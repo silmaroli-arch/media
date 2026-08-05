@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 
@@ -10,11 +10,12 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
+from sqlalchemy import or_
 
 from app.extensions import db
 from app.models import (
     Paciente, Usuario, Exame, Agendamento, FaqItem,
-    PerguntaPendente, ClinicaMembro, MedicoHorario, Clinica,
+    PerguntaPendente, ClinicaMembro, MedicoHorario, MedicoBloqueio, Clinica,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, DescontoConfig, Pagamento,
@@ -22,7 +23,7 @@ from app.models import (
 from app.clinica_utils import clinica_atual, clinicas_do_usuario, selecionar_clinica
 from app.pdf_preparo import extrair_sugestao_de_pdf
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
-from app.agendamento_otimizador import sugerir_horarios
+from app.agendamento_otimizador import sugerir_horarios, medico_tem_bloqueio
 
 # Dias da semana usados no formulário de horário de atendimento por médico.
 # Índice = MedicoHorario.dia_semana (0=segunda ... 6=domingo).
@@ -163,7 +164,7 @@ def dashboard():
         # sobre um exame de sua responsabilidade (perguntas gerais, sem
         # exame associado, ficam só para a secretaria responder).
         pendentes_q = pendentes_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
-            Exame.medico_id == current_user.id
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
     else:
         total_pacientes = Paciente.query.filter_by(clinica_id=clinica.id).count()
@@ -342,7 +343,9 @@ def exames_lista():
     clinica = clinica_atual()
     query = Exame.query.filter_by(clinica_id=clinica.id)
     if eh_medico():
-        query = query.filter_by(medico_id=current_user.id)
+        query = query.filter(
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
+        )
     exames = query.order_by(Exame.nome).all()
     return render_template("medico/exames_lista.html", exames=exames, eh_medico=eh_medico())
 
@@ -372,6 +375,12 @@ def exames_novo():
                 flash("Escolha o médico responsável pelo exame.", "danger")
                 return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
+        # Médicos adicionais, além do principal — qualquer um deles pode
+        # atender esse exame; a escolha de quem atende de fato acontece no
+        # momento do agendamento.
+        medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != medico_id}
+        medicos_extra = [m for m in medicos if m.id in medicos_extra_ids]
+
         modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)
         if not nome or not modelo:
             flash("Nome do exame e modelo de preparo são obrigatórios.", "danger")
@@ -384,7 +393,7 @@ def exames_novo():
         exame = Exame(
             clinica_id=clinica.id, medico_id=medico_id, nome=nome, descricao=descricao,
             preparo_modelo_id=modelo.id, duracao_minutos=duracao_minutos, preco=preco,
-            precisa_acompanhante=precisa_acompanhante,
+            precisa_acompanhante=precisa_acompanhante, medicos_extra=medicos_extra,
         )
         db.session.add(exame)
         db.session.commit()
@@ -402,10 +411,12 @@ def exames_editar(exame_id):
     clinica = clinica_atual()
     medicos = medicos_da_clinica(clinica)
     modelos = PreparoModelo.query.filter_by(clinica_id=clinica.id).order_by(PreparoModelo.nome).all()
-    filtros = dict(id=exame_id, clinica_id=clinica.id)
+    query = Exame.query.filter_by(id=exame_id, clinica_id=clinica.id)
     if eh_medico():
-        filtros["medico_id"] = current_user.id
-    exame = Exame.query.filter_by(**filtros).first_or_404()
+        query = query.filter(
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
+        )
+    exame = query.first_or_404()
 
     if request.method == "POST":
         exame.nome = request.form.get("nome", "").strip()
@@ -417,6 +428,8 @@ def exames_editar(exame_id):
             novo_medico_id = request.form.get("medico_id", type=int)
             if novo_medico_id and any(m.id == novo_medico_id for m in medicos):
                 exame.medico_id = novo_medico_id
+            medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != exame.medico_id}
+            exame.medicos_extra = [m for m in medicos if m.id in medicos_extra_ids]
         preparo_modelo_id = request.form.get("preparo_modelo_id", type=int)
         modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)
         if not modelo:
@@ -861,23 +874,35 @@ def agenda_novo():
             flash("Escolha um paciente e um exame válidos.", "danger")
             return redirect(url_for("medico.agenda_novo", filial_id=filial.id))
 
-        # O médico só pode agendar para os seus próprios exames — o
-        # agendamento herda o médico responsável a partir do exame
-        # escolhido, então isso também garante que só acompanhe os seus
-        # próprios pacientes a partir daqui.
+        # O médico só pode agendar para os seus próprios exames (principal
+        # ou associado). Quando o exame tem mais de um médico associado,
+        # é o médico escolhido no formulário (medico_id) que efetivamente
+        # atende esse agendamento — não necessariamente o médico principal
+        # do exame.
         medico_id_form = request.form.get("medico_id", type=int)
 
         # confirma que o paciente e o exame pertencem mesmo à filial escolhida
         paciente = Paciente.query.filter_by(id=paciente_id, clinica_id=filial.id).first()
-        exame_filtros = dict(id=exame_id, clinica_id=filial.id)
+        exame_query = Exame.query.filter_by(id=exame_id, clinica_id=filial.id)
         if eh_medico():
-            exame_filtros["medico_id"] = current_user.id
+            exame_query = exame_query.filter(
+                or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
+            )
         elif medico_id_form:
-            exame_filtros["medico_id"] = medico_id_form
-        exame = Exame.query.filter_by(**exame_filtros).first()
+            exame_query = exame_query.filter(
+                or_(Exame.medico_id == medico_id_form, Exame.medicos_extra.any(id=medico_id_form))
+            )
+        exame = exame_query.first()
         if not paciente or not exame:
             flash("Paciente ou exame inválido para a filial/médico escolhidos.", "danger")
             return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
+
+        if eh_medico():
+            medico_atende_id = current_user.id
+        elif medico_id_form and exame.medico_pode_atender(medico_id_form):
+            medico_atende_id = medico_id_form
+        else:
+            medico_atende_id = exame.medico_id
 
         try:
             data_hora = datetime.strptime(data_hora_str, "%Y-%m-%dT%H:%M")
@@ -893,11 +918,18 @@ def agenda_novo():
             )
             return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
 
+        if medico_tem_bloqueio(filial.id, medico_atende_id, data_hora):
+            flash(
+                "Esse médico bloqueou a agenda nesse horário (compromisso próprio) — escolha outro horário.",
+                "danger",
+            )
+            return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
+
         agendamento = Agendamento(
             clinica_id=filial.id,
             paciente_id=paciente.id,
             exame_id=exame.id,
-            medico_id=exame.medico_id,
+            medico_id=medico_atende_id,
             data_hora=data_hora,
             observacoes=observacoes,
             acompanhante_nome=acompanhante_nome or None,
@@ -928,9 +960,13 @@ def agenda_novo():
 
     exames_query = Exame.query.filter_by(clinica_id=filial_selecionada.id)
     if eh_medico():
-        exames_query = exames_query.filter_by(medico_id=current_user.id)
+        exames_query = exames_query.filter(
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
+        )
     elif medico_selecionado_id:
-        exames_query = exames_query.filter_by(medico_id=medico_selecionado_id)
+        exames_query = exames_query.filter(
+            or_(Exame.medico_id == medico_selecionado_id, Exame.medicos_extra.any(id=medico_selecionado_id))
+        )
     exames = exames_query.order_by(Exame.nome).all()
 
     return render_template(
@@ -1026,20 +1062,10 @@ def medico_horarios(medico_id=None):
     # horário. Secretárias e médicos com "perm_equipe" (ex.: o médico
     # fundador da clínica) podem escolher qualquer médico da filial atual —
     # mesma regra usada nas outras telas administrativas.
-    pode_escolher_medico = current_user.perm_equipe or not eh_medico()
-
-    if pode_escolher_medico:
-        medicos = medicos_da_clinica(clinica)
-        medico_alvo = next((m for m in medicos if m.id == medico_id), None)
-        if not medico_alvo:
-            # Sem seleção explícita: um médico cai no próprio horário por
-            # padrão; uma secretária cai no primeiro médico da lista.
-            medico_alvo = current_user if eh_medico() else (medicos[0] if medicos else None)
-        if not medico_alvo:
-            flash("Nenhum médico cadastrado nesta filial ainda.", "danger")
-            return redirect(url_for("medico.equipe_lista"))
-    else:
-        medico_alvo = current_user
+    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(clinica, medico_id)
+    if not medico_alvo:
+        flash("Nenhum médico cadastrado nesta filial ainda.", "danger")
+        return redirect(url_for("medico.equipe_lista"))
 
     if request.method == "POST":
         horarios_existentes = {
@@ -1081,6 +1107,134 @@ def medico_horarios(medico_id=None):
         dias_semana=list(enumerate(DIAS_SEMANA)),
         horarios_por_dia=horarios_por_dia,
     )
+
+
+def _resolver_medico_alvo(clinica, medico_id):
+    """Mesma regra usada em toda tela "do médico": um médico sem
+    perm_equipe só vê/edita os próprios dados; secretárias e médicos com
+    perm_equipe podem escolher qualquer médico da filial atual. Retorna
+    (pode_escolher_medico, medico_alvo) — medico_alvo é None só quando não
+    há nenhum médico cadastrado na filial (caso em que o chamador deve
+    redirecionar)."""
+    pode_escolher_medico = current_user.perm_equipe or not eh_medico()
+    if pode_escolher_medico:
+        medicos = medicos_da_clinica(clinica)
+        medico_alvo = next((m for m in medicos if m.id == medico_id), None)
+        if not medico_alvo:
+            medico_alvo = current_user if eh_medico() else (medicos[0] if medicos else None)
+    else:
+        medico_alvo = current_user
+    return pode_escolher_medico, medico_alvo
+
+
+# ---------- Meus exames agendados (agenda pessoal do médico) ----------
+
+@medico_bp.route("/medico-agenda", methods=["GET"])
+@medico_bp.route("/medico-agenda/<int:medico_id>", methods=["GET"])
+@login_required
+@staff_required
+def medico_agenda_pessoal(medico_id=None):
+    clinica = clinica_atual()
+    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(clinica, medico_id)
+    if not medico_alvo:
+        flash("Nenhum médico cadastrado nesta filial ainda.", "danger")
+        return redirect(url_for("medico.equipe_lista"))
+
+    agora = datetime.utcnow()
+    query = Agendamento.query.filter_by(clinica_id=clinica.id, medico_id=medico_alvo.id)
+    proximos = (
+        query.filter(Agendamento.data_hora >= agora, Agendamento.status != "cancelado")
+        .order_by(Agendamento.data_hora.asc())
+        .all()
+    )
+    anteriores = (
+        query.filter(Agendamento.data_hora < agora)
+        .order_by(Agendamento.data_hora.desc())
+        .limit(30)
+        .all()
+    )
+    return render_template(
+        "medico/medico_agenda_pessoal.html",
+        medico_alvo=medico_alvo,
+        medicos=(medicos_da_clinica(clinica) if pode_escolher_medico else []),
+        proximos=proximos,
+        anteriores=anteriores,
+    )
+
+
+# ---------- Bloqueio de agenda (compromisso próprio do médico) ----------
+
+@medico_bp.route("/medico-bloqueios", methods=["GET", "POST"])
+@medico_bp.route("/medico-bloqueios/<int:medico_id>", methods=["GET", "POST"])
+@login_required
+@staff_required
+def medico_bloqueios(medico_id=None):
+    clinica = clinica_atual()
+    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(clinica, medico_id)
+    if not medico_alvo:
+        flash("Nenhum médico cadastrado nesta filial ainda.", "danger")
+        return redirect(url_for("medico.equipe_lista"))
+
+    if request.method == "POST":
+        dia_inteiro = request.form.get("dia_inteiro") == "on"
+        data_inicio_str = request.form.get("data_inicio", "").strip()
+        data_fim_str = request.form.get("data_fim", "").strip()
+        hora_inicio_str = request.form.get("hora_inicio", "").strip()
+        hora_fim_str = request.form.get("hora_fim", "").strip()
+        motivo = request.form.get("motivo", "").strip()
+
+        try:
+            if dia_inteiro:
+                data_inicio_dt = datetime.strptime(data_inicio_str, "%Y-%m-%d")
+                data_fim_dt = datetime.strptime(data_fim_str or data_inicio_str, "%Y-%m-%d") + timedelta(
+                    days=1, seconds=-1
+                )
+            else:
+                data_inicio_dt = datetime.strptime(f"{data_inicio_str} {hora_inicio_str}", "%Y-%m-%d %H:%M")
+                data_fim_dt = datetime.strptime(f"{data_fim_str} {hora_fim_str}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            data_inicio_dt = data_fim_dt = None
+
+        if not data_inicio_dt or not data_fim_dt or data_fim_dt <= data_inicio_dt:
+            flash("Datas/horários inválidos — confira o período informado.", "danger")
+        else:
+            bloqueio = MedicoBloqueio(
+                clinica_id=clinica.id, medico_id=medico_alvo.id,
+                data_inicio=data_inicio_dt, data_fim=data_fim_dt,
+                motivo=motivo or None, dia_inteiro=dia_inteiro,
+            )
+            db.session.add(bloqueio)
+            db.session.commit()
+            flash("Bloqueio de agenda cadastrado.", "success")
+        return redirect(url_for("medico.medico_bloqueios", medico_id=medico_alvo.id))
+
+    bloqueios = (
+        MedicoBloqueio.query.filter_by(clinica_id=clinica.id, medico_id=medico_alvo.id)
+        .order_by(MedicoBloqueio.data_inicio.desc())
+        .all()
+    )
+    return render_template(
+        "medico/medico_bloqueios.html",
+        medico_alvo=medico_alvo,
+        medicos=(medicos_da_clinica(clinica) if pode_escolher_medico else []),
+        bloqueios=bloqueios,
+    )
+
+
+@medico_bp.route("/medico-bloqueios/<int:bloqueio_id>/remover", methods=["POST"])
+@login_required
+@staff_required
+def medico_bloqueio_remover(bloqueio_id):
+    clinica = clinica_atual()
+    filtros = dict(id=bloqueio_id, clinica_id=clinica.id)
+    if eh_medico() and not current_user.perm_equipe:
+        filtros["medico_id"] = current_user.id
+    bloqueio = MedicoBloqueio.query.filter_by(**filtros).first_or_404()
+    medico_id = bloqueio.medico_id
+    db.session.delete(bloqueio)
+    db.session.commit()
+    flash("Bloqueio removido.", "success")
+    return redirect(url_for("medico.medico_bloqueios", medico_id=medico_id))
 
 
 # ---------- Atendimento (continuidade/encerramento da consulta) ----------
@@ -1292,10 +1446,10 @@ def perguntas_pendentes():
         # responsabilidade; perguntas gerais (sem exame associado) ficam
         # só para a secretária responder.
         pendentes_q = pendentes_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
-            Exame.medico_id == current_user.id
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
         respondidas_q = respondidas_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
-            Exame.medico_id == current_user.id
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
 
     pendentes = pendentes_q.order_by(PerguntaPendente.criado_em.desc()).all()
@@ -1310,7 +1464,7 @@ def perguntas_responder(pergunta_id):
     clinica = clinica_atual()
     pergunta = PerguntaPendente.query.filter_by(id=pergunta_id, clinica_id=clinica.id).first_or_404()
 
-    if eh_medico() and (not pergunta.exame or pergunta.exame.medico_id != current_user.id):
+    if eh_medico() and (not pergunta.exame or not pergunta.exame.medico_pode_atender(current_user.id)):
         flash("Você só pode responder perguntas sobre os seus próprios exames.", "danger")
         return redirect(url_for("medico.perguntas_pendentes"))
 
@@ -1349,7 +1503,9 @@ def faq_lista():
     clinica = clinica_atual()
     query = FaqItem.query.filter_by(clinica_id=clinica.id)
     if eh_medico():
-        query = query.join(Exame, FaqItem.exame_id == Exame.id).filter(Exame.medico_id == current_user.id)
+        query = query.join(Exame, FaqItem.exame_id == Exame.id).filter(
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
+        )
     itens = query.order_by(FaqItem.criado_em.desc()).all()
     return render_template("medico/faq_lista.html", itens=itens)
 
@@ -1361,7 +1517,9 @@ def faq_novo():
     clinica = clinica_atual()
     exames_query = Exame.query.filter_by(clinica_id=clinica.id)
     if eh_medico():
-        exames_query = exames_query.filter_by(medico_id=current_user.id)
+        exames_query = exames_query.filter(
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
+        )
     exames = exames_query.order_by(Exame.nome).all()
 
     if request.method == "POST":

@@ -217,7 +217,7 @@ def buscar_resposta(pergunta_usuario: str, clinica_id, exame_id=None):
     return None, melhor_score
 
 
-def buscar_resposta_alimento(pergunta_usuario: str, exame):
+def buscar_resposta_alimento(pergunta_usuario: str, exame, paciente=None):
     """
     Verifica se a pergunta do paciente é sobre um alimento específico
     cadastrado no preparo do exame (lista de alimentos permitidos/sugeridos
@@ -285,10 +285,17 @@ def buscar_resposta_alimento(pergunta_usuario: str, exame):
             "durante o preparo deste exame."
         )
 
-    if (melhor_alimento.horas_antes is not None or melhor_alimento.dias_antes is not None) and exame.agendamentos:
-        # Usa o agendamento mais recente para calcular o prazo (mesmo
-        # critério usado na tela de preparo do paciente).
-        agendamento = sorted(exame.agendamentos, key=lambda a: a.data_hora)[-1]
+    # Só considera os agendamentos DESTE paciente para este exame — nunca
+    # o de outro paciente que também tenha marcado o mesmo tipo de exame
+    # (bug antigo: pegava o agendamento mais recente entre TODOS os
+    # pacientes do exame, o que podia mostrar o prazo errado).
+    agendamentos_paciente = (
+        [a for a in exame.agendamentos if a.paciente_id == paciente.id] if paciente else exame.agendamentos
+    )
+    if (melhor_alimento.horas_antes is not None or melhor_alimento.dias_antes is not None) and agendamentos_paciente:
+        # Usa o agendamento mais recente (deste paciente) para calcular o
+        # prazo — mesmo critério usado na tela de preparo do paciente.
+        agendamento = sorted(agendamentos_paciente, key=lambda a: a.data_hora)[-1]
         prazo = melhor_alimento.horas_antes if melhor_alimento.horas_antes is not None else melhor_alimento.dias_antes
         unidade = "horas" if melhor_alimento.horas_antes is not None else "dias"
         return (
@@ -329,7 +336,7 @@ def _sinonimos_medicamento(nome, categoria):
     return sinonimos
 
 
-def buscar_resposta_medicamento(pergunta_usuario: str, exame):
+def buscar_resposta_medicamento(pergunta_usuario: str, exame, paciente=None):
     """
     Verifica se a pergunta do paciente é sobre um medicamento cadastrado no
     preparo do exame — tanto os que precisam ser suspensos quanto os que
@@ -386,8 +393,13 @@ def buscar_resposta_medicamento(pergunta_usuario: str, exame):
         return resposta
 
     nome_medicamento = melhor_item.medicamento.nome
-    if exame.agendamentos:
-        agendamento = sorted(exame.agendamentos, key=lambda a: a.data_hora)[-1]
+    # Só considera os agendamentos DESTE paciente (ver mesmo comentário em
+    # buscar_resposta_alimento).
+    agendamentos_paciente = (
+        [a for a in exame.agendamentos if a.paciente_id == paciente.id] if paciente else exame.agendamentos
+    )
+    if agendamentos_paciente:
+        agendamento = sorted(agendamentos_paciente, key=lambda a: a.data_hora)[-1]
         resposta = (
             f"Não, {nome_medicamento} precisa ser suspenso a partir de "
             f"{melhor_item.limite(agendamento.data_hora).strftime('%d/%m/%Y')} "

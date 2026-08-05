@@ -12,7 +12,7 @@ app.routes_paciente.solicitar_agendamento).
 """
 from datetime import datetime, timedelta, date as date_cls
 
-from app.models import Agendamento, MedicoHorario
+from app.models import Agendamento, MedicoHorario, MedicoBloqueio
 
 DURACAO_PADRAO_MINUTOS = 30
 
@@ -22,6 +22,35 @@ def _horarios_do_medico(clinica_id, medico_id):
         clinica_id=clinica_id, medico_id=medico_id, ativo=True
     ).all()
     return {h.dia_semana: h for h in horarios}
+
+
+def medico_tem_bloqueio(clinica_id, medico_id, momento):
+    """True se o médico bloqueou a agenda (compromisso próprio) cobrindo
+    esse instante específico — usado para validar um agendamento manual
+    antes de criá-lo."""
+    return (
+        MedicoBloqueio.query.filter(
+            MedicoBloqueio.clinica_id == clinica_id,
+            MedicoBloqueio.medico_id == medico_id,
+            MedicoBloqueio.data_inicio <= momento,
+            MedicoBloqueio.data_fim > momento,
+        ).first()
+        is not None
+    )
+
+
+def _bloqueios_intervalos_do_dia(clinica_id, medico_id, dia):
+    """Intervalos (datetime, datetime) de bloqueio de agenda do médico que
+    tocam o dia informado — usado para não sugerir horários dentro deles."""
+    inicio_dia = datetime.combine(dia, datetime.min.time())
+    fim_dia = inicio_dia + timedelta(days=1)
+    bloqueios = MedicoBloqueio.query.filter(
+        MedicoBloqueio.clinica_id == clinica_id,
+        MedicoBloqueio.medico_id == medico_id,
+        MedicoBloqueio.data_inicio < fim_dia,
+        MedicoBloqueio.data_fim > inicio_dia,
+    ).all()
+    return [(b.data_inicio, b.data_fim) for b in bloqueios]
 
 
 def sugerir_horarios(exame, medico, clinica, data_inicio=None, quantidade=5, dias_maximos=60):
@@ -54,6 +83,7 @@ def sugerir_horarios(exame, medico, clinica, data_inicio=None, quantidade=5, dia
                 .all()
             )
             ocupados_intervalos = [(a.data_hora, a.data_hora + duracao) for a in ocupados]
+            ocupados_intervalos += _bloqueios_intervalos_do_dia(clinica.id, medico.id, dia_atual)
 
             slot = datetime.combine(dia_atual, horario.hora_inicio)
             fim_expediente = datetime.combine(dia_atual, horario.hora_fim)

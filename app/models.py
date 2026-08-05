@@ -171,6 +171,29 @@ class MedicoHorario(db.Model):
     medico = db.relationship("Usuario")
 
 
+class MedicoBloqueio(db.Model):
+    """Bloqueio de agenda de um médico por conta de compromisso próprio
+    (consulta, viagem, férias etc.) — cobre um intervalo de data/hora
+    (data_inicio até data_fim). Um bloqueio de dia inteiro é representado
+    com data_inicio às 00:00 e data_fim às 23:59:59 do(s) dia(s) afetado(s).
+    Usado pelo otimizador de agenda (app.agendamento_otimizador) para não
+    sugerir horários dentro do período bloqueado, e também para impedir
+    que a secretária agende manualmente nesse período."""
+    __tablename__ = "medico_bloqueios"
+
+    id = db.Column(db.Integer, primary_key=True)
+    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
+    medico_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    data_inicio = db.Column(db.DateTime, nullable=False)
+    data_fim = db.Column(db.DateTime, nullable=False)
+    motivo = db.Column(db.String(200))
+    dia_inteiro = db.Column(db.Boolean, nullable=False, default=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    clinica = db.relationship("Clinica")
+    medico = db.relationship("Usuario")
+
+
 class ClinicaMembro(db.Model):
     """Vínculo entre um usuário da equipe (médico/secretária) e uma clínica.
     Um mesmo usuário pode estar vinculado a várias clínicas."""
@@ -309,15 +332,26 @@ class Paciente(db.Model):
     mensagens_chat = db.relationship("ChatMensagem", back_populates="paciente", cascade="all, delete-orphan")
 
 
+# Associação extra entre exame e médicos que também podem atendê-lo, além
+# do médico principal (Exame.medico_id). Um exame pode ter vários médicos
+# associados — ao agendar, escolhe-se qual deles vai atender.
+exame_medicos_associados = db.Table(
+    "exame_medicos_associados",
+    db.Column("exame_id", db.Integer, db.ForeignKey("exames.id"), primary_key=True),
+    db.Column("medico_id", db.Integer, db.ForeignKey("usuarios.id"), primary_key=True),
+)
+
+
 class Exame(db.Model):
     __tablename__ = "exames"
     __table_args__ = (db.UniqueConstraint("clinica_id", "nome", name="uq_clinica_exame_nome"),)
 
     id = db.Column(db.Integer, primary_key=True)
     clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
-    # Médico responsável pelo exame — cada exame pertence exclusivamente a
-    # um médico da clínica. Quando a secretária cadastra o exame, ela
-    # escolhe a qual médico ele pertence.
+    # Médico principal do exame (quem cadastrou/é o dono padrão). Além
+    # dele, outros médicos podem ser associados ao mesmo exame (ver
+    # `medicos_extra` abaixo e a propriedade `medicos`) — nesse caso, ao
+    # agendar, a secretária escolhe qual dos médicos associados atende.
     medico_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
     nome = db.Column(db.String(150), nullable=False)
     descricao = db.Column(db.Text)
@@ -344,6 +378,10 @@ class Exame(db.Model):
 
     clinica = db.relationship("Clinica", back_populates="exames")
     medico = db.relationship("Usuario", back_populates="exames_medico", foreign_keys=[medico_id])
+    medicos_extra = db.relationship(
+        "Usuario", secondary=exame_medicos_associados,
+        backref=db.backref("exames_associados_extra", lazy="dynamic"),
+    )
     preparo_modelo = db.relationship("PreparoModelo", back_populates="exames")
     agendamentos = db.relationship("Agendamento", back_populates="exame")
     faqs = db.relationship("FaqItem", back_populates="exame", cascade="all, delete-orphan")
@@ -353,6 +391,22 @@ class Exame(db.Model):
         """Atalho de compatibilidade: o preparo efetivo do exame é o do
         modelo de preparo vinculado a ele."""
         return self.preparo_modelo
+
+    @property
+    def medicos(self):
+        """Todos os médicos que podem atender este exame: o médico
+        principal mais os médicos associados adicionalmente (sem
+        duplicar, e preservando o principal primeiro na lista)."""
+        vistos = {self.medico_id}
+        lista = [self.medico] if self.medico else []
+        for m in self.medicos_extra:
+            if m.id not in vistos:
+                vistos.add(m.id)
+                lista.append(m)
+        return lista
+
+    def medico_pode_atender(self, medico_id):
+        return medico_id == self.medico_id or any(m.id == medico_id for m in self.medicos_extra)
 
 
 class Medicamento(db.Model):

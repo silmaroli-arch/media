@@ -126,12 +126,12 @@ def chat():
                 ))
                 db.session.commit()
             elif exame_selecionado and (resposta_alimento := buscar_resposta_alimento(
-                pergunta_enviada, exame_selecionado
+                pergunta_enviada, exame_selecionado, paciente
             )):
                 resposta_ia = resposta_alimento
                 origem = "alimento"
             elif exame_selecionado and (resposta_medicamento := buscar_resposta_medicamento(
-                pergunta_enviada, exame_selecionado
+                pergunta_enviada, exame_selecionado, paciente
             )):
                 resposta_ia = resposta_medicamento
                 origem = "medicamento"

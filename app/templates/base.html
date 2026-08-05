@@ -24,8 +24,8 @@
 <div class="d-flex">
   {% if eh_staff_logado %}
   {% set grupo_pessoas = ['medico.pacientes_lista', 'medico.pacientes_novo', 'medico.pacientes_editar', 'medico.pacientes_detalhe',
-                           'medico.equipe_lista', 'medico.equipe_novo',
-                           'medico.medico_horarios'] %}
+                           'medico.equipe_lista', 'medico.equipe_novo'] %}
+  {% set grupo_medico = ['medico.medico_horarios', 'medico.medico_agenda_pessoal', 'medico.medico_bloqueios'] %}
   {% set grupo_cadastro_geral = ['medico.filiais_lista', 'medico.filiais_nova',
                                   'medico.clinica_configuracoes'] %}
   {% set grupo_financeiro = ['medico.descontos_lista'] %}
@@ -66,8 +66,26 @@
               <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.equipe') %}active{% endif %}" href="{{ url_for('medico.equipe_lista') }}">Equipe</a>
             </li>
             {% endif %}
+          </ul>
+        </div>
+      </li>
+
+      <li class="nav-item mb-1">
+        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuMedico" role="button"
+           aria-expanded="{{ 'true' if request.endpoint in grupo_medico else 'false' }}">
+          <span><i class="bi bi-clipboard2-pulse me-2"></i>Médico</span>
+          <i class="bi bi-chevron-down chevron-icon"></i>
+        </a>
+        <div class="collapse nav-sub {% if request.endpoint in grupo_medico %}show{% endif %}" id="menuMedico">
+          <ul class="nav flex-column">
             <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.medico_horarios' %}active{% endif %}" href="{{ url_for('medico.medico_horarios') }}">Horário de atendimento (médico)</a>
+              <a class="nav-link {% if request.endpoint == 'medico.medico_horarios' %}active{% endif %}" href="{{ url_for('medico.medico_horarios') }}">Horário de atendimento</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'medico.medico_agenda_pessoal' %}active{% endif %}" href="{{ url_for('medico.medico_agenda_pessoal') }}">Meus exames agendados</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'medico.medico_bloqueios' %}active{% endif %}" href="{{ url_for('medico.medico_bloqueios') }}">Bloquear agenda</a>
             </li>
           </ul>
         </div>

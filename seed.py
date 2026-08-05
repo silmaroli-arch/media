@@ -18,7 +18,7 @@ from app import create_app
 from app.extensions import db
 from app.db_utils import resetar_banco
 from app.models import (
-    Usuario, Empresa, Clinica, ClinicaMembro, MedicoHorario, Paciente,
+    Usuario, Empresa, Clinica, ClinicaMembro, MedicoHorario, MedicoBloqueio, Paciente,
     Exame, PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento,
     Agendamento, FaqItem, normalizar_telefone,
@@ -177,6 +177,14 @@ with app.app_context():
     )
     # Dr. Carlos também atende na São Paulo, mas ainda não cadastrou horário
     # lá — pra mostrar que isso é opcional e pode ser preenchido depois.
+
+    # Bloqueio de agenda de exemplo: Dr. Carlos de férias num dia inteiro —
+    # o otimizador de agenda não deve sugerir horários nesse dia.
+    db.session.add(MedicoBloqueio(
+        clinica_id=clinica_vitoria.id, medico_id=medico_compartilhado.id,
+        data_inicio=datetime(2026, 12, 24, 0, 0), data_fim=datetime(2026, 12, 24, 23, 59, 59),
+        motivo="Férias", dia_inteiro=True,
+    ))
     db.session.commit()
 
     # --- Catálogo de medicamentos (compartilhado pela plataforma) ---
@@ -257,6 +265,9 @@ with app.app_context():
         clinica_vitoria.id, medico_compartilhado.id, "Colonoscopia", "Exame do intestino grosso",
         modelo_colonoscopia_vitoria,
     )
+    # A Colonoscopia também pode ser atendida pela Dra. Fernanda — demonstra
+    # a associação de mais de um médico ao mesmo exame.
+    colonoscopia_vitoria.medicos_extra = [medica_vitoria2]
 
     # Um mesmo modelo de preparo (teste de hidrogênio) reaproveitado por 3
     # exames diferentes — cada substrato precisa ser agendado num dia
@@ -390,7 +401,12 @@ with app.app_context():
         paciente_id=joao.id,
         exame_id=colonoscopia_vitoria.id,
         medico_id=colonoscopia_vitoria.medico_id,
-        data_hora=datetime.utcnow() + timedelta(days=5),
+        # Data fixa (não relativa a "agora") — evita colidir de forma
+        # imprevisível com outros agendamentos de teste do mesmo
+        # paciente/exame criados com datas fixas (ver test_smoke.py), o
+        # que já causou falhas de teste dependentes do horário real em
+        # que o seed é executado.
+        data_hora=datetime(2026, 8, 6, 10, 0),
         status="agendado",
     ))
     db.session.add(Agendamento(

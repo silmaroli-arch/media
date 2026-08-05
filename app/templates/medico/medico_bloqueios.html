@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block titulo %}Bloquear agenda{% endblock %}
+{% block conteudo %}
+<h3 class="mb-1">Bloqueio de agenda de {{ medico_alvo.nome }}</h3>
+<p class="text-muted mb-4">
+  Use para marcar compromissos próprios (consulta, viagem, férias etc.) — o otimizador de agenda
+  não vai sugerir horários dentro do período bloqueado, e a secretária não conseguirá agendar
+  manualmente nesse período.
+</p>
+
+{% if medicos %}
+<div class="mb-4">
+  <label class="form-label">Médico</label>
+  <select class="form-select" style="max-width: 350px" onchange="window.location = '{{ url_for('medico.medico_bloqueios') }}/' + this.value">
+    {% for m in medicos %}
+    <option value="{{ m.id }}" {% if m.id == medico_alvo.id %}selected{% endif %}>{{ m.nome }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endif %}
+
+<div class="card p-4 mb-4">
+  <h5 class="mb-3">Novo bloqueio</h5>
+  <form method="post" id="formBloqueio">
+    <div class="form-check mb-3">
+      <input type="checkbox" name="dia_inteiro" id="dia_inteiro" class="form-check-input" onchange="alternarCamposHora()">
+      <label class="form-check-label" for="dia_inteiro">Dia inteiro (ou vários dias inteiros seguidos)</label>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label">Data início</label>
+        <input type="date" name="data_inicio" class="form-control" required>
+      </div>
+      <div class="col-md-3" id="campoHoraInicio">
+        <label class="form-label">Hora início</label>
+        <input type="time" name="hora_inicio" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Data fim</label>
+        <input type="date" name="data_fim" class="form-control">
+        <div class="form-text">Deixe em branco se for o mesmo dia do início.</div>
+      </div>
+      <div class="col-md-3" id="campoHoraFim">
+        <label class="form-label">Hora fim</label>
+        <input type="time" name="hora_fim" class="form-control">
+      </div>
+      <div class="col-md-12">
+        <label class="form-label">Motivo (opcional)</label>
+        <input type="text" name="motivo" class="form-control" placeholder="Ex.: consulta médica, viagem, férias...">
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary mt-3">Bloquear</button>
+  </form>
+</div>
+
+<div class="card p-3">
+  <h5>Bloqueios cadastrados</h5>
+  <table class="table table-hover mt-2">
+    <thead><tr><th>Início</th><th>Fim</th><th>Tipo</th><th>Motivo</th><th></th></tr></thead>
+    <tbody>
+      {% for b in bloqueios %}
+      <tr>
+        <td>{{ b.data_inicio.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ b.data_fim.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{% if b.dia_inteiro %}<span class="badge bg-dark">dia inteiro</span>{% else %}<span class="badge bg-secondary">período</span>{% endif %}</td>
+        <td>{{ b.motivo or '-' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('medico.medico_bloqueio_remover', bloqueio_id=b.id) }}">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Remover</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted text-center">Nenhum bloqueio cadastrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  function alternarCamposHora() {
+    var diaInteiro = document.getElementById('dia_inteiro').checked;
+    document.getElementById('campoHoraInicio').style.display = diaInteiro ? 'none' : '';
+    document.getElementById('campoHoraFim').style.display = diaInteiro ? 'none' : '';
+    var inicio = document.querySelector('input[name="hora_inicio"]');
+    var fim = document.querySelector('input[name="hora_fim"]');
+    inicio.required = !diaInteiro;
+    fim.required = !diaInteiro;
+  }
+  alternarCamposHora();
+</script>
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block titulo %}Meus exames agendados{% endblock %}
+{% block conteudo %}
+<h3 class="mb-1">Exames agendados de {{ medico_alvo.nome }}</h3>
+<p class="text-muted mb-4">Todos os agendamentos deste médico na filial atual, futuros e passados.</p>
+
+{% if medicos %}
+<div class="mb-4">
+  <label class="form-label">Médico</label>
+  <select class="form-select" style="max-width: 350px" onchange="window.location = '{{ url_for('medico.medico_agenda_pessoal') }}/' + this.value">
+    {% for m in medicos %}
+    <option value="{{ m.id }}" {% if m.id == medico_alvo.id %}selected{% endif %}>{{ m.nome }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endif %}
+
+<div class="card p-3 mb-4">
+  <h5>Próximos agendamentos</h5>
+  <table class="table table-hover mt-2">
+    <thead><tr><th>Data/Hora</th><th>Paciente</th><th>Exame</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for a in proximos %}
+      <tr>
+        <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ a.paciente.nome }}</td>
+        <td>{{ a.exame.nome }}</td>
+        <td>
+          <span class="badge
+            {% if a.status == 'solicitado' %}bg-warning text-dark
+            {% elif a.status == 'agendado' %}bg-secondary
+            {% elif a.status == 'confirmado' %}bg-info
+            {% elif a.status == 'realizado' %}bg-success
+            {% else %}bg-danger{% endif %}">{{ a.status }}</span>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-muted text-center">Nenhum agendamento futuro.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card p-3">
+  <h5>Agendamentos anteriores <span class="text-muted small">(últimos 30)</span></h5>
+  <table class="table table-hover mt-2">
+    <thead><tr><th>Data/Hora</th><th>Paciente</th><th>Exame</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for a in anteriores %}
+      <tr>
+        <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ a.paciente.nome }}</td>
+        <td>{{ a.exame.nome }}</td>
+        <td><span class="badge bg-secondary">{{ a.status }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-muted text-center">Nenhum agendamento anterior.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

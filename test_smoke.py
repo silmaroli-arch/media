@@ -12,7 +12,7 @@ from app.models import (
     Empresa, Clinica, PlataformaConfig, Usuario, Paciente, Exame, Agendamento,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, PerguntaPendente, FaqItem,
-    MedicoHorario, ChatMensagem, ResultadoExame, DescontoConfig, Pagamento,
+    MedicoHorario, MedicoBloqueio, ChatMensagem, ResultadoExame, DescontoConfig, Pagamento,
 )
 from app.pdf_preparo import (
     _sugerir_informacoes_gerais, _sugerir_alimentos, _sugerir_medicamentos, _sugerir_cortes,
@@ -160,8 +160,11 @@ client.get("/logout")
 login("medica2@clinicavitoria.com", "123456")
 r = client.get("/equipe/exames")
 texto = r.get_data(as_text=True)
-checar("Dra. Fernanda vê só o Hemograma, não a Colonoscopia do Dr. Carlos",
-       "Hemograma" in texto and "Colonoscopia" not in texto)
+checar(
+    "Dra. Fernanda vê o Hemograma (é dela) e a Colonoscopia (associada como médica extra), "
+    "mas não o Teste de Hidrogênio (só do Dr. Carlos)",
+    "Hemograma" in texto and "Colonoscopia" in texto and "Teste do Hidrogênio" not in texto,
+)
 
 r = client.get("/equipe/pacientes")
 texto = r.get_data(as_text=True)
@@ -1417,6 +1420,135 @@ checar("Login com a senha antiga não funciona mais após a troca", "E-mail ou s
 
 r = login("secretaria@clinicavitoria.com", "novaSenha123")
 checar("Login com a nova senha funciona", "Empresa" in r.get_data(as_text=True) or "Pacientes" in r.get_data(as_text=True) or r.status_code == 200)
+client.get("/logout")
+
+# ---------- Menu "Médico" e associação de médico(s) ao exame ----------
+
+login("secretaria@clinicavitoria.com", "novaSenha123")
+
+r = client.get("/equipe/pacientes")
+texto_menu = r.get_data(as_text=True)
+checar(
+    "Menu tem o grupo \"Médico\" com Horário de atendimento, Meus exames agendados e Bloquear agenda",
+    ">Médico<" in texto_menu and "Meus exames agendados" in texto_menu and "Bloquear agenda" in texto_menu,
+)
+
+with app.app_context():
+    clinica_vitoria_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
+    carlos = Usuario.query.filter_by(email="medico@clinicavitoria.com").first()
+    fernanda = Usuario.query.filter_by(email="medica2@clinicavitoria.com").first()
+    colonoscopia = Exame.query.filter_by(nome="Colonoscopia", clinica_id=clinica_vitoria_id).first()
+    joao = Paciente.query.filter_by(nome="João Pereira").first()
+    carlos_id, fernanda_id, colonoscopia_id, joao_id = carlos.id, fernanda.id, colonoscopia.id, joao.id
+    filial_id = clinica_vitoria_id
+    # Um teste anterior (edição de "precisa_acompanhante") postou no form de
+    # edição do exame sem os checkboxes de médicos extra — como qualquer
+    # formulário HTML real, isso "desmarca" a associação. Restaura aqui
+    # antes de testar a funcionalidade de múltiplos médicos por exame.
+    colonoscopia.medicos_extra = [fernanda]
+    db.session.commit()
+
+r = client.get(f"/equipe/exames/{colonoscopia_id}/editar")
+checar(
+    "Tela de editar exame mostra a Dra. Fernanda marcada como médica extra da Colonoscopia",
+    f'value="{fernanda_id}"' in r.get_data(as_text=True) and "checked" in r.get_data(as_text=True),
+)
+
+r = client.post("/equipe/agenda/novo", data={
+    "filial_id": filial_id,
+    "medico_id": fernanda_id,
+    "paciente_id": joao_id,
+    "exame_id": colonoscopia_id,
+    "data_hora": "2026-08-25T09:00",
+    # Um teste anterior passou a marcar este exame como exigindo
+    # acompanhante — precisa informar, senão o agendamento é rejeitado.
+    "acompanhante_nome": "Alguém da família",
+}, follow_redirects=True)
+checar("Agendar a Colonoscopia escolhendo a Dra. Fernanda (médica extra) funciona",
+       "sucesso" in r.get_data(as_text=True).lower())
+
+with app.app_context():
+    agendamento_fernanda = Agendamento.query.filter_by(
+        exame_id=colonoscopia_id, paciente_id=joao_id, data_hora=datetime(2026, 8, 25, 9, 0)
+    ).first()
+    checar(
+        "O agendamento ficou com a Dra. Fernanda como médica (não o Dr. Carlos, principal do exame)",
+        agendamento_fernanda is not None and agendamento_fernanda.medico_id == fernanda_id,
+    )
+
+client.get("/logout")
+
+# ---------- Meus exames agendados (agenda pessoal do médico) ----------
+
+login("medica2@clinicavitoria.com", "123456")
+r = client.get("/equipe/medico-agenda")
+texto = r.get_data(as_text=True)
+checar(
+    "Dra. Fernanda vê o agendamento da Colonoscopia (como médica extra) em \"Meus exames agendados\"",
+    "João Pereira" in texto and "Colonoscopia" in texto,
+)
+client.get("/logout")
+
+# ---------- Bloqueio de agenda por compromisso próprio do médico ----------
+
+login("secretaria@clinicavitoria.com", "novaSenha123")
+
+r = client.get(f"/equipe/medico-bloqueios/{carlos_id}")
+checar("Bloqueio de férias do Dr. Carlos (seed) aparece na lista", "Férias" in r.get_data(as_text=True))
+
+r = client.post(f"/equipe/medico-bloqueios/{carlos_id}", data={
+    "data_inicio": "2026-08-26",
+    "hora_inicio": "08:00",
+    "data_fim": "2026-08-26",
+    "hora_fim": "12:00",
+    "motivo": "Consulta médica",
+}, follow_redirects=True)
+checar("Cadastro de bloqueio por período funciona", "cadastrado" in r.get_data(as_text=True).lower())
+
+with app.app_context():
+    from app.agendamento_otimizador import sugerir_horarios, medico_tem_bloqueio
+    clinica_vitoria_obj = Clinica.query.get(filial_id)
+    exame_glicemia = Exame.query.filter_by(nome="Glicemia de jejum", clinica_id=filial_id).first()
+    carlos_obj = Usuario.query.get(carlos_id)
+    bloqueado = medico_tem_bloqueio(filial_id, carlos_id, datetime(2026, 8, 26, 9, 0))
+    checar("medico_tem_bloqueio detecta o horário bloqueado (26/08 09h, dentro das 08h-12h)", bloqueado)
+    livre = medico_tem_bloqueio(filial_id, carlos_id, datetime(2026, 8, 26, 14, 0))
+    checar("medico_tem_bloqueio não bloqueia horário fora do período (26/08 14h)", not livre)
+
+    sugestoes = sugerir_horarios(exame_glicemia, carlos_obj, clinica_vitoria_obj, data_inicio=date(2026, 8, 26), quantidade=50, dias_maximos=3)
+    dentro_do_bloqueio = any(
+        s.date() == date(2026, 8, 26) and 8 <= s.hour < 12 for s in sugestoes
+    )
+    checar(
+        "O otimizador de agenda não sugere horários dentro do período bloqueado (26/08 08h-12h)",
+        not dentro_do_bloqueio,
+    )
+
+with app.app_context():
+    exame_glicemia_id = Exame.query.filter_by(nome="Glicemia de jejum", clinica_id=filial_id).first().id
+
+r = client.post("/equipe/agenda/novo", data={
+    "filial_id": filial_id,
+    "medico_id": carlos_id,
+    "paciente_id": joao_id,
+    "exame_id": exame_glicemia_id,
+    "data_hora": "2026-08-26T09:00",
+}, follow_redirects=True)
+checar(
+    "Agendamento manual é rejeitado dentro do horário bloqueado do médico",
+    "bloqueou a agenda" in r.get_data(as_text=True).lower(),
+)
+
+with app.app_context():
+    bloqueio_extra = MedicoBloqueio.query.filter_by(clinica_id=filial_id, medico_id=carlos_id, motivo="Consulta médica").first()
+    bloqueio_extra_id = bloqueio_extra.id
+
+r = client.post(f"/equipe/medico-bloqueios/{bloqueio_extra_id}/remover", follow_redirects=True)
+checar("Remover bloqueio funciona", "removido" in r.get_data(as_text=True).lower())
+
+with app.app_context():
+    checar("Bloqueio removido não existe mais no banco", MedicoBloqueio.query.get(bloqueio_extra_id) is None)
+
 client.get("/logout")
 
 print("\nTodos os testes de fumaça passaram com sucesso.")
