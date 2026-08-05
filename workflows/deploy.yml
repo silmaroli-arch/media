@@ -1,0 +1,53 @@
+name: Deploy no Elastic Beanstalk
+
+# Cada branch corresponde a um ambiente da AWS:
+#   dev        -> media-dev
+#   qualidade  -> media-qa
+#   main       -> media-prod
+#
+# Pré-requisitos (ver instruções no README/chat):
+#   1. As 3 aplicações/ambientes já criados no Elastic Beanstalk (via `eb create`).
+#   2. Um usuário IAM com permissão de deploy no Elastic Beanstalk, com a
+#      Access Key e Secret Key cadastradas neste repositório em
+#      Settings -> Secrets and variables -> Actions, com os nomes:
+#        AWS_ACCESS_KEY_ID
+#        AWS_SECRET_ACCESS_KEY
+#   3. DATABASE_URL, SECRET_KEY (e ANTHROPIC_API_KEY, se usar) já configuradas
+#      em CADA ambiente do Elastic Beanstalk via `eb setenv` — esses dados
+#      sensíveis NÃO passam pelo Git nem pelo GitHub Actions.
+
+on:
+  push:
+    branches: [dev, qualidade, main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: Definir qual ambiente da AWS corresponde a este branch
+        id: ambiente
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "environment_name=media-prod" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref_name }}" = "qualidade" ]; then
+            echo "environment_name=media-qa" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment_name=media-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compactar o projeto para o deploy
+        run: zip -r deploy.zip . -x '.git/*' '.github/*'
+
+      - name: Deploy no Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: media
+          environment_name: ${{ steps.ambiente.outputs.environment_name }}
+          region: sa-east-1
+          version_label: ${{ github.sha }}
+          deployment_package: deploy.zip

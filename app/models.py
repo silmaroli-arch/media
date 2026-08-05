@@ -116,10 +116,6 @@ class Clinica(db.Model):
     membros = db.relationship("ClinicaMembro", back_populates="clinica", cascade="all, delete-orphan")
     pacientes = db.relationship("Paciente", back_populates="clinica", cascade="all, delete-orphan")
     exames = db.relationship("Exame", back_populates="clinica", cascade="all, delete-orphan")
-    horarios = db.relationship(
-        "ClinicaHorario", back_populates="clinica", cascade="all, delete-orphan",
-        order_by="ClinicaHorario.dia_semana",
-    )
 
     @property
     def bloqueada(self):
@@ -129,11 +125,6 @@ class Clinica(db.Model):
     @property
     def medicos_e_secretarias(self):
         return [m.usuario for m in self.membros if m.ativo]
-
-    @property
-    def horarios_por_dia(self):
-        """Dicionário {dia_semana: ClinicaHorario} para acesso fácil nos templates."""
-        return {h.dia_semana: h for h in self.horarios}
 
 
 class PlataformaConfig(db.Model):
@@ -156,30 +147,13 @@ class PlataformaConfig(db.Model):
         return config
 
 
-class ClinicaHorario(db.Model):
-    """Horário de funcionamento de um dia da semana para uma clínica.
-    dia_semana: 0=segunda, 1=terça, ..., 6=domingo (padrão Python/ISO).
-    Pode ser alterado a qualquer momento pela secretária."""
-    __tablename__ = "clinica_horarios"
-    __table_args__ = (db.UniqueConstraint("clinica_id", "dia_semana", name="uq_clinica_dia"),)
-
-    id = db.Column(db.Integer, primary_key=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
-    dia_semana = db.Column(db.Integer, nullable=False)  # 0=segunda ... 6=domingo
-    ativo = db.Column(db.Boolean, default=False)
-    hora_inicio = db.Column(db.Time)
-    hora_fim = db.Column(db.Time)
-
-    clinica = db.relationship("Clinica", back_populates="horarios")
-
-
 class MedicoHorario(db.Model):
     """Horário de atendimento de um médico numa filial específica, por dia
     da semana — usado pelo otimizador de agenda (ver
     app.agendamento_otimizador) para sugerir datas/horários de acordo com
     a duração do exame (Exame.duracao_minutos) e os agendamentos já
-    existentes. dia_semana segue o mesmo padrão de ClinicaHorario
-    (0=segunda ... 6=domingo)."""
+    existentes. dia_semana: 0=segunda, 1=terça, ..., 6=domingo (padrão
+    Python/ISO)."""
     __tablename__ = "medico_horarios"
     __table_args__ = (
         db.UniqueConstraint("clinica_id", "medico_id", "dia_semana", name="uq_medico_clinica_dia"),

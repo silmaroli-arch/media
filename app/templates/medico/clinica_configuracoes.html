@@ -66,32 +66,6 @@
   </div>
 
   <div class="card p-4 mb-4">
-    <h5 class="mb-1">Horário de funcionamento</h5>
-    <p class="text-muted small mb-3">Marque os dias em que a clínica atende e informe o horário. Pode ser ajustado depois.</p>
-    {% for dia_idx, dia_nome in dias_semana %}
-      {% set horario = horarios_por_dia.get(dia_idx) %}
-      <div class="row g-2 align-items-center mb-2">
-        <div class="col-md-3">
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" name="dia_{{ dia_idx }}_ativo" id="dia_{{ dia_idx }}_ativo"
-                   {% if horario and horario.ativo %}checked{% endif %}>
-            <label class="form-check-label" for="dia_{{ dia_idx }}_ativo">{{ dia_nome }}</label>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <input type="time" name="dia_{{ dia_idx }}_inicio" class="form-control"
-                 value="{{ horario.hora_inicio.strftime('%H:%M') if horario and horario.hora_inicio else '' }}">
-        </div>
-        <div class="col-auto text-muted">até</div>
-        <div class="col-md-3">
-          <input type="time" name="dia_{{ dia_idx }}_fim" class="form-control"
-                 value="{{ horario.hora_fim.strftime('%H:%M') if horario and horario.hora_fim else '' }}">
-        </div>
-      </div>
-    {% endfor %}
-  </div>
-
-  <div class="card p-4 mb-4">
     <h5 class="mb-1">Dados fiscais</h5>
     <p class="text-muted small mb-3">
       Usados futuramente para identificar a clínica em uma eventual nota fiscal ao paciente.

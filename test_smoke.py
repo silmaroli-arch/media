@@ -49,6 +49,14 @@ r = login("secretaria@clinicavitoria.com", "123456")
 checar("Login secretaria (Vitória) funciona", r.status_code == 200 and "Painel" in r.get_data(as_text=True))
 checar("Navbar mostra o nome da clínica atual", "Clínica Vitória" in r.get_data(as_text=True))
 
+texto_menu = r.get_data(as_text=True)
+checar("Menu novo tem os grupos Pessoas, Financeiro, IA e Configuração de exames",
+       ">Pessoas<" in texto_menu and ">Financeiro<" in texto_menu and ">IA<" in texto_menu
+       and "Configuração de exames" in texto_menu)
+checar("Menu não tem mais um item separado \"Agenda\" (calendário virou parte do Painel)",
+       ">Agenda<" not in texto_menu)
+checar("O calendário/agenda completa aparece dentro do próprio Painel", "Agenda de exames" in texto_menu)
+
 r = client.get("/equipe/pacientes")
 checar("Lista de pacientes da Vitória contém João, não contém Maria",
        "João Pereira" in r.get_data(as_text=True) and "Maria Silva" not in r.get_data(as_text=True))
@@ -56,8 +64,8 @@ checar("Lista de pacientes da Vitória contém João, não contém Maria",
 r = client.get("/equipe/exames")
 checar("Lista de exames da Vitória contém Colonoscopia", "Colonoscopia" in r.get_data(as_text=True))
 
-r = client.get("/equipe/agenda")
-checar("Agenda da Vitória acessível", r.status_code == 200)
+r = client.get("/equipe/agenda", follow_redirects=True)
+checar("Agenda da Vitória acessível (redireciona para o painel)", "Agenda de exames" in r.get_data(as_text=True))
 
 r = client.get("/equipe/equipe-membros")
 texto = r.get_data(as_text=True)
@@ -65,7 +73,11 @@ checar("Equipe da Vitória lista Ana e o Dr. Carlos", "Ana Secretária" in texto
 
 r = client.get("/equipe/clinica/configuracoes")
 texto = r.get_data(as_text=True)
-checar("Página de dados da clínica mostra o horário de sábado cadastrado", "07:00" in texto and "12:00" in texto)
+checar("Página de dados da clínica não tem mais bloco de horário", "Horário de funcionamento" not in texto)
+
+r = client.get("/equipe/medico-horarios/2")
+texto = r.get_data(as_text=True)
+checar("Página de horário do Dr. Carlos mostra o horário de sábado cadastrado", "07:00" in texto and "12:00" in texto)
 
 r = client.post("/equipe/clinica/configuracoes", data={
     "nome": "Clínica Vitória", "telefone": "(27) 3333-4444", "email_contato": "contato@clinicavitoria.com",
@@ -74,11 +86,15 @@ r = client.post("/equipe/clinica/configuracoes", data={
     "cidade": "Vitória", "uf": "ES",
     "inscricao_estadual": "081.234.567", "regime_tributario": "Simples Nacional",
     "cnae": "8640-2/02", "codigo_ibge_municipio": "3205309",
-    "dia_0_ativo": "on", "dia_0_inicio": "08:00", "dia_0_fim": "19:00",
 }, follow_redirects=True)
 checar("Secretária consegue salvar os dados da clínica", "atualizados com sucesso" in r.get_data(as_text=True).lower())
 
-r = client.get("/equipe/clinica/configuracoes")
+r = client.post("/equipe/medico-horarios/2", data={
+    "dia_0_ativo": "on", "dia_0_inicio": "08:00", "dia_0_fim": "19:00",
+}, follow_redirects=True)
+checar("Secretária consegue salvar horário do médico", "atualizado" in r.get_data(as_text=True).lower())
+
+r = client.get("/equipe/medico-horarios/2")
 checar("Novo horário de segunda-feira (08:00) foi salvo", "08:00" in r.get_data(as_text=True))
 
 client.get("/logout")
@@ -133,8 +149,8 @@ texto = r.get_data(as_text=True)
 checar("Dr. Carlos vê João (seu paciente), mas não Pedro (paciente da Dra. Fernanda)",
        "João Pereira" in texto and "Pedro Souza" not in texto)
 
-r = client.get("/equipe/agenda")
-checar("Agenda do Dr. Carlos acessível", r.status_code == 200)
+r = client.get("/equipe/agenda", follow_redirects=True)
+checar("Agenda do Dr. Carlos acessível (redireciona para o painel)", "Agenda de exames" in r.get_data(as_text=True))
 
 r = client.get("/equipe/equipe-membros")
 checar("Médico não consegue acessar a gestão de equipe", r.status_code in (302,))
@@ -214,6 +230,44 @@ r = client.get("/equipe/clinica/configuracoes")
 checar("Médico fundador consegue acessar Dados da clínica", r.status_code == 200)
 r = client.get("/equipe/pacientes/novo")
 checar("Médico fundador consegue acessar Novo paciente", r.status_code == 200)
+
+r = client.get("/equipe/medico-horarios")
+texto = r.get_data(as_text=True)
+checar(
+    "Médico fundador (com perm_equipe) vê o seletor de médico na tela de horário",
+    '<select class="form-select"' in texto,
+)
+
+client.get("/logout")
+
+# ---------- Médico comum (sem perm_equipe) só configura o próprio horário, sem seletor ----------
+
+r = client.post("/cadastro", data={
+    "nome_empresa": "Clínica Solo do Dr. Marcelo",
+    "nome_filial": "Consultório Marcelo",
+    "nome": "Dr. Marcelo Costa",
+    "email": "marcelo@clinicasolo2.com",
+    "senha": "senha123",
+    "papel": "medico",
+}, follow_redirects=True)
+
+with app.app_context():
+    marcelo = Usuario.query.filter_by(email="marcelo@clinicasolo2.com").first()
+    # Removemos a permissão de equipe (fundador ganha todas por padrão) para
+    # simular um médico comum, sem gestão da equipe.
+    marcelo.perm_equipe = False
+    db.session.commit()
+
+r = client.get("/equipe/medico-horarios")
+texto = r.get_data(as_text=True)
+checar(
+    "Médico sem perm_equipe não vê o seletor de médico na tela de horário",
+    '<select class="form-select"' not in texto,
+)
+client.get("/logout")
+
+# O restante dos testes abaixo assume o médico fundador (Dr. Ricardo) logado.
+login("ricardo@clinicasolo.com", "senha123")
 
 # ---------- Cadastro de paciente sem senha: login por telefone + data de nascimento ----------
 

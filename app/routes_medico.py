@@ -14,7 +14,7 @@ from flask_login import login_required, current_user, logout_user
 from app.extensions import db
 from app.models import (
     Paciente, Usuario, Exame, Agendamento, FaqItem,
-    PerguntaPendente, ClinicaMembro, ClinicaHorario, MedicoHorario, Clinica,
+    PerguntaPendente, ClinicaMembro, MedicoHorario, Clinica,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, DescontoConfig, Pagamento,
@@ -24,8 +24,8 @@ from app.pdf_preparo import extrair_sugestao_de_pdf
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.agendamento_otimizador import sugerir_horarios
 
-# Dias da semana usados no formulário de horário de funcionamento.
-# Índice = ClinicaHorario.dia_semana (0=segunda ... 6=domingo).
+# Dias da semana usados no formulário de horário de atendimento por médico.
+# Índice = MedicoHorario.dia_semana (0=segunda ... 6=domingo).
 DIAS_SEMANA = [
     "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
     "Sexta-feira", "Sábado", "Domingo",
@@ -175,12 +175,16 @@ def dashboard():
         .all()
     )
     pendentes = pendentes_q.count()
+    # A agenda completa (calendário + lista) foi incorporada ao painel — não
+    # existe mais uma tela separada de "Agenda" no menu.
+    agendamentos = agendamentos_q.order_by(Agendamento.data_hora.asc()).all()
     return render_template(
         "medico/dashboard.html",
         clinica=clinica,
         total_pacientes=total_pacientes,
         proximos=proximos,
         pendentes=pendentes,
+        agendamentos=agendamentos,
     )
 
 
@@ -798,12 +802,10 @@ CORES_STATUS = {
 @login_required
 @staff_required
 def agenda():
-    clinica = clinica_atual()
-    query = Agendamento.query.filter_by(clinica_id=clinica.id)
-    if eh_medico():
-        query = query.filter_by(medico_id=current_user.id)
-    agendamentos = query.order_by(Agendamento.data_hora.asc()).all()
-    return render_template("medico/agenda.html", agendamentos=agendamentos)
+    # A tela de agenda foi incorporada ao painel (não existe mais um item
+    # de menu separado) — este redirecionamento mantém funcionando os
+    # links/botões antigos que ainda apontam para cá.
+    return redirect(url_for("medico.dashboard", _anchor="agenda-completa"))
 
 
 @medico_bp.route("/agenda/eventos")
@@ -1020,15 +1022,24 @@ def agenda_confirmar_solicitacao(agendamento_id):
 def medico_horarios(medico_id=None):
     clinica = clinica_atual()
 
-    if eh_medico():
-        # Um médico só configura o próprio horário.
-        medico_alvo = current_user
-    else:
+    # Um médico sem a permissão de gerir a equipe só configura o próprio
+    # horário. Secretárias e médicos com "perm_equipe" (ex.: o médico
+    # fundador da clínica) podem escolher qualquer médico da filial atual —
+    # mesma regra usada nas outras telas administrativas.
+    pode_escolher_medico = current_user.perm_equipe or not eh_medico()
+
+    if pode_escolher_medico:
         medicos = medicos_da_clinica(clinica)
-        medico_alvo = next((m for m in medicos if m.id == medico_id), None) or (medicos[0] if medicos else None)
+        medico_alvo = next((m for m in medicos if m.id == medico_id), None)
+        if not medico_alvo:
+            # Sem seleção explícita: um médico cai no próprio horário por
+            # padrão; uma secretária cai no primeiro médico da lista.
+            medico_alvo = current_user if eh_medico() else (medicos[0] if medicos else None)
         if not medico_alvo:
             flash("Nenhum médico cadastrado nesta filial ainda.", "danger")
             return redirect(url_for("medico.equipe_lista"))
+    else:
+        medico_alvo = current_user
 
     if request.method == "POST":
         horarios_existentes = {
@@ -1066,7 +1077,7 @@ def medico_horarios(medico_id=None):
     return render_template(
         "medico/medico_horarios.html",
         medico_alvo=medico_alvo,
-        medicos=([] if eh_medico() else medicos_da_clinica(clinica)),
+        medicos=(medicos_da_clinica(clinica) if pode_escolher_medico else []),
         dias_semana=list(enumerate(DIAS_SEMANA)),
         horarios_por_dia=horarios_por_dia,
     )
@@ -1386,7 +1397,7 @@ def faq_novo():
     return render_template("medico/faq_form.html", exames=exames)
 
 
-# ---------- Dados da clínica (gerais, endereço, horário, fiscais) ----------
+# ---------- Dados da clínica (gerais, endereço, fiscais) ----------
 
 @medico_bp.route("/clinica/configuracoes", methods=["GET", "POST"])
 @medico_bp.route("/clinica/configuracoes/<int:filial_id>", methods=["GET", "POST"])
@@ -1431,38 +1442,13 @@ def clinica_configuracoes(filial_id=None):
         clinica.cnae = request.form.get("cnae", "").strip()
         clinica.codigo_ibge_municipio = request.form.get("codigo_ibge_municipio", "").strip()
 
-        # Horário de funcionamento — um checkbox "ativo" + hora início/fim por dia.
-        horarios_existentes = {h.dia_semana: h for h in clinica.horarios}
-        for dia_idx in range(7):
-            ativo = request.form.get(f"dia_{dia_idx}_ativo") == "on"
-            hora_inicio_str = request.form.get(f"dia_{dia_idx}_inicio", "").strip()
-            hora_fim_str = request.form.get(f"dia_{dia_idx}_fim", "").strip()
-
-            def parse_hora(valor):
-                try:
-                    return datetime.strptime(valor, "%H:%M").time() if valor else None
-                except ValueError:
-                    return None
-
-            horario = horarios_existentes.get(dia_idx)
-            if not horario:
-                horario = ClinicaHorario(clinica_id=clinica.id, dia_semana=dia_idx)
-                db.session.add(horario)
-
-            horario.ativo = ativo
-            horario.hora_inicio = parse_hora(hora_inicio_str)
-            horario.hora_fim = parse_hora(hora_fim_str)
-
         db.session.commit()
         flash("Dados da clínica atualizados com sucesso.", "success")
         return redirect(url_for("medico.clinica_configuracoes", filial_id=clinica.id))
 
-    horarios_por_dia = clinica.horarios_por_dia
     return render_template(
         "medico/clinica_configuracoes.html",
         clinica=clinica,
-        dias_semana=list(enumerate(DIAS_SEMANA)),
-        horarios_por_dia=horarios_por_dia,
     )
 
 
