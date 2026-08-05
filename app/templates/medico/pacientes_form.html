@@ -16,7 +16,8 @@
       </div>
       <div class="col-md-6">
         <label class="form-label">Telefone (login de acesso)</label>
-        <input type="text" name="telefone" class="form-control" placeholder="Ex.: (27) 99999-9999" required>
+        <input type="text" inputmode="numeric" name="telefone" id="telefone"
+               class="form-control" placeholder="(27) 99999-9999" maxlength="15" required>
       </div>
       <div class="col-md-6">
         <label class="form-label">Data de nascimento</label>
@@ -132,6 +133,21 @@
         formatado = digitos.slice(0, 2) + '/' + digitos.slice(2);
       }
       campoDataNascimento.value = formatado;
+    });
+  }
+  var campoTelefone = document.getElementById('telefone');
+  if (campoTelefone) {
+    campoTelefone.addEventListener('input', function () {
+      var digitos = campoTelefone.value.replace(/\D/g, '').slice(0, 11);
+      var formatado = digitos;
+      if (digitos.length > 6) {
+        formatado = '(' + digitos.slice(0, 2) + ') ' + digitos.slice(2, digitos.length > 10 ? 7 : 6) + '-' + digitos.slice(digitos.length > 10 ? 7 : 6);
+      } else if (digitos.length > 2) {
+        formatado = '(' + digitos.slice(0, 2) + ') ' + digitos.slice(2);
+      } else if (digitos.length > 0) {
+        formatado = '(' + digitos;
+      }
+      campoTelefone.value = formatado;
     });
   }
 

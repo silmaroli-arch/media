@@ -9,7 +9,8 @@
       <form method="post">
         <div class="mb-3">
           <label class="form-label">Telefone</label>
-          <input type="text" name="telefone" class="form-control" placeholder="Ex.: (27) 99999-9999" required autofocus>
+          <input type="text" inputmode="numeric" name="telefone" id="telefone"
+                 class="form-control" placeholder="(27) 99999-9999" maxlength="15" required autofocus>
         </div>
         <div class="mb-3">
           <label class="form-label">Data de nascimento</label>
@@ -20,16 +21,30 @@
       </form>
       <script>
         (function () {
-          var campo = document.getElementById("data_nascimento");
-          campo.addEventListener("input", function () {
-            var digitos = campo.value.replace(/\D/g, "").slice(0, 8);
+          var campoData = document.getElementById("data_nascimento");
+          campoData.addEventListener("input", function () {
+            var digitos = campoData.value.replace(/\D/g, "").slice(0, 8);
             if (digitos.length > 4) {
-              campo.value = digitos.slice(0, 2) + "/" + digitos.slice(2, 4) + "/" + digitos.slice(4);
+              campoData.value = digitos.slice(0, 2) + "/" + digitos.slice(2, 4) + "/" + digitos.slice(4);
             } else if (digitos.length > 2) {
-              campo.value = digitos.slice(0, 2) + "/" + digitos.slice(2);
+              campoData.value = digitos.slice(0, 2) + "/" + digitos.slice(2);
             } else {
-              campo.value = digitos;
+              campoData.value = digitos;
             }
+          });
+
+          var campoTelefone = document.getElementById("telefone");
+          campoTelefone.addEventListener("input", function () {
+            var digitos = campoTelefone.value.replace(/\D/g, "").slice(0, 11);
+            var formatado = digitos;
+            if (digitos.length > 6) {
+              formatado = "(" + digitos.slice(0, 2) + ") " + digitos.slice(2, digitos.length > 10 ? 7 : 6) + "-" + digitos.slice(digitos.length > 10 ? 7 : 6);
+            } else if (digitos.length > 2) {
+              formatado = "(" + digitos.slice(0, 2) + ") " + digitos.slice(2);
+            } else if (digitos.length > 0) {
+              formatado = "(" + digitos;
+            }
+            campoTelefone.value = formatado;
           });
         })();
       </script>

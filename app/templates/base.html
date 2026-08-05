@@ -174,14 +174,20 @@
   <div class="flex-grow-1 d-flex flex-column" style="min-height: 100vh;">
     {% if current_user.is_authenticated %}
     <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom bg-white no-print">
-      <div>
+      <div class="d-flex align-items-center">
         {% if current_user.is_dono %}
           <a href="{{ url_for('dono.dashboard') }}" class="fw-bold text-decoration-none text-dark"><i class="bi bi-heart-pulse"></i> Media</a>
         {% elif not current_user.is_staff %}
+          <button class="btn btn-sm btn-outline-secondary d-md-none me-2" type="button"
+                  data-bs-toggle="offcanvas" data-bs-target="#menuPacienteOffcanvas" aria-controls="menuPacienteOffcanvas">
+            <i class="bi bi-list"></i>
+          </button>
           <a href="{{ url_for('paciente.dashboard') }}" class="fw-bold text-decoration-none text-dark me-3"><i class="bi bi-heart-pulse"></i> Media</a>
-          <a href="{{ url_for('paciente.dashboard') }}" class="text-decoration-none me-3">Meus exames</a>
-          <a href="{{ url_for('paciente.solicitar_agendamento') }}" class="text-decoration-none me-3">Solicitar agendamento</a>
-          <a href="{{ url_for('paciente.chat') }}" class="text-decoration-none">Tirar dúvidas</a>
+          <span class="d-none d-md-inline">
+            <a href="{{ url_for('paciente.dashboard') }}" class="text-decoration-none me-3">Meus exames</a>
+            <a href="{{ url_for('paciente.solicitar_agendamento') }}" class="text-decoration-none me-3">Solicitar agendamento</a>
+            <a href="{{ url_for('paciente.chat') }}" class="text-decoration-none">Tirar dúvidas</a>
+          </span>
         {% endif %}
       </div>
       <div class="d-flex align-items-center">
@@ -193,13 +199,31 @@
             {% endif %}
           </span>
         {% endif %}
-        <span class="text-muted small me-3">{{ current_user.nome }}</span>
+        <span class="text-muted small me-3 {% if not current_user.is_staff and not current_user.is_dono %}d-none d-md-inline{% endif %}">{{ current_user.nome }}</span>
         {% if current_user.tem_senha %}
-        <a href="{{ url_for('auth.trocar_senha') }}" class="small text-decoration-none me-3">Trocar senha</a>
+        <a href="{{ url_for('auth.trocar_senha') }}" class="small text-decoration-none me-3 {% if not current_user.is_staff and not current_user.is_dono %}d-none d-md-inline{% endif %}">Trocar senha</a>
         {% endif %}
         <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-secondary btn-sm">Sair</a>
       </div>
     </div>
+
+    {% if not current_user.is_staff and not current_user.is_dono %}
+    <div class="offcanvas offcanvas-start no-print" tabindex="-1" id="menuPacienteOffcanvas" aria-labelledby="menuPacienteOffcanvasLabel">
+      <div class="offcanvas-header border-bottom">
+        <h5 class="offcanvas-title" id="menuPacienteOffcanvasLabel"><i class="bi bi-heart-pulse"></i> Media</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Fechar"></button>
+      </div>
+      <div class="offcanvas-body d-flex flex-column">
+        <div class="mb-3 fw-semibold">{{ current_user.nome }}</div>
+        <a href="{{ url_for('paciente.dashboard') }}" class="nav-link p-2 rounded"><i class="bi bi-clipboard2-pulse me-2"></i>Meus exames</a>
+        <a href="{{ url_for('paciente.solicitar_agendamento') }}" class="nav-link p-2 rounded"><i class="bi bi-calendar-plus me-2"></i>Solicitar agendamento</a>
+        <a href="{{ url_for('paciente.chat') }}" class="nav-link p-2 rounded"><i class="bi bi-chat-dots me-2"></i>Tirar dúvidas</a>
+        {% if current_user.tem_senha %}
+        <a href="{{ url_for('auth.trocar_senha') }}" class="nav-link p-2 rounded"><i class="bi bi-key me-2"></i>Trocar senha</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
     {% endif %}
 
     <div class="container-fluid flex-grow-1 my-4">
