@@ -1492,6 +1492,45 @@ with app.app_context():
 
 client.get("/logout")
 
+# ---------- Paciente escolhe o médico ao solicitar agendamento ----------
+# Como a Colonoscopia agora tem dois médicos associados (Dr. Carlos, o
+# principal, e a Dra. Fernanda, extra), a tela de solicitação de
+# agendamento do paciente precisa deixar escolher com qual dos dois quer
+# agendar, e a solicitação criada deve refletir essa escolha.
+login_paciente("(27) 99999-0000", "1985-04-12")
+r = client.get(f"/paciente/agendar?exame_id={colonoscopia_id}")
+texto = r.get_data(as_text=True)
+checar(
+    "Tela de solicitar agendamento mostra um seletor com os dois médicos da Colonoscopia",
+    "Dr. Carlos" in texto and "Dra. Fernanda" in texto,
+)
+
+r = client.get(f"/paciente/agendar?exame_id={colonoscopia_id}&medico_id={fernanda_id}")
+texto = r.get_data(as_text=True)
+checar("Ao escolher a Dra. Fernanda, os horários sugeridos mostram o nome dela", "Dra. Fernanda" in texto)
+
+import re as _re2
+match_horario_fernanda = _re2.search(r'value="(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"', texto)
+checar("Encontrou um horário sugerido com a Dra. Fernanda", match_horario_fernanda is not None)
+
+r = client.post("/paciente/agendar", data={
+    "exame_id": str(colonoscopia_id),
+    "medico_id": str(fernanda_id),
+    "horario_escolhido": match_horario_fernanda.group(1),
+}, follow_redirects=True)
+checar("Solicitação de agendamento com a Dra. Fernanda enviada com sucesso",
+       "solicitação" in r.get_data(as_text=True).lower() or "enviada" in r.get_data(as_text=True).lower())
+
+with app.app_context():
+    solicitacao_fernanda = Agendamento.query.filter_by(
+        paciente_id=joao_id, exame_id=colonoscopia_id, medico_id=fernanda_id, status="solicitado"
+    ).first()
+    checar(
+        "A solicitação criada pelo paciente ficou com a Dra. Fernanda (não o Dr. Carlos)",
+        solicitacao_fernanda is not None,
+    )
+client.get("/logout")
+
 # ---------- Meus exames agendados (agenda pessoal do médico) ----------
 
 login("medica2@clinicavitoria.com", "123456")
