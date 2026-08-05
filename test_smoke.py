@@ -56,6 +56,7 @@ checar("Menu novo tem os grupos Pessoas, Financeiro, IA e Configuração de exam
 checar("Menu não tem mais um item separado \"Agenda\" (calendário virou parte do Painel)",
        ">Agenda<" not in texto_menu)
 checar("O calendário/agenda completa aparece dentro do próprio Painel", "Agenda de exames" in texto_menu)
+checar("Painel tem um card de Solicitações de agendamento", "Solicitações de agendamento" in texto_menu)
 
 r = client.get("/equipe/pacientes")
 checar("Lista de pacientes da Vitória contém João, não contém Maria",
@@ -306,6 +307,15 @@ texto = r.get_data(as_text=True)
 checar("Paciente cadastrado sem senha consegue entrar só com telefone e data de nascimento",
        "Meus exames" in texto or "Tirar dúvidas" in texto)
 checar("Paciente sem senha não vê o link de 'Trocar senha' na barra superior", "Trocar senha" not in texto)
+client.get("/logout")
+
+# O campo de data de nascimento no login do paciente e no cadastro (tela da
+# secretária) agora é um campo de texto com máscara (DD/MM/AAAA), em vez do
+# seletor nativo do navegador — o back-end precisa aceitar esse formato.
+r = login_paciente("(28) 98765-4321", "20/06/1995")
+checar("Login do paciente também funciona com a data no formato brasileiro (DD/MM/AAAA)",
+       "Meus exames" in r.get_data(as_text=True) or "Tirar dúvidas" in r.get_data(as_text=True))
+client.get("/logout")
 
 client.get("/logout")
 
@@ -1285,6 +1295,10 @@ client.get("/logout")
 
 # --- Secretária confirma a solicitação de agendamento ---
 login("secretaria@clinicavitoria.com", "123456")
+r = client.get("/equipe/")
+checar("Card de solicitações no painel mostra ao menos 1 pendente", ">1<" in r.get_data(as_text=True)
+       and "Solicitações de agendamento" in r.get_data(as_text=True))
+
 r = client.get("/equipe/agenda/solicitacoes")
 checar("Tela de solicitações lista o pedido do paciente", "João Pereira" in r.get_data(as_text=True))
 

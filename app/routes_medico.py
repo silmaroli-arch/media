@@ -53,6 +53,22 @@ def _parse_valor_decimal(valor_str):
         return None
 
 
+def _parse_data_nascimento(valor_str):
+    """Converte a data de nascimento digitada para um date, aceitando o
+    formato brasileiro (DD/MM/AAAA, usado pelo campo com máscara no
+    formulário) e, por compatibilidade, o formato ISO (AAAA-MM-DD, usado
+    antes quando o campo era um <input type="date"> nativo)."""
+    valor_str = (valor_str or "").strip()
+    if not valor_str:
+        return None
+    for formato in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(valor_str, formato).date()
+        except ValueError:
+            continue
+    return None
+
+
 def staff_required(f):
     """Garante que o usuário é da equipe (médico/secretária) e que já tem
     uma clínica selecionada na sessão. Se tiver mais de uma clínica e
@@ -151,6 +167,7 @@ def dashboard():
 
     agendamentos_q = Agendamento.query.filter_by(clinica_id=clinica.id)
     pendentes_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="pendente")
+    solicitacoes_q = Agendamento.query.filter_by(clinica_id=clinica.id, status="solicitado")
 
     if eh_medico():
         total_pacientes = (
@@ -166,6 +183,7 @@ def dashboard():
         pendentes_q = pendentes_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
+        solicitacoes_q = solicitacoes_q.filter(Agendamento.medico_id == current_user.id)
     else:
         total_pacientes = Paciente.query.filter_by(clinica_id=clinica.id).count()
 
@@ -176,6 +194,7 @@ def dashboard():
         .all()
     )
     pendentes = pendentes_q.count()
+    solicitacoes_pendentes = solicitacoes_q.count()
     # A agenda completa (calendário + lista) foi incorporada ao painel — não
     # existe mais uma tela separada de "Agenda" no menu.
     agendamentos = agendamentos_q.order_by(Agendamento.data_hora.asc()).all()
@@ -185,6 +204,7 @@ def dashboard():
         total_pacientes=total_pacientes,
         proximos=proximos,
         pendentes=pendentes,
+        solicitacoes_pendentes=solicitacoes_pendentes,
         agendamentos=agendamentos,
     )
 
@@ -249,10 +269,9 @@ def pacientes_novo():
             flash("Nome, CPF, telefone e data de nascimento são obrigatórios.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
-        try:
-            data_nascimento = datetime.strptime(data_nascimento_str, "%Y-%m-%d").date()
-        except ValueError:
-            flash("Data de nascimento inválida.", "danger")
+        data_nascimento = _parse_data_nascimento(data_nascimento_str)
+        if not data_nascimento:
+            flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
         if Usuario.query.filter_by(telefone=telefone).first():

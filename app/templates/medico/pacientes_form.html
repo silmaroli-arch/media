@@ -12,7 +12,7 @@
       {% if not paciente %}
       <div class="col-md-6">
         <label class="form-label">CPF</label>
-        <input type="text" name="cpf" class="form-control" required>
+        <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" maxlength="14" required>
       </div>
       <div class="col-md-6">
         <label class="form-label">Telefone (login de acesso)</label>
@@ -20,7 +20,8 @@
       </div>
       <div class="col-md-6">
         <label class="form-label">Data de nascimento</label>
-        <input type="date" name="data_nascimento" class="form-control" required>
+        <input type="text" inputmode="numeric" name="data_nascimento" id="data_nascimento"
+               class="form-control" placeholder="DD/MM/AAAA" maxlength="10" autocomplete="bday" required>
         <div class="form-text">O paciente usa o telefone e a data de nascimento para acessar o sistema — não é preciso criar senha.</div>
       </div>
       {% else %}
@@ -102,6 +103,38 @@
 </div>
 
 <script>
+  // Máscaras numéricas (CPF e data de nascimento) — só existem no
+  // formulário de cadastro novo (na edição, esses campos ficam desabilitados
+  // e não têm o id abaixo).
+  var campoCpf = document.getElementById('cpf');
+  if (campoCpf) {
+    campoCpf.addEventListener('input', function () {
+      var digitos = campoCpf.value.replace(/\D/g, '').slice(0, 11);
+      var formatado = digitos;
+      if (digitos.length > 9) {
+        formatado = digitos.slice(0, 3) + '.' + digitos.slice(3, 6) + '.' + digitos.slice(6, 9) + '-' + digitos.slice(9);
+      } else if (digitos.length > 6) {
+        formatado = digitos.slice(0, 3) + '.' + digitos.slice(3, 6) + '.' + digitos.slice(6);
+      } else if (digitos.length > 3) {
+        formatado = digitos.slice(0, 3) + '.' + digitos.slice(3);
+      }
+      campoCpf.value = formatado;
+    });
+  }
+  var campoDataNascimento = document.getElementById('data_nascimento');
+  if (campoDataNascimento) {
+    campoDataNascimento.addEventListener('input', function () {
+      var digitos = campoDataNascimento.value.replace(/\D/g, '').slice(0, 8);
+      var formatado = digitos;
+      if (digitos.length > 4) {
+        formatado = digitos.slice(0, 2) + '/' + digitos.slice(2, 4) + '/' + digitos.slice(4);
+      } else if (digitos.length > 2) {
+        formatado = digitos.slice(0, 2) + '/' + digitos.slice(2);
+      }
+      campoDataNascimento.value = formatado;
+    });
+  }
+
   // Busca de endereço por CEP via ViaCEP — preenche os campos
   // automaticamente, mas continuam editáveis (o preenchimento é só uma
   // sugestão; a pessoa pode corrigir manualmente).

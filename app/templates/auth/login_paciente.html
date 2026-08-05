@@ -13,10 +13,26 @@
         </div>
         <div class="mb-3">
           <label class="form-label">Data de nascimento</label>
-          <input type="date" name="data_nascimento" class="form-control" required>
+          <input type="text" inputmode="numeric" name="data_nascimento" id="data_nascimento"
+                 class="form-control" placeholder="DD/MM/AAAA" maxlength="10" autocomplete="bday" required>
         </div>
         <button type="submit" class="btn btn-primary w-100">Entrar</button>
       </form>
+      <script>
+        (function () {
+          var campo = document.getElementById("data_nascimento");
+          campo.addEventListener("input", function () {
+            var digitos = campo.value.replace(/\D/g, "").slice(0, 8);
+            if (digitos.length > 4) {
+              campo.value = digitos.slice(0, 2) + "/" + digitos.slice(2, 4) + "/" + digitos.slice(4);
+            } else if (digitos.length > 2) {
+              campo.value = digitos.slice(0, 2) + "/" + digitos.slice(2);
+            } else {
+              campo.value = digitos;
+            }
+          });
+        })();
+      </script>
       <div class="text-center mt-3">
         <a href="{{ url_for('auth.login') }}" class="small">Sou médico(a) ou secretário(a) &rarr; <strong>Entrar com e-mail e senha</strong></a>
       </div>

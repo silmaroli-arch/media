@@ -4,21 +4,28 @@
 <h3 class="mb-1">{% if current_user.tipo == "medico" %}Meu painel{% else %}Painel da secretaria{% endif %}</h3>
 <p class="text-muted mb-4">{{ clinica.nome }}</p>
 <div class="row g-3 mb-4">
-  <div class="col-md-4">
+  <div class="col-md-3">
     <div class="card p-3">
       <div class="text-muted small">{% if current_user.tipo == "medico" %}Meus pacientes{% else %}Pacientes cadastrados{% endif %}</div>
       <div class="fs-3 fw-bold">{{ total_pacientes }}</div>
       <a href="{{ url_for('medico.pacientes_lista') }}" class="small">Ver pacientes</a>
     </div>
   </div>
-  <div class="col-md-4">
+  <div class="col-md-3">
     <div class="card p-3">
       <div class="text-muted small">Perguntas pendentes de resposta</div>
       <div class="fs-3 fw-bold {% if pendentes %}text-warning{% endif %}">{{ pendentes }}</div>
       <a href="{{ url_for('medico.perguntas_pendentes') }}" class="small">Responder agora</a>
     </div>
   </div>
-  <div class="col-md-4">
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="text-muted small">Solicitações de agendamento</div>
+      <div class="fs-3 fw-bold {% if solicitacoes_pendentes %}text-warning{% endif %}">{{ solicitacoes_pendentes }}</div>
+      <a href="{{ url_for('medico.agenda_solicitacoes') }}" class="small">Ver solicitações</a>
+    </div>
+  </div>
+  <div class="col-md-3">
     <div class="card p-3">
       <div class="text-muted small">Ações rápidas</div>
       {% if current_user.perm_pacientes %}
