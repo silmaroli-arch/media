@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block titulo %}Login do paciente{% endblock %}
+{% block conteudo %}
+<div class="row justify-content-center">
+  <div class="col-md-5">
+    <div class="card p-4 mt-5">
+      <h4 class="mb-3 text-center"><i class="bi bi-heart-pulse"></i> Controle de Preparo de Exames</h4>
+      <p class="text-muted small text-center">Acesso do paciente: informe o telefone cadastrado na clínica e sua data de nascimento. Não é necessário senha.</p>
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label">Telefone</label>
+          <input type="text" name="telefone" class="form-control" placeholder="Ex.: (27) 99999-9999" required autofocus>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Data de nascimento</label>
+          <input type="date" name="data_nascimento" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Entrar</button>
+      </form>
+      <div class="text-center mt-3">
+        <a href="{{ url_for('auth.login') }}" class="small">Sou médico(a) ou secretário(a) &rarr; <strong>Entrar com e-mail e senha</strong></a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

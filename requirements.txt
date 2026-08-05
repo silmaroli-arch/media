@@ -1,0 +1,11 @@
+Flask==3.0.3
+Flask-Login==0.6.3
+Flask-SQLAlchemy==3.1.1
+Werkzeug==3.0.3
+psycopg[binary]>=3.2
+python-dotenv==1.0.1
+gunicorn==22.0.0
+pypdf==3.17.4
+openpyxl==3.1.5
+anthropic==0.120.2  # opcional: só é usado se ANTHROPIC_API_KEY estiver configurada (ver app/ia_preparo.py)
+reportlab==4.4.10  # só usado pelo test_smoke.py, para gerar um PDF de teste

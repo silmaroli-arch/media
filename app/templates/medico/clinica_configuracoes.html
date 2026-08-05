@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block titulo %}Dados da clínica{% endblock %}
+{% block conteudo %}
+<h3 class="mb-1">Dados da clínica</h3>
+<p class="text-muted mb-4">Essas informações podem ser alteradas a qualquer momento.</p>
+
+<form method="post">
+  <div class="card p-4 mb-4">
+    <h5 class="mb-3">Dados gerais</h5>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Nome do estabelecimento *</label>
+        <input type="text" name="nome" class="form-control" value="{{ clinica.nome }}" required>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Razão social</label>
+        <input type="text" name="razao_social" class="form-control" value="{{ clinica.razao_social or '' }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">CNPJ</label>
+        <input type="text" name="cnpj" class="form-control" value="{{ clinica.cnpj or '' }}" placeholder="00.000.000/0000-00">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Telefone *</label>
+        <input type="text" name="telefone" class="form-control" value="{{ clinica.telefone or '' }}" required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">E-mail de contato *</label>
+        <input type="email" name="email_contato" class="form-control" value="{{ clinica.email_contato or '' }}" required>
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-4 mb-4">
+    <h5 class="mb-3">Endereço</h5>
+    <div class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label">CEP</label>
+        <input type="text" name="cep" class="form-control" value="{{ clinica.cep or '' }}" placeholder="00000-000">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Rua</label>
+        <input type="text" name="rua" class="form-control" value="{{ clinica.rua or '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Número</label>
+        <input type="text" name="numero" class="form-control" value="{{ clinica.numero or '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Complemento</label>
+        <input type="text" name="complemento" class="form-control" value="{{ clinica.complemento or '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Bairro</label>
+        <input type="text" name="bairro" class="form-control" value="{{ clinica.bairro or '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Cidade</label>
+        <input type="text" name="cidade" class="form-control" value="{{ clinica.cidade or '' }}">
+      </div>
+      <div class="col-md-1">
+        <label class="form-label">UF</label>
+        <input type="text" name="uf" class="form-control" maxlength="2" value="{{ clinica.uf or '' }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-4 mb-4">
+    <h5 class="mb-1">Horário de funcionamento</h5>
+    <p class="text-muted small mb-3">Marque os dias em que a clínica atende e informe o horário. Pode ser ajustado depois.</p>
+    {% for dia_idx, dia_nome in dias_semana %}
+      {% set horario = horarios_por_dia.get(dia_idx) %}
+      <div class="row g-2 align-items-center mb-2">
+        <div class="col-md-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="dia_{{ dia_idx }}_ativo" id="dia_{{ dia_idx }}_ativo"
+                   {% if horario and horario.ativo %}checked{% endif %}>
+            <label class="form-check-label" for="dia_{{ dia_idx }}_ativo">{{ dia_nome }}</label>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <input type="time" name="dia_{{ dia_idx }}_inicio" class="form-control"
+                 value="{{ horario.hora_inicio.strftime('%H:%M') if horario and horario.hora_inicio else '' }}">
+        </div>
+        <div class="col-auto text-muted">até</div>
+        <div class="col-md-3">
+          <input type="time" name="dia_{{ dia_idx }}_fim" class="form-control"
+                 value="{{ horario.hora_fim.strftime('%H:%M') if horario and horario.hora_fim else '' }}">
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="card p-4 mb-4">
+    <h5 class="mb-1">Dados fiscais</h5>
+    <p class="text-muted small mb-3">
+      Usados futuramente para identificar a clínica em uma eventual nota fiscal ao paciente.
+      Por ora só ficam salvos aqui — a emissão de nota fiscal ainda não está disponível na plataforma.
+    </p>
+    <div class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label">Inscrição estadual</label>
+        <input type="text" name="inscricao_estadual" class="form-control" value="{{ clinica.inscricao_estadual or '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Regime tributário</label>
+        <select name="regime_tributario" class="form-select">
+          <option value="">Selecione...</option>
+          {% for opcao in ["Simples Nacional", "Lucro Presumido", "Lucro Real", "MEI", "Isento"] %}
+          <option value="{{ opcao }}" {% if clinica.regime_tributario == opcao %}selected{% endif %}>{{ opcao }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">CNAE</label>
+        <input type="text" name="cnae" class="form-control" value="{{ clinica.cnae or '' }}" placeholder="0000-0/00">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Código IBGE do município</label>
+        <input type="text" name="codigo_ibge_municipio" class="form-control" value="{{ clinica.codigo_ibge_municipio or '' }}">
+      </div>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Salvar</button>
+</form>
+{% endblock %}

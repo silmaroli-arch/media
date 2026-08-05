@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block titulo %}Preparo - {{ agendamento.exame.nome }}{% endblock %}
+{% block conteudo %}
+<a href="{{ url_for('paciente.dashboard') }}" class="small">&larr; Voltar</a>
+<h3 class="mt-2 mb-1">{{ agendamento.exame.nome }}</h3>
+<p class="text-muted">{{ agendamento.data_hora.strftime('%d/%m/%Y às %H:%M') }} · status: {{ agendamento.status }}</p>
+
+<div class="card p-4 mb-3">
+  <h5>Como se preparar</h5>
+  {% if agendamento.exame.preparo %}
+    {% set preparo = agendamento.exame.preparo %}
+
+    {% if preparo.cortes %}
+    <div class="mb-3">
+      {% for corte in preparo.cortes %}
+      <div class="alert alert-info mb-2">
+        <strong>{{ corte.descricao }}:</strong> até
+        <strong>{{ corte.limite(agendamento.data_hora).strftime('%d/%m/%Y às %H:%M') }}</strong>
+        ({{ corte.horas_antes }} horas antes do seu exame)
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if preparo.medicamentos_suspensos %}
+    <div class="mb-3">
+      <h6>Medicamentos a suspender</h6>
+      <table class="table table-sm">
+        <thead><tr><th>Medicamento</th><th>Suspender a partir de</th><th>Observação</th></tr></thead>
+        <tbody>
+          {% for ms in preparo.medicamentos_suspensos %}
+          <tr>
+            <td>{{ ms.medicamento.nome }}</td>
+            <td><strong>{{ ms.limite(agendamento.data_hora).strftime('%d/%m/%Y') }}</strong> ({{ ms.dias_antes }} dias antes)</td>
+            <td class="text-muted small">{{ ms.observacao or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if preparo.observacoes_medicamentos %}
+      <p class="small text-muted">{{ preparo.observacoes_medicamentos }}</p>
+      {% endif %}
+      <p class="small text-muted">
+        Datas calculadas automaticamente a partir do horário do seu agendamento. Em caso de dúvida
+        sobre suspender algum medicamento (principalmente anticoagulantes), fale com o médico que
+        prescreveu antes de suspender por conta própria.
+      </p>
+    </div>
+    {% endif %}
+
+    {% if preparo.medicamentos_mantidos %}
+    <div class="mb-3">
+      <h6>Medicamentos que podem ser mantidos</h6>
+      <ul>
+        {% for mm in preparo.medicamentos_mantidos %}
+        <li>
+          {{ mm.nome }}
+          {% if mm.observacao %}<span class="text-muted small">— {{ mm.observacao }}</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if preparo.alimentos %}
+    <div class="mb-3">
+      {% set permitidos = preparo.alimentos|selectattr('permitido')|list %}
+      {% set proibidos = preparo.alimentos|rejectattr('permitido')|list %}
+      {% if proibidos %}
+      <h6>Alimentos proibidos</h6>
+      <ul>
+        {% for a in proibidos %}
+        <li>
+          {{ a.nome }}
+          {% if a.horas_antes is not none %}
+          <span class="text-muted small">— evitar a partir de {{ a.limite_formatado(agendamento.data_hora) }} ({{ a.horas_antes }} horas antes do exame)</span>
+          {% elif a.dias_antes is not none %}
+          <span class="text-muted small">— evitar a partir de {{ a.limite_formatado(agendamento.data_hora) }} ({{ a.dias_antes }} dias antes do exame)</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if permitidos %}
+      <h6>Sugestão para consumo</h6>
+      <ul>
+        {% for a in permitidos %}
+        <li>{{ a.nome }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if preparo.exames_anteriores_proibidos %}
+    <div class="mb-3">
+      <h6>Não pode ter feito recentemente</h6>
+      <ul>
+        {% for e in preparo.exames_anteriores_proibidos %}
+        <li>
+          {{ e.nome }}
+          {% if e.dias_antes is not none %}
+          <span class="text-muted small">— não deve ter sido feito desde {{ e.limite(agendamento.data_hora).strftime('%d/%m/%Y') }} ({{ e.dias_antes }} dias antes do exame)</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      <p class="small text-muted">Se você fez algum desses procedimentos recentemente, avise a secretaria antes do exame.</p>
+    </div>
+    {% endif %}
+
+    {% if preparo.informacoes_gerais %}
+    <div class="mb-3">
+      <h6>Outras orientações</h6>
+      <ul>
+        {% for info in preparo.informacoes_gerais %}
+        <li>
+          {{ info.texto }}
+          {% set limite_info = info.limite(agendamento.data_hora) %}
+          {% if limite_info %}
+          <span class="text-muted small">— {{ limite_info.strftime('%d/%m/%Y às %H:%M') }}</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <p style="white-space: pre-line">{{ preparo.instrucoes }}</p>
+  {% else %}
+    <p class="text-danger">Instruções de preparo ainda não cadastradas. Entre em contato com a secretaria.</p>
+  {% endif %}
+</div>
+
+<a href="{{ url_for('paciente.chat') }}?exame_id={{ agendamento.exame_id }}" class="btn btn-success"><i class="bi bi-chat-dots"></i> Tenho uma dúvida sobre este exame</a>
+{% endblock %}

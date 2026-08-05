@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block titulo %}Modelos de preparo{% endblock %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3>Modelos de preparo</h3>
+  <div>
+    <a href="{{ url_for('medico.preparo_modelos_importar_pdf') }}" class="btn btn-outline-primary"><i class="bi bi-file-earmark-pdf"></i> Importar de um PDF</a>
+    <a href="{{ url_for('medico.preparo_modelos_importar_xlsx') }}" class="btn btn-outline-primary"><i class="bi bi-file-earmark-excel"></i> Importar de um Excel</a>
+    <a href="{{ url_for('medico.preparo_modelos_novo') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo modelo</a>
+  </div>
+</div>
+<p class="text-muted small">
+  Um modelo de preparo pode ser usado por mais de um exame — útil quando exames diferentes (ex.:
+  variações do mesmo teste, que precisam ser agendados em dias separados) seguem exatamente o mesmo
+  preparo. Editar um modelo atualiza automaticamente todos os exames que o usam.
+</p>
+<div class="card p-3">
+  <table class="table table-hover align-middle">
+    <thead><tr><th>Nome</th><th>Cortes de alimentação</th><th>Medicamentos a suspender</th><th>Outras orientações</th><th>Usado por</th><th></th></tr></thead>
+    <tbody>
+      {% for m in modelos %}
+      <tr>
+        <td>{{ m.nome }}</td>
+        <td>
+          {% for c in m.cortes %}
+          <span class="badge bg-light text-dark border me-1">{{ c.descricao }}: {{ c.horas_antes }}h antes</span>
+          {% else %}
+          <span class="text-muted small">Nenhum</span>
+          {% endfor %}
+        </td>
+        <td>
+          {% if m.medicamentos_suspensos %}
+          <span class="badge bg-light text-dark border">{{ m.medicamentos_suspensos|length }} medicamento(s)</span>
+          {% else %}
+          <span class="text-muted small">Nenhum</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if m.informacoes_gerais %}
+          <span class="badge bg-light text-dark border">{{ m.informacoes_gerais|length }} item(ns)</span>
+          {% else %}
+          <span class="text-muted small">Nenhuma</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if m.exames %}
+          {{ m.exames|length }} exame(s)
+          {% else %}
+          <span class="text-muted small">Nenhum exame ainda</span>
+          {% endif %}
+        </td>
+        <td class="text-nowrap">
+          <a href="{{ url_for('medico.preparo_modelos_editar', modelo_id=m.id) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
+          <form method="post" action="{{ url_for('medico.preparo_modelos_remover', modelo_id=m.id) }}" class="d-inline" onsubmit="return confirm('Remover este modelo de preparo?');">
+            <button type="submit" class="btn btn-sm btn-outline-danger" {% if m.exames %}disabled title="Em uso por algum exame"{% endif %}>Remover</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted text-center">Nenhum modelo de preparo cadastrado ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

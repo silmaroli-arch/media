@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block titulo %}Novo agendamento{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Novo agendamento</h3>
+<div class="card p-4">
+  <form method="post">
+    <div class="row g-3 mb-2">
+      {% if filiais_disponiveis|length > 1 %}
+      <div class="col-md-6">
+        <label class="form-label">Filial</label>
+        <select id="sel_filial" name="filial_id" class="form-select" onchange="recarregarComFiltros()">
+          {% for f in filiais_disponiveis %}
+          <option value="{{ f.id }}" {% if f.id == filial_selecionada.id %}selected{% endif %}>{{ f.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <input type="hidden" id="sel_filial" name="filial_id" value="{{ filial_selecionada.id }}">
+      {% endif %}
+
+      {% if not eh_medico %}
+      <div class="col-md-6">
+        <label class="form-label">Médico</label>
+        <select id="sel_medico" name="medico_id" class="form-select" onchange="recarregarComFiltros()" required>
+          <option value="" disabled {% if not medico_selecionado_id %}selected{% endif %}>Selecione...</option>
+          {% for m in medicos_disponiveis %}
+          <option value="{{ m.id }}" {% if m.id == medico_selecionado_id %}selected{% endif %}>{{ m.nome }}</option>
+          {% endfor %}
+        </select>
+        {% if not medicos_disponiveis %}
+        <div class="form-text text-danger">Nenhum médico cadastrado nessa filial ainda.</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <input type="hidden" id="sel_medico" name="medico_id" value="{{ medico_selecionado_id }}">
+      {% endif %}
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Paciente</label>
+        <select name="paciente_id" class="form-select" required>
+          <option value="" disabled selected>Selecione...</option>
+          {% for p in pacientes %}
+          <option value="{{ p.id }}">{{ p.nome }} ({{ p.cpf }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Exame</label>
+        <select name="exame_id" class="form-select" required>
+          <option value="" disabled selected>Selecione...</option>
+          {% for e in exames %}
+          <option value="{{ e.id }}">{{ e.nome }}</option>
+          {% endfor %}
+        </select>
+        {% if not exames %}
+        <div class="form-text text-danger">Nenhum exame encontrado para essa filial/médico.</div>
+        {% endif %}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Data e hora</label>
+        <input type="datetime-local" name="data_hora" class="form-control" required>
+      </div>
+      <div class="col-md-12">
+        <label class="form-label">Observações</label>
+        <textarea name="observacoes" class="form-control" rows="2"></textarea>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Acompanhante (se o exame exigir)</label>
+        <input type="text" name="acompanhante_nome" class="form-control" placeholder="Nome de quem vai acompanhar o paciente">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Telefone do acompanhante</label>
+        <input type="text" name="acompanhante_telefone" class="form-control">
+      </div>
+    </div>
+    <div class="form-text mt-2">
+      Alguns exames exigem acompanhante no dia — se for o caso, o sistema vai pedir esse preenchimento
+      ao salvar. Pode ser alterado depois, até o dia do exame.
+    </div>
+    <button type="submit" class="btn btn-primary mt-4">Agendar</button>
+    <a href="{{ url_for('medico.agenda') }}" class="btn btn-link mt-4">Cancelar</a>
+  </form>
+</div>
+
+<script>
+  // Trocar a filial ou o médico recarrega a página (via GET) só pra
+  // atualizar as listas de paciente/exame — não é um envio real do
+  // agendamento, que só acontece ao clicar em "Agendar".
+  function recarregarComFiltros() {
+    var filial = document.getElementById('sel_filial').value;
+    var medicoEl = document.getElementById('sel_medico');
+    var medico = medicoEl ? medicoEl.value : '';
+    var params = new URLSearchParams();
+    if (filial) params.set('filial_id', filial);
+    if (medico) params.set('medico_id', medico);
+    window.location = "{{ url_for('medico.agenda_novo') }}?" + params.toString();
+  }
+</script>
+{% endblock %}

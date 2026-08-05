@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block titulo %}Tirar dúvidas{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3"><i class="bi bi-chat-dots"></i> Tirar dúvidas sobre o preparo</h3>
+
+<div class="card p-4 mb-4">
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label">Sobre qual exame é a sua dúvida?</label>
+      <select name="exame_id" class="form-select">
+        <option value="">Dúvida geral</option>
+        {% for a in agendamentos %}
+        <option value="{{ a.exame_id }}" {% if exame_id_selecionado == a.exame_id %}selected{% endif %}>{{ a.exame.nome }} ({{ a.data_hora.strftime('%d/%m') }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Sua pergunta</label>
+      <div class="input-group">
+        <input type="text" name="pergunta" class="form-control" placeholder='Ex: "Posso comer batata antes do exame?"' required>
+        <button type="submit" class="btn btn-success">Perguntar</button>
+      </div>
+    </div>
+  </form>
+
+  {% if pergunta_enviada %}
+  <div class="mt-4">
+    <div class="chat-bubble-user mb-2">{{ pergunta_enviada }}</div>
+    {% if resposta_ia %}
+      <div class="chat-bubble-ia"><i class="bi bi-robot"></i> {{ resposta_ia }}</div>
+    {% elif encaminhada %}
+      <div class="chat-bubble-alerta"><i class="bi bi-hourglass-split"></i> Ainda não sei responder essa pergunta com certeza. Encaminhei para a secretaria, que vai responder em breve — e a resposta ficará salva para as próximas pessoas que perguntarem o mesmo.</div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="card p-3">
+  <h5>Suas perguntas anteriores</h5>
+  {% if historico_pendentes %}
+  <table class="table table-sm">
+    <thead><tr><th>Pergunta</th><th>Status</th><th>Resposta</th><th></th></tr></thead>
+    <tbody>
+      {% for p in historico_pendentes %}
+      <tr>
+        <td>{{ p.pergunta }}</td>
+        <td><span class="badge {% if p.status == 'respondida' %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ p.status }}</span></td>
+        <td>{{ p.resposta or '-' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('paciente.pergunta_remover', pergunta_id=p.id) }}" onsubmit="return confirm('Remover esta pergunta?');">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Remover</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">Você ainda não fez perguntas.</p>
+  {% endif %}
+</div>
+{% endblock %}

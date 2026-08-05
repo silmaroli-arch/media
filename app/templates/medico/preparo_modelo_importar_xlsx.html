@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block titulo %}Importar preparo de Excel{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Importar modelo de preparo de uma planilha Excel</h3>
+<div class="card p-4" style="max-width: 640px;">
+  <p class="text-muted small">
+    A planilha deve ter uma linha por regra, com estas colunas (cabeçalho na primeira linha):
+  </p>
+  <p class="small">
+    <code>Tipo | Ação | Agrupador | Nome | Dias antes | Horas antes | Hora exata + dia antes</code>
+  </p>
+  <ul class="text-muted small">
+    <li><strong>Tipo</strong>: "Medicamento", "Alimento", "Aviso" ou "Exames / Procedimentos".</li>
+    <li><strong>Ação</strong>: para Medicamento, "Suspender" / "Não suspender" / "Receituário"; para
+      Alimento, "Suspender" / "Permitido (Sugestão de consumo)"; para Exames/Procedimentos, "Proibido".</li>
+    <li><strong>Agrupador</strong>: opcional — categoria/classe (ex.: "medicamento anticoagulante"), ou o
+      próprio nome do item quando "Nome" fica em branco (ex.: uma linha só para "antibióticos").</li>
+    <li><strong>Nome</strong>: nome do item, ou o texto do aviso.</li>
+    <li><strong>Dias antes</strong> / <strong>Horas antes</strong>: preencha só um dos dois.</li>
+    <li><strong>Hora exata + dia antes</strong>: horário fixo (ex.: 20:00), combinado com "Dias antes" quando o
+      prazo é um horário certo do relógio num dia relativo ao exame (não um número de horas antes).</li>
+  </ul>
+  <p class="text-muted small">
+    Cada aba da planilha é tratada como o preparo de um exame diferente. A extração é automática —
+    <strong>revise tudo com cuidado</strong> antes de salvar. Nada é gravado no banco até você confirmar
+    na tela seguinte.
+  </p>
+  <form method="post" enctype="multipart/form-data">
+    <div class="mb-3">
+      <label class="form-label">Arquivo Excel (.xlsx)</label>
+      <input type="file" name="arquivo_xlsx" class="form-control"
+             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Extrair e revisar</button>
+    <a href="{{ url_for('medico.preparo_modelos_lista') }}" class="btn btn-link">Cancelar</a>
+  </form>
+</div>
+<p class="mt-3">
+  Prefere enviar um PDF? <a href="{{ url_for('medico.preparo_modelos_importar_pdf') }}">Importar de um PDF</a> em vez de Excel.
+</p>
+{% endblock %}

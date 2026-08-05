@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block titulo %}Resultado do exame{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Resultado do exame — {{ agendamento.paciente.nome }}</h3>
+<p class="text-muted mb-4">{{ agendamento.exame.nome }} · {{ agendamento.data_hora.strftime('%d/%m/%Y %H:%M') }}</p>
+
+<div class="card p-4">
+  {% if agendamento.resultado %}
+  <p class="mb-3">
+    <i class="bi bi-file-earmark-pdf"></i> Já existe um resultado anexado: <strong>{{ agendamento.resultado.nome_arquivo }}</strong>
+    (enviado por {{ agendamento.resultado.enviado_por }} em {{ agendamento.resultado.criado_em.strftime('%d/%m/%Y %H:%M') }}).
+    Enviar um novo arquivo abaixo substitui esse.
+  </p>
+  {% endif %}
+  <form method="post" enctype="multipart/form-data">
+    <div class="mb-3">
+      <label class="form-label">Arquivo PDF do resultado</label>
+      <input type="file" name="arquivo_pdf" accept="application/pdf" class="form-control" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Enviar</button>
+    <a href="{{ url_for('medico.agenda') }}" class="btn btn-link">Cancelar</a>
+  </form>
+</div>
+{% endblock %}

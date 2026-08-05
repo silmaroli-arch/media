@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block titulo %}{{ paciente.nome }}{% endblock %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3>{{ paciente.nome }}</h3>
+  <a href="{{ url_for('medico.pacientes_editar', paciente_id=paciente.id) }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-pencil"></i> Editar cadastro</a>
+</div>
+<div class="card p-3 mb-3">
+  <p><strong>CPF:</strong> {{ paciente.cpf }}</p>
+  <p><strong>Telefone (login de acesso):</strong> {{ paciente.telefone or '-' }}</p>
+  <p><strong>Data de nascimento:</strong> {{ paciente.data_nascimento.strftime('%d/%m/%Y') if paciente.data_nascimento else '-' }}</p>
+  <p><strong>E-mail:</strong> {{ paciente.email or '-' }}</p>
+  <p class="mb-0"><strong>Endereço:</strong>
+    {% if paciente.rua %}
+      {{ paciente.rua }}, {{ paciente.numero or 's/n' }}{% if paciente.complemento %} - {{ paciente.complemento }}{% endif %} —
+      {{ paciente.bairro or '' }}, {{ paciente.cidade or '' }}/{{ paciente.uf or '' }} — CEP {{ paciente.cep or '-' }}
+    {% else %}-{% endif %}
+  </p>
+  <p class="mb-0"><strong>Contato de emergência:</strong>
+    {% if paciente.contato_emergencia_nome %}{{ paciente.contato_emergencia_nome }} — {{ paciente.contato_emergencia_telefone or '-' }}{% else %}-{% endif %}
+  </p>
+</div>
+
+<div class="card p-3">
+  <h5>Agendamentos</h5>
+  <table class="table table-sm">
+    <thead><tr><th>Data/Hora</th><th>Exame</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for a in paciente.agendamentos|sort(attribute='data_hora', reverse=True) %}
+      <tr>
+        <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ a.exame.nome }}</td>
+        <td><span class="badge bg-secondary">{{ a.status }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-muted text-center">Sem agendamentos.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <a href="{{ url_for('medico.agenda_novo') }}" class="btn btn-sm btn-outline-primary">Novo agendamento</a>
+</div>
+{% endblock %}

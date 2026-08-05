@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block titulo %}Perguntas dos pacientes{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Perguntas pendentes de resposta</h3>
+<p class="text-muted">Quando a IA não encontra uma resposta confiável na base de conhecimento, a pergunta cai aqui. Ao responder, ela é automaticamente adicionada à base de FAQ e a IA "aprende" para as próximas vezes.</p>
+
+{% if pendentes %}
+  {% for p in pendentes %}
+  <div class="card p-3 mb-3">
+    <p class="mb-1"><strong>{{ p.paciente.nome }}</strong> {% if p.exame %}<span class="badge bg-light text-dark">{{ p.exame.nome }}</span>{% endif %} <span class="text-muted small">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span></p>
+    <p class="fs-5">"{{ p.pergunta }}"</p>
+    <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
+      <div class="mb-2">
+        <textarea name="resposta" class="form-control" rows="2" placeholder="Digite a resposta que será enviada ao paciente e salva na base de conhecimento..." required></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Responder e ensinar a IA</button>
+    </form>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="alert alert-success">Nenhuma pergunta pendente. Tudo respondido! 🎉</div>
+{% endif %}
+
+<h4 class="mt-4">Últimas respondidas</h4>
+<table class="table table-sm">
+  <thead><tr><th>Paciente</th><th>Pergunta</th><th>Resposta</th><th>Por</th></tr></thead>
+  <tbody>
+    {% for p in respondidas %}
+    <tr>
+      <td>{{ p.paciente.nome }}</td>
+      <td>{{ p.pergunta }}</td>
+      <td>{{ p.resposta }}</td>
+      <td>{{ p.respondida_por }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="text-muted text-center">Nenhuma respondida ainda.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

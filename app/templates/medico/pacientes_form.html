@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block titulo %}{% if paciente %}Editar paciente{% else %}Novo paciente{% endif %}{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">{% if paciente %}Editar cadastro de {{ paciente.nome }}{% else %}Cadastrar novo paciente{% endif %}</h3>
+<div class="card p-4">
+  <form method="post">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Nome completo</label>
+        <input type="text" name="nome" class="form-control" value="{{ paciente.nome if paciente else '' }}" required>
+      </div>
+      {% if not paciente %}
+      <div class="col-md-6">
+        <label class="form-label">CPF</label>
+        <input type="text" name="cpf" class="form-control" required>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Telefone (login de acesso)</label>
+        <input type="text" name="telefone" class="form-control" placeholder="Ex.: (27) 99999-9999" required>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Data de nascimento</label>
+        <input type="date" name="data_nascimento" class="form-control" required>
+        <div class="form-text">O paciente usa o telefone e a data de nascimento para acessar o sistema — não é preciso criar senha.</div>
+      </div>
+      {% else %}
+      <div class="col-md-6">
+        <label class="form-label">CPF</label>
+        <input type="text" class="form-control" value="{{ paciente.cpf }}" disabled>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Telefone (login de acesso)</label>
+        <input type="text" class="form-control" value="{{ paciente.telefone or '' }}" disabled>
+      </div>
+      {% endif %}
+      <div class="col-md-6">
+        <label class="form-label">E-mail (opcional)</label>
+        <input type="email" name="email" class="form-control" value="{{ paciente.email if paciente else '' }}">
+      </div>
+      {% if paciente %}
+      <div class="col-md-12">
+        <label class="form-label">Observações</label>
+        <textarea name="observacoes" class="form-control" rows="2">{{ paciente.observacoes or '' }}</textarea>
+      </div>
+      {% endif %}
+    </div>
+
+    <hr class="my-4">
+    <h5>Endereço</h5>
+    <div class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label">CEP</label>
+        <input type="text" name="cep" id="cep" class="form-control" value="{{ paciente.cep if paciente else '' }}" placeholder="00000-000">
+        <div class="form-text" id="cep_status"></div>
+      </div>
+      <div class="col-md-7">
+        <label class="form-label">Rua</label>
+        <input type="text" name="rua" id="rua" class="form-control" value="{{ paciente.rua if paciente else '' }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Número</label>
+        <input type="text" name="numero" class="form-control" value="{{ paciente.numero if paciente else '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Complemento</label>
+        <input type="text" name="complemento" class="form-control" value="{{ paciente.complemento if paciente else '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Bairro</label>
+        <input type="text" name="bairro" id="bairro" class="form-control" value="{{ paciente.bairro if paciente else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Cidade</label>
+        <input type="text" name="cidade" id="cidade" class="form-control" value="{{ paciente.cidade if paciente else '' }}">
+      </div>
+      <div class="col-md-1">
+        <label class="form-label">UF</label>
+        <input type="text" name="uf" id="uf" maxlength="2" class="form-control" value="{{ paciente.uf if paciente else '' }}">
+      </div>
+    </div>
+
+    <hr class="my-4">
+    <h5>Contato de emergência</h5>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Nome</label>
+        <input type="text" name="contato_emergencia_nome" class="form-control" value="{{ paciente.contato_emergencia_nome if paciente else '' }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Telefone</label>
+        <input type="text" name="contato_emergencia_telefone" class="form-control" value="{{ paciente.contato_emergencia_telefone if paciente else '' }}">
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary mt-4">Salvar paciente</button>
+    {% if paciente %}
+    <a href="{{ url_for('medico.pacientes_detalhe', paciente_id=paciente.id) }}" class="btn btn-link mt-4">Cancelar</a>
+    {% else %}
+    <a href="{{ url_for('medico.pacientes_lista') }}" class="btn btn-link mt-4">Cancelar</a>
+    {% endif %}
+  </form>
+</div>
+
+<script>
+  // Busca de endereço por CEP via ViaCEP — preenche os campos
+  // automaticamente, mas continuam editáveis (o preenchimento é só uma
+  // sugestão; a pessoa pode corrigir manualmente).
+  document.getElementById('cep').addEventListener('blur', function () {
+    var cep = this.value.replace(/\D/g, '');
+    var status = document.getElementById('cep_status');
+    if (cep.length !== 8) return;
+    status.textContent = 'Buscando endereço...';
+    fetch('https://viacep.com.br/ws/' + cep + '/json/')
+      .then(function (r) { return r.json(); })
+      .then(function (dados) {
+        if (dados.erro) {
+          status.textContent = 'CEP não encontrado — preencha o endereço manualmente.';
+          return;
+        }
+        document.getElementById('rua').value = dados.logradouro || '';
+        document.getElementById('bairro').value = dados.bairro || '';
+        document.getElementById('cidade').value = dados.localidade || '';
+        document.getElementById('uf').value = dados.uf || '';
+        status.textContent = 'Endereço preenchido automaticamente — confira antes de salvar.';
+      })
+      .catch(function () {
+        status.textContent = 'Não foi possível consultar o CEP agora — preencha manualmente.';
+      });
+  });
+</script>
+{% endblock %}

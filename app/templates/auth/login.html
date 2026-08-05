@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block titulo %}Login{% endblock %}
+{% block conteudo %}
+<div class="row justify-content-center">
+  <div class="col-md-5">
+    <div class="card p-4 mt-5">
+      <h4 class="mb-3 text-center"><i class="bi bi-heart-pulse"></i> Controle de Preparo de Exames</h4>
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label">E-mail</label>
+          <input type="email" name="email" class="form-control" required autofocus>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Senha</label>
+          <input type="password" name="senha" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Entrar</button>
+      </form>
+      <div class="text-center mt-3">
+        <a href="{{ url_for('auth.cadastro') }}" class="small">Ainda não tem clínica cadastrada? <strong>Criar minha clínica</strong></a>
+      </div>
+      <div class="text-center mt-2">
+        <a href="{{ url_for('auth.login_paciente') }}" class="small">Sou paciente &rarr; <strong>Entrar com telefone e data de nascimento</strong></a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

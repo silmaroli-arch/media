@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block titulo %}{{ empresa.nome }}{% endblock %}
+{% block conteudo %}
+<a href="{{ url_for('dono.dashboard') }}" class="small">&larr; Voltar</a>
+<div class="d-flex justify-content-between align-items-center mt-2 mb-3">
+  <h3>{{ empresa.nome }}</h3>
+  <div>
+    {% if empresa.bloqueada %}
+    <form method="post" action="{{ url_for('dono.empresa_desbloquear', empresa_id=empresa.id) }}" class="d-inline">
+      <button type="submit" class="btn btn-success">Desbloquear acesso</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('dono.empresa_bloquear', empresa_id=empresa.id) }}" class="d-inline" onsubmit="return confirm('Bloquear o acesso desta empresa? Todas as filiais, médicos, secretárias e pacientes não conseguirão mais entrar.');">
+      <button type="submit" class="btn btn-danger">Bloquear acesso</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="text-muted small">Status atual</div>
+      <div class="fs-5 fw-bold">{{ empresa.status }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="text-muted small">Filiais</div>
+      <div class="fs-5 fw-bold">{{ empresa.filiais|length }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="text-muted small">Pacientes cadastrados</div>
+      <div class="fs-5 fw-bold">{{ total_pacientes }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="text-muted small">Agendamentos totais</div>
+      <div class="fs-5 fw-bold">{{ total_agendamentos }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card p-4 mb-4">
+  <h5>Dados de pagamento</h5>
+  <form method="post" action="{{ url_for('dono.empresa_editar', empresa_id=empresa.id) }}">
+    <div class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label">Status</label>
+        <select name="status" class="form-select">
+          {% for s in ['trial', 'ativa', 'inadimplente', 'bloqueada'] %}
+          <option value="{{ s }}" {% if s == empresa.status %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Vencimento da mensalidade</label>
+        <input type="date" name="data_vencimento" class="form-control" value="{{ empresa.data_vencimento.isoformat() if empresa.data_vencimento else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Valor por médico (R$)</label>
+        <input type="text" name="valor_por_medico" class="form-control" placeholder="ex.: 150.00"
+               value="{{ '%.2f'|format(empresa.valor_por_medico) if empresa.valor_por_medico is not none else '' }}">
+        <div class="form-text">Negociado individualmente com esta empresa. Deixe em branco se ainda não foi definido.</div>
+      </div>
+    </div>
+    <div class="mt-3">
+      <label class="form-label">Observações sobre o pagamento</label>
+      <textarea name="observacoes_pagamento" class="form-control" rows="3">{{ empresa.observacoes_pagamento or '' }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary mt-3">Salvar</button>
+  </form>
+</div>
+
+<div class="card p-4 mb-4">
+  <h5 class="mb-1">Cobrança estimada</h5>
+  <p class="text-muted small mb-2">
+    Calculada como (médicos distintos vinculados a qualquer filial desta empresa) × (valor por médico).
+    Um médico que atua em mais de uma filial da mesma empresa é contado uma única vez. A cobrança em si
+    continua manual — este valor é só uma referência para você.
+  </p>
+  <div class="row g-3">
+    <div class="col-md-4">
+      <div class="text-muted small">Médicos distintos</div>
+      <div class="fs-5 fw-bold">{{ medicos|length }}</div>
+    </div>
+    <div class="col-md-4">
+      <div class="text-muted small">Valor por médico</div>
+      <div class="fs-5 fw-bold">{{ '%.2f'|format(empresa.valor_por_medico) if empresa.valor_por_medico is not none else 'não definido' }}</div>
+    </div>
+    <div class="col-md-4">
+      <div class="text-muted small">Valor mensal estimado</div>
+      <div class="fs-5 fw-bold">{{ 'R$ %.2f'|format(valor_estimado) if valor_estimado is not none else '-' }}</div>
+    </div>
+  </div>
+  {% if medicos %}
+  <ul class="small text-muted mt-3 mb-0">
+    {% for m in medicos %}
+    <li>{{ m.nome }} ({{ m.email }})</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+
+<div class="card p-3">
+  <h5>Filiais e equipe</h5>
+  {% for filial in empresa.filiais %}
+  <div class="mb-3">
+    <h6 class="mb-2">{{ filial.nome }}</h6>
+    <table class="table table-sm">
+      <thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Vínculo ativo</th></tr></thead>
+      <tbody>
+        {% for m in membros_por_filial.get(filial.id, []) %}
+        <tr>
+          <td>{{ m.usuario.nome }}</td>
+          <td>{{ m.usuario.email }}</td>
+          <td>{{ m.usuario.tipo }}</td>
+          <td>{{ 'sim' if m.ativo else 'não' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-muted text-center">Nenhum membro cadastrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted">Nenhuma filial cadastrada.</p>
+  {% endfor %}
+</div>
+{% endblock %}

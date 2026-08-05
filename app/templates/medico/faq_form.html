@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block titulo %}Novo item da base de conhecimento{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Adicionar pergunta/resposta manualmente</h3>
+<div class="card p-4">
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label">Exame relacionado{% if current_user.tipo == "secretaria" %} (opcional){% endif %}</label>
+      <select name="exame_id" class="form-select" {% if current_user.tipo == "medico" %}required{% endif %}>
+        {% if current_user.tipo == "secretaria" %}
+        <option value="">Geral (qualquer exame)</option>
+        {% else %}
+        <option value="" disabled selected>Selecione...</option>
+        {% endif %}
+        {% for e in exames %}
+        <option value="{{ e.id }}">{{ e.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Pergunta</label>
+      <input type="text" name="pergunta" class="form-control" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Resposta</label>
+      <textarea name="resposta" class="form-control" rows="3" required></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Salvar</button>
+    <a href="{{ url_for('medico.faq_lista') }}" class="btn btn-link">Cancelar</a>
+  </form>
+</div>
+{% endblock %}

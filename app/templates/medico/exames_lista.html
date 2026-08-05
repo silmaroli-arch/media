@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block titulo %}Exames{% endblock %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3>Exames &amp; instruções de preparo</h3>
+  <a href="{{ url_for('medico.exames_novo') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo exame</a>
+</div>
+<div class="row g-3">
+  {% for e in exames %}
+  <div class="col-md-6">
+    <div class="card p-3">
+      <h5>{{ e.nome }}</h5>
+      {% if not eh_medico %}
+      <p class="small text-muted mb-1"><i class="bi bi-person-badge"></i> {{ e.medico.nome }}</p>
+      {% endif %}
+      <p class="text-muted small">{{ e.descricao or 'Sem descrição.' }}</p>
+      {% if e.preparo %}
+        <p class="small mb-1"><strong>Modelo de preparo:</strong> {{ e.preparo.nome }}</p>
+        {% if e.preparo.cortes %}
+        <p class="small mb-1">
+          {% for c in e.preparo.cortes %}<span class="badge bg-light text-dark border me-1">{{ c.descricao }}: {{ c.horas_antes }}h antes</span>{% endfor %}
+        </p>
+        {% endif %}
+        <p class="small">{{ e.preparo.instrucoes[:150] }}{% if e.preparo.instrucoes|length > 150 %}...{% endif %}</p>
+      {% else %}
+        <p class="text-danger small">Nenhum preparo cadastrado.</p>
+      {% endif %}
+      <a href="{{ url_for('medico.exames_editar', exame_id=e.id) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-muted">Nenhum exame cadastrado ainda.</p>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,262 @@
+import os
+from datetime import datetime
+from functools import wraps
+
+from flask import (
+    Blueprint, render_template, redirect, url_for, request, flash, send_from_directory,
+    current_app, abort,
+)
+from flask_login import login_required, current_user, logout_user
+
+from app.extensions import db
+from app.models import Agendamento, Exame, PerguntaPendente, FaqItem, ChatMensagem, Usuario, MedicoHorario
+from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
+from app.ia_preparo import responder_com_ia
+from app.clinica_utils import verificar_vencimento
+from app.agendamento_otimizador import sugerir_horarios
+
+paciente_bp = Blueprint("paciente", __name__, url_prefix="/paciente")
+
+
+def paciente_required(f):
+    @wraps(f)
+    def decorado(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.tipo != "paciente":
+            flash("Acesso restrito a pacientes.", "danger")
+            return redirect(url_for("auth.login"))
+
+        paciente = current_user.paciente
+        if paciente and paciente.clinica:
+            verificar_vencimento(paciente.clinica)
+        if paciente and paciente.clinica and paciente.clinica.bloqueada:
+            # Precisa deslogar de verdade aqui — senão a pessoa continua
+            # autenticada e cai num loop (auth.login manda de volta pra
+            # index, que manda de volta pra esta view).
+            logout_user()
+            flash(
+                "O acesso da sua clínica à plataforma está temporariamente indisponível. "
+                "Entre em contato com a clínica para mais informações.",
+                "danger",
+            )
+            return redirect(url_for("auth.login"))
+
+        return f(*args, **kwargs)
+    return decorado
+
+
+@paciente_bp.route("/")
+@login_required
+@paciente_required
+def dashboard():
+    paciente = current_user.paciente
+    proximos = (
+        Agendamento.query.filter_by(paciente_id=paciente.id)
+        .filter(Agendamento.data_hora >= datetime.utcnow())
+        .order_by(Agendamento.data_hora.asc())
+        .all()
+    )
+    historico = (
+        Agendamento.query.filter_by(paciente_id=paciente.id)
+        .filter(Agendamento.data_hora < datetime.utcnow())
+        .order_by(Agendamento.data_hora.desc())
+        .all()
+    )
+    return render_template("paciente/dashboard.html", proximos=proximos, historico=historico)
+
+
+@paciente_bp.route("/exame/<int:agendamento_id>")
+@login_required
+@paciente_required
+def preparo_exame(agendamento_id):
+    paciente = current_user.paciente
+    agendamento = Agendamento.query.filter_by(id=agendamento_id, paciente_id=paciente.id).first_or_404()
+    return render_template("paciente/preparo.html", agendamento=agendamento)
+
+
+@paciente_bp.route("/chat", methods=["GET", "POST"])
+@login_required
+@paciente_required
+def chat():
+    paciente = current_user.paciente
+    agendamentos = (
+        Agendamento.query.filter_by(paciente_id=paciente.id)
+        .order_by(Agendamento.data_hora.desc())
+        .all()
+    )
+
+    resposta_ia = None
+    pergunta_enviada = None
+    encaminhada = False
+    exame_id_selecionado = request.form.get("exame_id") or (agendamentos[0].exame_id if agendamentos else None)
+
+    if request.method == "POST":
+        pergunta_enviada = request.form.get("pergunta", "").strip()
+        exame_id_selecionado = request.form.get("exame_id") or None
+
+        if pergunta_enviada:
+            faq_item, score = buscar_resposta(
+                pergunta_enviada,
+                clinica_id=paciente.clinica_id,
+                exame_id=int(exame_id_selecionado) if exame_id_selecionado else None,
+            )
+
+            exame_selecionado = Exame.query.get(int(exame_id_selecionado)) if exame_id_selecionado else None
+
+            origem = None
+            if faq_item:
+                faq_item.vezes_utilizada += 1
+                db.session.commit()
+                resposta_ia = faq_item.resposta
+                origem = "faq"
+            elif exame_selecionado and (resposta_claude := responder_com_ia(pergunta_enviada, exame_selecionado)):
+                # A IA (quando configurada — ver app.ia_preparo) já
+                # interpreta o preparo com mais flexibilidade do que a
+                # correspondência por palavra-chave abaixo. A resposta é
+                # salva como uma FAQ (igual a quando a secretaria responde
+                # manualmente), pra perguntas parecidas serem respondidas
+                # na hora, sem gastar uma nova chamada de API.
+                resposta_ia = resposta_claude
+                origem = "ia"
+                db.session.add(FaqItem(
+                    clinica_id=paciente.clinica_id,
+                    exame_id=exame_selecionado.id,
+                    pergunta=pergunta_enviada,
+                    resposta=resposta_claude,
+                    criado_por="Assistente (IA)",
+                ))
+                db.session.commit()
+            elif exame_selecionado and (resposta_alimento := buscar_resposta_alimento(
+                pergunta_enviada, exame_selecionado
+            )):
+                resposta_ia = resposta_alimento
+                origem = "alimento"
+            elif exame_selecionado and (resposta_medicamento := buscar_resposta_medicamento(
+                pergunta_enviada, exame_selecionado
+            )):
+                resposta_ia = resposta_medicamento
+                origem = "medicamento"
+            else:
+                pendente = PerguntaPendente(
+                    clinica_id=paciente.clinica_id,
+                    paciente_id=paciente.id,
+                    exame_id=int(exame_id_selecionado) if exame_id_selecionado else None,
+                    pergunta=pergunta_enviada,
+                )
+                db.session.add(pendente)
+                db.session.commit()
+                encaminhada = True
+                origem = "pendente"
+
+            # Registra a pergunta+resposta no histórico do paciente — o
+            # médico consegue ver essas dúvidas ao iniciar o atendimento
+            # (ver medico.atendimento).
+            db.session.add(ChatMensagem(
+                paciente_id=paciente.id,
+                exame_id=exame_selecionado.id if exame_selecionado else None,
+                pergunta=pergunta_enviada,
+                resposta=resposta_ia,
+                origem=origem,
+            ))
+            db.session.commit()
+
+    historico_pendentes = (
+        PerguntaPendente.query.filter_by(paciente_id=paciente.id)
+        .order_by(PerguntaPendente.criado_em.desc())
+        .all()
+    )
+
+    return render_template(
+        "paciente/chat.html",
+        agendamentos=agendamentos,
+        resposta_ia=resposta_ia,
+        pergunta_enviada=pergunta_enviada,
+        encaminhada=encaminhada,
+        exame_id_selecionado=int(exame_id_selecionado) if exame_id_selecionado else None,
+        historico_pendentes=historico_pendentes,
+    )
+
+
+@paciente_bp.route("/perguntas/<int:pergunta_id>/remover", methods=["POST"])
+@login_required
+@paciente_required
+def pergunta_remover(pergunta_id):
+    paciente = current_user.paciente
+    # Só remove se a pergunta for realmente do próprio paciente logado —
+    # evita que alguém apague pergunta de outro paciente forjando o id na URL.
+    pendente = PerguntaPendente.query.filter_by(id=pergunta_id, paciente_id=paciente.id).first_or_404()
+    db.session.delete(pendente)
+    db.session.commit()
+    flash("Pergunta removida.", "success")
+    return redirect(url_for("paciente.chat"))
+
+
+# ---------- Solicitação de agendamento pelo próprio paciente ----------
+
+@paciente_bp.route("/agendar", methods=["GET", "POST"])
+@login_required
+@paciente_required
+def solicitar_agendamento():
+    paciente = current_user.paciente
+    exames = Exame.query.filter_by(clinica_id=paciente.clinica_id).order_by(Exame.nome).all()
+
+    exame_id = request.form.get("exame_id", type=int) or request.args.get("exame_id", type=int)
+    exame_selecionado = next((e for e in exames if e.id == exame_id), None) if exame_id else None
+    sugestoes = []
+    if exame_selecionado:
+        sugestoes = sugerir_horarios(
+            exame_selecionado, exame_selecionado.medico, exame_selecionado.clinica,
+        )
+
+    if request.method == "POST":
+        horario_escolhido = request.form.get("horario_escolhido")
+        if not exame_selecionado:
+            flash("Escolha um exame válido.", "danger")
+        elif not horario_escolhido:
+            flash("Escolha um dos horários sugeridos.", "danger")
+        else:
+            try:
+                data_hora = datetime.strptime(horario_escolhido, "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                flash("Horário inválido — escolha novamente um dos horários sugeridos.", "danger")
+                return redirect(url_for("paciente.solicitar_agendamento", exame_id=exame_selecionado.id))
+
+            agendamento = Agendamento(
+                clinica_id=paciente.clinica_id,
+                paciente_id=paciente.id,
+                exame_id=exame_selecionado.id,
+                medico_id=exame_selecionado.medico_id,
+                data_hora=data_hora,
+                status="solicitado",
+            )
+            db.session.add(agendamento)
+            db.session.commit()
+            flash(
+                "Solicitação de agendamento enviada! A clínica vai confirmar o horário em breve — "
+                "você pode acompanhar o status pelo seu painel.",
+                "success",
+            )
+            return redirect(url_for("paciente.dashboard"))
+
+    return render_template(
+        "paciente/solicitar_agendamento.html",
+        exames=exames,
+        exame_selecionado=exame_selecionado,
+        sugestoes=sugestoes,
+    )
+
+
+# ---------- Resultado de exame (download do PDF anexado pela clínica) ----------
+
+@paciente_bp.route("/exame/<int:agendamento_id>/resultado")
+@login_required
+@paciente_required
+def resultado_baixar(agendamento_id):
+    paciente = current_user.paciente
+    agendamento = Agendamento.query.filter_by(id=agendamento_id, paciente_id=paciente.id).first_or_404()
+    if not agendamento.resultado:
+        abort(404)
+    pasta = os.path.join(current_app.instance_path, "resultados_exame")
+    return send_from_directory(
+        pasta, agendamento.resultado.caminho_arquivo,
+        as_attachment=True, download_name=agendamento.resultado.nome_arquivo,
+    )

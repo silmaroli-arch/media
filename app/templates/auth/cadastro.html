@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block titulo %}Criar empresa{% endblock %}
+{% block conteudo %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card p-4 mt-4">
+      <h4 class="mb-1 text-center"><i class="bi bi-hospital"></i> Cadastre sua empresa</h4>
+      <p class="text-muted text-center small">
+        Crie a conta da sua empresa na plataforma, junto com a primeira filial (unidade/clínica).
+        Depois você poderá cadastrar outras filiais, médicos, secretárias e pacientes.
+      </p>
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label">Nome da empresa</label>
+          <input type="text" name="nome_empresa" class="form-control" required autofocus>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Nome desta filial (unidade)</label>
+          <input type="text" name="nome_filial" class="form-control" required>
+          <div class="form-text">Se sua empresa tiver mais de uma unidade, você cadastra as outras depois, pela área administrativa.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Seu nome</label>
+          <input type="text" name="nome" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Você é médico(a) ou secretário(a)?</label>
+          <select name="papel" class="form-select" required>
+            <option value="secretaria">Secretário(a)</option>
+            <option value="medico">Médico(a)</option>
+          </select>
+          <div class="form-text">
+            Não tem problema se a sua clínica não tem secretária — como você está criando a
+            empresa, você recebe acesso a todas as telas administrativas (equipe, filiais, dados
+            da clínica), seja qual for sua escolha aqui.
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Seu e-mail (será seu login)</label>
+          <input type="email" name="email" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Senha</label>
+          <input type="password" name="senha" class="form-control" minlength="6" required>
+          <div class="form-text">Mínimo de 6 caracteres.</div>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Criar minha empresa</button>
+      </form>
+      <div class="text-center mt-3">
+        <a href="{{ url_for('auth.login') }}" class="small">Já tem conta? Fazer login</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

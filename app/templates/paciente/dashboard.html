@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block titulo %}Meus exames{% endblock %}
+{% block conteudo %}
+<h3 class="mb-4">Olá, {{ current_user.nome }}!</h3>
+
+<div class="card p-3 mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0">Próximos exames</h5>
+    <a href="{{ url_for('paciente.solicitar_agendamento') }}" class="btn btn-sm btn-outline-primary">Solicitar novo agendamento</a>
+  </div>
+  {% if proximos %}
+    {% for a in proximos %}
+    <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+      <div>
+        <strong>{{ a.exame.nome }}</strong><br>
+        <span class="text-muted small">{{ a.data_hora.strftime('%d/%m/%Y às %H:%M') }} · status: {{ a.status }}{% if a.status == 'solicitado' %} (aguardando confirmação da clínica){% endif %}</span>
+      </div>
+      <a href="{{ url_for('paciente.preparo_exame', agendamento_id=a.id) }}" class="btn btn-sm btn-primary">Ver preparo</a>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="text-muted">Você não tem exames agendados no momento.</p>
+  {% endif %}
+</div>
+
+<div class="card p-3">
+  <h5>Histórico</h5>
+  {% if historico %}
+    {% for a in historico %}
+    <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+      <div>
+        <strong>{{ a.exame.nome }}</strong><br>
+        <span class="text-muted small">{{ a.data_hora.strftime('%d/%m/%Y às %H:%M') }} · status: {{ a.status }}</span>
+      </div>
+      <div class="d-flex gap-2">
+        {% if a.resultado %}
+        <a href="{{ url_for('paciente.resultado_baixar', agendamento_id=a.id) }}" class="btn btn-sm btn-success"><i class="bi bi-file-earmark-pdf"></i> Baixar resultado</a>
+        {% endif %}
+        <a href="{{ url_for('paciente.preparo_exame', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary">Ver preparo</a>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="text-muted">Sem histórico de exames.</p>
+  {% endif %}
+</div>
+
+<a href="{{ url_for('paciente.chat') }}" class="btn btn-lg btn-success mt-4"><i class="bi bi-chat-dots"></i> Tirar dúvidas sobre o preparo</a>
+{% endblock %}

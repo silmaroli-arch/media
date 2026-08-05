@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block titulo %}Comprovante de pagamento{% endblock %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-3 no-print">
+  <h3>Comprovante de pagamento</h3>
+  <button onclick="window.print()" class="btn btn-primary"><i class="bi bi-printer"></i> Imprimir</button>
+</div>
+
+<div class="card p-4" style="max-width: 700px;">
+  <h4 class="mb-1">{{ clinica.nome }}</h4>
+  {% if clinica.cnpj %}<p class="text-muted small mb-3">CNPJ: {{ clinica.cnpj }}</p>{% endif %}
+  <hr>
+  <p><strong>Paciente:</strong> {{ agendamento.paciente.nome }} (CPF {{ agendamento.paciente.cpf }})</p>
+  <p><strong>Procedimento:</strong> {{ agendamento.exame.nome }}</p>
+  <p><strong>Data do atendimento:</strong> {{ agendamento.data_hora.strftime('%d/%m/%Y %H:%M') }}</p>
+  <hr>
+  <table class="table table-sm">
+    <tbody>
+      <tr><td>Valor do procedimento</td><td class="text-end">R$ {{ '%.2f'|format(agendamento.pagamento.valor_procedimento) }}</td></tr>
+      {% if agendamento.pagamento.desconto_percentual %}
+      <tr><td>Desconto aplicado{% if agendamento.pagamento.desconto_nome %} ({{ agendamento.pagamento.desconto_nome }}){% endif %}</td><td class="text-end">-{{ agendamento.pagamento.desconto_percentual }}%</td></tr>
+      {% endif %}
+      <tr class="fw-bold"><td>Valor final pago</td><td class="text-end">R$ {{ '%.2f'|format(agendamento.pagamento.valor_final) }}</td></tr>
+      <tr><td>Forma de pagamento</td><td class="text-end">{{ agendamento.pagamento.forma_pagamento or '-' }}</td></tr>
+    </tbody>
+  </table>
+  <p class="text-muted small mb-0">Registrado por {{ agendamento.pagamento.registrado_por }} em {{ agendamento.pagamento.pago_em.strftime('%d/%m/%Y %H:%M') }}.</p>
+  <p class="text-muted small mt-3">Este comprovante não substitui uma nota fiscal.</p>
+</div>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block titulo %}Adicionar à equipe{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Adicionar médico ou secretária</h3>
+<div class="card p-4">
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label">Nome</label>
+      <input type="text" name="nome" class="form-control">
+      <div class="form-text">Se o e-mail já tiver uma conta na plataforma (outra clínica), o nome não é necessário — vamos só vincular a conta existente.</div>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">E-mail</label>
+      <input type="email" name="email" class="form-control" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Papel</label>
+      <select name="papel" id="sel_papel" class="form-select" onchange="ajustarPermissoesPadrao()">
+        <option value="secretaria">Secretária</option>
+        <option value="medico">Médico</option>
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Filial em que essa pessoa vai atuar</label>
+      <select name="filial_id" class="form-select" required>
+        {% for f in filiais %}
+        <option value="{{ f.id }}" {% if clinica_atual_navbar and f.id == clinica_atual_navbar.id %}selected{% endif %}>{{ f.nome }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text">Se a pessoa também atender em outra filial da empresa, cadastre-a de novo depois escolhendo a outra filial.</div>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Senha inicial (só se for uma conta nova)</label>
+      <input type="text" name="senha" class="form-control" placeholder="Padrão: 123456">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Permissões administrativas (só valem para uma conta nova)</label>
+      <div class="form-text mb-2">
+        Nem toda clínica tem secretária — marque abaixo quais telas administrativas essa pessoa
+        vai poder acessar. Se o e-mail já for de uma conta existente, essas permissões são
+        ignoradas aqui; ajuste-as depois pela lista de equipe.
+      </div>
+      <div class="form-check">
+        <input class="form-check-input perm-checkbox" type="checkbox" name="perm_pacientes" id="perm_pacientes" checked>
+        <label class="form-check-label" for="perm_pacientes">Cadastrar pacientes</label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input perm-checkbox" type="checkbox" name="perm_equipe" id="perm_equipe" checked>
+        <label class="form-check-label" for="perm_equipe">Gerenciar equipe</label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input perm-checkbox" type="checkbox" name="perm_filiais" id="perm_filiais" checked>
+        <label class="form-check-label" for="perm_filiais">Gerenciar filiais</label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input perm-checkbox" type="checkbox" name="perm_dados_clinica" id="perm_dados_clinica" checked>
+        <label class="form-check-label" for="perm_dados_clinica">Editar dados da clínica</label>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Salvar</button>
+    <a href="{{ url_for('medico.equipe_lista') }}" class="btn btn-link">Cancelar</a>
+  </form>
+</div>
+<script>
+  // Só um ponto de partida sugerido — todas as permissões continuam
+  // editáveis manualmente antes de salvar.
+  function ajustarPermissoesPadrao() {
+    var ehSecretaria = document.getElementById('sel_papel').value === 'secretaria';
+    document.querySelectorAll('.perm-checkbox').forEach(function (cb) {
+      cb.checked = ehSecretaria;
+    });
+  }
+</script>
+{% endblock %}
