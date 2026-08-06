@@ -12,7 +12,7 @@ from app.models import (
     Empresa, Clinica, PlataformaConfig, Usuario, Paciente, Exame, Agendamento,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, PerguntaPendente, FaqItem,
-    MedicoHorario, ChatMensagem, ResultadoExame, DescontoConfig, Pagamento,
+    MedicoHorario, MedicoBloqueio, ChatMensagem, ResultadoExame, DescontoConfig, Pagamento,
 )
 from app.pdf_preparo import (
     _sugerir_informacoes_gerais, _sugerir_alimentos, _sugerir_medicamentos, _sugerir_cortes,
@@ -49,6 +49,15 @@ r = login("secretaria@clinicavitoria.com", "123456")
 checar("Login secretaria (Vitória) funciona", r.status_code == 200 and "Painel" in r.get_data(as_text=True))
 checar("Navbar mostra o nome da clínica atual", "Clínica Vitória" in r.get_data(as_text=True))
 
+texto_menu = r.get_data(as_text=True)
+checar("Menu novo tem os grupos Pessoas, Financeiro, IA e Configuração de exames",
+       ">Pessoas<" in texto_menu and ">Financeiro<" in texto_menu and ">IA<" in texto_menu
+       and "Configuração de exames" in texto_menu)
+checar("Menu não tem mais um item separado \"Agenda\" (calendário virou parte do Painel)",
+       ">Agenda<" not in texto_menu)
+checar("O calendário/agenda completa aparece dentro do próprio Painel", "Agenda de exames" in texto_menu)
+checar("Painel tem um card de Solicitações de agendamento", "Solicitações de agendamento" in texto_menu)
+
 r = client.get("/equipe/pacientes")
 checar("Lista de pacientes da Vitória contém João, não contém Maria",
        "João Pereira" in r.get_data(as_text=True) and "Maria Silva" not in r.get_data(as_text=True))
@@ -56,8 +65,8 @@ checar("Lista de pacientes da Vitória contém João, não contém Maria",
 r = client.get("/equipe/exames")
 checar("Lista de exames da Vitória contém Colonoscopia", "Colonoscopia" in r.get_data(as_text=True))
 
-r = client.get("/equipe/agenda")
-checar("Agenda da Vitória acessível", r.status_code == 200)
+r = client.get("/equipe/agenda", follow_redirects=True)
+checar("Agenda da Vitória acessível (redireciona para o painel)", "Agenda de exames" in r.get_data(as_text=True))
 
 r = client.get("/equipe/equipe-membros")
 texto = r.get_data(as_text=True)
@@ -65,7 +74,11 @@ checar("Equipe da Vitória lista Ana e o Dr. Carlos", "Ana Secretária" in texto
 
 r = client.get("/equipe/clinica/configuracoes")
 texto = r.get_data(as_text=True)
-checar("Página de dados da clínica mostra o horário de sábado cadastrado", "07:00" in texto and "12:00" in texto)
+checar("Página de dados da clínica não tem mais bloco de horário", "Horário de funcionamento" not in texto)
+
+r = client.get("/equipe/medico-horarios/2")
+texto = r.get_data(as_text=True)
+checar("Página de horário do Dr. Carlos mostra o horário de sábado cadastrado", "07:00" in texto and "12:00" in texto)
 
 r = client.post("/equipe/clinica/configuracoes", data={
     "nome": "Clínica Vitória", "telefone": "(27) 3333-4444", "email_contato": "contato@clinicavitoria.com",
@@ -74,11 +87,15 @@ r = client.post("/equipe/clinica/configuracoes", data={
     "cidade": "Vitória", "uf": "ES",
     "inscricao_estadual": "081.234.567", "regime_tributario": "Simples Nacional",
     "cnae": "8640-2/02", "codigo_ibge_municipio": "3205309",
-    "dia_0_ativo": "on", "dia_0_inicio": "08:00", "dia_0_fim": "19:00",
 }, follow_redirects=True)
 checar("Secretária consegue salvar os dados da clínica", "atualizados com sucesso" in r.get_data(as_text=True).lower())
 
-r = client.get("/equipe/clinica/configuracoes")
+r = client.post("/equipe/medico-horarios/2", data={
+    "dia_0_ativo": "on", "dia_0_inicio": "08:00", "dia_0_fim": "19:00",
+}, follow_redirects=True)
+checar("Secretária consegue salvar horário do médico", "atualizado" in r.get_data(as_text=True).lower())
+
+r = client.get("/equipe/medico-horarios/2")
 checar("Novo horário de segunda-feira (08:00) foi salvo", "08:00" in r.get_data(as_text=True))
 
 client.get("/logout")
@@ -133,8 +150,8 @@ texto = r.get_data(as_text=True)
 checar("Dr. Carlos vê João (seu paciente), mas não Pedro (paciente da Dra. Fernanda)",
        "João Pereira" in texto and "Pedro Souza" not in texto)
 
-r = client.get("/equipe/agenda")
-checar("Agenda do Dr. Carlos acessível", r.status_code == 200)
+r = client.get("/equipe/agenda", follow_redirects=True)
+checar("Agenda do Dr. Carlos acessível (redireciona para o painel)", "Agenda de exames" in r.get_data(as_text=True))
 
 r = client.get("/equipe/equipe-membros")
 checar("Médico não consegue acessar a gestão de equipe", r.status_code in (302,))
@@ -144,8 +161,11 @@ client.get("/logout")
 login("medica2@clinicavitoria.com", "123456")
 r = client.get("/equipe/exames")
 texto = r.get_data(as_text=True)
-checar("Dra. Fernanda vê só o Hemograma, não a Colonoscopia do Dr. Carlos",
-       "Hemograma" in texto and "Colonoscopia" not in texto)
+checar(
+    "Dra. Fernanda vê o Hemograma (é dela) e a Colonoscopia (associada como médica extra), "
+    "mas não o Teste de Hidrogênio (só do Dr. Carlos)",
+    "Hemograma" in texto and "Colonoscopia" in texto and "Teste do Hidrogênio" not in texto,
+)
 
 r = client.get("/equipe/pacientes")
 texto = r.get_data(as_text=True)
@@ -179,9 +199,87 @@ r = client.post("/cadastro", data={
 texto = r.get_data(as_text=True)
 checar("Cadastro público cria empresa+filial e loga automaticamente", "Painel" in texto)
 checar("Nova filial aparece na navbar", "Filial Única" in texto)
+checar("Cadastro público leva direto para o assistente de configuração inicial", "Configuração inicial da clínica" in texto)
 
 r = client.get("/equipe/pacientes")
 checar("Filial nova começa sem nenhum paciente de outras empresas", "João Pereira" not in r.get_data(as_text=True))
+
+# ---------- Assistente de configuração inicial (wizard) ----------
+
+r = client.get("/equipe/configuracao-inicial")
+texto_wiz = r.get_data(as_text=True)
+checar("Wizard mostra as 4 etapas obrigatórias/opcionais esperadas", all(
+    t in texto_wiz for t in ["Dados da clínica", "Convidar mais gente para a equipe",
+                              "Horário de atendimento do médico", "Primeiro modelo de preparo", "Primeiro exame"]
+))
+checar("Wizard começa com 0 de 5 etapas concluídas", "0 de 5 etapas concluídas" in texto_wiz)
+checar("Etapa de horário começa bloqueada (não há médico ainda)", "Cadastre um médico" in texto_wiz)
+
+r = client.get("/equipe/")
+checar("Painel mostra o aviso de configuração inicial pendente", "configuração inicial da clínica ainda não está completa" in r.get_data(as_text=True))
+
+# Etapa 1: Dados da clínica
+r = client.post("/equipe/clinica/configuracoes", data={
+    "nome": "Filial Única", "telefone": "(27) 99999-0000",
+    "email_contato": "fulano@clinicateste.com",
+    "voltar_onboarding": "1",
+}, follow_redirects=True)
+checar("Salvar dados da clínica com voltar_onboarding=1 volta para o wizard", "Configuração inicial da clínica" in r.get_data(as_text=True))
+checar("Etapa 'Dados da clínica' aparece concluída após salvar", "1 de 5 etapas concluídas" in r.get_data(as_text=True))
+
+# Etapa 2: Convidar mais gente para a equipe (cadastra um médico novo)
+with app.app_context():
+    filial_teste = Clinica.query.filter_by(nome="Filial Única").first()
+    filial_teste_id = filial_teste.id
+
+r = client.post("/equipe/equipe-membros/novo", data={
+    "nome": "Dra. Juliana Wizard", "email": "juliana.wizard2@clinicateste.com",
+    "papel": "medico", "filial_id": filial_teste_id,
+    "voltar_onboarding": "1",
+}, follow_redirects=True)
+texto_wiz = r.get_data(as_text=True)
+checar("Cadastrar médico com voltar_onboarding=1 volta para o wizard", "Configuração inicial da clínica" in texto_wiz)
+checar("Etapa 'equipe' aparece concluída após cadastrar 2º membro", "2 de 5 etapas concluídas" in texto_wiz)
+checar("Etapa de horário deixa de estar bloqueada (já existe médico)", "Cadastre um médico" not in texto_wiz)
+
+with app.app_context():
+    juliana = Usuario.query.filter_by(email="juliana.wizard2@clinicateste.com").first()
+    juliana_id = juliana.id
+
+# Etapa 3: Horário de atendimento do médico
+r = client.post(f"/equipe/medico-horarios/{juliana_id}", data={
+    "dia_0_ativo": "on", "dia_0_inicio": "08:00", "dia_0_fim": "12:00",
+    "voltar_onboarding": "1",
+}, follow_redirects=True)
+texto_wiz = r.get_data(as_text=True)
+checar("Salvar horário com voltar_onboarding=1 volta para o wizard", "Configuração inicial da clínica" in texto_wiz)
+checar("Etapa 'horário' aparece concluída após salvar", "3 de 5 etapas concluídas" in texto_wiz)
+
+# Etapa 4: Primeiro modelo de preparo
+r = client.post("/equipe/preparo-modelos/novo", data={
+    "nome": "Preparo Wizard Teste", "instrucoes": "Jejum de 8 horas antes do exame.",
+    "voltar_onboarding": "1",
+}, follow_redirects=True)
+texto_wiz = r.get_data(as_text=True)
+checar("Salvar modelo de preparo com voltar_onboarding=1 volta para o wizard", "Configuração inicial da clínica" in texto_wiz)
+checar("Etapa 'modelo_preparo' aparece concluída após salvar", "4 de 5 etapas concluídas" in texto_wiz)
+checar("Etapa de exame deixa de estar bloqueada (já existe modelo de preparo)", "Cadastre um modelo de preparo primeiro" not in texto_wiz)
+
+with app.app_context():
+    modelo_wizard = PreparoModelo.query.filter_by(nome="Preparo Wizard Teste").first()
+    modelo_wizard_id = modelo_wizard.id
+
+# Etapa 5: Primeiro exame
+r = client.post("/equipe/exames/novo", data={
+    "nome": "Exame Wizard Teste", "medico_id": juliana_id, "preparo_modelo_id": modelo_wizard_id,
+    "voltar_onboarding": "1",
+}, follow_redirects=True)
+texto_wiz = r.get_data(as_text=True)
+checar("Salvar exame com voltar_onboarding=1 volta para o wizard", "Configuração inicial da clínica" in texto_wiz)
+checar("Todas as 5 etapas concluídas mostram a mensagem de conclusão", "Configuração inicial concluída!" in texto_wiz)
+
+r = client.get("/equipe/")
+checar("Aviso de configuração pendente some do Painel quando tudo está concluído", "configuração inicial da clínica ainda não está completa" not in r.get_data(as_text=True))
 
 client.get("/logout")
 
@@ -214,6 +312,44 @@ r = client.get("/equipe/clinica/configuracoes")
 checar("Médico fundador consegue acessar Dados da clínica", r.status_code == 200)
 r = client.get("/equipe/pacientes/novo")
 checar("Médico fundador consegue acessar Novo paciente", r.status_code == 200)
+
+r = client.get("/equipe/medico-horarios")
+texto = r.get_data(as_text=True)
+checar(
+    "Médico fundador (com perm_equipe) vê o seletor de médico na tela de horário",
+    '<select class="form-select"' in texto,
+)
+
+client.get("/logout")
+
+# ---------- Médico comum (sem perm_equipe) só configura o próprio horário, sem seletor ----------
+
+r = client.post("/cadastro", data={
+    "nome_empresa": "Clínica Solo do Dr. Marcelo",
+    "nome_filial": "Consultório Marcelo",
+    "nome": "Dr. Marcelo Costa",
+    "email": "marcelo@clinicasolo2.com",
+    "senha": "senha123",
+    "papel": "medico",
+}, follow_redirects=True)
+
+with app.app_context():
+    marcelo = Usuario.query.filter_by(email="marcelo@clinicasolo2.com").first()
+    # Removemos a permissão de equipe (fundador ganha todas por padrão) para
+    # simular um médico comum, sem gestão da equipe.
+    marcelo.perm_equipe = False
+    db.session.commit()
+
+r = client.get("/equipe/medico-horarios")
+texto = r.get_data(as_text=True)
+checar(
+    "Médico sem perm_equipe não vê o seletor de médico na tela de horário",
+    '<select class="form-select"' not in texto,
+)
+client.get("/logout")
+
+# O restante dos testes abaixo assume o médico fundador (Dr. Ricardo) logado.
+login("ricardo@clinicasolo.com", "senha123")
 
 # ---------- Cadastro de paciente sem senha: login por telefone + data de nascimento ----------
 
@@ -249,6 +385,15 @@ texto = r.get_data(as_text=True)
 checar("Paciente cadastrado sem senha consegue entrar só com telefone e data de nascimento",
        "Meus exames" in texto or "Tirar dúvidas" in texto)
 checar("Paciente sem senha não vê o link de 'Trocar senha' na barra superior", "Trocar senha" not in texto)
+client.get("/logout")
+
+# O campo de data de nascimento no login do paciente e no cadastro (tela da
+# secretária) agora é um campo de texto com máscara (DD/MM/AAAA), em vez do
+# seletor nativo do navegador — o back-end precisa aceitar esse formato.
+r = login_paciente("(28) 98765-4321", "20/06/1995")
+checar("Login do paciente também funciona com a data no formato brasileiro (DD/MM/AAAA)",
+       "Meus exames" in r.get_data(as_text=True) or "Tirar dúvidas" in r.get_data(as_text=True))
+client.get("/logout")
 
 client.get("/logout")
 
@@ -1228,6 +1373,10 @@ client.get("/logout")
 
 # --- Secretária confirma a solicitação de agendamento ---
 login("secretaria@clinicavitoria.com", "123456")
+r = client.get("/equipe/")
+checar("Card de solicitações no painel mostra ao menos 1 pendente", ">1<" in r.get_data(as_text=True)
+       and "Solicitações de agendamento" in r.get_data(as_text=True))
+
 r = client.get("/equipe/agenda/solicitacoes")
 checar("Tela de solicitações lista o pedido do paciente", "João Pereira" in r.get_data(as_text=True))
 
@@ -1363,6 +1512,174 @@ checar("Login com a senha antiga não funciona mais após a troca", "E-mail ou s
 
 r = login("secretaria@clinicavitoria.com", "novaSenha123")
 checar("Login com a nova senha funciona", "Empresa" in r.get_data(as_text=True) or "Pacientes" in r.get_data(as_text=True) or r.status_code == 200)
+client.get("/logout")
+
+# ---------- Menu "Médico" e associação de médico(s) ao exame ----------
+
+login("secretaria@clinicavitoria.com", "novaSenha123")
+
+r = client.get("/equipe/pacientes")
+texto_menu = r.get_data(as_text=True)
+checar(
+    "Menu tem o grupo \"Médico\" com Horário de atendimento, Meus exames agendados e Bloquear agenda",
+    ">Médico<" in texto_menu and "Meus exames agendados" in texto_menu and "Bloquear agenda" in texto_menu,
+)
+
+with app.app_context():
+    clinica_vitoria_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
+    carlos = Usuario.query.filter_by(email="medico@clinicavitoria.com").first()
+    fernanda = Usuario.query.filter_by(email="medica2@clinicavitoria.com").first()
+    colonoscopia = Exame.query.filter_by(nome="Colonoscopia", clinica_id=clinica_vitoria_id).first()
+    joao = Paciente.query.filter_by(nome="João Pereira").first()
+    carlos_id, fernanda_id, colonoscopia_id, joao_id = carlos.id, fernanda.id, colonoscopia.id, joao.id
+    filial_id = clinica_vitoria_id
+    # Um teste anterior (edição de "precisa_acompanhante") postou no form de
+    # edição do exame sem os checkboxes de médicos extra — como qualquer
+    # formulário HTML real, isso "desmarca" a associação. Restaura aqui
+    # antes de testar a funcionalidade de múltiplos médicos por exame.
+    colonoscopia.medicos_extra = [fernanda]
+    db.session.commit()
+
+r = client.get(f"/equipe/exames/{colonoscopia_id}/editar")
+checar(
+    "Tela de editar exame mostra a Dra. Fernanda marcada como médica extra da Colonoscopia",
+    f'value="{fernanda_id}"' in r.get_data(as_text=True) and "checked" in r.get_data(as_text=True),
+)
+
+r = client.post("/equipe/agenda/novo", data={
+    "filial_id": filial_id,
+    "medico_id": fernanda_id,
+    "paciente_id": joao_id,
+    "exame_id": colonoscopia_id,
+    "data_hora": "2026-08-25T09:00",
+    # Um teste anterior passou a marcar este exame como exigindo
+    # acompanhante — precisa informar, senão o agendamento é rejeitado.
+    "acompanhante_nome": "Alguém da família",
+}, follow_redirects=True)
+checar("Agendar a Colonoscopia escolhendo a Dra. Fernanda (médica extra) funciona",
+       "sucesso" in r.get_data(as_text=True).lower())
+
+with app.app_context():
+    agendamento_fernanda = Agendamento.query.filter_by(
+        exame_id=colonoscopia_id, paciente_id=joao_id, data_hora=datetime(2026, 8, 25, 9, 0)
+    ).first()
+    checar(
+        "O agendamento ficou com a Dra. Fernanda como médica (não o Dr. Carlos, principal do exame)",
+        agendamento_fernanda is not None and agendamento_fernanda.medico_id == fernanda_id,
+    )
+
+client.get("/logout")
+
+# ---------- Paciente escolhe o médico ao solicitar agendamento ----------
+# Como a Colonoscopia agora tem dois médicos associados (Dr. Carlos, o
+# principal, e a Dra. Fernanda, extra), a tela de solicitação de
+# agendamento do paciente precisa deixar escolher com qual dos dois quer
+# agendar, e a solicitação criada deve refletir essa escolha.
+login_paciente("(27) 99999-0000", "1985-04-12")
+r = client.get(f"/paciente/agendar?exame_id={colonoscopia_id}")
+texto = r.get_data(as_text=True)
+checar(
+    "Tela de solicitar agendamento mostra um seletor com os dois médicos da Colonoscopia",
+    "Dr. Carlos" in texto and "Dra. Fernanda" in texto,
+)
+
+r = client.get(f"/paciente/agendar?exame_id={colonoscopia_id}&medico_id={fernanda_id}")
+texto = r.get_data(as_text=True)
+checar("Ao escolher a Dra. Fernanda, os horários sugeridos mostram o nome dela", "Dra. Fernanda" in texto)
+
+import re as _re2
+match_horario_fernanda = _re2.search(r'value="(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"', texto)
+checar("Encontrou um horário sugerido com a Dra. Fernanda", match_horario_fernanda is not None)
+
+r = client.post("/paciente/agendar", data={
+    "exame_id": str(colonoscopia_id),
+    "medico_id": str(fernanda_id),
+    "horario_escolhido": match_horario_fernanda.group(1),
+}, follow_redirects=True)
+checar("Solicitação de agendamento com a Dra. Fernanda enviada com sucesso",
+       "solicitação" in r.get_data(as_text=True).lower() or "enviada" in r.get_data(as_text=True).lower())
+
+with app.app_context():
+    solicitacao_fernanda = Agendamento.query.filter_by(
+        paciente_id=joao_id, exame_id=colonoscopia_id, medico_id=fernanda_id, status="solicitado"
+    ).first()
+    checar(
+        "A solicitação criada pelo paciente ficou com a Dra. Fernanda (não o Dr. Carlos)",
+        solicitacao_fernanda is not None,
+    )
+client.get("/logout")
+
+# ---------- Meus exames agendados (agenda pessoal do médico) ----------
+
+login("medica2@clinicavitoria.com", "123456")
+r = client.get("/equipe/medico-agenda")
+texto = r.get_data(as_text=True)
+checar(
+    "Dra. Fernanda vê o agendamento da Colonoscopia (como médica extra) em \"Meus exames agendados\"",
+    "João Pereira" in texto and "Colonoscopia" in texto,
+)
+client.get("/logout")
+
+# ---------- Bloqueio de agenda por compromisso próprio do médico ----------
+
+login("secretaria@clinicavitoria.com", "novaSenha123")
+
+r = client.get(f"/equipe/medico-bloqueios/{carlos_id}")
+checar("Bloqueio de férias do Dr. Carlos (seed) aparece na lista", "Férias" in r.get_data(as_text=True))
+
+r = client.post(f"/equipe/medico-bloqueios/{carlos_id}", data={
+    "data_inicio": "2026-08-26",
+    "hora_inicio": "08:00",
+    "data_fim": "2026-08-26",
+    "hora_fim": "12:00",
+    "motivo": "Consulta médica",
+}, follow_redirects=True)
+checar("Cadastro de bloqueio por período funciona", "cadastrado" in r.get_data(as_text=True).lower())
+
+with app.app_context():
+    from app.agendamento_otimizador import sugerir_horarios, medico_tem_bloqueio
+    clinica_vitoria_obj = Clinica.query.get(filial_id)
+    exame_glicemia = Exame.query.filter_by(nome="Glicemia de jejum", clinica_id=filial_id).first()
+    carlos_obj = Usuario.query.get(carlos_id)
+    bloqueado = medico_tem_bloqueio(filial_id, carlos_id, datetime(2026, 8, 26, 9, 0))
+    checar("medico_tem_bloqueio detecta o horário bloqueado (26/08 09h, dentro das 08h-12h)", bloqueado)
+    livre = medico_tem_bloqueio(filial_id, carlos_id, datetime(2026, 8, 26, 14, 0))
+    checar("medico_tem_bloqueio não bloqueia horário fora do período (26/08 14h)", not livre)
+
+    sugestoes = sugerir_horarios(exame_glicemia, carlos_obj, clinica_vitoria_obj, data_inicio=date(2026, 8, 26), quantidade=50, dias_maximos=3)
+    dentro_do_bloqueio = any(
+        s.date() == date(2026, 8, 26) and 8 <= s.hour < 12 for s in sugestoes
+    )
+    checar(
+        "O otimizador de agenda não sugere horários dentro do período bloqueado (26/08 08h-12h)",
+        not dentro_do_bloqueio,
+    )
+
+with app.app_context():
+    exame_glicemia_id = Exame.query.filter_by(nome="Glicemia de jejum", clinica_id=filial_id).first().id
+
+r = client.post("/equipe/agenda/novo", data={
+    "filial_id": filial_id,
+    "medico_id": carlos_id,
+    "paciente_id": joao_id,
+    "exame_id": exame_glicemia_id,
+    "data_hora": "2026-08-26T09:00",
+}, follow_redirects=True)
+checar(
+    "Agendamento manual é rejeitado dentro do horário bloqueado do médico",
+    "bloqueou a agenda" in r.get_data(as_text=True).lower(),
+)
+
+with app.app_context():
+    bloqueio_extra = MedicoBloqueio.query.filter_by(clinica_id=filial_id, medico_id=carlos_id, motivo="Consulta médica").first()
+    bloqueio_extra_id = bloqueio_extra.id
+
+r = client.post(f"/equipe/medico-bloqueios/{bloqueio_extra_id}/remover", follow_redirects=True)
+checar("Remover bloqueio funciona", "removido" in r.get_data(as_text=True).lower())
+
+with app.app_context():
+    checar("Bloqueio removido não existe mais no banco", MedicoBloqueio.query.get(bloqueio_extra_id) is None)
+
 client.get("/logout")
 
 print("\nTodos os testes de fumaça passaram com sucesso.")

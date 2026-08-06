@@ -13,7 +13,7 @@
     <div class="d-flex justify-content-between align-items-center border-bottom py-2">
       <div>
         <strong>{{ a.exame.nome }}</strong><br>
-        <span class="text-muted small">{{ a.data_hora.strftime('%d/%m/%Y às %H:%M') }} · status: {{ a.status }}{% if a.status == 'solicitado' %} (aguardando confirmação da clínica){% endif %}</span>
+        <span class="text-muted small">{{ a.data_hora.strftime('%d/%m/%Y às %H:%M') }} · com {{ a.medico.nome }} · status: {{ a.status }}{% if a.status == 'solicitado' %} (aguardando confirmação da clínica){% endif %}</span>
       </div>
       <a href="{{ url_for('paciente.preparo_exame', agendamento_id=a.id) }}" class="btn btn-sm btn-primary">Ver preparo</a>
     </div>
@@ -30,7 +30,7 @@
     <div class="d-flex justify-content-between align-items-center border-bottom py-2">
       <div>
         <strong>{{ a.exame.nome }}</strong><br>
-        <span class="text-muted small">{{ a.data_hora.strftime('%d/%m/%Y às %H:%M') }} · status: {{ a.status }}</span>
+        <span class="text-muted small">{{ a.data_hora.strftime('%d/%m/%Y às %H:%M') }} · com {{ a.medico.nome }} · status: {{ a.status }}</span>
       </div>
       <div class="d-flex gap-2">
         {% if a.resultado %}

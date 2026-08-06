@@ -1,4 +1,4 @@
-# Plataforma de Controle de Preparo de Exames (multi-empresa / multi-filial)
+# Media — Plataforma de Controle de Preparo de Exames (multi-empresa / multi-filial)
 
 Plataforma SaaS para clínicas/consultórios controlarem o preparo de
 pacientes para exames. Qualquer pessoa pode cadastrar sua **empresa** pela
@@ -185,7 +185,7 @@ conexão no formato `postgresql://usuario:senha@host:porta/banco`:
 - **Docker local**, se preferirem testar sem depender da nuvem:
   ```bash
   docker run --name preparo-postgres -e POSTGRES_PASSWORD=preparo_dev_pw \
-    -e POSTGRES_USER=preparo_dev -e POSTGRES_DB=preparo_exames_dev \
+    -e POSTGRES_USER=media_dev -e POSTGRES_DB=media_dev \
     -p 5432:5432 -d postgres:16
   ```
 
@@ -198,7 +198,7 @@ cp .env.example .env
 ```
 
 ```
-DATABASE_URL=postgresql://usuario:senha@host:5432/preparo_exames_dev
+DATABASE_URL=postgresql://usuario:senha@host:5432/media_dev
 SECRET_KEY=uma-chave-aleatoria-só-sua
 ```
 
@@ -208,7 +208,7 @@ banco no Git.
 ### 3. Instale as dependências e rode
 
 ```bash
-cd preparo_exames
+cd media
 pip install -r requirements.txt
 python seed.py      # cria as tabelas no PostgreSQL e popula com dados de exemplo
 python run.py        # inicia o servidor em http://localhost:5000
@@ -265,7 +265,7 @@ combinação mais direta para esse tipo de app.
 3. Em **Engine options**, escolha **PostgreSQL**.
 4. Em **Templates**, escolha **Free tier** (assim você usa a cota gratuita
    dos 12 meses, se a conta for elegível).
-5. Em **Settings**: dê um nome à instância (ex.: `preparo-exames-db`),
+5. Em **Settings**: dê um nome à instância (ex.: `media-db`),
    defina o usuário master (ex.: `preparo_admin`) e uma senha forte — anote
    essa senha, ela não aparece de novo depois.
 6. Em **Instance configuration**, o Free tier já seleciona `db.t3.micro` ou
@@ -275,15 +275,15 @@ combinação mais direta para esse tipo de app.
    VPC, o ideal é mudar para **No** e restringir por *security group* — veja
    a nota de segurança abaixo).
 8. Em **Additional configuration**, defina o nome do banco inicial:
-   `preparo_exames` (campo "Initial database name").
+   `media` (campo "Initial database name").
 9. Clique em **Create database**. Leva de 5 a 10 minutos para ficar
    disponível.
 10. Quando o status virar "Available", clique na instância e copie o
-    **Endpoint** (algo como `preparo-exames-db.xxxxxxxxx.sa-east-1.rds.amazonaws.com`)
+    **Endpoint** (algo como `media-db.xxxxxxxxx.sa-east-1.rds.amazonaws.com`)
     e a **Port** (normalmente `5432`).
 11. Monte a `DATABASE_URL`:
     ```
-    postgresql://preparo_admin:SUA_SENHA@SEU_ENDPOINT:5432/preparo_exames
+    postgresql://preparo_admin:SUA_SENHA@SEU_ENDPOINT:5432/media
     ```
 
 **Nota de segurança:** depois que a aplicação estiver rodando (Parte 2),
@@ -309,18 +309,18 @@ corretamente.
    eb init
    ```
    Escolha a região (ex.: `sa-east-1` — São Paulo), dê um nome à
-   aplicação (ex.: `preparo-exames`), e quando perguntar a plataforma,
+   aplicação (ex.: `media`), e quando perguntar a plataforma,
    escolha **Python**.
 3. Crie o ambiente:
    ```bash
-   eb create preparo-exames-dev
+   eb create media-dev
    ```
    Isso já cria a instância EC2, o load balancer e sobe a aplicação — leva
    alguns minutos.
 4. Configure as variáveis de ambiente (a `DATABASE_URL` montada na Parte 1
    e uma `SECRET_KEY` só sua):
    ```bash
-   eb setenv DATABASE_URL="postgresql://preparo_admin:SUA_SENHA@SEU_ENDPOINT:5432/preparo_exames" SECRET_KEY="uma-chave-aleatoria"
+   eb setenv DATABASE_URL="postgresql://preparo_admin:SUA_SENHA@SEU_ENDPOINT:5432/media" SECRET_KEY="uma-chave-aleatoria"
    ```
 5. Rode o `seed.py` uma vez para criar as tabelas no banco. Como o
    Beanstalk não te dá acesso direto de terminal à instância por padrão, o
@@ -328,7 +328,7 @@ corretamente.
    mesmo `DATABASE_URL` (ele vai criar as tabelas direto no RDS, de onde
    você estiver):
    ```bash
-   export DATABASE_URL="postgresql://preparo_admin:SUA_SENHA@SEU_ENDPOINT:5432/preparo_exames"
+   export DATABASE_URL="postgresql://preparo_admin:SUA_SENHA@SEU_ENDPOINT:5432/media"
    python seed.py
    ```
    (Para isso funcionar, o RDS precisa estar com "Public access" habilitado
@@ -354,7 +354,7 @@ Beanstalk não exige isso, aceita upload direto do `.zip`).
 ## Estrutura do projeto
 
 ```
-preparo_exames/
+media/
 ├── app/
 │   ├── __init__.py         # criação do app Flask
 │   ├── models.py            # modelos do banco (Usuario, Paciente, Exame, ...)

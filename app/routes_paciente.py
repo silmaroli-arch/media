@@ -126,12 +126,12 @@ def chat():
                 ))
                 db.session.commit()
             elif exame_selecionado and (resposta_alimento := buscar_resposta_alimento(
-                pergunta_enviada, exame_selecionado
+                pergunta_enviada, exame_selecionado, paciente
             )):
                 resposta_ia = resposta_alimento
                 origem = "alimento"
             elif exame_selecionado and (resposta_medicamento := buscar_resposta_medicamento(
-                pergunta_enviada, exame_selecionado
+                pergunta_enviada, exame_selecionado, paciente
             )):
                 resposta_ia = resposta_medicamento
                 origem = "medicamento"
@@ -201,16 +201,29 @@ def solicitar_agendamento():
 
     exame_id = request.form.get("exame_id", type=int) or request.args.get("exame_id", type=int)
     exame_selecionado = next((e for e in exames if e.id == exame_id), None) if exame_id else None
-    sugestoes = []
+
+    medicos_disponiveis = []
+    medico_selecionado = None
     if exame_selecionado:
+        # Um exame pode ter mais de um médico associado (médico principal +
+        # médicos "extra") — o paciente escolhe com qual deles prefere
+        # agendar; sem escolha explícita, cai no médico principal.
+        medicos_disponiveis = exame_selecionado.medicos
+        medico_id_escolhido = request.form.get("medico_id", type=int) or request.args.get("medico_id", type=int)
+        medico_selecionado = next(
+            (m for m in medicos_disponiveis if m.id == medico_id_escolhido), None
+        ) or exame_selecionado.medico
+
+    sugestoes = []
+    if exame_selecionado and medico_selecionado:
         sugestoes = sugerir_horarios(
-            exame_selecionado, exame_selecionado.medico, exame_selecionado.clinica,
+            exame_selecionado, medico_selecionado, exame_selecionado.clinica,
         )
 
     if request.method == "POST":
         horario_escolhido = request.form.get("horario_escolhido")
-        if not exame_selecionado:
-            flash("Escolha um exame válido.", "danger")
+        if not exame_selecionado or not medico_selecionado:
+            flash("Escolha um exame e um médico válidos.", "danger")
         elif not horario_escolhido:
             flash("Escolha um dos horários sugeridos.", "danger")
         else:
@@ -218,13 +231,16 @@ def solicitar_agendamento():
                 data_hora = datetime.strptime(horario_escolhido, "%Y-%m-%dT%H:%M:%S")
             except ValueError:
                 flash("Horário inválido — escolha novamente um dos horários sugeridos.", "danger")
-                return redirect(url_for("paciente.solicitar_agendamento", exame_id=exame_selecionado.id))
+                return redirect(url_for(
+                    "paciente.solicitar_agendamento",
+                    exame_id=exame_selecionado.id, medico_id=medico_selecionado.id,
+                ))
 
             agendamento = Agendamento(
                 clinica_id=paciente.clinica_id,
                 paciente_id=paciente.id,
                 exame_id=exame_selecionado.id,
-                medico_id=exame_selecionado.medico_id,
+                medico_id=medico_selecionado.id,
                 data_hora=data_hora,
                 status="solicitado",
             )
@@ -240,6 +256,8 @@ def solicitar_agendamento():
     return render_template(
         "paciente/solicitar_agendamento.html",
         exames=exames,
+        medicos_disponiveis=medicos_disponiveis,
+        medico_selecionado=medico_selecionado,
         exame_selecionado=exame_selecionado,
         sugestoes=sugestoes,
     )

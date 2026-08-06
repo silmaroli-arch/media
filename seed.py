@@ -18,7 +18,7 @@ from app import create_app
 from app.extensions import db
 from app.db_utils import resetar_banco
 from app.models import (
-    Usuario, Empresa, Clinica, ClinicaMembro, ClinicaHorario, Paciente,
+    Usuario, Empresa, Clinica, ClinicaMembro, MedicoHorario, MedicoBloqueio, Paciente,
     Exame, PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento,
     Agendamento, FaqItem, normalizar_telefone,
@@ -96,21 +96,6 @@ with app.app_context():
     db.session.add_all([clinica_vitoria, clinica_sp, filial_grupo_centro, filial_grupo_praia])
     db.session.commit()
 
-    # Horário de funcionamento de exemplo (Clínica Vitória: seg-sex, 7h-18h;
-    # sábado de manhã; a São Paulo fica sem horário cadastrado ainda, pra
-    # mostrar que isso é opcional e pode ser preenchido depois).
-    for dia_idx in range(5):  # segunda a sexta
-        db.session.add(ClinicaHorario(
-            clinica_id=clinica_vitoria.id, dia_semana=dia_idx, ativo=True,
-            hora_inicio=time(7, 0), hora_fim=time(18, 0),
-        ))
-    db.session.add(ClinicaHorario(
-        clinica_id=clinica_vitoria.id, dia_semana=5, ativo=True,  # sábado
-        hora_inicio=time(7, 0), hora_fim=time(12, 0),
-    ))
-    db.session.add(ClinicaHorario(clinica_id=clinica_vitoria.id, dia_semana=6, ativo=False))  # domingo
-    db.session.commit()
-
     # --- Usuários da equipe ---
     # Permissões administrativas (pacientes/equipe/filiais/dados da clínica)
     # não são mais amarradas ao papel médico/secretária — nem toda clínica
@@ -163,6 +148,43 @@ with app.app_context():
         ClinicaMembro(clinica_id=filial_grupo_centro.id, usuario_id=medico_grupo.id, ativo=True),
         ClinicaMembro(clinica_id=filial_grupo_praia.id, usuario_id=medico_grupo.id, ativo=True),
     ])
+    db.session.commit()
+
+    # Horário de atendimento de exemplo, por médico (usado pelo otimizador
+    # de agenda para sugerir horários disponíveis ao paciente). Cada médico
+    # define o seu próprio horário — não existe mais um horário único por
+    # clínica.
+    def criar_horario_padrao(clinica_id, medico_id, hora_inicio=time(7, 0), hora_fim=time(18, 0),
+                              sabado=True, hora_fim_sabado=time(12, 0)):
+        for dia_idx in range(5):  # segunda a sexta
+            db.session.add(MedicoHorario(
+                clinica_id=clinica_id, medico_id=medico_id, dia_semana=dia_idx, ativo=True,
+                hora_inicio=hora_inicio, hora_fim=hora_fim,
+            ))
+        db.session.add(MedicoHorario(
+            clinica_id=clinica_id, medico_id=medico_id, dia_semana=5, ativo=sabado,  # sábado
+            hora_inicio=hora_inicio, hora_fim=hora_fim_sabado,
+        ))
+        db.session.add(MedicoHorario(clinica_id=clinica_id, medico_id=medico_id, dia_semana=6, ativo=False))  # domingo
+
+    # Dr. Carlos atende na Clínica Vitória seg-sex 7h-18h e sábado de manhã.
+    criar_horario_padrao(clinica_vitoria.id, medico_compartilhado.id)
+    # Dra. Fernanda, também na Vitória, com um horário mais restrito, pra
+    # mostrar que cada médico pode ter horários diferentes.
+    criar_horario_padrao(
+        clinica_vitoria.id, medica_vitoria2.id,
+        hora_inicio=time(13, 0), hora_fim=time(19, 0), sabado=False,
+    )
+    # Dr. Carlos também atende na São Paulo, mas ainda não cadastrou horário
+    # lá — pra mostrar que isso é opcional e pode ser preenchido depois.
+
+    # Bloqueio de agenda de exemplo: Dr. Carlos de férias num dia inteiro —
+    # o otimizador de agenda não deve sugerir horários nesse dia.
+    db.session.add(MedicoBloqueio(
+        clinica_id=clinica_vitoria.id, medico_id=medico_compartilhado.id,
+        data_inicio=datetime(2026, 12, 24, 0, 0), data_fim=datetime(2026, 12, 24, 23, 59, 59),
+        motivo="Férias", dia_inteiro=True,
+    ))
     db.session.commit()
 
     # --- Catálogo de medicamentos (compartilhado pela plataforma) ---
@@ -243,6 +265,9 @@ with app.app_context():
         clinica_vitoria.id, medico_compartilhado.id, "Colonoscopia", "Exame do intestino grosso",
         modelo_colonoscopia_vitoria,
     )
+    # A Colonoscopia também pode ser atendida pela Dra. Fernanda — demonstra
+    # a associação de mais de um médico ao mesmo exame.
+    colonoscopia_vitoria.medicos_extra = [medica_vitoria2]
 
     # Um mesmo modelo de preparo (teste de hidrogênio) reaproveitado por 3
     # exames diferentes — cada substrato precisa ser agendado num dia
@@ -376,7 +401,12 @@ with app.app_context():
         paciente_id=joao.id,
         exame_id=colonoscopia_vitoria.id,
         medico_id=colonoscopia_vitoria.medico_id,
-        data_hora=datetime.utcnow() + timedelta(days=5),
+        # Data fixa (não relativa a "agora") — evita colidir de forma
+        # imprevisível com outros agendamentos de teste do mesmo
+        # paciente/exame criados com datas fixas (ver test_smoke.py), o
+        # que já causou falhas de teste dependentes do horário real em
+        # que o seed é executado.
+        data_hora=datetime(2026, 8, 6, 10, 0),
         status="agendado",
     ))
     db.session.add(Agendamento(

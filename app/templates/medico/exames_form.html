@@ -4,6 +4,7 @@
 <h3 class="mb-3">{% if exame %}Editar exame{% else %}Cadastrar novo exame{% endif %}</h3>
 <div class="card p-4">
   <form method="post">
+    <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
     <div class="mb-3">
       <label class="form-label">Nome do exame</label>
       <input type="text" name="nome" class="form-control" value="{{ exame.nome if exame else '' }}" required>
@@ -26,6 +27,19 @@
       {% if not medicos %}
       <div class="form-text text-danger">Nenhum médico cadastrado nesta clínica ainda. Cadastre um médico na equipe antes de criar exames.</div>
       {% endif %}
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Outros médicos que também atendem este exame (opcional)</label>
+      <div class="form-text mb-1">
+        Ao agendar este exame, será possível escolher qualquer um dos médicos marcados aqui (além do responsável).
+      </div>
+      {% for m in medicos %}
+      <div class="form-check">
+        <input type="checkbox" name="medicos_extra_ids" value="{{ m.id }}" id="medico_extra_{{ m.id }}" class="form-check-input"
+               {% if exame and m in exame.medicos_extra %}checked{% endif %}>
+        <label class="form-check-label" for="medico_extra_{{ m.id }}">{{ m.nome }}</label>
+      </div>
+      {% endfor %}
     </div>
     {% endif %}
     <div class="mb-3">

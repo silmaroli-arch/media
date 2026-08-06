@@ -14,13 +14,31 @@
         {% endfor %}
       </select>
     </div>
+    {% if exame_selecionado and medicos_disponiveis|length > 1 %}
+    <div class="col-md-4">
+      <label class="form-label">Médico</label>
+      <select name="medico_id" class="form-select" onchange="this.form.submit()">
+        {% for m in medicos_disponiveis %}
+        <option value="{{ m.id }}" {% if medico_selecionado and medico_selecionado.id == m.id %}selected{% endif %}>{{ m.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
   </form>
 
   {% if exame_selecionado %}
     {% if sugestoes %}
     <form method="post">
       <input type="hidden" name="exame_id" value="{{ exame_selecionado.id }}">
-      <p>Escolha um dos próximos horários disponíveis com o médico responsável por este exame:</p>
+      <input type="hidden" name="medico_id" value="{{ medico_selecionado.id }}">
+      <p>
+        Escolha um dos próximos horários disponíveis com
+        {% if medicos_disponiveis|length > 1 %}
+          <strong>{{ medico_selecionado.nome }}</strong>:
+        {% else %}
+          o médico responsável por este exame ({{ medico_selecionado.nome }}):
+        {% endif %}
+      </p>
       {% for horario in sugestoes %}
       <div class="form-check mb-2">
         <input class="form-check-input" type="radio" name="horario_escolhido" id="horario_{{ loop.index }}"

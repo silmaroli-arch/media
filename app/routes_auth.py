@@ -47,10 +47,15 @@ def login_paciente():
 
         data_nascimento = None
         if data_nascimento_str:
-            try:
-                data_nascimento = datetime.strptime(data_nascimento_str, "%Y-%m-%d").date()
-            except ValueError:
-                data_nascimento = None
+            # Aceita o formato brasileiro (DD/MM/AAAA, usado pelo campo com
+            # máscara) e, por compatibilidade, o formato ISO (AAAA-MM-DD,
+            # usado antes quando o campo era um <input type="date"> nativo).
+            for formato in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    data_nascimento = datetime.strptime(data_nascimento_str, formato).date()
+                    break
+                except ValueError:
+                    continue
 
         usuario = Usuario.query.filter_by(telefone=telefone, tipo="paciente").first() if telefone else None
 
@@ -181,9 +186,9 @@ def cadastro():
 
         flash(
             f"Empresa '{empresa.nome}' criada com sucesso, com a filial '{filial.nome}'! "
-            "Agora você já pode cadastrar outras filiais, médicos, secretárias e pacientes.",
+            "Vamos te ajudar a deixar tudo pronto para uso.",
             "success",
         )
-        return redirect(url_for("medico.dashboard"))
+        return redirect(url_for("medico.onboarding"))
 
     return render_template("auth/cadastro.html")
