@@ -199,9 +199,87 @@ r = client.post("/cadastro", data={
 texto = r.get_data(as_text=True)
 checar("Cadastro público cria empresa+filial e loga automaticamente", "Painel" in texto)
 checar("Nova filial aparece na navbar", "Filial Única" in texto)
+checar("Cadastro público leva direto para o assistente de configuração inicial", "Configuração inicial da clínica" in texto)
 
 r = client.get("/equipe/pacientes")
 checar("Filial nova começa sem nenhum paciente de outras empresas", "João Pereira" not in r.get_data(as_text=True))
+
+# ---------- Assistente de configuração inicial (wizard) ----------
+
+r = client.get("/equipe/configuracao-inicial")
+texto_wiz = r.get_data(as_text=True)
+checar("Wizard mostra as 4 etapas obrigatórias/opcionais esperadas", all(
+    t in texto_wiz for t in ["Dados da clínica", "Convidar mais gente para a equipe",
+                              "Horário de atendimento do médico", "Primeiro modelo de preparo", "Primeiro exame"]
+))
+checar("Wizard começa com 0 de 5 etapas concluídas", "0 de 5 etapas concluídas" in texto_wiz)
+checar("Etapa de horário começa bloqueada (não há médico ainda)", "Cadastre um médico" in texto_wiz)
+
+r = client.get("/equipe/")
+checar("Painel mostra o aviso de configuração inicial pendente", "configuração inicial da clínica ainda não está completa" in r.get_data(as_text=True))
+
+# Etapa 1: Dados da clínica
+r = client.post("/equipe/clinica/configuracoes", data={
+    "nome": "Filial Única", "telefone": "(27) 99999-0000",
+    "email_contato": "fulano@clinicateste.com",
+    "voltar_onboarding": "1",
+}, follow_redirects=True)
+checar("Salvar dados da clínica com voltar_onboarding=1 volta para o wizard", "Configuração inicial da clínica" in r.get_data(as_text=True))
+checar("Etapa 'Dados da clínica' aparece concluída após salvar", "1 de 5 etapas concluídas" in r.get_data(as_text=True))
+
+# Etapa 2: Convidar mais gente para a equipe (cadastra um médico novo)
+with app.app_context():
+    filial_teste = Clinica.query.filter_by(nome="Filial Única").first()
+    filial_teste_id = filial_teste.id
+
+r = client.post("/equipe/equipe-membros/novo", data={
+    "nome": "Dra. Juliana Wizard", "email": "juliana.wizard2@clinicateste.com",
+    "papel": "medico", "filial_id": filial_teste_id,
+    "voltar_onboarding": "1",
+}, follow_redirects=True)
+texto_wiz = r.get_data(as_text=True)
+checar("Cadastrar médico com voltar_onboarding=1 volta para o wizard", "Configuração inicial da clínica" in texto_wiz)
+checar("Etapa 'equipe' aparece concluída após cadastrar 2º membro", "2 de 5 etapas concluídas" in texto_wiz)
+checar("Etapa de horário deixa de estar bloqueada (já existe médico)", "Cadastre um médico" not in texto_wiz)
+
+with app.app_context():
+    juliana = Usuario.query.filter_by(email="juliana.wizard2@clinicateste.com").first()
+    juliana_id = juliana.id
+
+# Etapa 3: Horário de atendimento do médico
+r = client.post(f"/equipe/medico-horarios/{juliana_id}", data={
+    "dia_0_ativo": "on", "dia_0_inicio": "08:00", "dia_0_fim": "12:00",
+    "voltar_onboarding": "1",
+}, follow_redirects=True)
+texto_wiz = r.get_data(as_text=True)
+checar("Salvar horário com voltar_onboarding=1 volta para o wizard", "Configuração inicial da clínica" in texto_wiz)
+checar("Etapa 'horário' aparece concluída após salvar", "3 de 5 etapas concluídas" in texto_wiz)
+
+# Etapa 4: Primeiro modelo de preparo
+r = client.post("/equipe/preparo-modelos/novo", data={
+    "nome": "Preparo Wizard Teste", "instrucoes": "Jejum de 8 horas antes do exame.",
+    "voltar_onboarding": "1",
+}, follow_redirects=True)
+texto_wiz = r.get_data(as_text=True)
+checar("Salvar modelo de preparo com voltar_onboarding=1 volta para o wizard", "Configuração inicial da clínica" in texto_wiz)
+checar("Etapa 'modelo_preparo' aparece concluída após salvar", "4 de 5 etapas concluídas" in texto_wiz)
+checar("Etapa de exame deixa de estar bloqueada (já existe modelo de preparo)", "Cadastre um modelo de preparo primeiro" not in texto_wiz)
+
+with app.app_context():
+    modelo_wizard = PreparoModelo.query.filter_by(nome="Preparo Wizard Teste").first()
+    modelo_wizard_id = modelo_wizard.id
+
+# Etapa 5: Primeiro exame
+r = client.post("/equipe/exames/novo", data={
+    "nome": "Exame Wizard Teste", "medico_id": juliana_id, "preparo_modelo_id": modelo_wizard_id,
+    "voltar_onboarding": "1",
+}, follow_redirects=True)
+texto_wiz = r.get_data(as_text=True)
+checar("Salvar exame com voltar_onboarding=1 volta para o wizard", "Configuração inicial da clínica" in texto_wiz)
+checar("Todas as 5 etapas concluídas mostram a mensagem de conclusão", "Configuração inicial concluída!" in texto_wiz)
+
+r = client.get("/equipe/")
+checar("Aviso de configuração pendente some do Painel quando tudo está concluído", "configuração inicial da clínica ainda não está completa" not in r.get_data(as_text=True))
 
 client.get("/logout")
 

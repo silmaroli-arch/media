@@ -69,6 +69,17 @@ def _parse_data_nascimento(valor_str):
     return None
 
 
+def _destino_pos_onboarding(endpoint_padrao, **kwargs):
+    """Usado pelos formulários de cadastro que também são acessados a
+    partir do assistente de configuração inicial (ver medico.onboarding).
+    Quando a pessoa chegou à tela vindo do assistente (campo oculto
+    "voltar_onboarding"), volta para lá em vez de ir para o destino normal
+    daquele formulário — assim o fluxo guiado continua de onde parou."""
+    if request.form.get("voltar_onboarding") == "1":
+        return redirect(url_for("medico.onboarding"))
+    return redirect(url_for(endpoint_padrao, **kwargs))
+
+
 def staff_required(f):
     """Garante que o usuário é da equipe (médico/secretária) e que já tem
     uma clínica selecionada na sessão. Se tiver mais de uma clínica e
@@ -125,6 +136,67 @@ def eh_medico():
 def medicos_da_clinica(clinica):
     """Lista os médicos (usuários) vinculados e ativos nesta clínica."""
     return [m for m in clinica.medicos_e_secretarias if m.tipo == "medico"]
+
+
+def status_configuracao_inicial(clinica):
+    """Calcula, a partir dos dados que já existem no banco (sem guardar
+    nenhum estado de "assistente" à parte), quais das etapas sugeridas na
+    configuração inicial da clínica já foram feitas. Usado tanto pela tela
+    do assistente (medico.onboarding) quanto pelo aviso mostrado no Painel
+    enquanto a configuração não estiver completa — por ser calculado a
+    partir dos dados reais, permanece correto mesmo que a pessoa pule
+    etapas e preencha as coisas por fora do assistente, em outra ordem."""
+    tem_medico = len(medicos_da_clinica(clinica)) > 0
+    tem_horario = MedicoHorario.query.filter_by(clinica_id=clinica.id, ativo=True).first() is not None
+    tem_mais_gente = ClinicaMembro.query.filter_by(clinica_id=clinica.id, ativo=True).count() > 1
+    tem_modelo_preparo = PreparoModelo.query.filter_by(clinica_id=clinica.id).first() is not None
+    tem_exame = Exame.query.filter_by(clinica_id=clinica.id).first() is not None
+
+    etapas = [
+        {
+            "id": "dados_clinica",
+            "titulo": "Dados da clínica",
+            "descricao": "Endereço, CNPJ e telefone/e-mail de contato da clínica.",
+            "concluida": bool(clinica.telefone and clinica.email_contato),
+            "endpoint": "medico.clinica_configuracoes",
+            "permissao": "perm_dados_clinica",
+        },
+        {
+            "id": "equipe",
+            "titulo": "Convidar mais gente para a equipe",
+            "descricao": "Adicione outra secretária ou médico, se houver — esta etapa é totalmente opcional.",
+            "concluida": tem_mais_gente,
+            "endpoint": "medico.equipe_novo",
+            "permissao": "perm_equipe",
+            "opcional": True,
+        },
+        {
+            "id": "horario",
+            "titulo": "Horário de atendimento do médico",
+            "descricao": "Necessário para o sistema sugerir horários automaticamente na hora de agendar.",
+            "concluida": tem_horario,
+            "endpoint": "medico.medico_horarios",
+            "bloqueada": not tem_medico,
+            "motivo_bloqueio": "Cadastre um médico na etapa \"Convidar mais gente para a equipe\" primeiro.",
+        },
+        {
+            "id": "modelo_preparo",
+            "titulo": "Primeiro modelo de preparo",
+            "descricao": "As instruções (cortes de alimentação, medicamentos, etc.) que o paciente vai ver.",
+            "concluida": tem_modelo_preparo,
+            "endpoint": "medico.preparo_modelos_novo",
+        },
+        {
+            "id": "exame",
+            "titulo": "Primeiro exame",
+            "descricao": "Vincula um exame a um modelo de preparo e a um médico responsável — sem isso, ainda não há nada para agendar.",
+            "concluida": tem_exame,
+            "endpoint": "medico.exames_novo",
+            "bloqueada": not tem_modelo_preparo,
+            "motivo_bloqueio": "Cadastre um modelo de preparo primeiro.",
+        },
+    ]
+    return etapas
 
 
 # ---------- Seleção de clínica ----------
@@ -206,6 +278,30 @@ def dashboard():
         pendentes=pendentes,
         solicitacoes_pendentes=solicitacoes_pendentes,
         agendamentos=agendamentos,
+        etapas_configuracao_inicial=[e for e in status_configuracao_inicial(clinica) if not e["concluida"] and not e.get("opcional")],
+    )
+
+
+@medico_bp.route("/configuracao-inicial")
+@login_required
+@staff_required
+def onboarding():
+    """Assistente de configuração inicial, mostrado logo após a empresa se
+    cadastrar (ver auth.cadastro) e também acessível a qualquer momento
+    pelo aviso no Painel — reúne, num só lugar, as etapas sugeridas para
+    deixar a clínica pronta para uso. Nenhuma etapa é obrigatória: cada
+    uma só linka para a tela real (Dados da clínica, Equipe, Horário de
+    atendimento, Modelos de preparo, Exames), que continua funcionando
+    normalmente por fora do assistente também."""
+    clinica = clinica_atual()
+    etapas = status_configuracao_inicial(clinica)
+    concluidas = sum(1 for e in etapas if e["concluida"])
+    return render_template(
+        "medico/onboarding.html",
+        clinica=clinica,
+        etapas=etapas,
+        concluidas=concluidas,
+        total=len(etapas),
     )
 
 
@@ -418,7 +514,7 @@ def exames_novo():
         db.session.commit()
 
         flash("Exame cadastrado com sucesso.", "success")
-        return redirect(url_for("medico.exames_lista"))
+        return _destino_pos_onboarding("medico.exames_lista")
 
     return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
@@ -667,7 +763,7 @@ def preparo_modelos_novo():
         db.session.commit()
 
         flash("Modelo de preparo cadastrado com sucesso.", "success")
-        return redirect(url_for("medico.preparo_modelos_lista"))
+        return _destino_pos_onboarding("medico.preparo_modelos_lista")
 
     return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
@@ -1113,7 +1209,7 @@ def medico_horarios(medico_id=None):
 
         db.session.commit()
         flash(f"Horário de atendimento de {medico_alvo.nome} atualizado.", "success")
-        return redirect(url_for("medico.medico_horarios", medico_id=medico_alvo.id))
+        return _destino_pos_onboarding("medico.medico_horarios", medico_id=medico_alvo.id)
 
     horarios_por_dia = {
         h.dia_semana: h
@@ -1621,7 +1717,7 @@ def clinica_configuracoes(filial_id=None):
 
         db.session.commit()
         flash("Dados da clínica atualizados com sucesso.", "success")
-        return redirect(url_for("medico.clinica_configuracoes", filial_id=clinica.id))
+        return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
 
     return render_template(
         "medico/clinica_configuracoes.html",
@@ -1741,13 +1837,13 @@ def equipe_novo():
             ).first()
             if vinculo_existente:
                 flash("Esse usuário já faz parte dessa filial.", "warning")
-                return redirect(url_for("medico.equipe_lista"))
+                return _destino_pos_onboarding("medico.equipe_lista")
 
             vinculo = ClinicaMembro(clinica_id=filial.id, usuario_id=usuario_existente.id, ativo=True)
             db.session.add(vinculo)
             db.session.commit()
             flash(f"{usuario_existente.nome} foi vinculado(a) à filial '{filial.nome}'.", "success")
-            return redirect(url_for("medico.equipe_lista"))
+            return _destino_pos_onboarding("medico.equipe_lista")
 
         # Conta nova
         if not nome:
@@ -1776,7 +1872,7 @@ def equipe_novo():
             f"{nome} cadastrado(a) como {papel} na filial '{filial.nome}'. Senha de acesso inicial: {senha_final}",
             "success",
         )
-        return redirect(url_for("medico.equipe_lista"))
+        return _destino_pos_onboarding("medico.equipe_lista")
 
     return render_template("medico/equipe_form.html", filiais=filiais)
 

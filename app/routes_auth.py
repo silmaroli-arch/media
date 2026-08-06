@@ -186,9 +186,9 @@ def cadastro():
 
         flash(
             f"Empresa '{empresa.nome}' criada com sucesso, com a filial '{filial.nome}'! "
-            "Agora você já pode cadastrar outras filiais, médicos, secretárias e pacientes.",
+            "Vamos te ajudar a deixar tudo pronto para uso.",
             "success",
         )
-        return redirect(url_for("medico.dashboard"))
+        return redirect(url_for("medico.onboarding"))
 
     return render_template("auth/cadastro.html")

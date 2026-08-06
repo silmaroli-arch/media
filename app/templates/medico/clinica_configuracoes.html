@@ -5,6 +5,7 @@
 <p class="text-muted mb-4">Essas informações podem ser alteradas a qualquer momento.</p>
 
 <form method="post">
+  <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
   <div class="card p-4 mb-4">
     <h5 class="mb-3">Dados gerais</h5>
     <div class="row g-3">

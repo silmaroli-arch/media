@@ -3,6 +3,18 @@
 {% block conteudo %}
 <h3 class="mb-1">{% if current_user.tipo == "medico" %}Meu painel{% else %}Painel da secretaria{% endif %}</h3>
 <p class="text-muted mb-4">{{ clinica.nome }}</p>
+
+{% if etapas_configuracao_inicial and current_user.perm_dados_clinica %}
+<div class="alert alert-warning d-flex justify-content-between align-items-center">
+  <div>
+    <strong>A configuração inicial da clínica ainda não está completa.</strong>
+    Faltam {{ etapas_configuracao_inicial|length }} etapa{{ 's' if etapas_configuracao_inicial|length != 1 else '' }}:
+    {{ etapas_configuracao_inicial|map(attribute='titulo')|join(', ') }}.
+  </div>
+  <a href="{{ url_for('medico.onboarding') }}" class="btn btn-sm btn-warning text-nowrap ms-3">Continuar configuração &rarr;</a>
+</div>
+{% endif %}
+
 <div class="row g-3 mb-4">
   <div class="col-md-3">
     <div class="card p-3">

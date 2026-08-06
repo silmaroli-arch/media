@@ -20,6 +20,7 @@
 {% endif %}
 
 <form method="post">
+  <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
   <div class="card p-4">
     {% for dia_idx, dia_nome in dias_semana %}
       {% set horario = horarios_por_dia.get(dia_idx) %}
