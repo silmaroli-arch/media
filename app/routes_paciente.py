@@ -7,6 +7,7 @@ from flask import (
     current_app, abort,
 )
 from flask_login import login_required, current_user, logout_user
+from sqlalchemy import or_
 
 from app.extensions import db
 from app.models import Agendamento, Exame, PerguntaPendente, FaqItem, ChatMensagem, Usuario, MedicoHorario
@@ -49,15 +50,21 @@ def paciente_required(f):
 @paciente_required
 def dashboard():
     paciente = current_user.paciente
+    agora = datetime.utcnow()
+    # "Próximos exames" só mostra o que ainda está de pé e no futuro.
+    # Cancelado ou realizado vai para o Histórico independente da data —
+    # mesmo um agendamento cancelado que estava marcado para o futuro não
+    # é mais um "próximo exame" de verdade.
     proximos = (
         Agendamento.query.filter_by(paciente_id=paciente.id)
-        .filter(Agendamento.data_hora >= datetime.utcnow())
+        .filter(Agendamento.data_hora >= agora)
+        .filter(Agendamento.status.in_(["solicitado", "agendado", "confirmado"]))
         .order_by(Agendamento.data_hora.asc())
         .all()
     )
     historico = (
         Agendamento.query.filter_by(paciente_id=paciente.id)
-        .filter(Agendamento.data_hora < datetime.utcnow())
+        .filter(or_(Agendamento.status.in_(["cancelado", "realizado"]), Agendamento.data_hora < agora))
         .order_by(Agendamento.data_hora.desc())
         .all()
     )
