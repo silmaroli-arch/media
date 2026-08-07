@@ -792,6 +792,18 @@ class Pagamento(db.Model):
     registrado_por = db.Column(db.String(150))
     pago_em = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Emissão de NFS-e para este pagamento — ver app/nfse_nacional.py.
+    # status: nao_emitida, simulada (modo simulação, sem valor fiscal),
+    # assinada_pendente_envio (DPS assinado mas o envio automático ao
+    # Ambiente de Dados Nacional falhou/não foi confirmado), enviada.
+    nfse_status = db.Column(db.String(30), default="nao_emitida")
+    nfse_numero_dps = db.Column(db.Integer)
+    nfse_numero = db.Column(db.String(30))
+    nfse_codigo_verificacao = db.Column(db.String(60))
+    nfse_xml_assinado = db.Column(db.Text)
+    nfse_erro = db.Column(db.Text)
+    nfse_emitida_em = db.Column(db.DateTime)
+
     agendamento = db.relationship("Agendamento", back_populates="pagamento")
     desconto = db.relationship("DescontoConfig")
 

@@ -126,6 +126,15 @@ ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_rps_proximo_numero INTEGER;
 -- da junção (ver app.ia_preparo.responder_com_ia e medico/perguntas.html).
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_claude TEXT;
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_chatgpt TEXT;
+
+-- Emissao de NFS-e por pagamento (ver app/nfse_nacional.py).
+ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_status VARCHAR(30) DEFAULT 'nao_emitida';
+ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_numero_dps INTEGER;
+ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_numero VARCHAR(30);
+ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_codigo_verificacao VARCHAR(60);
+ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_xml_assinado TEXT;
+ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_erro TEXT;
+ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_emitida_em TIMESTAMP;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

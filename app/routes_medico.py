@@ -26,6 +26,7 @@ from app.pdf_preparo import extrair_sugestao_de_pdf
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.agendamento_otimizador import sugerir_horarios, medico_tem_bloqueio
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
+from app.nfse_nacional import emitir_nfse, ErroEmissaoNfse
 from cryptography.hazmat.primitives.serialization import pkcs12
 
 # Dias da semana usados no formulário de horário de atendimento por médico.
