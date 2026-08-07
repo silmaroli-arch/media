@@ -1561,6 +1561,60 @@ def pagamento_comprovante(agendamento_id):
     return render_template("medico/pagamento_comprovante.html", agendamento=agendamento, clinica=clinica)
 
 
+@medico_bp.route("/agenda/<int:agendamento_id>/pagamento/emitir-nfse", methods=["POST"])
+@login_required
+@staff_required
+@permissao_required("perm_dados_clinica")
+def pagamento_emitir_nfse(agendamento_id):
+    """Emite a NFS-e do pagamento já registrado (ver app/nfse_nacional.py
+    para o fluxo completo: monta o DPS, assina com o certificado da
+    clínica e tenta enviar ao Ambiente de Dados Nacional). Em modo
+    simulação, nada é assinado nem enviado — só marca a nota como
+    simulada, sem valor fiscal, pra testar o fluxo de tela."""
+    clinica = clinica_atual()
+    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    if eh_medico():
+        filtros["medico_id"] = current_user.id
+    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+    pagamento = agendamento.pagamento
+    if not pagamento:
+        flash("Registre o pagamento antes de emitir a nota fiscal.", "danger")
+        return redirect(url_for("medico.pagamento_registrar", agendamento_id=agendamento.id))
+
+    try:
+        resultado = emitir_nfse(clinica, agendamento.paciente, agendamento, pagamento)
+    except ErroEmissaoNfse as erro:
+        flash(str(erro), "danger")
+        return redirect(url_for("medico.pagamento_comprovante", agendamento_id=agendamento.id))
+    except Exception as erro:
+        flash(f"Erro inesperado ao emitir a NFS-e: {erro}", "danger")
+        return redirect(url_for("medico.pagamento_comprovante", agendamento_id=agendamento.id))
+
+    pagamento.nfse_status = resultado["status"]
+    pagamento.nfse_numero_dps = resultado["numero_dps"]
+    pagamento.nfse_numero = resultado.get("numero_nfse")
+    pagamento.nfse_codigo_verificacao = resultado.get("codigo_verificacao")
+    pagamento.nfse_xml_assinado = resultado.get("xml_assinado")
+    pagamento.nfse_erro = resultado.get("erro")
+    pagamento.nfse_emitida_em = datetime.utcnow()
+    clinica.fiscal_rps_proximo_numero = resultado["numero_dps"]
+    db.session.commit()
+
+    if resultado["status"] == "simulada":
+        flash("NFS-e simulada com sucesso (modo simulação — sem valor fiscal).", "success")
+    elif resultado["status"] == "enviada":
+        flash("DPS assinado e enviado ao Ambiente de Dados Nacional com sucesso.", "success")
+    else:
+        flash(
+            "DPS assinado com o certificado da clínica, mas o envio automático ao Ambiente de "
+            "Dados Nacional falhou (" + (resultado.get("erro") or "motivo desconhecido") +
+            "). O XML assinado foi salvo — copie-o abaixo se precisar enviar manualmente pelo "
+            "emissor web da prefeitura/ADN.",
+            "warning",
+        )
+    return redirect(url_for("medico.pagamento_comprovante", agendamento_id=agendamento.id))
+
+
 # ---------- Perguntas pendentes (aprendizado da "IA") ----------
 
 @medico_bp.route("/perguntas")

@@ -27,4 +27,51 @@
   <p class="text-muted small mb-0">Registrado por {{ agendamento.pagamento.registrado_por }} em {{ agendamento.pagamento.pago_em.strftime('%d/%m/%Y %H:%M') }}.</p>
   <p class="text-muted small mt-3">Este comprovante não substitui uma nota fiscal.</p>
 </div>
+
+<div class="card p-4 mt-3 no-print" style="max-width: 700px;">
+  <h5 class="mb-2">Nota fiscal (NFS-e)</h5>
+
+  {% set nfse = agendamento.pagamento %}
+  {% if nfse.nfse_status == 'simulada' %}
+    <div class="alert alert-warning mb-3">
+      <strong>NFS-e simulada</strong> (modo simulação — sem valor fiscal).<br>
+      Número simulado: {{ nfse.nfse_numero }}<br>
+      Emitida em {{ nfse.nfse_emitida_em.strftime('%d/%m/%Y %H:%M') if nfse.nfse_emitida_em else '-' }}.
+    </div>
+  {% elif nfse.nfse_status == 'enviada' %}
+    <div class="alert alert-success mb-3">
+      <strong>DPS assinado e enviado ao Ambiente de Dados Nacional.</strong><br>
+      Emitida em {{ nfse.nfse_emitida_em.strftime('%d/%m/%Y %H:%M') if nfse.nfse_emitida_em else '-' }}.
+    </div>
+  {% elif nfse.nfse_status == 'assinada_pendente_envio' %}
+    <div class="alert alert-secondary mb-3">
+      <strong>DPS assinado com o certificado da clínica, mas o envio automático ainda não foi confirmado.</strong><br>
+      {{ nfse.nfse_erro }}
+      <details class="mt-2">
+        <summary class="small">Ver XML assinado (para envio manual)</summary>
+        <textarea class="form-control mt-2" rows="8" readonly>{{ nfse.nfse_xml_assinado }}</textarea>
+      </details>
+    </div>
+  {% else %}
+    <p class="text-muted small">Nenhuma NFS-e emitida para este pagamento ainda.</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('medico.pagamento_emitir_nfse', agendamento_id=agendamento.id) }}" onsubmit="return confirm('Emitir a NFS-e deste pagamento?');">
+    <button type="submit" class="btn btn-dark" id="btn-emitir-nfse">
+      {% if nfse.nfse_status in ('nao_emitida', None) %}Emitir NFS-e{% else %}Emitir novamente{% endif %}
+    </button>
+    {% if clinica.fiscal_modo_simulacao %}
+      <span class="text-muted small ms-2">Modo simulação ligado — nenhum valor fiscal real será gerado.</span>
+    {% endif %}
+  </form>
+</div>
+
+<script>
+  var formNfse = document.querySelector('form[action*="emitir-nfse"]');
+  if (formNfse) {
+    formNfse.addEventListener('submit', function () {
+      document.getElementById('btn-emitir-nfse').disabled = true;
+    });
+  }
+</script>
 {% endblock %}
