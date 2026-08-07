@@ -184,6 +184,14 @@ document.addEventListener('DOMContentLoaded', function () {
       list: 'Lista'
     },
     height: 650,
+    // Deixa o numero do dia (e o nome do dia da semana) clicavel na visao
+    // de mes - ao clicar, pula direto pra visao de semana do dia
+    // escolhido, em vez do padrao do FullCalendar (que iria pra visao de
+    // UM dia so, que essa agenda nem oferece como botao).
+    navLinks: true,
+    navLinkDayClick: function (data) {
+      calendario.changeView('timeGridWeek', data);
+    },
     events: "{{ url_for('medico.agenda_eventos') }}",
     eventClick: function (info) {
       var props = info.event.extendedProps;

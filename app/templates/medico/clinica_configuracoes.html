@@ -19,11 +19,11 @@
       </div>
       <div class="col-md-6">
         <label class="form-label">CNPJ</label>
-        <input type="text" name="cnpj" class="form-control" value="{{ clinica.cnpj or '' }}" placeholder="00.000.000/0000-00">
+        <input type="text" inputmode="numeric" name="cnpj" id="cnpj" class="form-control" value="{{ clinica.cnpj or '' }}" placeholder="00.000.000/0000-00">
       </div>
       <div class="col-md-3">
         <label class="form-label">Telefone *</label>
-        <input type="text" name="telefone" class="form-control" value="{{ clinica.telefone or '' }}" required>
+        <input type="text" inputmode="numeric" name="telefone" id="telefone_clinica" class="form-control" value="{{ clinica.telefone or '' }}" placeholder="(27) 99999-9999" required>
       </div>
       <div class="col-md-3">
         <label class="form-label">E-mail de contato *</label>
@@ -37,7 +37,7 @@
     <div class="row g-3">
       <div class="col-md-3">
         <label class="form-label">CEP</label>
-        <input type="text" name="cep" class="form-control" value="{{ clinica.cep or '' }}" placeholder="00000-000">
+        <input type="text" inputmode="numeric" name="cep" id="cep_clinica" class="form-control" value="{{ clinica.cep or '' }}" placeholder="00000-000">
       </div>
       <div class="col-md-6">
         <label class="form-label">Rua</label>
@@ -99,4 +99,42 @@
 
   <button type="submit" class="btn btn-primary">Salvar</button>
 </form>
+
+<script>
+  // Mascara fixa (mesma logica do cadastro de paciente e do novo
+  // agendamento - ver app/templates/medico/pacientes_form.html): enquanto
+  // a pessoa digita, os digitos ainda nao preenchidos ficam marcados com
+  // "_". Nenhum desses campos pode ter "maxlength" no HTML, porque a
+  // mascara ja mostra o padrao inteiro (com os "_") desde o primeiro
+  // digito.
+  function aplicarMascaraFixa(campo, padrao) {
+    if (!campo) return;
+    var maxDigitos = (padrao.match(/9/g) || []).length;
+    campo.addEventListener('input', function () {
+      var digitos = campo.value.replace(/\D/g, '').slice(0, maxDigitos);
+      if (!digitos) {
+        campo.value = '';
+        return;
+      }
+      var resultado = '';
+      var pos = 0;
+      var i;
+      for (i = 0; i < padrao.length && pos < digitos.length; i++) {
+        if (padrao[i] === '9') {
+          resultado += digitos[pos];
+          pos++;
+        } else {
+          resultado += padrao[i];
+        }
+      }
+      for (var j = i; j < padrao.length; j++) {
+        resultado += padrao[j] === '9' ? '_' : padrao[j];
+      }
+      campo.value = resultado;
+    });
+  }
+  aplicarMascaraFixa(document.getElementById('cnpj'), '99.999.999/9999-99');
+  aplicarMascaraFixa(document.getElementById('telefone_clinica'), '(99) 99999-9999');
+  aplicarMascaraFixa(document.getElementById('cep_clinica'), '99999-999');
+</script>
 {% endblock %}
