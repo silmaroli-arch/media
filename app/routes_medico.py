@@ -1737,6 +1737,136 @@ def clinica_configuracoes(filial_id=None):
     )
 
 
+@medico_bp.route("/clinica/emissao-fiscal", methods=["POST"])
+@medico_bp.route("/clinica/emissao-fiscal/<int:filial_id>", methods=["POST"])
+@login_required
+@staff_required
+@permissao_required("perm_dados_clinica")
+def clinica_emissao_fiscal(filial_id=None):
+    """Salva a configuração de emissão de NFC-e (ambiente, provedor,
+    série/numeração, código CSC) — separado do formulário principal de
+    "Dados da clínica" porque fica em outro <form> na mesma página (ver
+    medico/clinica_configuracoes.html). O upload do certificado digital em
+    si tem sua própria rota, `clinica_certificado_upload`, abaixo."""
+    clinica_sessao = clinica_atual()
+    if filial_id:
+        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=clinica_sessao.empresa_id).first_or_404()
+    else:
+        clinica = clinica_sessao
+
+    clinica.fiscal_ambiente = request.form.get("fiscal_ambiente", "homologacao").strip() or "homologacao"
+    clinica.fiscal_modo_simulacao = request.form.get("fiscal_modo_simulacao") == "on"
+    clinica.fiscal_simular_falha_conexao = request.form.get("fiscal_simular_falha_conexao") == "on"
+
+    clinica.fiscal_provedor_emissao = request.form.get("fiscal_provedor_emissao", "nenhum").strip() or "nenhum"
+
+    # Os campos abaixo são segredos (token do provedor, código CSC) — o
+    # formulário nunca mostra o valor real de volta (só um placeholder com
+    # pontos), então só regravamos quando a pessoa realmente digita algo
+    # novo. Deixar em branco mantém o valor já salvo sem alteração.
+    token_novo = request.form.get("fiscal_provedor_token_api", "").strip()
+    if token_novo:
+        clinica.fiscal_provedor_token_cripto = criptografar_texto(token_novo)
+
+    serie = request.form.get("fiscal_nfce_serie", "").strip()
+    clinica.fiscal_nfce_serie = int(serie) if serie.isdigit() else None
+
+    proximo_numero = request.form.get("fiscal_nfce_proximo_numero", "").strip()
+    clinica.fiscal_nfce_proximo_numero = int(proximo_numero) if proximo_numero.isdigit() else None
+
+    clinica.fiscal_csc_id_token = request.form.get("fiscal_csc_id_token", "").strip()
+
+    csc_novo = request.form.get("fiscal_csc_codigo", "").strip()
+    if csc_novo:
+        clinica.fiscal_csc_codigo_cripto = criptografar_texto(csc_novo)
+
+    db.session.commit()
+    flash("Dados fiscais de emissão atualizados com sucesso.", "success")
+    return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+
+
+@medico_bp.route("/clinica/certificado", methods=["POST"])
+@medico_bp.route("/clinica/certificado/<int:filial_id>", methods=["POST"])
+@login_required
+@staff_required
+@permissao_required("perm_dados_clinica")
+def clinica_certificado_upload(filial_id=None):
+    """Recebe o certificado digital e-CNPJ (.pfx/.p12) e a senha dele,
+    valida que o arquivo realmente abre com essa senha (usando a biblioteca
+    `cryptography`) e só então salva — o arquivo e a senha ficam
+    criptografados no banco (ver app/cripto_fiscal.py), nunca em texto
+    puro nem em disco."""
+    clinica_sessao = clinica_atual()
+    if filial_id:
+        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=clinica_sessao.empresa_id).first_or_404()
+    else:
+        clinica = clinica_sessao
+
+    arquivo = request.files.get("certificado_arquivo")
+    senha = request.form.get("certificado_senha", "")
+
+    if not arquivo or not arquivo.filename:
+        flash("Selecione o arquivo do certificado (.pfx) antes de enviar.", "danger")
+        return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+
+    if not senha:
+        flash("Informe a senha do certificado.", "danger")
+        return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+
+    conteudo = arquivo.read()
+    # Um certificado .pfx/.p12 normal tem poucos KB — um arquivo muito
+    # maior do que isso quase certamente não é um certificado válido, então
+    # rejeitamos antes mesmo de tentar abrir (evita gastar memória com um
+    # upload indevido).
+    if len(conteudo) > 5 * 1024 * 1024:
+        flash("Arquivo muito grande para ser um certificado válido.", "danger")
+        return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+
+    try:
+        _chave_privada, certificado, _cadeia = pkcs12.load_key_and_certificates(
+            conteudo, senha.encode("utf-8")
+        )
+    except Exception:
+        flash(
+            "Não foi possível abrir o certificado — verifique se o arquivo "
+            "é um .pfx/.p12 válido e se a senha está correta.",
+            "danger",
+        )
+        return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+
+    if certificado is None:
+        flash("O arquivo enviado não contém um certificado válido.", "danger")
+        return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+
+    # Tentativa (best-effort) de extrair o CNPJ a partir do "Common Name" do
+    # certificado — certificados e-CNPJ da ICP-Brasil costumam trazer o
+    # CNPJ (14 dígitos) ali, no formato "RAZAO SOCIAL:CNPJ". Serve só para
+    # exibição na tela; se não conseguir extrair, o certificado é salvo do
+    # mesmo jeito.
+    cnpj_extraido = None
+    try:
+        cn = certificado.subject.rfc4514_string()
+        digitos = re.findall(r"\d{14}", cn)
+        if digitos:
+            cnpj_extraido = digitos[0]
+    except Exception:
+        cnpj_extraido = None
+
+    if hasattr(certificado, "not_valid_after_utc"):
+        validade = certificado.not_valid_after_utc.date()
+    else:
+        validade = certificado.not_valid_after.date()
+
+    clinica.fiscal_certificado_pfx = criptografar_bytes(conteudo)
+    clinica.fiscal_certificado_senha_cripto = criptografar_texto(senha)
+    clinica.fiscal_certificado_cnpj = cnpj_extraido
+    clinica.fiscal_certificado_validade = validade
+    db.session.commit()
+
+    flash("Certificado digital validado e salvo com sucesso.", "success")
+    return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+
+
 # ---------- Filiais da empresa ----------
 
 @medico_bp.route("/filiais")
