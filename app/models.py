@@ -814,3 +814,25 @@ class PerguntaPendente(db.Model):
     clinica = db.relationship("Clinica")
     paciente = db.relationship("Paciente", back_populates="perguntas_pendentes")
     exame = db.relationship("Exame")
+
+
+class HistoricoDeploy(db.Model):
+    """Um registro por deploy realizado neste ambiente (media-dev, media-qa
+    ou media-prod - cada um tem seu proprio banco, entao cada um acumula
+    seu proprio historico). E preenchido automaticamente pelo proprio app
+    na inicializacao (ver app._registrar_deploy_atual em app/__init__.py)
+    lendo o deploy_info.json gerado pelo pipeline do GitHub Actions (ver
+    .github/workflows/deploy.yml) - nao precisa de nenhuma acao manual.
+
+    Serve so para mostrar "o que mudou" na tela de login (ver
+    versao_info/historico_deploy no context processor) - nao tem nenhum
+    dado sensivel de paciente/clinica."""
+    __tablename__ = "historico_deploy"
+
+    id = db.Column(db.Integer, primary_key=True)
+    commit = db.Column(db.String(64), unique=True, nullable=False)
+    commit_curto = db.Column(db.String(16))
+    branch = db.Column(db.String(50))
+    mensagem = db.Column(db.Text)
+    deploy_em = db.Column(db.DateTime)
+    registrado_em = db.Column(db.DateTime, default=datetime.utcnow)

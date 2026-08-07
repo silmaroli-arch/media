@@ -10,10 +10,22 @@ from app.extensions import db, login_manager
 load_dotenv()  # lê variáveis do arquivo .env, se existir
 
 
+def _formatar_data_br(dt_utc):
+    """Formata um datetime em UTC (sem timezone, como vem do banco) para o
+    horário de Brasília (usado pela equipe) — mesmo formato usado tanto no
+    rodapé "último deploy" quanto no histórico de versões da tela de
+    login."""
+    if not dt_utc:
+        return "desconhecido"
+    dt_br = dt_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("America/Sao_Paulo"))
+    return dt_br.strftime("%d/%m/%Y %H:%M") + " (horário de Brasília)"
+
+
 def _carregar_info_deploy(base_dir: str):
     """Lê o arquivo "deploy_info.json" (gerado automaticamente pelo pipeline
     de deploy do GitHub Actions, ver .github/workflows/deploy.yml) para saber
-    qual commit e em que horário este ambiente foi publicado por último.
+    qual commit, mensagem e em que horário este ambiente foi publicado por
+    último.
 
     Em desenvolvimento local (ou se o arquivo não existir por qualquer
     motivo) simplesmente não mostra nada — não é um erro."""
@@ -24,22 +36,75 @@ def _carregar_info_deploy(base_dir: str):
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return None
 
-    deploy_em_local = info.get("deploy_em")
-    if deploy_em_local:
+    deploy_em_iso = info.get("deploy_em")
+    deploy_em_dt = None
+    if deploy_em_iso:
         try:
-            # O pipeline grava o horário em UTC - convertemos para o
-            # horário de Brasília (usado pela equipe), em vez de mostrar UTC.
-            dt_utc = datetime.fromisoformat(deploy_em_local.replace("Z", "+00:00"))
-            dt_br = dt_utc.astimezone(ZoneInfo("America/Sao_Paulo"))
-            deploy_em_local = dt_br.strftime("%d/%m/%Y %H:%M") + " (horário de Brasília)"
+            # O pipeline grava o horário em UTC.
+            deploy_em_dt = datetime.fromisoformat(deploy_em_iso.replace("Z", "+00:00")).replace(tzinfo=None)
         except ValueError:
             pass
 
     return {
+        "commit": info.get("commit"),
         "commit_curto": info.get("commit_curto", "?"),
         "branch": info.get("branch", "?"),
-        "deploy_em_local": deploy_em_local or "desconhecido",
+        "mensagem": info.get("mensagem"),
+        "deploy_em_dt": deploy_em_dt,
+        "deploy_em_local": _formatar_data_br(deploy_em_dt) if deploy_em_dt else (deploy_em_iso or "desconhecido"),
     }
+
+
+def _registrar_deploy_atual(info_deploy):
+    """Grava uma linha no histórico de versões (tabela historico_deploy) na
+    primeira vez que o app sobe depois de um deploy novo neste ambiente —
+    a dedupe é pelo hash do commit, então reinícios do mesmo deploy (sem
+    commit novo) não duplicam a linha. Cada ambiente (media-dev, media-qa,
+    media-prod) tem seu próprio banco, então acumula seu próprio
+    histórico. Roda dentro do app_context, depois do db.create_all() (ver
+    create_app), então a tabela já existe."""
+    if not info_deploy or not info_deploy.get("commit"):
+        return
+    from app.models import HistoricoDeploy
+    try:
+        ja_existe = HistoricoDeploy.query.filter_by(commit=info_deploy["commit"]).first()
+        if ja_existe:
+            return
+        db.session.add(HistoricoDeploy(
+            commit=info_deploy["commit"],
+            commit_curto=info_deploy.get("commit_curto"),
+            branch=info_deploy.get("branch"),
+            mensagem=info_deploy.get("mensagem"),
+            deploy_em=info_deploy.get("deploy_em_dt"),
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
+def _carregar_historico_deploy(limite=10):
+    """Últimos N deploys registrados neste ambiente, mais recente primeiro
+    — usado só para mostrar "o que foi publicado" na tela de login, ao
+    lado da data do último deploy."""
+    from app.models import HistoricoDeploy
+    try:
+        registros = (
+            HistoricoDeploy.query
+            .order_by(HistoricoDeploy.deploy_em.desc().nullslast(), HistoricoDeploy.id.desc())
+            .limit(limite)
+            .all()
+        )
+    except Exception:
+        return []
+    return [
+        {
+            "commit_curto": r.commit_curto,
+            "branch": r.branch,
+            "mensagem": r.mensagem,
+            "deploy_em_local": _formatar_data_br(r.deploy_em),
+        }
+        for r in registros
+    ]
 
 
 def _resolver_uri_banco(base_dir: str) -> str:
@@ -80,14 +145,6 @@ def create_app():
     }
 
     info_deploy = _carregar_info_deploy(base_dir)
-
-    @app.context_processor
-    def injetar_info_deploy():
-        # Disponível em TODOS os templates (não só para quem está logado),
-        # para dar para checar se o deploy automático rodou até na tela de
-        # login. Lido uma única vez na inicialização do app, não a cada
-        # requisição.
-        return {"versao_info": info_deploy}
 
     db.init_app(app)
     login_manager.init_app(app)
@@ -148,5 +205,15 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        _registrar_deploy_atual(info_deploy)
+        historico_deploy_lista = _carregar_historico_deploy()
+
+    @app.context_processor
+    def injetar_info_deploy():
+        # Disponível em TODOS os templates (não só para quem está logado),
+        # para dar para checar se o deploy automático rodou até na tela de
+        # login. Lido uma única vez na inicialização do app, não a cada
+        # requisição.
+        return {"versao_info": info_deploy, "historico_deploy": historico_deploy_lista}
 
     return app

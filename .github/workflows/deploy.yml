@@ -24,7 +24,19 @@ jobs:
 
       - name: Gerar informações de versão/deploy
         run: |
-          echo "{\"commit\": \"${{ github.sha }}\", \"commit_curto\": \"$(echo ${{ github.sha }} | cut -c1-7)\", \"branch\": \"${{ github.ref_name }}\", \"deploy_em\": \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"}" > deploy_info.json
+          python3 -c "
+          import json, subprocess
+          mensagem = subprocess.run(
+              ['git', 'log', '-1', '--pretty=%s'], capture_output=True, text=True
+          ).stdout.strip()
+          json.dump({
+              'commit': '${{ github.sha }}',
+              'commit_curto': '${{ github.sha }}'[:7],
+              'branch': '${{ github.ref_name }}',
+              'mensagem': mensagem,
+              'deploy_em': '$(date -u +%Y-%m-%dT%H:%M:%SZ)',
+          }, open('deploy_info.json', 'w'), ensure_ascii=False)
+          "
 
       - name: Garantir que os hooks de deploy do Elastic Beanstalk sejam executáveis
         # O checkout costuma vir de uma máquina Windows, onde o bit de
