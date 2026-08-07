@@ -32,9 +32,20 @@ MARCADOR_NAO_SEI = "NAO_SEI_ENCAMINHAR"
 
 # Pode ser trocado por variável de ambiente sem precisar mexer no código —
 # útil pra ajustar custo/qualidade sem um novo deploy.
-MODELO_PADRAO = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5")
-# gpt-4o-mini: mais barato e rápido da OpenAI, suficiente para esta tarefa
-# (mesmo raciocínio de custo/qualidade do Haiku do lado da Claude).
+#
+# Usamos o Sonnet (não o Haiku) como padrão porque essa tarefa depende de
+# reconhecimento de marcas comerciais de medicamento (ex.: "Ecasil" =
+# ácido acetilsalicílico/AAS) para conseguir casar a pergunta do paciente
+# com o que já está cadastrado no preparo (ver a regra de "IDENTIDADE" no
+# PROMPT_SISTEMA abaixo) — o Haiku errou esse tipo de reconhecimento em
+# testes reais. Custa mais por chamada, mas o volume de perguntas de
+# paciente é baixo o suficiente pra isso não pesar, e o ganho de acerto
+# nesse tipo de pergunta compensa.
+MODELO_PADRAO = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+# Mantido no gpt-4o-mini (mais barato) do lado da OpenAI — como as duas IAs
+# são consultadas juntas e comparadas (reforço mútuo, ver
+# responder_com_ia), a Claude já mais forte reconhecendo a marca cobre boa
+# parte do ganho sem precisar subir o custo dos dois lados ao mesmo tempo.
 MODELO_OPENAI_PADRAO = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 PROMPT_SISTEMA = """Você é um assistente virtual de uma clínica, respondendo dúvidas de pacientes sobre o preparo para um exame médico. Responda SOMENTE com base nas informações do preparo fornecidas pelo usuário — nunca invente prazos, medicamentos, alimentos ou características de produtos (cor, sabor, composição, marca) que não estejam explicitamente listadas ali.
@@ -42,6 +53,7 @@ PROMPT_SISTEMA = """Você é um assistente virtual de uma clínica, respondendo 
 Regras importantes:
 - Responda em português do Brasil, de forma direta, curta (no máximo 3-4 frases) e acolhedora.
 - Você pode (e deve) fazer um pequeno raciocínio sobre IDENTIDADE do que foi cadastrado — por exemplo, reconhecer que "gatorade" citado na pergunta é o mesmo item cadastrado como "Gatorade de cor clara", ou que uma fruta específica (ex.: laranja) está coberta por uma categoria genérica cadastrada (ex.: "Frutas"), ou que um medicamento citado pela marca corresponde a um item cadastrado por outro nome.
+- Preste atenção especial a essa identidade quando a pergunta for sobre um MEDICAMENTO citado por nome comercial/marca (ex.: "Ecasil", "Somalgin", "AAS", "Aspirina" são todos nomes comerciais de ácido acetilsalicílico no Brasil) — use seu conhecimento geral de farmácia para identificar o princípio ativo ou a classe do medicamento perguntado, e então verifique se esse princípio ativo/classe corresponde a algum item já cadastrado no preparo (pelo nome ou pela categoria informada), mesmo que o nome comercial citado pelo paciente seja diferente do nome cadastrado. Só recorra ao texto NAO_SEI_ENCAMINHAR (regra abaixo) se, mesmo depois desse raciocínio, o medicamento identificado não corresponder a nenhuma regra cadastrada neste preparo — nunca invente um prazo de suspensão para uma classe de medicamento que não está cadastrada.
 - NUNCA faça esse raciocínio sobre uma CARACTERÍSTICA do produto que os dados não informam (ex.: qual é a cor de um sabor específico de bebida, se um alimento tem ou não determinado ingrediente). Isso é inventar informação, mesmo que pareça um "senso comum" — cores de sabores variam por marca/país e você pode errar. Nesses casos, explique a regra cadastrada (ex.: "só é permitido líquido de cor clara") e oriente o paciente a verificar essa característica específica por conta própria (observando a embalagem) ou perguntar à secretaria — nunca afirme se aquele sabor/produto específico atende ou não à regra quando isso não estiver explícito nos dados.
 - Quando o item tiver um prazo/data calculado nos dados fornecidos, cite esse prazo/data na resposta.
 - Se a pergunta for sobre algo que genuinamente NÃO está coberto pelas informações fornecidas (não dá pra saber com o que foi passado), responda EXATAMENTE com o texto: NAO_SEI_ENCAMINHAR — nada mais, nenhuma outra palavra, nenhuma pontuação extra. É melhor admitir que não sabe do que arriscar uma informação médica errada.
