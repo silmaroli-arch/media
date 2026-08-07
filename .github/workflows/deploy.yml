@@ -10,6 +10,15 @@ jobs:
     steps:
       - name: Baixar código do repositório
         uses: actions/checkout@v4
+        with:
+          # fetch-depth 2 (em vez do padrão 1) para o passo seguinte
+          # conseguir comparar este commit com o anterior e listar os
+          # arquivos alterados (usado no histórico de versões da tela de
+          # login) - o auto_commit_push.bat sempre grava a mesma mensagem
+          # genérica de commit ("Auto-commit: sincronizacao automatica"),
+          # então a mensagem do commit em si não serve pra dizer o que
+          # mudou.
+          fetch-depth: 2
 
       - name: Definir qual ambiente da AWS corresponde a este branch
         id: ambiente
@@ -26,9 +35,35 @@ jobs:
         run: |
           python3 -c "
           import json, subprocess
-          mensagem = subprocess.run(
+
+          def arquivos_alterados():
+              # Lista os arquivos alterados neste commit - o
+              # auto_commit_push.bat sempre usa a mesma mensagem genérica de
+              # commit, então isso é mais útil pra dizer *o que* foi
+              # publicado do que o assunto do commit em si.
+              resultado = subprocess.run(
+                  ['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'],
+                  capture_output=True, text=True,
+              )
+              if resultado.returncode != 0:
+                  return None
+              return [l for l in resultado.stdout.strip().splitlines() if l]
+
+          assunto = subprocess.run(
               ['git', 'log', '-1', '--pretty=%s'], capture_output=True, text=True
           ).stdout.strip()
+
+          arquivos = arquivos_alterados()
+          MENSAGEM_GENERICA = 'Auto-commit: sincronizacao automatica'
+          if arquivos and (not assunto or assunto == MENSAGEM_GENERICA):
+              LIMITE = 6
+              listados = ', '.join(arquivos[:LIMITE])
+              if len(arquivos) > LIMITE:
+                  listados += f' e mais {len(arquivos) - LIMITE} arquivo(s)'
+              mensagem = listados
+          else:
+              mensagem = assunto
+
           json.dump({
               'commit': '${{ github.sha }}',
               'commit_curto': '${{ github.sha }}'[:7],
