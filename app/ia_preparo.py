@@ -54,9 +54,14 @@ def _cliente_anthropic():
         return None
     try:
         import anthropic
-    except ImportError:
+        return anthropic.Anthropic(api_key=api_key)
+    except Exception:
+        # Cobre tanto a falta da biblioteca quanto qualquer erro ao
+        # construir o cliente (ex.: incompatibilidade de versão entre a
+        # lib e uma de suas dependências, como já aconteceu com a lib da
+        # OpenAI abaixo) — nunca deve derrubar o chat do paciente com um
+        # erro 500, só faz o sistema seguir sem essa IA.
         return None
-    return anthropic.Anthropic(api_key=api_key)
 
 
 def _cliente_openai():
@@ -71,9 +76,15 @@ def _cliente_openai():
         return None
     try:
         import openai
-    except ImportError:
+        return openai.OpenAI(api_key=api_key)
+    except Exception:
+        # Mesma lógica de _cliente_anthropic() acima: nunca deixar um
+        # problema aqui (falta da lib, ou um erro de construção do
+        # cliente — foi exatamente isso que causou o 500 real: a versão
+        # antiga da lib "openai" passava um parâmetro "proxies" que a
+        # versão do "httpx" instalada junto já não aceita mais) derrubar
+        # o chat do paciente.
         return None
-    return openai.OpenAI(api_key=api_key)
 
 
 def _formatar_contexto_preparo(exame):
