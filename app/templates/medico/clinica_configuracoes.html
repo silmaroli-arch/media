@@ -101,6 +101,131 @@
   <button type="submit" class="btn btn-primary">Salvar</button>
 </form>
 
+<div class="card p-4 mb-4">
+  <h5 class="mb-1">Emissão direta com a SEFAZ</h5>
+  <p class="text-muted small mb-3">
+    A emissão da NFC-e é feita direto com a SEFAZ (sem provedor terceiro), usando o certificado digital e-CNPJ do estabelecimento.
+  </p>
+
+  <form id="form-emissao-fiscal" method="post" action="{{ url_for('medico.clinica_emissao_fiscal', filial_id=clinica.id) }}">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Ambiente</label>
+        <select name="fiscal_ambiente" class="form-select">
+          <option value="homologacao" {% if clinica.fiscal_ambiente != 'producao' %}selected{% endif %}>Homologação (teste — sem valor fiscal)</option>
+          <option value="producao" {% if clinica.fiscal_ambiente == 'producao' %}selected{% endif %}>Produção (valor fiscal real)</option>
+        </select>
+        <div class="form-text">
+          {% if clinica.fiscal_ambiente == 'producao' %}Produção: as notas emitidas têm valor fiscal real — use com cuidado.{% else %}Homologação: notas de teste, sem valor fiscal — seguro pra validar o fluxo completo antes de emitir de verdade.{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="alert alert-warning mt-3 mb-0">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="fiscal_modo_simulacao" id="fiscal_modo_simulacao" {% if clinica.fiscal_modo_simulacao %}checked{% endif %}>
+        <label class="form-check-label fw-bold" for="fiscal_modo_simulacao">Modo simulação (teste sem certificado)</label>
+      </div>
+      <div class="small mt-1">
+        Ao fechar uma conta, gera uma chave de acesso e QR Code fictícios e marca a venda como "autorizada" sem enviar nada à SEFAZ — não precisa de certificado configurado. Serve só pra testar o restante do fluxo (tela de Vendas, reenvio, impressão do cupom). <strong>Nenhuma nota fiscal real é emitida enquanto isso estiver ligado.</strong> Lembre de desligar antes de emitir notas de verdade.
+      </div>
+    </div>
+
+    <div class="alert alert-info mt-3 mb-0">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="fiscal_simular_falha_conexao" id="fiscal_simular_falha_conexao" {% if clinica.fiscal_simular_falha_conexao %}checked{% endif %}>
+        <label class="form-check-label fw-bold" for="fiscal_simular_falha_conexao">Simular falha de conexão com a SEFAZ (teste de contingência)</label>
+      </div>
+      <div class="small mt-1">
+        Ferramenta de teste: força a próxima emissão a cair em contingência (nota real, assinada, com QR Code — só finge que a SEFAZ está fora do ar). Serve para validar o fluxo completo de contingência sem precisar esperar uma falha de verdade. Só funciona em homologação, mesmo que fique ligada por engano. Lembre de desligar depois do teste — senão toda venda cai em contingência.
+      </div>
+    </div>
+  </form>
+
+  {% if clinica.fiscal_certificado_pfx %}
+  <div class="alert alert-success mt-3 mb-0">
+    <strong>Certificado digital configurado.</strong><br>
+    CNPJ do certificado: {{ clinica.fiscal_certificado_cnpj or "não identificado" }}<br>
+    Válido até: {{ clinica.fiscal_certificado_validade.strftime('%d/%m/%Y') if clinica.fiscal_certificado_validade else "desconhecida" }}.
+  </div>
+  {% else %}
+  <div class="alert alert-secondary mt-3 mb-0">
+    Nenhum certificado digital configurado ainda — envie o arquivo do certificado abaixo para habilitar a emissão real de NFC-e.
+  </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('medico.clinica_certificado_upload', filial_id=clinica.id) }}" enctype="multipart/form-data" class="mt-3">
+    <h6 class="mb-1">Substituir certificado</h6>
+    <p class="text-muted small mb-2">
+      Envie o arquivo .pfx do certificado e-CNPJ (A1) e a senha dele. O arquivo é validado e só é guardado depois de conferirmos que abre com essa senha; ambos ficam criptografados no banco, nunca em texto simples.
+    </p>
+    <div class="row g-3 align-items-end">
+      <div class="col-md-5">
+        <label class="form-label">Arquivo do certificado (.pfx)</label>
+        <input type="file" name="certificado_arquivo" class="form-control" accept=".pfx,.p12">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Senha do certificado</label>
+        <input type="password" name="certificado_senha" class="form-control" autocomplete="off">
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-dark w-100">Enviar certificado</button>
+      </div>
+    </div>
+  </form>
+
+  <hr class="my-4">
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Provedor de emissão (legado / alternativo)</label>
+      <select name="fiscal_provedor_emissao" form="form-emissao-fiscal" class="form-select">
+        <option value="nenhum" {% if clinica.fiscal_provedor_emissao == 'nenhum' or not clinica.fiscal_provedor_emissao %}selected{% endif %}>Nenhum ainda</option>
+        <option value="focus_nfe" {% if clinica.fiscal_provedor_emissao == 'focus_nfe' %}selected{% endif %}>Focus NFe</option>
+        <option value="nfe_io" {% if clinica.fiscal_provedor_emissao == 'nfe_io' %}selected{% endif %}>NFe.io</option>
+        <option value="tecnospeed" {% if clinica.fiscal_provedor_emissao == 'tecnospeed' %}selected{% endif %}>Tecnospeed</option>
+        <option value="outro" {% if clinica.fiscal_provedor_emissao == 'outro' %}selected{% endif %}>Outro</option>
+      </select>
+      <div class="form-text">Deixe em "Nenhum ainda" se for usar a emissão direta acima. Esses campos ficam guardados caso um dia você prefira trocar por um provedor.</div>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Token / API Key do provedor</label>
+      <input type="password" name="fiscal_provedor_token_api" form="form-emissao-fiscal" class="form-control" autocomplete="off" placeholder="{{ '••••••••••••••••' if clinica.fiscal_provedor_token_cripto else '' }}">
+      <div class="form-text">{% if clinica.fiscal_provedor_token_cripto %}Já configurado — deixe em branco para manter o valor atual.{% endif %}</div>
+    </div>
+  </div>
+
+  <h6 class="mt-4 mb-2">NFC-e</h6>
+  <div class="row g-3">
+    <div class="col-md-3">
+      <label class="form-label">Série</label>
+      <input type="text" inputmode="numeric" name="fiscal_nfce_serie" form="form-emissao-fiscal" class="form-control" value="{{ clinica.fiscal_nfce_serie if clinica.fiscal_nfce_serie is not none else '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Próximo número</label>
+      <input type="text" inputmode="numeric" name="fiscal_nfce_proximo_numero" form="form-emissao-fiscal" class="form-control" value="{{ clinica.fiscal_nfce_proximo_numero if clinica.fiscal_nfce_proximo_numero is not none else '' }}">
+    </div>
+  </div>
+
+  <div class="alert alert-info mt-3 mb-0">
+    Os dois campos abaixo (CSC e ID do token) são usados pra emitir em <strong>contingência</strong> — se a SEFAZ ficar inacessível no momento de uma venda, o sistema tenta emitir a NFC-e offline automaticamente, e esses dados são obrigatórios pra montar o QR Code dessa nota. Sem eles configurados, uma falha de conexão com a SEFAZ vira erro em vez de contingência. Consulte no site da SEFAZ do seu estado (opção "Consulta CSC/Token" ou similar, na área do contribuinte).
+  </div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-md-3">
+      <label class="form-label">ID do token CSC</label>
+      <input type="text" name="fiscal_csc_id_token" form="form-emissao-fiscal" class="form-control" value="{{ clinica.fiscal_csc_id_token or '' }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">CSC (Código de Segurança do Contribuinte)</label>
+      <input type="password" name="fiscal_csc_codigo" form="form-emissao-fiscal" class="form-control" autocomplete="off" placeholder="{{ '••••••••••••••••' if clinica.fiscal_csc_codigo_cripto else '' }}">
+      <div class="form-text">{% if clinica.fiscal_csc_codigo_cripto %}Já configurado — deixe em branco para manter o valor atual.{% endif %}</div>
+    </div>
+  </div>
+
+  <button type="submit" form="form-emissao-fiscal" class="btn btn-dark mt-4">Salvar dados fiscais</button>
+</div>
+
 <script>
   // Mascara fixa (mesma logica do cadastro de paciente e do novo
   // agendamento - ver app/templates/medico/pacientes_form.html): enquanto
