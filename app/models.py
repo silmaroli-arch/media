@@ -796,7 +796,16 @@ class PerguntaPendente(db.Model):
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=True)
     pergunta = db.Column(db.Text, nullable=False)
-    status = db.Column(db.String(20), default="pendente")  # pendente, respondida
+    # status: pendente (sem nenhuma resposta ainda, aguardando a
+    # secretaria/médico digitar uma do zero), aguardando_aprovacao (a IA já
+    # rascunhou uma resposta em `resposta_sugerida_ia`, mas o médico ainda
+    # precisa revisar/editar e aprovar antes dela ir para o paciente),
+    # respondida (finalizada e já visível ao paciente).
+    status = db.Column(db.String(20), default="pendente")
+    # Rascunho de resposta gerado pela IA, mostrado ao médico como sugestão
+    # editável na tela de aprovação — nunca é exibido diretamente ao
+    # paciente; só o conteúdo de `resposta` (preenchido na aprovação) é.
+    resposta_sugerida_ia = db.Column(db.Text)
     resposta = db.Column(db.Text)
     respondida_por = db.Column(db.String(150))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)

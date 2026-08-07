@@ -101,28 +101,32 @@ def chat():
             # A IA (quando configurada — ver app.ia_preparo) é SEMPRE
             # consultada primeiro, e não a base de conhecimento (FAQ) — ela
             # interpreta o preparo com mais flexibilidade do que a
-            # correspondência por palavra-chave abaixo. Toda pergunta feita
-            # a ela é salva como uma FAQ (igual a quando a secretária
-            # responde manualmente), para ficar registrada na base de
-            # conhecimento e o médico poder consultar depois — mas essa
-            # gravação é só um REGISTRO: a IA continua sendo chamada de novo
-            # a cada nova pergunta, mesmo que pareça repetida (ver
-            # app.faq_engine.buscar_resposta, que só reaproveita uma
-            # resposta salva da IA quando a pergunta nova é idêntica à
-            # original).
+            # correspondência por palavra-chave abaixo. A resposta da IA,
+            # porém, NÃO vai direto para o paciente: fica como um rascunho
+            # (PerguntaPendente com status "aguardando_aprovacao") até o
+            # médico revisar, editar se precisar, e aprovar — só nesse
+            # momento ela é mostrada ao paciente e gravada na base de
+            # conhecimento (FaqItem), igual a uma resposta manual. Cada
+            # pergunta continua sendo encaminhada à IA de novo, mesmo que
+            # pareça repetida — não há atalho pela FAQ aqui.
             resposta_claude = responder_com_ia(pergunta_enviada, exame_selecionado) if exame_selecionado else None
 
             if resposta_claude:
-                resposta_ia = resposta_claude
-                origem = "ia"
-                db.session.add(FaqItem(
+                origem = "ia_aguardando"
+                pendente = PerguntaPendente(
                     clinica_id=paciente.clinica_id,
+                    paciente_id=paciente.id,
                     exame_id=exame_selecionado.id,
                     pergunta=pergunta_enviada,
-                    resposta=resposta_claude,
-                    criado_por="Assistente (IA)",
-                ))
+                    status="aguardando_aprovacao",
+                    resposta_sugerida_ia=resposta_claude,
+                )
+                db.session.add(pendente)
                 db.session.commit()
+                # Mesma mensagem de "aguarde" usada quando ninguém sabe
+                # responder ainda — o paciente só vê a resposta final depois
+                # que o médico aprovar (ela aparece no histórico abaixo).
+                encaminhada = True
             else:
                 # A IA não respondeu (não está configurada, deu erro, ou não
                 # há exame selecionado para dar contexto ao preparo) — só

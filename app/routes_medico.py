@@ -1554,6 +1554,9 @@ def pagamento_comprovante(agendamento_id):
 def perguntas_pendentes():
     clinica = clinica_atual()
     pendentes_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="pendente")
+    # Respostas que a IA já rascunhou e estão esperando o médico revisar,
+    # editar se precisar, e aprovar antes de irem para o paciente.
+    aguardando_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="aguardando_aprovacao")
     respondidas_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="respondida")
 
     if eh_medico():
@@ -1563,13 +1566,19 @@ def perguntas_pendentes():
         pendentes_q = pendentes_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
+        aguardando_q = aguardando_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
+        )
         respondidas_q = respondidas_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
 
     pendentes = pendentes_q.order_by(PerguntaPendente.criado_em.desc()).all()
+    aguardando = aguardando_q.order_by(PerguntaPendente.criado_em.desc()).all()
     respondidas = respondidas_q.order_by(PerguntaPendente.respondida_em.desc()).limit(20).all()
-    return render_template("medico/perguntas.html", pendentes=pendentes, respondidas=respondidas)
+    return render_template(
+        "medico/perguntas.html", pendentes=pendentes, aguardando=aguardando, respondidas=respondidas,
+    )
 
 
 @medico_bp.route("/perguntas/<int:pergunta_id>/responder", methods=["POST"])
