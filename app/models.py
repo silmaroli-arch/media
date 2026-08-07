@@ -708,7 +708,7 @@ class ChatMensagem(db.Model):
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=True)
     pergunta = db.Column(db.Text, nullable=False)
     resposta = db.Column(db.Text)
-    # origem: faq, ia, alimento, medicamento, pendente (encaminhada)
+    # origem: faq, ia, ia_aguardando (resposta da IA esperando aprovação do médico), alimento, medicamento, pendente (encaminhada)
     origem = db.Column(db.String(20))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 

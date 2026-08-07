@@ -2,8 +2,27 @@
 {% block titulo %}Perguntas dos pacientes{% endblock %}
 {% block conteudo %}
 <h3 class="mb-3">Perguntas pendentes de resposta</h3>
-<p class="text-muted">Quando a IA não encontra uma resposta confiável na base de conhecimento, a pergunta cai aqui. Ao responder, ela é automaticamente adicionada à base de FAQ e a IA "aprende" para as próximas vezes.</p>
+<p class="text-muted">Toda pergunta do paciente é respondida primeiro pela IA, mas nada vai para o paciente sem sua aprovação — revise (e edite se precisar) as respostas da IA abaixo antes de liberá-las. Perguntas que a IA não conseguiu responder aparecem na lista de baixo, sem nenhum rascunho, aguardando você escrever a resposta do zero.</p>
 
+{% if aguardando %}
+  <h5 class="mt-2"><i class="bi bi-robot"></i> Respostas da IA aguardando sua aprovação</h5>
+  <p class="text-muted">A IA já respondeu essas perguntas, mas o paciente ainda não viu nada — revise o rascunho abaixo, edite se precisar, e aprove para liberar a resposta e salvá-la na base de conhecimento.</p>
+  {% for p in aguardando %}
+  <div class="card p-3 mb-3 border-info">
+    <p class="mb-1"><strong>{{ p.paciente.nome }}</strong> {% if p.exame %}<span class="badge bg-light text-dark">{{ p.exame.nome }}</span>{% endif %} <span class="text-muted small">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span></p>
+    <p class="fs-5">"{{ p.pergunta }}"</p>
+    <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
+      <div class="mb-2">
+        <label class="form-label small text-muted mb-1">Rascunho da IA — edite se precisar antes de aprovar:</label>
+        <textarea name="resposta" class="form-control" rows="3" required>{{ p.resposta_sugerida_ia }}</textarea>
+      </div>
+      <button type="submit" class="btn btn-info btn-sm">Aprovar e enviar ao paciente</button>
+    </form>
+  </div>
+  {% endfor %}
+{% endif %}
+
+<h4 class="mt-4">Perguntas sem nenhuma resposta ainda</h4>
 {% if pendentes %}
   {% for p in pendentes %}
   <div class="card p-3 mb-3">
@@ -18,7 +37,7 @@
   </div>
   {% endfor %}
 {% else %}
-  <div class="alert alert-success">Nenhuma pergunta pendente. Tudo respondido! 🎉</div>
+  <div class="alert alert-success">Nenhuma pergunta pendente sem resposta. 🎉</div>
 {% endif %}
 
 <h4 class="mt-4">Últimas respondidas</h4>

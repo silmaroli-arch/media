@@ -28,6 +28,8 @@
     <div class="chat-bubble-user mb-2">{{ pergunta_enviada }}</div>
     {% if resposta_ia %}
       <div class="chat-bubble-ia"><i class="bi bi-robot"></i> {{ resposta_ia }}</div>
+    {% elif origem == 'ia_aguardando' %}
+      <div class="chat-bubble-alerta"><i class="bi bi-hourglass-split"></i> Já tenho uma resposta, mas ela precisa ser revisada pelo médico antes de te enviar — assim que ele aprovar, ela aparece aqui embaixo, na sua lista de perguntas.</div>
     {% elif encaminhada %}
       <div class="chat-bubble-alerta"><i class="bi bi-hourglass-split"></i> Ainda não sei responder essa pergunta com certeza. Encaminhei para a secretaria, que vai responder em breve — e a resposta ficará salva para as próximas pessoas que perguntarem o mesmo.</div>
     {% endif %}
@@ -44,7 +46,11 @@
       {% for p in historico_pendentes %}
       <tr>
         <td>{{ p.pergunta }}</td>
-        <td><span class="badge {% if p.status == 'respondida' %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ p.status }}</span></td>
+        <td>
+          <span class="badge {% if p.status == 'respondida' %}bg-success{% else %}bg-warning text-dark{% endif %}">
+            {% if p.status == 'respondida' %}respondida{% elif p.status == 'aguardando_aprovacao' %}em análise{% else %}pendente{% endif %}
+          </span>
+        </td>
         <td>{{ p.resposta or '-' }}</td>
         <td>
           <form method="post" action="{{ url_for('paciente.pergunta_remover', pergunta_id=p.id) }}" onsubmit="return confirm('Remover esta pergunta?');">

@@ -704,47 +704,81 @@ with patch.object(routes_paciente_mod, "responder_com_ia", return_value=(
         follow_redirects=True,
     )
 texto = r.get_data(as_text=True)
-bolha_resposta = texto.split('chat-bubble-ia')[1] if 'chat-bubble-ia' in texto else ""
-checar("Com a IA configurada (simulada aqui), o preparo do Gatorade é respondido corretamente, sem cair como pendente",
-       "gatorade de cor clara" in bolha_resposta.lower() and "encaminhei" not in texto.lower())
+checar("Com a IA configurada (simulada aqui), a resposta NÃO vai direto para o paciente — fica esperando aprovação do médico",
+       "gatorade de cor clara" not in texto.lower() and "aprova" in texto.lower())
 
 with app.app_context():
+    aguardando_gatorade = PerguntaPendente.query.filter_by(
+        clinica_id=clinica_vitoria_id, pergunta="Esse gatorade de uva conta como líquido claro?",
+        status="aguardando_aprovacao",
+    ).first()
+    checar("A resposta rascunhada pela IA fica salva em PerguntaPendente (aguardando_aprovacao), não direto como FAQ",
+           aguardando_gatorade is not None
+           and "gatorade de cor clara" in aguardando_gatorade.resposta_sugerida_ia.lower())
+    checar("Nenhuma FAQ é criada antes da aprovação do médico",
+           FaqItem.query.filter_by(
+               clinica_id=clinica_vitoria_id, pergunta="Esse gatorade de uva conta como líquido claro?"
+           ).first() is None)
+client.get("/logout")
+
+# O médico revisa o rascunho da IA, edita levemente, e aprova — só a partir
+# daqui a resposta deve aparecer para o paciente e ser gravada na FAQ.
+login("medico@clinicavitoria.com", "123456")
+r = client.get("/equipe/perguntas")
+texto = r.get_data(as_text=True)
+checar("A pergunta aguardando aprovação aparece na tela do médico, com o rascunho da IA pré-preenchido",
+       "gatorade de cor clara" in texto.lower())
+with app.app_context():
+    pergunta_id_gatorade = PerguntaPendente.query.filter_by(
+        clinica_id=clinica_vitoria_id, pergunta="Esse gatorade de uva conta como líquido claro?",
+    ).first().id
+resposta_editada_pelo_medico = "Sim, pode — gatorade de cor clara é permitido nesse preparo (revisado pelo médico)."
+client.post(
+    f"/equipe/perguntas/{pergunta_id_gatorade}/responder",
+    data={"resposta": resposta_editada_pelo_medico},
+    follow_redirects=True,
+)
+with app.app_context():
+    aprovada = PerguntaPendente.query.get(pergunta_id_gatorade)
+    checar("Depois de aprovada, a pergunta muda para status 'respondida' com a resposta (editada) do médico",
+           aprovada.status == "respondida" and aprovada.resposta == resposta_editada_pelo_medico)
     aprendida = FaqItem.query.filter_by(
         clinica_id=clinica_vitoria_id, pergunta="Esse gatorade de uva conta como líquido claro?"
     ).first()
-    checar("Resposta da IA é salva como FAQ (aprendizado), para não gastar uma nova chamada de API na próxima vez",
-           aprendida is not None and aprendida.criado_por == "Assistente (IA)")
+    checar("Só ao ser aprovada (com a edição do médico) é que a resposta entra na base de FAQ",
+           aprendida is not None and aprendida.resposta == resposta_editada_pelo_medico)
+client.get("/logout")
+
+login_paciente("(27) 99999-0000", "1985-04-12")
+r = client.get("/paciente/chat")
+texto = r.get_data(as_text=True)
+checar("Depois da aprovação, o paciente vê a resposta final (já editada pelo médico) no histórico",
+       resposta_editada_pelo_medico.lower() in texto.lower())
+client.get("/logout")
 
 # A IA é SEMPRE consultada primeiro (mesmo quando já existe uma FAQ igual
 # aprendida antes) — a base de conhecimento só é usada quando a IA não
-# responde (sem chave configurada, erro, ou sem confiança). Aqui a IA está
-# desligada neste ambiente de teste (sem ANTHROPIC_API_KEY) então ela
-# retorna None de qualquer forma e cai para a FAQ aprendida no passo
-# anterior — resultado igual, mas o caminho percorrido já é outro.
-r = client.post(
-    "/paciente/chat",
-    data={"pergunta": "Esse gatorade de uva conta como líquido claro?", "exame_id": str(colonoscopia_vitoria_id)},
-    follow_redirects=True,
-)
-texto = r.get_data(as_text=True)
-checar("Pergunta repetida é respondida pela FAQ aprendida quando a IA não responde",
-       "gatorade de cor clara" in texto.lower())
-
-# Com a IA configurada (simulada aqui) respondendo de forma DIFERENTE da FAQ
-# já aprendida para a mesmíssima pergunta, a resposta da IA deve prevalecer
-# — prova de que a base de conhecimento não é mais consultada primeiro.
+# responde (sem chave configurada, erro, ou sem confiança). Simulando a IA
+# respondendo de novo, de forma DIFERENTE da FAQ já aprendida acima para a
+# mesmíssima pergunta, o rascunho novo da IA deve prevalecer — prova de que
+# a base de conhecimento não é consultada primeiro.
+login_paciente("(27) 99999-0000", "1985-04-12")
 with patch.object(routes_paciente_mod, "responder_com_ia", return_value=(
     "Atualização: esse gatorade específico teve a fórmula alterada e não é mais recomendado."
 )):
-    r = client.post(
+    client.post(
         "/paciente/chat",
         data={"pergunta": "Esse gatorade de uva conta como líquido claro?", "exame_id": str(colonoscopia_vitoria_id)},
         follow_redirects=True,
     )
-texto = r.get_data(as_text=True)
-bolha_resposta = texto.split('chat-bubble-ia')[1] if 'chat-bubble-ia' in texto else ""
-checar("A IA é consultada mesmo com uma FAQ idêntica já aprendida, e sua resposta nova prevalece sobre a antiga",
-       "fórmula alterada" in bolha_resposta.lower())
+client.get("/logout")
+with app.app_context():
+    novo_rascunho = PerguntaPendente.query.filter_by(
+        clinica_id=clinica_vitoria_id, pergunta="Esse gatorade de uva conta como líquido claro?",
+        status="aguardando_aprovacao",
+    ).order_by(PerguntaPendente.criado_em.desc()).first()
+    checar("A IA é consultada de novo mesmo com uma FAQ idêntica já aprovada antes, e seu rascunho novo prevalece sobre o antigo",
+           novo_rascunho is not None and "fórmula alterada" in novo_rascunho.resposta_sugerida_ia.lower())
 
 # Bug real reportado: uma FAQ aprendida da IA sobre um sabor específico
 # (uva) não pode ser reaproveitada para uma pergunta parecida mas sobre

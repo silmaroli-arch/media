@@ -21,6 +21,10 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS cidade VARCHAR(100);
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS uf VARCHAR(2);
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS contato_emergencia_nome VARCHAR(150);
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS contato_emergencia_telefone VARCHAR(30);
+
+-- Rascunho de resposta da IA aguardando aprovação do médico (ver
+-- PerguntaPendente.resposta_sugerida_ia em app/models.py).
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_sugerida_ia TEXT;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

@@ -87,6 +87,7 @@ def chat():
     resposta_ia = None
     pergunta_enviada = None
     encaminhada = False
+    origem = None
     exame_id_selecionado = request.form.get("exame_id") or (agendamentos[0].exame_id if agendamentos else None)
 
     if request.method == "POST":
@@ -95,8 +96,6 @@ def chat():
 
         if pergunta_enviada:
             exame_selecionado = Exame.query.get(int(exame_id_selecionado)) if exame_id_selecionado else None
-
-            origem = None
 
             # A IA (quando configurada — ver app.ia_preparo) é SEMPRE
             # consultada primeiro, e não a base de conhecimento (FAQ) — ela
@@ -188,6 +187,7 @@ def chat():
         resposta_ia=resposta_ia,
         pergunta_enviada=pergunta_enviada,
         encaminhada=encaminhada,
+        origem=origem,
         exame_id_selecionado=int(exame_id_selecionado) if exame_id_selecionado else None,
         historico_pendentes=historico_pendentes,
     )
