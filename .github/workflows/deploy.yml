@@ -26,6 +26,13 @@ jobs:
         run: |
           echo "{\"commit\": \"${{ github.sha }}\", \"commit_curto\": \"$(echo ${{ github.sha }} | cut -c1-7)\", \"branch\": \"${{ github.ref_name }}\", \"deploy_em\": \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"}" > deploy_info.json
 
+      - name: Garantir que os hooks de deploy do Elastic Beanstalk sejam executáveis
+        # O checkout costuma vir de uma máquina Windows, onde o bit de
+        # execução do Unix não é preservado pelo Git - sem isso o Elastic
+        # Beanstalk simplesmente ignora o hook silenciosamente (não dá erro,
+        # só não roda).
+        run: chmod +x .platform/hooks/*/*.sh || true
+
       - name: Compactar o projeto para o deploy
         run: zip -r deploy.zip . -x '.git/*' '.github/*'
 
