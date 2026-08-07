@@ -60,8 +60,12 @@ if not %errorlevel%==0 (
 
 REM Traz o que tiver de novo no dev remoto antes de comitar por cima -
 REM evita o erro "rejected (fetch first)" quando alguem/alguma automacao
-REM avancou o dev remoto nesse meio tempo.
-git pull --rebase origin dev >> "%LOG%" 2>&1
+REM avancou o dev remoto nesse meio tempo. O --autostash guarda de lado
+REM (e devolve depois) qualquer alteracao local ainda nao comitada antes de
+REM sincronizar - sem isso, o "pull --rebase" recusa rodar quando ja existem
+REM arquivos modificados na pasta (que e exatamente o caso normal aqui,
+REM ja que o script so roda quando ha algo nao comitado para publicar).
+git pull --rebase --autostash origin dev >> "%LOG%" 2>&1
 if not %errorlevel%==0 (
     echo [%date% %time%] ERRO ao sincronizar com origin/dev - veja acima. Resolva manualmente antes da proxima execucao. >> "%LOG%"
     exit /b 1

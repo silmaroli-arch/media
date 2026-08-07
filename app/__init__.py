@@ -1,10 +1,41 @@
+import json
 import os
 import warnings
+from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask
 from app.extensions import db, login_manager
 
 load_dotenv()  # lê variáveis do arquivo .env, se existir
+
+
+def _carregar_info_deploy(base_dir: str):
+    """Lê o arquivo "deploy_info.json" (gerado automaticamente pelo pipeline
+    de deploy do GitHub Actions, ver .github/workflows/deploy.yml) para saber
+    qual commit e em que horário este ambiente foi publicado por último.
+
+    Em desenvolvimento local (ou se o arquivo não existir por qualquer
+    motivo) simplesmente não mostra nada — não é um erro."""
+    caminho = os.path.join(base_dir, "deploy_info.json")
+    try:
+        with open(caminho, "r", encoding="utf-8") as f:
+            info = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+    deploy_em_local = info.get("deploy_em")
+    if deploy_em_local:
+        try:
+            dt = datetime.fromisoformat(deploy_em_local.replace("Z", "+00:00"))
+            deploy_em_local = dt.strftime("%d/%m/%Y %H:%M UTC")
+        except ValueError:
+            pass
+
+    return {
+        "commit_curto": info.get("commit_curto", "?"),
+        "branch": info.get("branch", "?"),
+        "deploy_em_local": deploy_em_local or "desconhecido",
+    }
 
 
 def _resolver_uri_banco(base_dir: str) -> str:
@@ -43,6 +74,16 @@ def create_app():
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "pool_pre_ping": True,  # evita erros de conexão "caída" em bancos remotos
     }
+
+    info_deploy = _carregar_info_deploy(base_dir)
+
+    @app.context_processor
+    def injetar_info_deploy():
+        # Disponível em TODOS os templates (não só para quem está logado),
+        # para dar para checar se o deploy automático rodou até na tela de
+        # login. Lido uma única vez na inicialização do app, não a cada
+        # requisição.
+        return {"versao_info": info_deploy}
 
     db.init_app(app)
     login_manager.init_app(app)

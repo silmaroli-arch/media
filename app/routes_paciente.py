@@ -94,27 +94,25 @@ def chat():
         exame_id_selecionado = request.form.get("exame_id") or None
 
         if pergunta_enviada:
-            faq_item, score = buscar_resposta(
-                pergunta_enviada,
-                clinica_id=paciente.clinica_id,
-                exame_id=int(exame_id_selecionado) if exame_id_selecionado else None,
-            )
-
             exame_selecionado = Exame.query.get(int(exame_id_selecionado)) if exame_id_selecionado else None
 
             origem = None
-            if faq_item:
-                faq_item.vezes_utilizada += 1
-                db.session.commit()
-                resposta_ia = faq_item.resposta
-                origem = "faq"
-            elif exame_selecionado and (resposta_claude := responder_com_ia(pergunta_enviada, exame_selecionado)):
-                # A IA (quando configurada — ver app.ia_preparo) já
-                # interpreta o preparo com mais flexibilidade do que a
-                # correspondência por palavra-chave abaixo. A resposta é
-                # salva como uma FAQ (igual a quando a secretaria responde
-                # manualmente), pra perguntas parecidas serem respondidas
-                # na hora, sem gastar uma nova chamada de API.
+
+            # A IA (quando configurada — ver app.ia_preparo) é SEMPRE
+            # consultada primeiro, e não a base de conhecimento (FAQ) — ela
+            # interpreta o preparo com mais flexibilidade do que a
+            # correspondência por palavra-chave abaixo. Toda pergunta feita
+            # a ela é salva como uma FAQ (igual a quando a secretária
+            # responde manualmente), para ficar registrada na base de
+            # conhecimento e o médico poder consultar depois — mas essa
+            # gravação é só um REGISTRO: a IA continua sendo chamada de novo
+            # a cada nova pergunta, mesmo que pareça repetida (ver
+            # app.faq_engine.buscar_resposta, que só reaproveita uma
+            # resposta salva da IA quando a pergunta nova é idêntica à
+            # original).
+            resposta_claude = responder_com_ia(pergunta_enviada, exame_selecionado) if exame_selecionado else None
+
+            if resposta_claude:
                 resposta_ia = resposta_claude
                 origem = "ia"
                 db.session.add(FaqItem(
@@ -125,27 +123,42 @@ def chat():
                     criado_por="Assistente (IA)",
                 ))
                 db.session.commit()
-            elif exame_selecionado and (resposta_alimento := buscar_resposta_alimento(
-                pergunta_enviada, exame_selecionado, paciente
-            )):
-                resposta_ia = resposta_alimento
-                origem = "alimento"
-            elif exame_selecionado and (resposta_medicamento := buscar_resposta_medicamento(
-                pergunta_enviada, exame_selecionado, paciente
-            )):
-                resposta_ia = resposta_medicamento
-                origem = "medicamento"
             else:
-                pendente = PerguntaPendente(
+                # A IA não respondeu (não está configurada, deu erro, ou não
+                # há exame selecionado para dar contexto ao preparo) — só
+                # nesse caso a base de conhecimento e as respostas prontas
+                # de alimento/medicamento entram como alternativa.
+                faq_item, score = buscar_resposta(
+                    pergunta_enviada,
                     clinica_id=paciente.clinica_id,
-                    paciente_id=paciente.id,
                     exame_id=int(exame_id_selecionado) if exame_id_selecionado else None,
-                    pergunta=pergunta_enviada,
                 )
-                db.session.add(pendente)
-                db.session.commit()
-                encaminhada = True
-                origem = "pendente"
+                if faq_item:
+                    faq_item.vezes_utilizada += 1
+                    db.session.commit()
+                    resposta_ia = faq_item.resposta
+                    origem = "faq"
+                elif exame_selecionado and (resposta_alimento := buscar_resposta_alimento(
+                    pergunta_enviada, exame_selecionado, paciente
+                )):
+                    resposta_ia = resposta_alimento
+                    origem = "alimento"
+                elif exame_selecionado and (resposta_medicamento := buscar_resposta_medicamento(
+                    pergunta_enviada, exame_selecionado, paciente
+                )):
+                    resposta_ia = resposta_medicamento
+                    origem = "medicamento"
+                else:
+                    pendente = PerguntaPendente(
+                        clinica_id=paciente.clinica_id,
+                        paciente_id=paciente.id,
+                        exame_id=int(exame_id_selecionado) if exame_id_selecionado else None,
+                        pergunta=pergunta_enviada,
+                    )
+                    db.session.add(pendente)
+                    db.session.commit()
+                    encaminhada = True
+                    origem = "pendente"
 
             # Registra a pergunta+resposta no histórico do paciente — o
             # médico consegue ver essas dúvidas ao iniciar o atendimento

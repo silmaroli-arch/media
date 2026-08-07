@@ -6,6 +6,10 @@ __pycache__/
 venv/
 instance/
 
+# Gerado automaticamente pelo pipeline de deploy (.github/workflows/deploy.yml)
+# a cada publicação - nunca deve ser commitado manualmente.
+deploy_info.json
+
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
