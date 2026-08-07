@@ -108,9 +108,9 @@ def chat():
             # conhecimento (FaqItem), igual a uma resposta manual. Cada
             # pergunta continua sendo encaminhada à IA de novo, mesmo que
             # pareça repetida — não há atalho pela FAQ aqui.
-            resposta_claude = responder_com_ia(pergunta_enviada, exame_selecionado) if exame_selecionado else None
+            resultado_ia = responder_com_ia(pergunta_enviada, exame_selecionado) if exame_selecionado else None
 
-            if resposta_claude:
+            if resultado_ia and resultado_ia["final"]:
                 origem = "ia_aguardando"
                 pendente = PerguntaPendente(
                     clinica_id=paciente.clinica_id,
@@ -118,7 +118,12 @@ def chat():
                     exame_id=exame_selecionado.id,
                     pergunta=pergunta_enviada,
                     status="aguardando_aprovacao",
-                    resposta_sugerida_ia=resposta_claude,
+                    resposta_sugerida_ia=resultado_ia["final"],
+                    # Guardadas à parte para a tela de aprovação mostrar a
+                    # resposta de cada IA lado a lado, além da junção
+                    # (ver medico/perguntas.html).
+                    resposta_bruta_claude=resultado_ia["claude"],
+                    resposta_bruta_chatgpt=resultado_ia["chatgpt"],
                 )
                 db.session.add(pendente)
                 db.session.commit()

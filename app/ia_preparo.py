@@ -263,22 +263,26 @@ def responder_com_ia(pergunta_usuario, exame):
     """Tenta responder a pergunta do paciente usando IA, com o preparo do
     exame como contexto. Quando tanto ANTHROPIC_API_KEY quanto
     OPENAI_API_KEY estão configuradas, consulta as DUAS (Claude e
-    ChatGPT) e as combina por "reforço mútuo": se concordam, retorna a
-    resposta normalmente; se divergem em algum ponto prático, retorna as
-    duas lado a lado com um aviso, para o médico revisar com mais atenção
-    antes de aprovar (ver app.routes_paciente.chat e
-    medico/perguntas.html). Com só uma das chaves configurada, funciona
-    com aquela IA sozinha, exatamente como antes.
+    ChatGPT) e as combina por "reforço mútuo": se concordam, o rascunho
+    final é a resposta da Claude; se divergem em algum ponto prático, o
+    rascunho final junta as duas lado a lado com um aviso, para o médico
+    revisar com mais atenção antes de aprovar. Com só uma das chaves
+    configurada, funciona com aquela IA sozinha, exatamente como antes.
 
-    Retorna None quando: nenhuma API está configurada; as chamadas
-    falharam (rede, limite de uso etc.); ou a(s) IA(s) sinalizaram que não
-    têm certeza. Em qualquer caso de None, a pergunta segue para a
+    Retorna um dicionário {"final": ..., "claude": ..., "chatgpt": ...} —
+    "claude" e "chatgpt" são as respostas cruas de cada IA (para a tela de
+    aprovação mostrar lado a lado, ver medico/perguntas.html), e "final" é
+    o rascunho que efetivamente vira o PerguntaPendente.resposta_sugerida_ia
+    (já com a lógica de reforço mútuo acima aplicada). Todos os campos vêm
+    None quando: nenhuma API está configurada; a(s) chamada(s) falharam
+    (rede, limite de uso etc.); ou a(s) IA(s) sinalizaram que não têm
+    certeza. Quando "final" é None, a pergunta segue para a
     correspondência por palavra-chave e, por fim, para a fila da
     secretaria — o comportamento de antes não muda."""
     cliente_anthropic = _cliente_anthropic()
     cliente_openai = _cliente_openai()
     if not cliente_anthropic and not cliente_openai:
-        return None
+        return {"final": None, "claude": None, "chatgpt": None}
 
     contexto = _formatar_contexto_preparo(exame)
 
@@ -291,13 +295,16 @@ def responder_com_ia(pergunta_usuario, exame):
 
     if resposta_claude and resposta_chatgpt:
         if _respostas_divergem(cliente_anthropic, resposta_claude, resposta_chatgpt):
-            return (
+            final = (
                 "⚠️ As duas IAs consultadas (Claude e ChatGPT) deram respostas "
                 "diferentes para esta pergunta — revise com atenção antes de "
                 "aprovar.\n\n"
                 f"Resposta do Claude:\n{resposta_claude}\n\n"
                 f"Resposta do ChatGPT:\n{resposta_chatgpt}"
             )
-        return resposta_claude
+        else:
+            final = resposta_claude
+    else:
+        final = resposta_claude or resposta_chatgpt
 
-    return resposta_claude or resposta_chatgpt
+    return {"final": final, "claude": resposta_claude, "chatgpt": resposta_chatgpt}

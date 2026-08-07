@@ -826,6 +826,14 @@ class PerguntaPendente(db.Model):
     # editável na tela de aprovação — nunca é exibido diretamente ao
     # paciente; só o conteúdo de `resposta` (preenchido na aprovação) é.
     resposta_sugerida_ia = db.Column(db.Text)
+    # Respostas "cruas" de cada IA consultada, guardadas separadas do
+    # rascunho final acima (que já pode ser a junção das duas, quando
+    # ambas respondem e divergem — ver app.ia_preparo.responder_com_ia) —
+    # servem só para o médico comparar lado a lado na tela de aprovação;
+    # ficam em branco quando aquela IA não estava configurada ou não
+    # respondeu a esta pergunta específica.
+    resposta_bruta_claude = db.Column(db.Text)
+    resposta_bruta_chatgpt = db.Column(db.Text)
     resposta = db.Column(db.Text)
     respondida_por = db.Column(db.String(150))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)

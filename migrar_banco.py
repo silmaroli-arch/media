@@ -110,6 +110,12 @@ ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_nfce_serie INTEGER;
 ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_nfce_proximo_numero INTEGER;
 ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_csc_id_token VARCHAR(20);
 ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_csc_codigo_cripto BYTEA;
+
+-- Guarda a resposta "crua" de cada IA (Claude e ChatGPT) separada do
+-- rascunho final, pra tela de aprovação mostrar as duas lado a lado além
+-- da junção (ver app.ia_preparo.responder_com_ia e medico/perguntas.html).
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_claude TEXT;
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_chatgpt TEXT;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)
