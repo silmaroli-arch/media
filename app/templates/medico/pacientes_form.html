@@ -52,7 +52,7 @@
     <div class="row g-3">
       <div class="col-md-3">
         <label class="form-label">CEP</label>
-        <input type="text" name="cep" id="cep" class="form-control" value="{{ paciente.cep if paciente else '' }}" placeholder="00000-000">
+        <input type="text" inputmode="numeric" name="cep" id="cep" class="form-control" value="{{ paciente.cep if paciente else '' }}" placeholder="00000-000" maxlength="9">
         <div class="form-text" id="cep_status"></div>
       </div>
       <div class="col-md-7">
@@ -104,52 +104,47 @@
 </div>
 
 <script>
+  // Mascaras fixas: enquanto a pessoa digita, os espacos dos digitos ainda
+  // nao preenchidos ficam marcados com "_", em vez de ir aparecendo so a
+  // pontuacao dos digitos ja digitados - fica mais facil ver quantos
+  // digitos ainda faltam (ex.: "123.4__.___-__" em vez de so "123.4").
+  // "9" no padrao = uma posicao de digito; qualquer outro caractere e
+  // literal (ponto, traco, barra, parenteses, espaco).
+  function aplicarMascaraFixa(campo, padrao) {
+    if (!campo) return;
+    var maxDigitos = (padrao.match(/9/g) || []).length;
+    campo.addEventListener('input', function () {
+      var digitos = campo.value.replace(/\D/g, '').slice(0, maxDigitos);
+      if (!digitos) {
+        campo.value = '';
+        return;
+      }
+      var resultado = '';
+      var pos = 0;
+      for (var i = 0; i < padrao.length && pos < digitos.length; i++) {
+        if (padrao[i] === '9') {
+          resultado += digitos[pos];
+          pos++;
+        } else {
+          resultado += padrao[i];
+        }
+      }
+      // Completa o resto do padrao com "_" nas posicoes de digito que
+      // ainda faltam, mantendo a pontuacao fixa visivel.
+      for (var j = i; j < padrao.length; j++) {
+        resultado += padrao[j] === '9' ? '_' : padrao[j];
+      }
+      campo.value = resultado;
+    });
+  }
+
   // Máscaras numéricas (CPF e data de nascimento) — só existem no
   // formulário de cadastro novo (na edição, esses campos ficam desabilitados
   // e não têm o id abaixo).
-  var campoCpf = document.getElementById('cpf');
-  if (campoCpf) {
-    campoCpf.addEventListener('input', function () {
-      var digitos = campoCpf.value.replace(/\D/g, '').slice(0, 11);
-      var formatado = digitos;
-      if (digitos.length > 9) {
-        formatado = digitos.slice(0, 3) + '.' + digitos.slice(3, 6) + '.' + digitos.slice(6, 9) + '-' + digitos.slice(9);
-      } else if (digitos.length > 6) {
-        formatado = digitos.slice(0, 3) + '.' + digitos.slice(3, 6) + '.' + digitos.slice(6);
-      } else if (digitos.length > 3) {
-        formatado = digitos.slice(0, 3) + '.' + digitos.slice(3);
-      }
-      campoCpf.value = formatado;
-    });
-  }
-  var campoDataNascimento = document.getElementById('data_nascimento');
-  if (campoDataNascimento) {
-    campoDataNascimento.addEventListener('input', function () {
-      var digitos = campoDataNascimento.value.replace(/\D/g, '').slice(0, 8);
-      var formatado = digitos;
-      if (digitos.length > 4) {
-        formatado = digitos.slice(0, 2) + '/' + digitos.slice(2, 4) + '/' + digitos.slice(4);
-      } else if (digitos.length > 2) {
-        formatado = digitos.slice(0, 2) + '/' + digitos.slice(2);
-      }
-      campoDataNascimento.value = formatado;
-    });
-  }
-  var campoTelefone = document.getElementById('telefone');
-  if (campoTelefone) {
-    campoTelefone.addEventListener('input', function () {
-      var digitos = campoTelefone.value.replace(/\D/g, '').slice(0, 11);
-      var formatado = digitos;
-      if (digitos.length > 6) {
-        formatado = '(' + digitos.slice(0, 2) + ') ' + digitos.slice(2, digitos.length > 10 ? 7 : 6) + '-' + digitos.slice(digitos.length > 10 ? 7 : 6);
-      } else if (digitos.length > 2) {
-        formatado = '(' + digitos.slice(0, 2) + ') ' + digitos.slice(2);
-      } else if (digitos.length > 0) {
-        formatado = '(' + digitos;
-      }
-      campoTelefone.value = formatado;
-    });
-  }
+  aplicarMascaraFixa(document.getElementById('cpf'), '999.999.999-99');
+  aplicarMascaraFixa(document.getElementById('data_nascimento'), '99/99/9999');
+  aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
+  aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
 
   // Busca de endereço por CEP via ViaCEP — preenche os campos
   // automaticamente, mas continuam editáveis (o preenchimento é só uma
