@@ -1272,11 +1272,11 @@ def medico_agenda_pessoal(medico_id=None):
 
     # Só exames confirmados aparecem aqui — é a lista de trabalho do
     # médico para o que já está confirmado com o paciente, não uma agenda
-    # geral (essa fica em "Agenda de exames", no Painel).
-    agora = datetime.utcnow()
+    # geral (essa fica em "Agenda de exames", no Painel). Sem filtro de
+    # data: um exame de hoje que já passou do horário mas ainda não foi
+    # marcado como "realizado" continua precisando aparecer aqui.
     proximos = (
         Agendamento.query.filter_by(clinica_id=clinica.id, medico_id=medico_alvo.id, status="confirmado")
-        .filter(Agendamento.data_hora >= agora)
         .order_by(Agendamento.data_hora.asc())
         .all()
     )
