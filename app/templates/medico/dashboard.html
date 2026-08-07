@@ -43,7 +43,6 @@
       {% if current_user.perm_pacientes %}
       <a href="{{ url_for('medico.pacientes_novo') }}" class="btn btn-sm btn-primary mt-1">Novo paciente</a>
       {% endif %}
-      <a href="{{ url_for('medico.exames_novo') }}" class="btn btn-sm btn-outline-primary mt-1">Novo exame</a>
       <a href="{{ url_for('medico.agenda_novo') }}" class="btn btn-sm btn-outline-primary mt-1">Novo agendamento</a>
     </div>
   </div>
