@@ -12,17 +12,17 @@
       {% if not paciente %}
       <div class="col-md-6">
         <label class="form-label">CPF</label>
-        <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" maxlength="14" required>
+        <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" required>
       </div>
       <div class="col-md-6">
         <label class="form-label">Telefone (login de acesso)</label>
         <input type="text" inputmode="numeric" name="telefone" id="telefone"
-               class="form-control" placeholder="(27) 99999-9999" maxlength="15" required>
+               class="form-control" placeholder="(27) 99999-9999" required>
       </div>
       <div class="col-md-6">
         <label class="form-label">Data de nascimento</label>
         <input type="text" inputmode="numeric" name="data_nascimento" id="data_nascimento"
-               class="form-control" placeholder="DD/MM/AAAA" maxlength="10" autocomplete="bday" required>
+               class="form-control" placeholder="DD/MM/AAAA" autocomplete="bday" required>
         <div class="form-text">O paciente usa o telefone e a data de nascimento para acessar o sistema — não é preciso criar senha.</div>
       </div>
       {% else %}
@@ -52,7 +52,7 @@
     <div class="row g-3">
       <div class="col-md-3">
         <label class="form-label">CEP</label>
-        <input type="text" inputmode="numeric" name="cep" id="cep" class="form-control" value="{{ paciente.cep if paciente else '' }}" placeholder="00000-000" maxlength="9">
+        <input type="text" inputmode="numeric" name="cep" id="cep" class="form-control" value="{{ paciente.cep if paciente else '' }}" placeholder="00000-000">
         <div class="form-text" id="cep_status"></div>
       </div>
       <div class="col-md-7">
