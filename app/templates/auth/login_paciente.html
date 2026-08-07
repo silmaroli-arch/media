@@ -51,6 +51,11 @@
       <div class="text-center mt-3">
         <a href="{{ url_for('auth.login') }}" class="small">Sou médico(a) ou secretário(a) &rarr; <strong>Entrar com e-mail e senha</strong></a>
       </div>
+      {% if versao_info %}
+      <div class="text-muted text-center small mt-3" style="opacity:.55; font-size:.75rem;">
+        versão {{ versao_info.commit_curto }} ({{ versao_info.branch }}) · último deploy: {{ versao_info.deploy_em_local }}
+      </div>
+      {% endif %}
     </div>
   </div>
 </div>

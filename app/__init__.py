@@ -2,6 +2,7 @@ import json
 import os
 import warnings
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from flask import Flask
 from app.extensions import db, login_manager
@@ -26,8 +27,11 @@ def _carregar_info_deploy(base_dir: str):
     deploy_em_local = info.get("deploy_em")
     if deploy_em_local:
         try:
-            dt = datetime.fromisoformat(deploy_em_local.replace("Z", "+00:00"))
-            deploy_em_local = dt.strftime("%d/%m/%Y %H:%M UTC")
+            # O pipeline grava o horário em UTC - convertemos para o
+            # horário de Brasília (usado pela equipe), em vez de mostrar UTC.
+            dt_utc = datetime.fromisoformat(deploy_em_local.replace("Z", "+00:00"))
+            dt_br = dt_utc.astimezone(ZoneInfo("America/Sao_Paulo"))
+            deploy_em_local = dt_br.strftime("%d/%m/%Y %H:%M") + " (horário de Brasília)"
         except ValueError:
             pass
 

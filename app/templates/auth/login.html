@@ -22,6 +22,11 @@
       <div class="text-center mt-2">
         <a href="{{ url_for('auth.login_paciente') }}" class="small">Sou paciente &rarr; <strong>Entrar com telefone e data de nascimento</strong></a>
       </div>
+      {% if versao_info %}
+      <div class="text-muted text-center small mt-3" style="opacity:.55; font-size:.75rem;">
+        versão {{ versao_info.commit_curto }} ({{ versao_info.branch }}) · último deploy: {{ versao_info.deploy_em_local }}
+      </div>
+      {% endif %}
     </div>
   </div>
 </div>
