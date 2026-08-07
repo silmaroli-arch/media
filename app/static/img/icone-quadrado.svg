@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1660B0"/>
+      <stop offset="100%" stop-color="#0B3D66"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Fundo -->
+  <rect x="0" y="0" width="200" height="200" rx="44" ry="44" fill="url(#bgGrad)"/>
+
+  <!-- "M" monograma (médico) -->
+  <path d="M 48 150 L 48 52 L 100 104 L 152 52 L 152 150"
+        fill="none" stroke="#FFFFFF" stroke-width="20"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Brilho por trás do pico do pulso (IA) -->
+  <circle cx="86" cy="70" r="26" fill="url(#glow)"/>
+
+  <!-- Linha de pulso/ECG (médico) cruzando o meio do M -->
+  <path d="M 18 112 L 66 112 L 78 138 L 94 66 L 108 112 L 182 112"
+        fill="none" stroke="#22D3EE" stroke-width="9"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Nó de IA no pico do pulso -->
+  <circle cx="94" cy="66" r="7" fill="#FFFFFF"/>
+  <circle cx="94" cy="66" r="3.2" fill="#22D3EE"/>
+  <line x1="94" y1="66" x2="94" y2="48" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <line x1="94" y1="66" x2="112" y2="54" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <line x1="94" y1="66" x2="76" y2="52" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+</svg>
