@@ -127,6 +127,12 @@ ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_rps_proximo_numero INTEGER;
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_claude TEXT;
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_chatgpt TEXT;
 
+-- Vinculo entre pergunta do chat e o agendamento/consulta especifico
+-- (ver ChatMensagem.agendamento_id em app/models.py) - permite ao medico
+-- ver exatamente quais perguntas pertencem a qual consulta no historico
+-- de atendimentos.
+ALTER TABLE chat_mensagens ADD COLUMN IF NOT EXISTS agendamento_id INTEGER REFERENCES agendamentos(id);
+
 -- Emissao de NFS-e por pagamento (ver app/nfse_nacional.py).
 ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_status VARCHAR(30) DEFAULT 'nao_emitida';
 ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_numero_dps INTEGER;

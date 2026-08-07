@@ -11,7 +11,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 
 from app.extensions import db
 from app.models import (
@@ -1387,19 +1387,25 @@ def atendimento(agendamento_id):
         return redirect(url_for("medico.atendimento", agendamento_id=agendamento.id))
 
     # Perguntas que o paciente fez pelo app sobre este exame — pra o
-    # médico já chegar na consulta sabendo o que foi perguntado.
+    # médico já chegar na consulta sabendo o que foi perguntado. Prioriza
+    # o vínculo direto com este agendamento (ChatMensagem.agendamento_id);
+    # o "or" com o filtro antigo por exame é só pra perguntas feitas antes
+    # desse vínculo existir, que ficaram sem agendamento_id preenchido.
     mensagens_chat = (
-        ChatMensagem.query.filter_by(paciente_id=agendamento.paciente_id, exame_id=agendamento.exame_id)
+        ChatMensagem.query.filter(
+            ChatMensagem.paciente_id == agendamento.paciente_id,
+            or_(
+                ChatMensagem.agendamento_id == agendamento.id,
+                and_(ChatMensagem.agendamento_id.is_(None), ChatMensagem.exame_id == agendamento.exame_id),
+            ),
+        )
         .order_by(ChatMensagem.criado_em.desc())
         .all()
     )
     # Notas de atendimentos anteriores do mesmo paciente (com qualquer
     # médico/exame) — reaproveitáveis como histórico de referência. Cada
     # um vira seu próprio expand panel na tela, mostrando ao abrir as
-    # perguntas que o paciente fez pelo app até a data daquela consulta
-    # (mesmo paciente + mesmo exame — não temos um vínculo direto entre
-    # pergunta e agendamento específico, então usamos a data como
-    # aproximação razoável).
+    # perguntas feitas especificamente para aquela consulta.
     atendimentos_anteriores_raw = (
         Agendamento.query.filter(
             Agendamento.paciente_id == agendamento.paciente_id,
@@ -1415,8 +1421,17 @@ def atendimento(agendamento_id):
         mensagens_da_consulta = (
             ChatMensagem.query.filter(
                 ChatMensagem.paciente_id == agendamento.paciente_id,
-                ChatMensagem.exame_id == a.exame_id,
-                ChatMensagem.criado_em <= a.data_hora,
+                or_(
+                    ChatMensagem.agendamento_id == a.id,
+                    # Fallback para perguntas de antes do vínculo direto
+                    # existir: aproxima pela data (mesmo exame, feitas até
+                    # o dia daquela consulta).
+                    and_(
+                        ChatMensagem.agendamento_id.is_(None),
+                        ChatMensagem.exame_id == a.exame_id,
+                        ChatMensagem.criado_em <= a.data_hora,
+                    ),
+                ),
             )
             .order_by(ChatMensagem.criado_em.desc())
             .all()

@@ -730,6 +730,13 @@ class ChatMensagem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=True)
+    # Vínculo com o agendamento/consulta específico sobre o qual a
+    # pergunta foi feita (o paciente escolhe isso no seletor da tela de
+    # dúvidas) — permite ao médico ver exatamente quais perguntas
+    # pertencem a qual consulta no histórico de atendimentos, em vez de só
+    # aproximar por data. Pode ser None em perguntas "gerais" (sem exame
+    # selecionado) ou em registros antigos, de antes deste campo existir.
+    agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=True)
     pergunta = db.Column(db.Text, nullable=False)
     resposta = db.Column(db.Text)
     # origem: faq, ia, ia_aguardando (resposta da IA esperando aprovação do médico), alimento, medicamento, pendente (encaminhada)
@@ -738,6 +745,7 @@ class ChatMensagem(db.Model):
 
     paciente = db.relationship("Paciente", back_populates="mensagens_chat")
     exame = db.relationship("Exame")
+    agendamento = db.relationship("Agendamento")
 
 
 class ResultadoExame(db.Model):

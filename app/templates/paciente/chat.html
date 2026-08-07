@@ -7,10 +7,10 @@
   <form method="post" id="form-tirar-duvida">
     <div class="mb-3">
       <label class="form-label">Sobre qual exame é a sua dúvida?</label>
-      <select name="exame_id" class="form-select">
+      <select name="agendamento_id" class="form-select">
         <option value="">Dúvida geral</option>
         {% for a in agendamentos %}
-        <option value="{{ a.exame_id }}" {% if exame_id_selecionado == a.exame_id %}selected{% endif %}>{{ a.exame.nome }} ({{ a.data_hora.strftime('%d/%m') }})</option>
+        <option value="{{ a.id }}" {% if agendamento_id_selecionado == a.id %}selected{% endif %}>{{ a.exame.nome }} ({{ a.data_hora.strftime('%d/%m') }})</option>
         {% endfor %}
       </select>
     </div>

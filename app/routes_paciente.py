@@ -88,14 +88,43 @@ def chat():
     pergunta_enviada = None
     encaminhada = False
     origem = None
-    exame_id_selecionado = request.form.get("exame_id") or (agendamentos[0].exame_id if agendamentos else None)
+    agendamento_id_selecionado = request.form.get("agendamento_id") or (agendamentos[0].id if agendamentos else None)
+    if agendamento_id_selecionado:
+        agendamento_id_selecionado = int(agendamento_id_selecionado)
 
     if request.method == "POST":
         pergunta_enviada = request.form.get("pergunta", "").strip()
-        exame_id_selecionado = request.form.get("exame_id") or None
+        agendamento_id_form = request.form.get("agendamento_id") or None
+        exame_id_form = request.form.get("exame_id") or None  # compat: clientes antigos ainda mandam só isso
+
+        # O seletor da tela (novo) guarda o agendamento específico, não só
+        # o tipo de exame — assim dá pra vincular a pergunta a exatamente
+        # qual consulta ela é sobre (ver ChatMensagem.agendamento_id),
+        # mesmo quando o paciente tem mais de um agendamento do mesmo
+        # exame.
+        agendamento_selecionado = (
+            Agendamento.query.filter_by(id=int(agendamento_id_form), paciente_id=paciente.id).first()
+            if agendamento_id_form else None
+        )
+        exame_selecionado = agendamento_selecionado.exame if agendamento_selecionado else None
+
+        if not agendamento_selecionado and exame_id_form:
+            # Compat com quem ainda manda só "exame_id" — resolve o exame
+            # normalmente e tenta achar, de forma best-effort, o
+            # agendamento mais recente deste paciente para esse exame, só
+            # pra ainda conseguir vincular a pergunta quando der.
+            exame_selecionado = Exame.query.get(int(exame_id_form))
+            if exame_selecionado:
+                agendamento_selecionado = (
+                    Agendamento.query.filter_by(paciente_id=paciente.id, exame_id=exame_selecionado.id)
+                    .order_by(Agendamento.data_hora.desc())
+                    .first()
+                )
+
+        exame_id_selecionado = exame_selecionado.id if exame_selecionado else None
+        agendamento_id_selecionado = agendamento_selecionado.id if agendamento_selecionado else None
 
         if pergunta_enviada:
-            exame_selecionado = Exame.query.get(int(exame_id_selecionado)) if exame_id_selecionado else None
 
             # A IA (quando configurada — ver app.ia_preparo) é SEMPRE
             # consultada primeiro, e não a base de conhecimento (FAQ) — ela
@@ -160,7 +189,7 @@ def chat():
                     pendente = PerguntaPendente(
                         clinica_id=paciente.clinica_id,
                         paciente_id=paciente.id,
-                        exame_id=int(exame_id_selecionado) if exame_id_selecionado else None,
+                        exame_id=exame_id_selecionado,
                         pergunta=pergunta_enviada,
                     )
                     db.session.add(pendente)
@@ -170,10 +199,11 @@ def chat():
 
             # Registra a pergunta+resposta no histórico do paciente — o
             # médico consegue ver essas dúvidas ao iniciar o atendimento
-            # (ver medico.atendimento).
+            # (ver medico.atendimento), já vinculadas ao agendamento certo.
             db.session.add(ChatMensagem(
                 paciente_id=paciente.id,
                 exame_id=exame_selecionado.id if exame_selecionado else None,
+                agendamento_id=agendamento_selecionado.id if agendamento_selecionado else None,
                 pergunta=pergunta_enviada,
                 resposta=resposta_ia,
                 origem=origem,
@@ -193,7 +223,7 @@ def chat():
         pergunta_enviada=pergunta_enviada,
         encaminhada=encaminhada,
         origem=origem,
-        exame_id_selecionado=int(exame_id_selecionado) if exame_id_selecionado else None,
+        agendamento_id_selecionado=agendamento_id_selecionado,
         historico_pendentes=historico_pendentes,
     )
 
