@@ -1,6 +1,37 @@
+"""Aplica as migrações de schema pendentes (ALTER TABLE ... ADD COLUMN IF
+NOT EXISTS) no banco - necessário porque db.create_all() só cria tabelas que
+ainda não existem, nunca adiciona colunas novas a uma tabela já existente.
+
+Roda automaticamente em TODO deploy (ver
+.platform/hooks/predeploy/01_migrar_banco.sh), usando a mesma DATABASE_URL
+que o app já usa naquele ambiente - por isso NÃO tem mais a senha do banco
+escrita aqui no código.
+
+Para rodar manualmente na sua máquina (ex.: testar uma migração nova antes
+de commitar, ou aplicar direto num ambiente sem esperar o próximo deploy):
+1. Crie um arquivo ".env" na raiz do projeto (ele já está no .gitignore,
+   então nunca vai parar no Git) com uma linha:
+       DATABASE_URL=postgresql://postgres:SENHA@HOST:5432/NOME_DO_BANCO?sslmode=verify-full&sslrootcert=global-bundle.pem
+   (troque SENHA/HOST/NOME_DO_BANCO pelo ambiente que quiser migrar -
+   media_dev, media_qa ou media_prod).
+2. Rode: python migrar_banco.py
+"""
+import os
+import sys
+
+from dotenv import load_dotenv
 import psycopg
 
-DATABASE_URL = "postgresql://postgres:silQ1A2Z3@database-1.cdyi4mii61i0.sa-east-1.rds.amazonaws.com:5432/media_dev?sslmode=verify-full&sslrootcert=global-bundle.pem"
+load_dotenv()
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    print(
+        "DATABASE_URL não está definida. Crie um arquivo .env na raiz do "
+        "projeto com DATABASE_URL=... (veja as instruções no topo deste "
+        "arquivo) ou exporte a variável antes de rodar."
+    )
+    sys.exit(1)
 
 SQL = """
 ALTER TABLE exames ADD COLUMN IF NOT EXISTS duracao_minutos INTEGER;
