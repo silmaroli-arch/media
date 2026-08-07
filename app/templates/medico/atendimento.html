@@ -50,12 +50,37 @@
 
         <h6 class="text-uppercase text-muted small mb-2">Atendimentos anteriores</h6>
         {% if atendimentos_anteriores %}
-          {% for a in atendimentos_anteriores %}
-          <div class="border-bottom py-2">
-            <div class="fw-semibold">{{ a.exame.nome }} — {{ a.data_hora.strftime('%d/%m/%Y') }}</div>
-            <div class="text-muted small">{{ a.notas_atendimento }}</div>
+        <div class="accordion" id="accordionAtendimentosAnteriores">
+          {% for a, mensagens_da_consulta in atendimentos_anteriores %}
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#atendimentoAnterior{{ a.id }}">
+                {{ a.exame.nome }} — {{ a.data_hora.strftime('%d/%m/%Y') }}
+              </button>
+            </h2>
+            <div id="atendimentoAnterior{{ a.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionAtendimentosAnteriores">
+              <div class="accordion-body">
+                <div class="mb-3">
+                  <div class="text-uppercase text-muted small mb-1">Observações registradas na época</div>
+                  <div>{{ a.notas_atendimento }}</div>
+                </div>
+                <div class="text-uppercase text-muted small mb-1">Perguntas feitas pelo app para aquela consulta</div>
+                {% if mensagens_da_consulta %}
+                  {% for m in mensagens_da_consulta %}
+                  <div class="border-bottom py-2">
+                    <div class="fw-semibold">{{ m.pergunta }}</div>
+                    <div class="text-muted small">{{ m.resposta or '(encaminhada para a secretaria, sem resposta automática)' }}</div>
+                    <div class="text-muted small">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}</div>
+                  </div>
+                  {% endfor %}
+                {% else %}
+                <p class="text-muted mb-0">Nenhuma pergunta registrada pelo app até a data desta consulta.</p>
+                {% endif %}
+              </div>
+            </div>
           </div>
           {% endfor %}
+        </div>
         {% else %}
         <p class="text-muted">Nenhum atendimento anterior com observações registradas.</p>
         {% endif %}

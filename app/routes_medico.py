@@ -1394,8 +1394,13 @@ def atendimento(agendamento_id):
         .all()
     )
     # Notas de atendimentos anteriores do mesmo paciente (com qualquer
-    # médico/exame) — reaproveitáveis como histórico de referência.
-    atendimentos_anteriores = (
+    # médico/exame) — reaproveitáveis como histórico de referência. Cada
+    # um vira seu próprio expand panel na tela, mostrando ao abrir as
+    # perguntas que o paciente fez pelo app até a data daquela consulta
+    # (mesmo paciente + mesmo exame — não temos um vínculo direto entre
+    # pergunta e agendamento específico, então usamos a data como
+    # aproximação razoável).
+    atendimentos_anteriores_raw = (
         Agendamento.query.filter(
             Agendamento.paciente_id == agendamento.paciente_id,
             Agendamento.id != agendamento.id,
@@ -1405,6 +1410,19 @@ def atendimento(agendamento_id):
         .limit(10)
         .all()
     )
+    atendimentos_anteriores = []
+    for a in atendimentos_anteriores_raw:
+        mensagens_da_consulta = (
+            ChatMensagem.query.filter(
+                ChatMensagem.paciente_id == agendamento.paciente_id,
+                ChatMensagem.exame_id == a.exame_id,
+                ChatMensagem.criado_em <= a.data_hora,
+            )
+            .order_by(ChatMensagem.criado_em.desc())
+            .all()
+        )
+        atendimentos_anteriores.append((a, mensagens_da_consulta))
+
     return render_template(
         "medico/atendimento.html",
         agendamento=agendamento,
