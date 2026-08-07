@@ -48,29 +48,7 @@
   </div>
 </div>
 
-<div class="card p-3">
-  <h5>Próximos agendamentos</h5>
-  {% if proximos %}
-  <table class="table table-sm mt-2">
-    <thead><tr><th>Data/Hora</th><th>Paciente</th><th>Exame</th><th>Status</th></tr></thead>
-    <tbody>
-      {% for a in proximos %}
-      <tr>
-        <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
-        <td>{{ a.paciente.nome }}</td>
-        <td>{{ a.exame.nome }}</td>
-        <td><span class="badge bg-secondary">{{ a.status }}</span></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="text-muted">Nenhum agendamento futuro.</p>
-  {% endif %}
-  <a href="#agenda-completa" class="small">Ver agenda completa &darr;</a>
-</div>
-
-<div id="agenda-completa" class="mt-4">
+<div id="agenda-completa">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h5 class="mb-0">Agenda de exames</h5>
     <a href="{{ url_for('medico.agenda_novo') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Novo agendamento</a>
@@ -85,6 +63,27 @@
       <span><span class="badge" style="background-color:#dc3545">&nbsp;</span> cancelado</span>
     </div>
     <div id="calendario"></div>
+  </div>
+
+  <div class="card p-3 mb-4">
+    <h5>Próximos agendamentos</h5>
+    {% if proximos %}
+    <table class="table table-sm mt-2">
+      <thead><tr><th>Data/Hora</th><th>Paciente</th><th>Exame</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for a in proximos %}
+        <tr>
+          <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+          <td>{{ a.paciente.nome }}</td>
+          <td>{{ a.exame.nome }}</td>
+          <td><span class="badge bg-secondary">{{ a.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">Nenhum agendamento futuro.</p>
+    {% endif %}
   </div>
 
   <div class="card p-3">
@@ -107,19 +106,7 @@
             {% if a.encerrada %}<span class="badge bg-dark">encerrado</span>{% endif %}
           </td>
           <td class="text-nowrap">
-            <form method="post" action="{{ url_for('medico.agenda_status', agendamento_id=a.id) }}" class="d-flex gap-1 mb-1">
-              <select name="status" class="form-select form-select-sm" style="width:auto">
-                {% for s in ['solicitado', 'agendado', 'confirmado', 'realizado', 'cancelado'] %}
-                <option value="{{ s }}" {% if s == a.status %}selected{% endif %}>{{ s }}</option>
-                {% endfor %}
-              </select>
-              <button type="submit" class="btn btn-sm btn-outline-primary">Atualizar</button>
-            </form>
-            <div class="d-flex gap-1 flex-wrap">
-              <a href="{{ url_for('medico.atendimento', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Atendimento">Atendimento</a>
-              <a href="{{ url_for('medico.resultado_upload', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Resultado">Resultado</a>
-              <a href="{{ url_for('medico.pagamento_registrar', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Pagamento">Pagamento</a>
-            </div>
+            <a href="{{ url_for('medico.pagamento_registrar', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Pagamento">Pagamento</a>
           </td>
         </tr>
         {% else %}
