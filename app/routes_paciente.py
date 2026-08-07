@@ -85,8 +85,12 @@ def preparo_exame(agendamento_id):
 @paciente_required
 def chat():
     paciente = current_user.paciente
+    # O seletor "sobre qual exame" só mostra exames agendados ou
+    # confirmados — solicitado ainda não é certo, e cancelado/realizado
+    # não fazem mais sentido como opção pra tirar dúvida sobre o preparo.
     agendamentos = (
         Agendamento.query.filter_by(paciente_id=paciente.id)
+        .filter(Agendamento.status.in_(["agendado", "confirmado"]))
         .order_by(Agendamento.data_hora.desc())
         .all()
     )
