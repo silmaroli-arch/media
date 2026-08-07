@@ -93,6 +93,23 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS contato_emergencia_telefone VARCH
 -- Rascunho de resposta da IA aguardando aprovação do médico (ver
 -- PerguntaPendente.resposta_sugerida_ia em app/models.py).
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_sugerida_ia TEXT;
+
+-- Emissão fiscal (NFC-e) direto com a SEFAZ, na tela "Dados da clínica".
+-- Senha do certificado, token do provedor e código CSC ficam gravados só
+-- criptografados (ver app/cripto_fiscal.py) — nunca em texto puro.
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_ambiente VARCHAR(20) NOT NULL DEFAULT 'homologacao';
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_modo_simulacao BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_simular_falha_conexao BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_certificado_pfx BYTEA;
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_certificado_senha_cripto BYTEA;
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_certificado_cnpj VARCHAR(20);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_certificado_validade DATE;
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_provedor_emissao VARCHAR(50) NOT NULL DEFAULT 'nenhum';
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_provedor_token_cripto BYTEA;
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_nfce_serie INTEGER;
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_nfce_proximo_numero INTEGER;
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_csc_id_token VARCHAR(20);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_csc_codigo_cripto BYTEA;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

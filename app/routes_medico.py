@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -24,6 +25,8 @@ from app.clinica_utils import clinica_atual, clinicas_do_usuario, selecionar_cli
 from app.pdf_preparo import extrair_sugestao_de_pdf
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.agendamento_otimizador import sugerir_horarios, medico_tem_bloqueio
+from app.cripto_fiscal import criptografar_bytes, criptografar_texto
+from cryptography.hazmat.primitives.serialization import pkcs12
 
 # Dias da semana usados no formulário de horário de atendimento por médico.
 # Índice = MedicoHorario.dia_semana (0=segunda ... 6=domingo).
