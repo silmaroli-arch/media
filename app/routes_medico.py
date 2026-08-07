@@ -241,7 +241,15 @@ def dashboard():
     clinica = clinica_atual()
 
     agendamentos_q = Agendamento.query.filter_by(clinica_id=clinica.id)
+    # "Pendente de resposta" no painel conta as duas situações que
+    # aparecem na tela "Perguntas dos pacientes" (ver
+    # medico.perguntas_pendentes) esperando alguma ação do médico: as que
+    # ainda não têm nenhum rascunho (status "pendente") E as que a IA já
+    # rascunhou mas ainda aguardam aprovação (status "aguardando_aprovacao")
+    # — antes só a primeira era contada aqui, então uma pergunta com
+    # rascunho da IA aparecia como card zerado mesmo tendo o que revisar.
     pendentes_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="pendente")
+    aguardando_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="aguardando_aprovacao")
     solicitacoes_q = Agendamento.query.filter_by(clinica_id=clinica.id, status="solicitado")
 
     if eh_medico():
@@ -258,6 +266,9 @@ def dashboard():
         pendentes_q = pendentes_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
+        aguardando_q = aguardando_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
+        )
         solicitacoes_q = solicitacoes_q.filter(Agendamento.medico_id == current_user.id)
     else:
         total_pacientes = Paciente.query.filter_by(clinica_id=clinica.id).count()
@@ -268,7 +279,7 @@ def dashboard():
         .limit(5)
         .all()
     )
-    pendentes = pendentes_q.count()
+    pendentes = pendentes_q.count() + aguardando_q.count()
     solicitacoes_pendentes = solicitacoes_q.count()
     # A agenda completa (calendário + lista) foi incorporada ao painel — não
     # existe mais uma tela separada de "Agenda" no menu.
