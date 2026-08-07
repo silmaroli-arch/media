@@ -955,9 +955,13 @@ def agenda():
 @login_required
 @staff_required
 def agenda_eventos():
-    """Retorna os agendamentos no formato que o FullCalendar espera."""
+    """Retorna os agendamentos no formato que o FullCalendar espera. Só
+    mostra o que ainda está de pé (solicitado/agendado/confirmado) —
+    cancelado e realizado não aparecem mais no calendário do painel."""
     clinica = clinica_atual()
-    query = Agendamento.query.filter_by(clinica_id=clinica.id)
+    query = Agendamento.query.filter_by(clinica_id=clinica.id).filter(
+        Agendamento.status.in_(["solicitado", "agendado", "confirmado"])
+    )
     if eh_medico():
         query = query.filter_by(medico_id=current_user.id)
     agendamentos = query.all()
