@@ -25,6 +25,9 @@ MARCADOR_NAO_SEI = "NAO_SEI_ENCAMINHAR"
 # Pode ser trocado por variável de ambiente sem precisar mexer no código —
 # útil pra ajustar custo/qualidade sem um novo deploy.
 MODELO_PADRAO = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5")
+# gpt-4o-mini: mais barato e rápido da OpenAI, suficiente para esta tarefa
+# (mesmo raciocínio de custo/qualidade do Haiku do lado da Claude).
+MODELO_OPENAI_PADRAO = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 PROMPT_SISTEMA = """Você é um assistente virtual de uma clínica, respondendo dúvidas de pacientes sobre o preparo para um exame médico. Responda SOMENTE com base nas informações do preparo fornecidas pelo usuário — nunca invente prazos, medicamentos, alimentos ou características de produtos (cor, sabor, composição, marca) que não estejam explicitamente listadas ali.
 
@@ -37,7 +40,7 @@ Regras importantes:
 - Nunca responda sobre assuntos fora do preparo deste exame específico (ex.: diagnósticos, tratamentos, outros exames)."""
 
 
-def _cliente():
+def _cliente_anthropic():
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
@@ -46,6 +49,23 @@ def _cliente():
     except ImportError:
         return None
     return anthropic.Anthropic(api_key=api_key)
+
+
+def _cliente_openai():
+    """Segunda IA opcional (ChatGPT/OpenAI), usada em conjunto com a Claude
+    (ver responder_com_ia) para dar mais confiança às respostas antes de
+    irem para a aprovação do médico - nunca sozinha no lugar da Claude, só
+    quando ANTHROPIC_API_KEY também estiver configurada é que as duas são
+    combinadas; se só OPENAI_API_KEY estiver configurada, funciona como
+    IA única (mesma lógica de "não sei" e mesmo prompt da Claude)."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    try:
+        import openai
+    except ImportError:
+        return None
+    return openai.OpenAI(api_key=api_key)
 
 
 def _formatar_contexto_preparo(exame):
@@ -147,19 +167,7 @@ def _formatar_contexto_preparo(exame):
     return "\n".join(partes)
 
 
-def responder_com_ia(pergunta_usuario, exame):
-    """Tenta responder a pergunta do paciente usando a API da Claude, com o
-    preparo do exame como contexto. Retorna a resposta (string) quando a
-    IA respondeu com confiança, ou None quando: a API não está
-    configurada; a chamada falhou (rede, limite de uso etc.); ou a
-    própria IA sinalizou que não tem certeza. Em qualquer caso de None, a
-    pergunta segue para a correspondência por palavra-chave e, por fim,
-    para a fila da secretaria — o comportamento de antes não muda."""
-    cliente = _cliente()
-    if not cliente:
-        return None
-
-    contexto = _formatar_contexto_preparo(exame)
+def _perguntar_claude(cliente, pergunta_usuario, contexto):
     try:
         mensagem = cliente.messages.create(
             model=MODELO_PADRAO,
@@ -172,8 +180,105 @@ def responder_com_ia(pergunta_usuario, exame):
         )
     except Exception:
         return None
-
     texto = "".join(getattr(bloco, "text", "") for bloco in mensagem.content).strip()
     if not texto or MARCADOR_NAO_SEI in texto:
         return None
     return texto
+
+
+def _perguntar_chatgpt(cliente, pergunta_usuario, contexto):
+    try:
+        resposta = cliente.chat.completions.create(
+            model=MODELO_OPENAI_PADRAO,
+            max_tokens=300,
+            messages=[
+                {"role": "system", "content": PROMPT_SISTEMA},
+                {
+                    "role": "user",
+                    "content": f"Dados do preparo:\n{contexto}\n\nPergunta do paciente: {pergunta_usuario}",
+                },
+            ],
+        )
+    except Exception:
+        return None
+    texto = (resposta.choices[0].message.content or "").strip()
+    if not texto or MARCADOR_NAO_SEI in texto:
+        return None
+    return texto
+
+
+def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b):
+    """Quando as duas IAs respondem, usa uma chamada extra rápida e barata
+    (Claude Haiku, poucos tokens) só para CLASSIFICAR se as duas respostas
+    passam a mesma orientação prática ao paciente - não reescreve nem
+    tenta "resolver" a diferença sozinha, só sinaliza para o médico
+    revisar com mais atenção quando elas divergem."""
+    if not cliente_anthropic:
+        # Sem a Claude disponível para julgar, não dá pra comparar - trata
+        # como divergência (mais seguro pedir revisão do que presumir
+        # concordância sem checar).
+        return True
+    try:
+        veredito = cliente_anthropic.messages.create(
+            model=MODELO_PADRAO,
+            max_tokens=5,
+            system=(
+                "Compare as duas respostas abaixo, dadas por assistentes diferentes à "
+                "mesma pergunta de um paciente sobre preparo de exame. Responda SOMENTE "
+                "com a palavra SIM se elas passam a mesma orientação prática ao "
+                "paciente, ou NAO se divergem em algum ponto que mudaria o que o "
+                "paciente deveria fazer."
+            ),
+            messages=[{
+                "role": "user",
+                "content": f"Resposta 1: {resposta_a}\n\nResposta 2: {resposta_b}",
+            }],
+        )
+        texto = "".join(getattr(bloco, "text", "") for bloco in veredito.content).strip().upper()
+        return texto.startswith("NAO")
+    except Exception:
+        return True
+
+
+def responder_com_ia(pergunta_usuario, exame):
+    """Tenta responder a pergunta do paciente usando IA, com o preparo do
+    exame como contexto. Quando tanto ANTHROPIC_API_KEY quanto
+    OPENAI_API_KEY estão configuradas, consulta as DUAS (Claude e
+    ChatGPT) e as combina por "reforço mútuo": se concordam, retorna a
+    resposta normalmente; se divergem em algum ponto prático, retorna as
+    duas lado a lado com um aviso, para o médico revisar com mais atenção
+    antes de aprovar (ver app.routes_paciente.chat e
+    medico/perguntas.html). Com só uma das chaves configurada, funciona
+    com aquela IA sozinha, exatamente como antes.
+
+    Retorna None quando: nenhuma API está configurada; as chamadas
+    falharam (rede, limite de uso etc.); ou a(s) IA(s) sinalizaram que não
+    têm certeza. Em qualquer caso de None, a pergunta segue para a
+    correspondência por palavra-chave e, por fim, para a fila da
+    secretaria — o comportamento de antes não muda."""
+    cliente_anthropic = _cliente_anthropic()
+    cliente_openai = _cliente_openai()
+    if not cliente_anthropic and not cliente_openai:
+        return None
+
+    contexto = _formatar_contexto_preparo(exame)
+
+    resposta_claude = (
+        _perguntar_claude(cliente_anthropic, pergunta_usuario, contexto) if cliente_anthropic else None
+    )
+    resposta_chatgpt = (
+        _perguntar_chatgpt(cliente_openai, pergunta_usuario, contexto) if cliente_openai else None
+    )
+
+    if resposta_claude and resposta_chatgpt:
+        if _respostas_divergem(cliente_anthropic, resposta_claude, resposta_chatgpt):
+            return (
+                "⚠️ As duas IAs consultadas (Claude e ChatGPT) deram respostas "
+                "diferentes para esta pergunta — revise com atenção antes de "
+                "aprovar.\n\n"
+                f"Resposta do Claude:\n{resposta_claude}\n\n"
+                f"Resposta do ChatGPT:\n{resposta_chatgpt}"
+            )
+        return resposta_claude
+
+    return resposta_claude or resposta_chatgpt
