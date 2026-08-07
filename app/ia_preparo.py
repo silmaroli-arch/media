@@ -259,6 +259,55 @@ def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b):
         return True
 
 
+def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, resposta_b):
+    """Quando as duas IAs respondem de forma divergente, usa uma chamada
+    extra à Claude para propor UMA única resposta final que já concilia
+    as duas — em vez de só colar as duas respostas lado a lado, tenta de
+    fato sugerir a melhor síntese, mantendo a mesma cautela do prompt
+    principal (nunca inventar informação que não esteja em nenhuma das
+    duas respostas, e recomendar confirmar com a secretaria quando as
+    respostas realmente se contradizem num ponto que mudaria a orientação
+    ao paciente). Continua sendo só uma SUGESTÃO — o médico revisa e edita
+    antes de aprovar, igual a qualquer outro rascunho da IA.
+
+    Retorna None se não conseguir sintetizar (Claude indisponível ou erro
+    na chamada) — nesse caso quem chamou deve cair de volta para mostrar
+    as duas respostas lado a lado, nunca travar a aprovação por causa
+    disso."""
+    if not cliente_anthropic:
+        return None
+    try:
+        sintese = cliente_anthropic.messages.create(
+            model=MODELO_PADRAO,
+            max_tokens=300,
+            system=(
+                "Duas IAs diferentes responderam à mesma pergunta de um paciente "
+                "sobre preparo de exame, com respostas que divergem em algum ponto. "
+                "Sua tarefa é propor UMA única resposta final, em português do "
+                "Brasil, curta (no máximo 3-4 frases) e acolhedora, que concilie as "
+                "duas — priorizando a informação mais completa e mais segura "
+                "(quando uma resposta é mais cautelosa que a outra, prefira a mais "
+                "cautelosa). NUNCA invente uma informação que não esteja em "
+                "nenhuma das duas respostas. Se as duas realmente se contradizem "
+                "num ponto que mudaria o que o paciente deveria fazer (e não dá "
+                "para saber qual está certa), não tente adivinhar: responda "
+                "recomendando que o paciente confirme com a secretaria/clínica "
+                "esse ponto específico, deixando claro qual é o ponto de dúvida."
+            ),
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Pergunta do paciente: {pergunta_usuario}\n\n"
+                    f"Resposta 1: {resposta_a}\n\nResposta 2: {resposta_b}"
+                ),
+            }],
+        )
+        texto = "".join(getattr(bloco, "text", "") for bloco in sintese.content).strip()
+        return texto or None
+    except Exception:
+        return None
+
+
 def responder_com_ia(pergunta_usuario, exame):
     """Tenta responder a pergunta do paciente usando IA, com o preparo do
     exame como contexto. Quando tanto ANTHROPIC_API_KEY quanto
@@ -295,13 +344,26 @@ def responder_com_ia(pergunta_usuario, exame):
 
     if resposta_claude and resposta_chatgpt:
         if _respostas_divergem(cliente_anthropic, resposta_claude, resposta_chatgpt):
-            final = (
-                "⚠️ As duas IAs consultadas (Claude e ChatGPT) deram respostas "
-                "diferentes para esta pergunta — revise com atenção antes de "
-                "aprovar.\n\n"
-                f"Resposta do Claude:\n{resposta_claude}\n\n"
-                f"Resposta do ChatGPT:\n{resposta_chatgpt}"
-            )
+            sintese = _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_claude, resposta_chatgpt)
+            if sintese:
+                final = (
+                    "⚠️ As duas IAs consultadas (Claude e ChatGPT) deram respostas "
+                    "diferentes para esta pergunta — revise a sugestão abaixo com "
+                    "atenção antes de aprovar (as respostas de cada uma estão logo "
+                    "acima, para comparação).\n\n"
+                    f"Sugestão (junção das duas respostas): {sintese}"
+                )
+            else:
+                # Não conseguiu sintetizar (Claude indisponível ou erro na
+                # chamada) — cai de volta para mostrar as duas respostas
+                # completas, em vez de travar a aprovação por causa disso.
+                final = (
+                    "⚠️ As duas IAs consultadas (Claude e ChatGPT) deram respostas "
+                    "diferentes para esta pergunta — revise com atenção antes de "
+                    "aprovar.\n\n"
+                    f"Resposta do Claude:\n{resposta_claude}\n\n"
+                    f"Resposta do ChatGPT:\n{resposta_chatgpt}"
+                )
         else:
             final = resposta_claude
     else:

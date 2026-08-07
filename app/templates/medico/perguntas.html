@@ -6,48 +6,70 @@
 
 {% if aguardando %}
   <h5 class="mt-2"><i class="bi bi-robot"></i> Respostas da IA aguardando sua aprovação</h5>
-  <p class="text-muted">A IA já respondeu essas perguntas, mas o paciente ainda não viu nada — revise o rascunho abaixo, edite se precisar, e aprove para liberar a resposta e salvá-la na base de conhecimento.</p>
-  {% for p in aguardando %}
-  <div class="card p-3 mb-3 border-info">
-    <p class="mb-1"><strong>{{ p.paciente.nome }}</strong> {% if p.exame %}<span class="badge bg-light text-dark">{{ p.exame.nome }}</span>{% endif %} <span class="text-muted small">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span></p>
-    <p class="fs-5">"{{ p.pergunta }}"</p>
-    <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
-      {% if p.resposta_bruta_chatgpt %}
-      <div class="mb-2">
-        <label class="form-label small text-muted mb-1">Resposta do ChatGPT:</label>
-        <div class="border rounded p-2 bg-light small" style="white-space: pre-wrap;">{{ p.resposta_bruta_chatgpt }}</div>
+  <p class="text-muted">A IA já respondeu essas perguntas, mas o paciente ainda não viu nada — clique numa pergunta para revisar o rascunho, edite se precisar, e aprove para liberar a resposta e salvá-la na base de conhecimento.</p>
+  <div class="accordion mb-4" id="accordionAguardando">
+    {% for p in aguardando %}
+    <div class="accordion-item border-info">
+      <h2 class="accordion-header">
+        <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#aguardando-{{ p.id }}">
+          <span class="me-2"><strong>{{ p.paciente.nome }}</strong> — "{{ p.pergunta }}"</span>
+          {% if p.exame %}<span class="badge bg-light text-dark me-2">{{ p.exame.nome }}</span>{% endif %}
+          <span class="text-muted small">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+        </button>
+      </h2>
+      <div id="aguardando-{{ p.id }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#accordionAguardando">
+        <div class="accordion-body">
+          <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
+            {% if p.resposta_bruta_chatgpt %}
+            <div class="mb-2">
+              <label class="form-label small text-muted mb-1">Resposta do ChatGPT:</label>
+              <div class="border rounded p-2 bg-light small" style="white-space: pre-wrap;">{{ p.resposta_bruta_chatgpt }}</div>
+            </div>
+            {% endif %}
+            {% if p.resposta_bruta_claude %}
+            <div class="mb-2">
+              <label class="form-label small text-muted mb-1">Resposta do Claude:</label>
+              <div class="border rounded p-2 bg-light small" style="white-space: pre-wrap;">{{ p.resposta_bruta_claude }}</div>
+            </div>
+            {% endif %}
+            <div class="mb-2">
+              <label class="form-label small text-muted mb-1">Rascunho final (sugestão de junção das respostas acima) — edite se precisar antes de aprovar:</label>
+              <textarea name="resposta" class="form-control" rows="3" required>{{ p.resposta_sugerida_ia }}</textarea>
+            </div>
+            <button type="submit" class="btn btn-info btn-sm">Aprovar e enviar ao paciente</button>
+          </form>
+        </div>
       </div>
-      {% endif %}
-      {% if p.resposta_bruta_claude %}
-      <div class="mb-2">
-        <label class="form-label small text-muted mb-1">Resposta do Claude:</label>
-        <div class="border rounded p-2 bg-light small" style="white-space: pre-wrap;">{{ p.resposta_bruta_claude }}</div>
-      </div>
-      {% endif %}
-      <div class="mb-2">
-        <label class="form-label small text-muted mb-1">Rascunho final (junção das respostas acima) — edite se precisar antes de aprovar:</label>
-        <textarea name="resposta" class="form-control" rows="3" required>{{ p.resposta_sugerida_ia }}</textarea>
-      </div>
-      <button type="submit" class="btn btn-info btn-sm">Aprovar e enviar ao paciente</button>
-    </form>
+    </div>
+    {% endfor %}
   </div>
-  {% endfor %}
 {% endif %}
 
 <h4 class="mt-4">Perguntas sem nenhuma resposta ainda</h4>
 {% if pendentes %}
-  {% for p in pendentes %}
-  <div class="card p-3 mb-3">
-    <p class="mb-1"><strong>{{ p.paciente.nome }}</strong> {% if p.exame %}<span class="badge bg-light text-dark">{{ p.exame.nome }}</span>{% endif %} <span class="text-muted small">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span></p>
-    <p class="fs-5">"{{ p.pergunta }}"</p>
-    <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
-      <div class="mb-2">
-        <textarea name="resposta" class="form-control" rows="2" placeholder="Digite a resposta que será enviada ao paciente e salva na base de conhecimento..." required></textarea>
+  <div class="accordion mb-4" id="accordionPendentes">
+    {% for p in pendentes %}
+    <div class="accordion-item">
+      <h2 class="accordion-header">
+        <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#pendente-{{ p.id }}">
+          <span class="me-2"><strong>{{ p.paciente.nome }}</strong> — "{{ p.pergunta }}"</span>
+          {% if p.exame %}<span class="badge bg-light text-dark me-2">{{ p.exame.nome }}</span>{% endif %}
+          <span class="text-muted small">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+        </button>
+      </h2>
+      <div id="pendente-{{ p.id }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#accordionPendentes">
+        <div class="accordion-body">
+          <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
+            <div class="mb-2">
+              <textarea name="resposta" class="form-control" rows="2" placeholder="Digite a resposta que será enviada ao paciente e salva na base de conhecimento..." required></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Responder e ensinar a IA</button>
+          </form>
+        </div>
       </div>
-      <button type="submit" class="btn btn-primary btn-sm">Responder e ensinar a IA</button>
-    </form>
+    </div>
+    {% endfor %}
   </div>
-  {% endfor %}
 {% else %}
   <div class="alert alert-success">Nenhuma pergunta pendente sem resposta. 🎉</div>
 {% endif %}
