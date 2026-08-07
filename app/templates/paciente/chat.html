@@ -4,7 +4,7 @@
 <h3 class="mb-3"><i class="bi bi-chat-dots"></i> Tirar dúvidas sobre o preparo</h3>
 
 <div class="card p-4 mb-4">
-  <form method="post">
+  <form method="post" id="form-tirar-duvida">
     <div class="mb-3">
       <label class="form-label">Sobre qual exame é a sua dúvida?</label>
       <select name="exame_id" class="form-select">
@@ -18,10 +18,17 @@
       <label class="form-label">Sua pergunta</label>
       <div class="input-group">
         <input type="text" name="pergunta" class="form-control" placeholder='Ex: "Posso comer batata antes do exame?"' required>
-        <button type="submit" class="btn btn-success">Perguntar</button>
+        <button type="submit" class="btn btn-success" id="btn-perguntar">Perguntar</button>
       </div>
     </div>
   </form>
+  <script>
+    document.getElementById('form-tirar-duvida').addEventListener('submit', function () {
+      var botao = document.getElementById('btn-perguntar');
+      botao.disabled = true;
+      botao.innerHTML = 'Enviando...';
+    });
+  </script>
 
   {% if pergunta_enviada %}
   <div class="mt-4">
