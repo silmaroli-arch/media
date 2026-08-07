@@ -292,7 +292,11 @@ def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, respos
                 "num ponto que mudaria o que o paciente deveria fazer (e não dá "
                 "para saber qual está certa), não tente adivinhar: responda "
                 "recomendando que o paciente confirme com a secretaria/clínica "
-                "esse ponto específico, deixando claro qual é o ponto de dúvida."
+                "esse ponto específico, deixando claro qual é o ponto de dúvida. "
+                "Responda SOMENTE com o texto que será enviado direto ao "
+                "paciente — sem títulos como 'Resposta final:', sem aspas "
+                "envolvendo tudo, e sem nenhum comentário sobre as duas IAs ou "
+                "sobre o processo de conciliação."
             ),
             messages=[{
                 "role": "user",
@@ -346,13 +350,12 @@ def responder_com_ia(pergunta_usuario, exame):
         if _respostas_divergem(cliente_anthropic, resposta_claude, resposta_chatgpt):
             sintese = _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_claude, resposta_chatgpt)
             if sintese:
-                final = (
-                    "⚠️ As duas IAs consultadas (Claude e ChatGPT) deram respostas "
-                    "diferentes para esta pergunta — revise a sugestão abaixo com "
-                    "atenção antes de aprovar (as respostas de cada uma estão logo "
-                    "acima, para comparação).\n\n"
-                    f"Sugestão (junção das duas respostas): {sintese}"
-                )
+                # O rascunho final é o próprio texto sintetizado, já pronto
+                # para envio ao paciente — as respostas individuais do
+                # Claude e do ChatGPT continuam visíveis acima (ver
+                # medico/perguntas.html), então não é preciso repetir aviso
+                # nenhum aqui dentro do textarea.
+                final = sintese
             else:
                 # Não conseguiu sintetizar (Claude indisponível ou erro na
                 # chamada) — cai de volta para mostrar as duas respostas

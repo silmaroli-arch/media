@@ -11,13 +11,13 @@
     {% for p in aguardando %}
     <div class="accordion-item border-info">
       <h2 class="accordion-header">
-        <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#aguardando-{{ p.id }}">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#aguardando-{{ p.id }}">
           <span class="me-2"><strong>{{ p.paciente.nome }}</strong> — "{{ p.pergunta }}"</span>
           {% if p.exame %}<span class="badge bg-light text-dark me-2">{{ p.exame.nome }}</span>{% endif %}
           <span class="text-muted small">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
         </button>
       </h2>
-      <div id="aguardando-{{ p.id }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#accordionAguardando">
+      <div id="aguardando-{{ p.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionAguardando">
         <div class="accordion-body">
           <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
             {% if p.resposta_bruta_chatgpt %}
@@ -51,13 +51,13 @@
     {% for p in pendentes %}
     <div class="accordion-item">
       <h2 class="accordion-header">
-        <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#pendente-{{ p.id }}">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#pendente-{{ p.id }}">
           <span class="me-2"><strong>{{ p.paciente.nome }}</strong> — "{{ p.pergunta }}"</span>
           {% if p.exame %}<span class="badge bg-light text-dark me-2">{{ p.exame.nome }}</span>{% endif %}
           <span class="text-muted small">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
         </button>
       </h2>
-      <div id="pendente-{{ p.id }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#accordionPendentes">
+      <div id="pendente-{{ p.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionPendentes">
         <div class="accordion-body">
           <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
             <div class="mb-2">
