@@ -1564,7 +1564,6 @@ def pagamento_comprovante(agendamento_id):
 @medico_bp.route("/agenda/<int:agendamento_id>/pagamento/emitir-nfse", methods=["POST"])
 @login_required
 @staff_required
-@permissao_required("perm_dados_clinica")
 def pagamento_emitir_nfse(agendamento_id):
     """Emite a NFS-e do pagamento já registrado (ver app/nfse_nacional.py
     para o fluxo completo: monta o DPS, assina com o certificado da
