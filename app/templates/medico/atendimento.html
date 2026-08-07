@@ -7,51 +7,59 @@
   {% if agendamento.encerrada %}<span class="badge bg-dark ms-2">Encerrado em {{ agendamento.encerrado_em.strftime('%d/%m/%Y %H:%M') }}</span>{% endif %}
 </p>
 
-<div class="row g-4">
-  <div class="col-md-6">
-    <div class="card p-3 mb-4">
-      <h5>Dúvidas do paciente sobre este exame (app)</h5>
-      {% if mensagens_chat %}
-        {% for m in mensagens_chat %}
-        <div class="border-bottom py-2">
-          <div class="fw-semibold">{{ m.pergunta }}</div>
-          <div class="text-muted small">{{ m.resposta or '(encaminhada para a secretaria, sem resposta automática)' }}</div>
-          <div class="text-muted small">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}</div>
-        </div>
-        {% endfor %}
-      {% else %}
-      <p class="text-muted">O paciente ainda não fez nenhuma pergunta pelo aplicativo sobre este exame.</p>
-      {% endif %}
+<div class="card p-4 mb-4">
+  <h5 class="mb-3">Observações da consulta</h5>
+  <form method="post">
+    <textarea name="notas_atendimento" class="form-control mb-3" rows="8"
+              placeholder="Anotações sobre a consulta — ficam salvas no histórico do paciente para consulta futura.">{{ agendamento.notas_atendimento or '' }}</textarea>
+    <div class="form-check mb-3">
+      <input type="checkbox" name="encerrar" id="encerrar" class="form-check-input" {% if agendamento.encerrada %}checked disabled{% endif %}>
+      <label class="form-check-label" for="encerrar">Encerrar este atendimento (marca o agendamento como "realizado")</label>
     </div>
+    <button type="submit" class="btn btn-primary">Salvar</button>
+    <a href="{{ url_for('medico.agenda') }}" class="btn btn-link">Voltar para a agenda</a>
+  </form>
+</div>
 
-    <div class="card p-3">
-      <h5>Histórico de atendimentos anteriores deste paciente</h5>
-      {% if atendimentos_anteriores %}
-        {% for a in atendimentos_anteriores %}
-        <div class="border-bottom py-2">
-          <div class="fw-semibold">{{ a.exame.nome }} — {{ a.data_hora.strftime('%d/%m/%Y') }}</div>
-          <div class="text-muted small">{{ a.notas_atendimento }}</div>
-        </div>
-        {% endfor %}
-      {% else %}
-      <p class="text-muted">Nenhum atendimento anterior com observações registradas.</p>
-      {% endif %}
-    </div>
-  </div>
+<div class="accordion" id="accordionHistoricoPaciente">
+  <div class="accordion-item">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#historicoPacienteBody">
+        Histórico de atendimentos anteriores deste paciente
+      </button>
+    </h2>
+    <div id="historicoPacienteBody" class="accordion-collapse collapse" data-bs-parent="#accordionHistoricoPaciente">
+      <div class="accordion-body">
+        <h6 class="text-uppercase text-muted small mb-2">
+          Dúvidas do paciente sobre este exame (app)
+          <span class="badge bg-info text-dark ms-1">desta consulta</span>
+        </h6>
+        {% if mensagens_chat %}
+          {% for m in mensagens_chat %}
+          <div class="border-bottom py-2">
+            <div class="fw-semibold">{{ m.pergunta }}</div>
+            <div class="text-muted small">{{ m.resposta or '(encaminhada para a secretaria, sem resposta automática)' }}</div>
+            <div class="text-muted small">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}</div>
+          </div>
+          {% endfor %}
+        {% else %}
+        <p class="text-muted">O paciente ainda não fez nenhuma pergunta pelo aplicativo sobre este exame.</p>
+        {% endif %}
 
-  <div class="col-md-6">
-    <div class="card p-4">
-      <h5 class="mb-3">Observações da consulta</h5>
-      <form method="post">
-        <textarea name="notas_atendimento" class="form-control mb-3" rows="8"
-                  placeholder="Anotações sobre a consulta — ficam salvas no histórico do paciente para consulta futura.">{{ agendamento.notas_atendimento or '' }}</textarea>
-        <div class="form-check mb-3">
-          <input type="checkbox" name="encerrar" id="encerrar" class="form-check-input" {% if agendamento.encerrada %}checked disabled{% endif %}>
-          <label class="form-check-label" for="encerrar">Encerrar este atendimento (marca o agendamento como "realizado")</label>
-        </div>
-        <button type="submit" class="btn btn-primary">Salvar</button>
-        <a href="{{ url_for('medico.agenda') }}" class="btn btn-link">Voltar para a agenda</a>
-      </form>
+        <hr class="my-3">
+
+        <h6 class="text-uppercase text-muted small mb-2">Atendimentos anteriores</h6>
+        {% if atendimentos_anteriores %}
+          {% for a in atendimentos_anteriores %}
+          <div class="border-bottom py-2">
+            <div class="fw-semibold">{{ a.exame.nome }} — {{ a.data_hora.strftime('%d/%m/%Y') }}</div>
+            <div class="text-muted small">{{ a.notas_atendimento }}</div>
+          </div>
+          {% endfor %}
+        {% else %}
+        <p class="text-muted">Nenhum atendimento anterior com observações registradas.</p>
+        {% endif %}
+      </div>
     </div>
   </div>
 </div>
