@@ -1,17 +1,25 @@
-"""Integração opcional com a API da Claude (Anthropic) para responder
-dúvidas de pacientes de forma mais flexível do que a correspondência por
-palavra-chave de `app.faq_engine` — interpreta a pergunta em linguagem
-natural usando como contexto os dados estruturados do preparo do exame
-(cortes, medicamentos, alimentos, exames anteriores, informações gerais),
-já com os prazos calculados a partir do agendamento.
+"""Integração opcional com APIs de IA (Claude/Anthropic e, opcionalmente,
+ChatGPT/OpenAI) para responder dúvidas de pacientes de forma mais flexível
+do que a correspondência por palavra-chave de `app.faq_engine` — interpreta
+a pergunta em linguagem natural usando como contexto os dados estruturados
+do preparo do exame (cortes, medicamentos, alimentos, exames anteriores,
+informações gerais), já com os prazos calculados a partir do agendamento.
 
-Só é usada quando a variável de ambiente ANTHROPIC_API_KEY está
-configurada (ver .env.example) — sem ela, `responder_com_ia` sempre
-retorna None e o sistema continua funcionando só com a correspondência
-por palavra-chave de app.faq_engine (ver app.routes_paciente.chat), do
-jeito que já funcionava antes. Também nunca "trava" o chat: qualquer erro
-de rede/API é tratado como "não conseguiu responder agora" e cai de volta
-para o mesmo caminho de sempre.
+Só é usada quando pelo menos uma das variáveis de ambiente
+ANTHROPIC_API_KEY / OPENAI_API_KEY está configurada (ver .env.example) —
+sem nenhuma delas, `responder_com_ia` sempre retorna None e o sistema
+continua funcionando só com a correspondência por palavra-chave de
+app.faq_engine (ver app.routes_paciente.chat), do jeito que já funcionava
+antes. Também nunca "trava" o chat: qualquer erro de rede/API é tratado
+como "não conseguiu responder agora" e cai de volta para o mesmo caminho
+de sempre.
+
+Quando as DUAS chaves estão configuradas, consulta as duas IAs para a
+mesma pergunta ("reforço mútuo"): se concordam, usa a resposta da Claude
+normalmente; se divergem em algum ponto prático, retorna as duas lado a
+lado com um aviso, para o médico revisar com mais atenção antes de
+aprovar (ver app.routes_paciente.chat e medico/perguntas.html) — nunca
+tenta "resolver" a diferença sozinha.
 
 Importante: é instruída a responder SÓ com base no preparo cadastrado, e a
 sinalizar quando não tem certeza (em vez de arriscar uma informação
@@ -54,7 +62,7 @@ def _cliente_anthropic():
 def _cliente_openai():
     """Segunda IA opcional (ChatGPT/OpenAI), usada em conjunto com a Claude
     (ver responder_com_ia) para dar mais confiança às respostas antes de
-    irem para a aprovação do médico - nunca sozinha no lugar da Claude, só
+    irem para a aprovação do médico — nunca sozinha no lugar da Claude, só
     quando ANTHROPIC_API_KEY também estiver configurada é que as duas são
     combinadas; se só OPENAI_API_KEY estiver configurada, funciona como
     IA única (mesma lógica de "não sei" e mesmo prompt da Claude)."""
