@@ -57,7 +57,7 @@
       </div>
       <div class="col-md-7">
         <label class="form-label">Rua</label>
-        <input type="text" name="rua" id="rua" class="form-control" value="{{ paciente.rua if paciente else '' }}">
+        <input type="text" name="rua" id="rua" class="form-control bg-light" value="{{ paciente.rua if paciente else '' }}" readonly>
       </div>
       <div class="col-md-2">
         <label class="form-label">Número</label>
@@ -69,15 +69,15 @@
       </div>
       <div class="col-md-4">
         <label class="form-label">Bairro</label>
-        <input type="text" name="bairro" id="bairro" class="form-control" value="{{ paciente.bairro if paciente else '' }}">
+        <input type="text" name="bairro" id="bairro" class="form-control bg-light" value="{{ paciente.bairro if paciente else '' }}" readonly>
       </div>
       <div class="col-md-3">
         <label class="form-label">Cidade</label>
-        <input type="text" name="cidade" id="cidade" class="form-control" value="{{ paciente.cidade if paciente else '' }}">
+        <input type="text" name="cidade" id="cidade" class="form-control bg-light" value="{{ paciente.cidade if paciente else '' }}" readonly>
       </div>
       <div class="col-md-1">
         <label class="form-label">UF</label>
-        <input type="text" name="uf" id="uf" maxlength="2" class="form-control" value="{{ paciente.uf if paciente else '' }}">
+        <input type="text" name="uf" id="uf" maxlength="2" class="form-control bg-light" value="{{ paciente.uf if paciente else '' }}" readonly>
       </div>
     </div>
 
@@ -147,8 +147,8 @@
   aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
 
   // Busca de endereço por CEP via ViaCEP — preenche os campos
-  // automaticamente, mas continuam editáveis (o preenchimento é só uma
-  // sugestão; a pessoa pode corrigir manualmente).
+  // automaticamente; os campos de endereço (rua, bairro, cidade e UF)
+  // ficam somente leitura, preenchidos só por essa busca do CEP.
   document.getElementById('cep').addEventListener('blur', function () {
     var cep = this.value.replace(/\D/g, '');
     var status = document.getElementById('cep_status');
@@ -165,7 +165,7 @@
         document.getElementById('bairro').value = dados.bairro || '';
         document.getElementById('cidade').value = dados.localidade || '';
         document.getElementById('uf').value = dados.uf || '';
-        status.textContent = 'Endereço preenchido automaticamente — confira antes de salvar.';
+        status.textContent = 'Endereço preenchido automaticamente pelo CEP.';
       })
       .catch(function () {
         status.textContent = 'Não foi possível consultar o CEP agora — preencha manualmente.';
