@@ -21,3 +21,10 @@ tmp_export_debug.tar.gz
 # pelo proprio script antes do commit, mas fica aqui tambem por seguranca
 # caso essa etapa falhe por algum motivo.
 ultima_mudanca.txt
+
+# Log do auto_commit_push.bat - cresce a CADA execucao do agendador (a cada
+# poucos minutos), mesmo quando nao ha nenhuma mudanca de codigo real. Se
+# ele ficasse rastreado pelo git (como ficou por engano ate agora), isso
+# gerava um commit - e um deploy inteiro no GitHub Actions - a cada
+# execucao, so por causa do log crescer. So deve existir localmente.
+auto_commit_push.log
