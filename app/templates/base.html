@@ -30,7 +30,7 @@
   {% set grupo_medico = ['medico.medico_horarios', 'medico.medico_agenda_pessoal', 'medico.medico_bloqueios'] %}
   {% set grupo_cadastro_geral = ['medico.filiais_lista', 'medico.filiais_nova',
                                   'medico.clinica_configuracoes'] %}
-  {% set grupo_financeiro = ['medico.descontos_lista'] %}
+  {% set grupo_financeiro = ['medico.financeiro_receber_pagamento', 'medico.descontos_lista'] %}
   {% set grupo_ia = ['medico.perguntas_pendentes', 'medico.perguntas_responder',
                       'medico.faq_lista', 'medico.faq_novo'] %}
   {% set grupo_config_exames = ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar',
@@ -126,6 +126,9 @@
         </a>
         <div class="collapse nav-sub {% if request.endpoint in grupo_financeiro %}show{% endif %}" id="menuFinanceiro">
           <ul class="nav flex-column">
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'medico.financeiro_receber_pagamento' %}active{% endif %}" href="{{ url_for('medico.financeiro_receber_pagamento') }}">Receber pagamento</a>
+            </li>
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint == 'medico.descontos_lista' %}active{% endif %}" href="{{ url_for('medico.descontos_lista') }}">Descontos</a>
             </li>

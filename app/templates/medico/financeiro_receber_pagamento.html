@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block titulo %}Receber pagamento{% endblock %}
+{% block conteudo %}
+<h3 class="mb-1">Receber pagamento</h3>
+<p class="text-muted mb-4">Agendamentos que ainda não têm pagamento registrado.</p>
+
+<div class="card p-3">
+  <table class="table table-hover mt-2">
+    <thead><tr><th>Data/Hora</th><th>Paciente</th><th>Exame</th><th>Médico</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for a in pendentes %}
+      <tr>
+        <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ a.paciente.nome }}</td>
+        <td>{{ a.exame.nome }}</td>
+        <td>{{ a.medico.nome }}</td>
+        <td>
+          <span class="badge
+            {% if a.status == 'solicitado' %}bg-warning text-dark
+            {% elif a.status == 'agendado' %}bg-secondary
+            {% elif a.status == 'confirmado' %}bg-info
+            {% elif a.status == 'realizado' %}bg-success
+            {% else %}bg-danger{% endif %}">{{ a.status }}</span>
+        </td>
+        <td class="text-nowrap">
+          <a href="{{ url_for('medico.pagamento_registrar', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Pagamento">Receber pagamento</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted text-center">Nenhum pagamento pendente.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

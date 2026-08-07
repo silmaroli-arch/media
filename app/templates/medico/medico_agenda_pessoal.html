@@ -2,7 +2,7 @@
 {% block titulo %}Meus exames agendados{% endblock %}
 {% block conteudo %}
 <h3 class="mb-1">Exames agendados de {{ medico_alvo.nome }}</h3>
-<p class="text-muted mb-4">Todos os agendamentos deste médico na filial atual, futuros e passados.</p>
+<p class="text-muted mb-4">Exames confirmados deste médico na filial atual.</p>
 
 {% if medicos %}
 <div class="mb-4">
@@ -15,7 +15,7 @@
 </div>
 {% endif %}
 
-<div class="card p-3 mb-4">
+<div class="card p-3">
   <h5>Próximos agendamentos</h5>
   <table class="table table-hover mt-2">
     <thead><tr><th>Data/Hora</th><th>Paciente</th><th>Exame</th><th>Status</th><th></th></tr></thead>
@@ -49,40 +49,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="text-muted text-center">Nenhum agendamento futuro.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-
-<div class="card p-3">
-  <h5>Agendamentos anteriores <span class="text-muted small">(últimos 30)</span></h5>
-  <table class="table table-hover mt-2">
-    <thead><tr><th>Data/Hora</th><th>Paciente</th><th>Exame</th><th>Status</th><th></th></tr></thead>
-    <tbody>
-      {% for a in anteriores %}
-      <tr>
-        <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
-        <td>{{ a.paciente.nome }}</td>
-        <td>{{ a.exame.nome }}</td>
-        <td><span class="badge bg-secondary">{{ a.status }}</span></td>
-        <td class="text-nowrap">
-          <form method="post" action="{{ url_for('medico.agenda_status', agendamento_id=a.id) }}" class="d-flex gap-1 mb-1">
-            <select name="status" class="form-select form-select-sm" style="width:auto">
-              {% for s in ['solicitado', 'agendado', 'confirmado', 'realizado', 'cancelado'] %}
-              <option value="{{ s }}" {% if s == a.status %}selected{% endif %}>{{ s }}</option>
-              {% endfor %}
-            </select>
-            <button type="submit" class="btn btn-sm btn-outline-primary">Atualizar</button>
-          </form>
-          <div class="d-flex gap-1 flex-wrap">
-            <a href="{{ url_for('medico.atendimento', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Atendimento">Atendimento</a>
-            <a href="{{ url_for('medico.resultado_upload', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Resultado">Resultado</a>
-          </div>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="5" class="text-muted text-center">Nenhum agendamento anterior.</td></tr>
+      <tr><td colspan="5" class="text-muted text-center">Nenhum exame confirmado no momento.</td></tr>
       {% endfor %}
     </tbody>
   </table>

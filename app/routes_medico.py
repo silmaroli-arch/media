@@ -1270,17 +1270,14 @@ def medico_agenda_pessoal(medico_id=None):
         flash("Nenhum médico cadastrado nesta filial ainda.", "danger")
         return redirect(url_for("medico.equipe_lista"))
 
+    # Só exames confirmados aparecem aqui — é a lista de trabalho do
+    # médico para o que já está confirmado com o paciente, não uma agenda
+    # geral (essa fica em "Agenda de exames", no Painel).
     agora = datetime.utcnow()
-    query = Agendamento.query.filter_by(clinica_id=clinica.id, medico_id=medico_alvo.id)
     proximos = (
-        query.filter(Agendamento.data_hora >= agora, Agendamento.status != "cancelado")
+        Agendamento.query.filter_by(clinica_id=clinica.id, medico_id=medico_alvo.id, status="confirmado")
+        .filter(Agendamento.data_hora >= agora)
         .order_by(Agendamento.data_hora.asc())
-        .all()
-    )
-    anteriores = (
-        query.filter(Agendamento.data_hora < agora)
-        .order_by(Agendamento.data_hora.desc())
-        .limit(30)
         .all()
     )
     return render_template(
@@ -1288,7 +1285,6 @@ def medico_agenda_pessoal(medico_id=None):
         medico_alvo=medico_alvo,
         medicos=(medicos_da_clinica(clinica) if pode_escolher_medico else []),
         proximos=proximos,
-        anteriores=anteriores,
     )
 
 
@@ -1470,6 +1466,28 @@ def resultado_upload(agendamento_id):
 
 
 # ---------- Pagamento e descontos ----------
+
+@medico_bp.route("/financeiro/receber-pagamento", methods=["GET"])
+@login_required
+@staff_required
+def financeiro_receber_pagamento():
+    """Lista os agendamentos que ainda não têm pagamento registrado, pra
+    quem cuida do financeiro dar baixa sem precisar navegar pela agenda —
+    ver medico.pagamento_registrar para o registro em si."""
+    clinica = clinica_atual()
+    pendentes = (
+        Agendamento.query
+        .outerjoin(Pagamento, Pagamento.agendamento_id == Agendamento.id)
+        .filter(
+            Agendamento.clinica_id == clinica.id,
+            Agendamento.status != "cancelado",
+            Pagamento.id.is_(None),
+        )
+        .order_by(Agendamento.data_hora.desc())
+        .all()
+    )
+    return render_template("medico/financeiro_receber_pagamento.html", pendentes=pendentes)
+
 
 @medico_bp.route("/descontos", methods=["GET", "POST"])
 @login_required
