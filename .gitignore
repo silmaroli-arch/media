@@ -14,3 +14,4 @@ deploy_info.json
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+tmp_export_*.tar.gz

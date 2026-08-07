@@ -34,6 +34,43 @@ if not DATABASE_URL:
     sys.exit(1)
 
 SQL = """
+-- "empresas" e "clinicas" ganharam vários campos (dados fiscais, endereço,
+-- cobrança) depois de já estarem em uso em produção - sem estes ALTER
+-- TABLE, salvar uma empresa/clínica nova falha com "column does not
+-- exist", porque o INSERT gerado pelo SQLAlchemy inclui todas as colunas
+-- do modelo atual.
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS cnpj VARCHAR(20);
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS email_contato VARCHAR(150);
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS telefone VARCHAR(30);
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'trial';
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS data_vencimento DATE;
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS observacoes_pagamento TEXT;
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS valor_por_medico NUMERIC(10, 2);
+
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS razao_social VARCHAR(200);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS cnpj VARCHAR(20);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS email_contato VARCHAR(150);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS telefone VARCHAR(30);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS logo_url VARCHAR(300);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS cep VARCHAR(10);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS rua VARCHAR(200);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS numero VARCHAR(20);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS complemento VARCHAR(100);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS bairro VARCHAR(100);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS cidade VARCHAR(100);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS uf VARCHAR(2);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS inscricao_estadual VARCHAR(30);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS regime_tributario VARCHAR(50);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS cnae VARCHAR(20);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS codigo_ibge_municipio VARCHAR(10);
+
+-- "usuarios" ganhou as permissões administrativas por pessoa (perm_*)
+-- depois de já ter contas cadastradas.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS perm_pacientes BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS perm_equipe BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS perm_filiais BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS perm_dados_clinica BOOLEAN NOT NULL DEFAULT FALSE;
+
 ALTER TABLE exames ADD COLUMN IF NOT EXISTS duracao_minutos INTEGER;
 ALTER TABLE exames ADD COLUMN IF NOT EXISTS preco NUMERIC(10, 2);
 ALTER TABLE exames ADD COLUMN IF NOT EXISTS precisa_acompanhante BOOLEAN NOT NULL DEFAULT FALSE;
