@@ -1480,7 +1480,7 @@ def financeiro_receber_pagamento():
         .outerjoin(Pagamento, Pagamento.agendamento_id == Agendamento.id)
         .filter(
             Agendamento.clinica_id == clinica.id,
-            Agendamento.status != "cancelado",
+            Agendamento.status == "realizado",
             Pagamento.id.is_(None),
         )
         .order_by(Agendamento.data_hora.desc())
