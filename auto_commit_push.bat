@@ -71,6 +71,26 @@ if not %errorlevel%==0 (
     exit /b 1
 )
 
+REM Se o Claude deixou um resumo de uma linha do que acabou de implementar
+REM em ultima_mudanca.txt, usa ele como mensagem do commit - senao, cai na
+REM mensagem generica de sempre. O arquivo e apagado ANTES do "git add -A"
+REM (nao depois), entao ele nunca entra no historico do git - so serve
+REM como um bilhete de passagem unica pra essa mensagem.
+set "MENSAGEM_COMMIT=Auto-commit: sincronizacao automatica"
+set "ARQUIVO_MENSAGEM=ultima_mudanca.txt"
+
+if exist "%ARQUIVO_MENSAGEM%" (
+    for /f "usebackq delims=" %%L in ("%ARQUIVO_MENSAGEM%") do (
+        set "MENSAGEM_COMMIT=%%L"
+        goto :mensagem_lida
+    )
+)
+:mensagem_lida
+
+if exist "%ARQUIVO_MENSAGEM%" (
+    del /f /q "%ARQUIVO_MENSAGEM%" >> "%LOG%" 2>&1
+)
+
 git add -A >> "%LOG%" 2>&1
 
 git diff --cached --quiet
@@ -79,7 +99,7 @@ if %errorlevel%==0 (
     exit /b 0
 )
 
-git commit -m "Auto-commit: sincronizacao automatica" >> "%LOG%" 2>&1
+git commit -m "%MENSAGEM_COMMIT%" >> "%LOG%" 2>&1
 if not %errorlevel%==0 (
     echo [%date% %time%] ERRO no commit - veja acima. >> "%LOG%"
     exit /b 1

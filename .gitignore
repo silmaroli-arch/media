@@ -15,3 +15,9 @@ deploy_info.json
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
 tmp_export_debug.tar.gz
+
+# Bilhete de uma linha que o Claude deixa com um resumo da mudanca antes do
+# auto_commit_push.bat rodar (ver auto_commit_push.bat) - e sempre apagado
+# pelo proprio script antes do commit, mas fica aqui tambem por seguranca
+# caso essa etapa falhe por algum motivo.
+ultima_mudanca.txt
