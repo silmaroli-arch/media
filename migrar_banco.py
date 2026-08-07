@@ -109,7 +109,7 @@ ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_provedor_emissao VARCHAR(50
 ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_provedor_token_cripto BYTEA;
 
 -- Campos específicos de NFS-e (substituem os antigos campos de NFC-e —
--- série/número de nota e CSC não se aplicam a serviço; o app ainda não
+-- série/número de nota e CSC não se aplicam a serviço, e o app ainda não
 -- estava em uso em produção, então as colunas antigas são removidas).
 ALTER TABLE clinicas DROP COLUMN IF EXISTS fiscal_nfce_serie;
 ALTER TABLE clinicas DROP COLUMN IF EXISTS fiscal_nfce_proximo_numero;
