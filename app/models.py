@@ -110,9 +110,11 @@ class Clinica(db.Model):
     cnae = db.Column(db.String(20))
     codigo_ibge_municipio = db.Column(db.String(10))
 
-    # Emissão fiscal (NFC-e) direto com a SEFAZ — ver app/cripto_fiscal.py
-    # para a criptografia da senha do certificado, do token do provedor e
-    # do código CSC. Nenhum desses três é guardado em texto puro.
+    # Emissão fiscal (NFS-e Nacional — ADN/Serpro) — ver app/cripto_fiscal.py
+    # para a criptografia da senha do certificado e do token do provedor.
+    # Nenhum dos dois é guardado em texto puro. NFS-e (serviço, ISS
+    # municipal) é o padrão correto para exames médicos — NFC-e é venda de
+    # produto (ICMS estadual) e não se aplica aqui.
     fiscal_ambiente = db.Column(db.String(20), nullable=False, default="homologacao")
     fiscal_modo_simulacao = db.Column(db.Boolean, nullable=False, default=False)
     fiscal_simular_falha_conexao = db.Column(db.Boolean, nullable=False, default=False)
@@ -125,10 +127,12 @@ class Clinica(db.Model):
     fiscal_provedor_emissao = db.Column(db.String(50), nullable=False, default="nenhum")
     fiscal_provedor_token_cripto = db.Column(db.LargeBinary)
 
-    fiscal_nfce_serie = db.Column(db.Integer)
-    fiscal_nfce_proximo_numero = db.Column(db.Integer)
-    fiscal_csc_id_token = db.Column(db.String(20))
-    fiscal_csc_codigo_cripto = db.Column(db.LargeBinary)
+    # Dados específicos da NFS-e (nota fiscal de serviço eletrônica).
+    fiscal_inscricao_municipal = db.Column(db.String(30))
+    fiscal_codigo_servico = db.Column(db.String(20))
+    fiscal_aliquota_iss = db.Column(db.Numeric(5, 2))
+    fiscal_rps_serie = db.Column(db.String(10))
+    fiscal_rps_proximo_numero = db.Column(db.Integer)
 
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 

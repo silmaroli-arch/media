@@ -1754,9 +1754,10 @@ def clinica_configuracoes(filial_id=None):
 @staff_required
 @permissao_required("perm_dados_clinica")
 def clinica_emissao_fiscal(filial_id=None):
-    """Salva a configuração de emissão de NFC-e (ambiente, provedor,
-    série/numeração, código CSC) — separado do formulário principal de
-    "Dados da clínica" porque fica em outro <form> na mesma página (ver
+    """Salva a configuração de emissão de NFS-e (ambiente, provedor,
+    inscrição municipal, código de serviço, alíquota de ISS, série/número
+    do RPS) — separado do formulário principal de "Dados da clínica"
+    porque fica em outro <form> na mesma página (ver
     medico/clinica_configuracoes.html). O upload do certificado digital em
     si tem sua própria rota, `clinica_certificado_upload`, abaixo."""
     clinica_sessao = clinica_atual()
@@ -1771,25 +1772,27 @@ def clinica_emissao_fiscal(filial_id=None):
 
     clinica.fiscal_provedor_emissao = request.form.get("fiscal_provedor_emissao", "nenhum").strip() or "nenhum"
 
-    # Os campos abaixo são segredos (token do provedor, código CSC) — o
-    # formulário nunca mostra o valor real de volta (só um placeholder com
-    # pontos), então só regravamos quando a pessoa realmente digita algo
-    # novo. Deixar em branco mantém o valor já salvo sem alteração.
+    # O campo abaixo é um segredo (token do provedor) — o formulário nunca
+    # mostra o valor real de volta (só um placeholder com pontos), então
+    # só regravamos quando a pessoa realmente digita algo novo. Deixar em
+    # branco mantém o valor já salvo sem alteração.
     token_novo = request.form.get("fiscal_provedor_token_api", "").strip()
     if token_novo:
         clinica.fiscal_provedor_token_cripto = criptografar_texto(token_novo)
 
-    serie = request.form.get("fiscal_nfce_serie", "").strip()
-    clinica.fiscal_nfce_serie = int(serie) if serie.isdigit() else None
+    clinica.fiscal_inscricao_municipal = request.form.get("fiscal_inscricao_municipal", "").strip()
+    clinica.fiscal_codigo_servico = request.form.get("fiscal_codigo_servico", "").strip()
 
-    proximo_numero = request.form.get("fiscal_nfce_proximo_numero", "").strip()
-    clinica.fiscal_nfce_proximo_numero = int(proximo_numero) if proximo_numero.isdigit() else None
+    aliquota = request.form.get("fiscal_aliquota_iss", "").strip().replace(",", ".")
+    try:
+        clinica.fiscal_aliquota_iss = round(float(aliquota), 2) if aliquota else None
+    except ValueError:
+        clinica.fiscal_aliquota_iss = None
 
-    clinica.fiscal_csc_id_token = request.form.get("fiscal_csc_id_token", "").strip()
+    clinica.fiscal_rps_serie = request.form.get("fiscal_rps_serie", "").strip() or None
 
-    csc_novo = request.form.get("fiscal_csc_codigo", "").strip()
-    if csc_novo:
-        clinica.fiscal_csc_codigo_cripto = criptografar_texto(csc_novo)
+    proximo_numero = request.form.get("fiscal_rps_proximo_numero", "").strip()
+    clinica.fiscal_rps_proximo_numero = int(proximo_numero) if proximo_numero.isdigit() else None
 
     db.session.commit()
     flash("Dados fiscais de emissão atualizados com sucesso.", "success")

@@ -94,9 +94,10 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS contato_emergencia_telefone VARCH
 -- PerguntaPendente.resposta_sugerida_ia em app/models.py).
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_sugerida_ia TEXT;
 
--- Emissão fiscal (NFC-e) direto com a SEFAZ, na tela "Dados da clínica".
--- Senha do certificado, token do provedor e código CSC ficam gravados só
--- criptografados (ver app/cripto_fiscal.py) — nunca em texto puro.
+-- Emissão fiscal de NFS-e (nota fiscal de serviço eletrônica — padrão
+-- NFS-e Nacional / ADN), na tela "Dados da clínica". Senha do certificado
+-- e token do provedor ficam gravados só criptografados (ver
+-- app/cripto_fiscal.py) — nunca em texto puro.
 ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_ambiente VARCHAR(20) NOT NULL DEFAULT 'homologacao';
 ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_modo_simulacao BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_simular_falha_conexao BOOLEAN NOT NULL DEFAULT FALSE;
@@ -106,10 +107,19 @@ ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_certificado_cnpj VARCHAR(20
 ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_certificado_validade DATE;
 ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_provedor_emissao VARCHAR(50) NOT NULL DEFAULT 'nenhum';
 ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_provedor_token_cripto BYTEA;
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_nfce_serie INTEGER;
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_nfce_proximo_numero INTEGER;
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_csc_id_token VARCHAR(20);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_csc_codigo_cripto BYTEA;
+
+-- Campos específicos de NFS-e (substituem os antigos campos de NFC-e —
+-- série/número de nota e CSC não se aplicam a serviço; o app ainda não
+-- estava em uso em produção, então as colunas antigas são removidas).
+ALTER TABLE clinicas DROP COLUMN IF EXISTS fiscal_nfce_serie;
+ALTER TABLE clinicas DROP COLUMN IF EXISTS fiscal_nfce_proximo_numero;
+ALTER TABLE clinicas DROP COLUMN IF EXISTS fiscal_csc_id_token;
+ALTER TABLE clinicas DROP COLUMN IF EXISTS fiscal_csc_codigo_cripto;
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_inscricao_municipal VARCHAR(30);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_codigo_servico VARCHAR(20);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_aliquota_iss NUMERIC(5,2);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_rps_serie VARCHAR(10);
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_rps_proximo_numero INTEGER;
 
 -- Guarda a resposta "crua" de cada IA (Claude e ChatGPT) separada do
 -- rascunho final, pra tela de aprovação mostrar as duas lado a lado além
