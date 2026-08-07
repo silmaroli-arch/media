@@ -19,6 +19,17 @@
 </div>
 {% endif %}
 
+<div class="mb-4">
+  <label class="form-label">Horário base</label>
+  <div class="d-flex align-items-center flex-wrap gap-2">
+    <input type="time" id="horario_base_inicio" class="form-control" style="max-width: 130px">
+    <span class="text-muted">até</span>
+    <input type="time" id="horario_base_fim" class="form-control" style="max-width: 130px">
+    <button type="button" class="btn btn-outline-primary" id="btnCopiarHorarioBase">Copiar para os dias marcados</button>
+  </div>
+  <div class="form-text">Preencha aqui um horário e clique no botão para aplicar nos dias que já estão marcados abaixo — evita ter que digitar o mesmo horário em cada dia.</div>
+</div>
+
 <form method="post">
   <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
   <div class="card p-4">
@@ -46,4 +57,30 @@
   </div>
   <button type="submit" class="btn btn-primary mt-3">Salvar</button>
 </form>
+
+<script>
+  document.getElementById('btnCopiarHorarioBase').addEventListener('click', function () {
+    var inicio = document.getElementById('horario_base_inicio').value;
+    var fim = document.getElementById('horario_base_fim').value;
+    if (!inicio || !fim) {
+      alert('Preencha o horário base (início e fim) antes de copiar.');
+      return;
+    }
+    var algumMarcado = false;
+    document.querySelectorAll('input[type="checkbox"][id^="dia_"][id$="_ativo"]').forEach(function (caixa) {
+      if (!caixa.checked) return;
+      algumMarcado = true;
+      // id e algo como "dia_2_ativo" -> extrai o "2" do meio para achar os
+      // campos de horario correspondentes aquele dia.
+      var diaIdx = caixa.id.slice('dia_'.length, caixa.id.length - '_ativo'.length);
+      var campoInicio = document.querySelector('input[name="dia_' + diaIdx + '_inicio"]');
+      var campoFim = document.querySelector('input[name="dia_' + diaIdx + '_fim"]');
+      if (campoInicio) campoInicio.value = inicio;
+      if (campoFim) campoFim.value = fim;
+    });
+    if (!algumMarcado) {
+      alert('Nenhum dia está marcado — marque os dias desejados antes de copiar o horário.');
+    }
+  });
+</script>
 {% endblock %}
