@@ -22,6 +22,10 @@ jobs:
             echo "environment_name=media-dev" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Gerar informações de versão/deploy
+        run: |
+          echo "{\"commit\": \"${{ github.sha }}\", \"commit_curto\": \"$(echo ${{ github.sha }} | cut -c1-7)\", \"branch\": \"${{ github.ref_name }}\", \"deploy_em\": \"$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"}" > deploy_info.json
+
       - name: Compactar o projeto para o deploy
         run: zip -r deploy.zip . -x '.git/*' '.github/*'
 
