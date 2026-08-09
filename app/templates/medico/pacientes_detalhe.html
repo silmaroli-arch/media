@@ -3,7 +3,10 @@
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h3>{{ paciente.nome }}</h3>
-  <a href="{{ url_for('medico.pacientes_editar', paciente_id=paciente.id) }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-pencil"></i> Editar cadastro</a>
+  <div>
+    <a href="{{ url_for('medico.pacientes_prontuario_exportar', paciente_id=paciente.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark-pdf"></i> Exportar prontuário (PDF)</a>
+    <a href="{{ url_for('medico.pacientes_editar', paciente_id=paciente.id) }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-pencil"></i> Editar cadastro</a>
+  </div>
 </div>
 <div class="card p-3 mb-3">
   <p><strong>CPF:</strong> {{ paciente.cpf }}</p>

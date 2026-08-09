@@ -52,6 +52,17 @@
         {% if e.temperatura_celsius %}Temp.: {{ e.temperatura_celsius }} °C{% endif %}
       </div>
       {% endif %}
+      {% if e.assinada %}
+      <div class="small mt-1 text-success">
+        <i class="bi bi-patch-check-fill"></i> Assinado digitalmente
+        {% if e.assinatura_certificado_titular %}— {{ e.assinatura_certificado_titular }}{% endif %}
+        {% if e.assinado_em %}em {{ e.assinado_em.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+      </div>
+      {% else %}
+      <div class="small mt-1 text-muted">
+        <i class="bi bi-dash-circle"></i> Sem assinatura digital (registro nível NGS2)
+      </div>
+      {% endif %}
     </div>
     {% endfor %}
   </div>

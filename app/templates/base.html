@@ -27,7 +27,7 @@
   {% if eh_staff_logado %}
   {% set grupo_pessoas = ['medico.pacientes_lista', 'medico.pacientes_novo', 'medico.pacientes_editar', 'medico.pacientes_detalhe',
                            'medico.equipe_lista', 'medico.equipe_novo'] %}
-  {% set grupo_medico = ['medico.medico_horarios', 'medico.medico_agenda_pessoal', 'medico.medico_bloqueios'] %}
+  {% set grupo_medico = ['medico.medico_horarios', 'medico.medico_agenda_pessoal', 'medico.medico_bloqueios', 'medico.certificado_digital'] %}
   {% set grupo_cadastro_geral = ['medico.filiais_lista', 'medico.filiais_nova',
                                   'medico.clinica_configuracoes'] %}
   {% set grupo_financeiro = ['medico.financeiro_receber_pagamento', 'medico.descontos_lista'] %}
@@ -89,6 +89,11 @@
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint == 'medico.medico_bloqueios' %}active{% endif %}" href="{{ url_for('medico.medico_bloqueios') }}">Bloquear agenda</a>
             </li>
+            {% if current_user.tipo == 'medico' %}
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'medico.certificado_digital' %}active{% endif %}" href="{{ url_for('medico.certificado_digital') }}">Meu certificado digital</a>
+            </li>
+            {% endif %}
           </ul>
         </div>
       </li>

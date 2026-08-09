@@ -27,7 +27,11 @@ from app.pdf_preparo import extrair_sugestao_de_pdf
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.agendamento_otimizador import sugerir_horarios, medico_tem_bloqueio
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
+from app.cripto_clinico import criptografar_bytes as criptografar_bytes_clinico, criptografar_texto as criptografar_texto_clinico
 from app.nfse_nacional import emitir_nfse, reenviar_nfse_pendente, gerar_pdf_contingencia, ErroEmissaoNfse
+from app.assinatura_clinica import assinar_evolucao_se_possivel, ErroAssinatura
+from app.auditoria_clinica import registrar_acesso
+from app.prontuario_pdf import gerar_pdf_prontuario
 from cryptography.hazmat.primitives.serialization import pkcs12
 
 # Dias da semana usados no formulário de horário de atendimento por médico.
@@ -520,6 +524,40 @@ def pacientes_detalhe(paciente_id):
             return redirect(url_for("medico.pacientes_lista"))
 
     return render_template("medico/pacientes_detalhe.html", paciente=paciente)
+
+
+@medico_bp.route("/pacientes/<int:paciente_id>/prontuario/exportar")
+@login_required
+@staff_required
+def pacientes_prontuario_exportar(paciente_id):
+    """Exporta o prontuário (histórico de evolução clínica) do paciente em
+    PDF — requisito técnico do processo sem papel (NGS2/NGS3, CFM
+    1.821/2007): o sistema precisa conseguir exportar num formato aberto.
+    Mesmas checagens de acesso de pacientes_detalhe(), e o próprio acesso
+    de exportação também fica registrado na trilha de auditoria."""
+    clinica = clinica_atual()
+    paciente = Paciente.query.filter_by(id=paciente_id, clinica_id=clinica.id).first_or_404()
+
+    if eh_medico() and not current_user.perm_pacientes:
+        tem_vinculo = Agendamento.query.filter_by(
+            paciente_id=paciente.id, medico_id=current_user.id
+        ).first()
+        if not tem_vinculo:
+            flash("Este paciente não tem agendamentos com você.", "danger")
+            return redirect(url_for("medico.pacientes_lista"))
+
+    evolucoes = list(paciente.evolucoes_clinicas)
+    pdf_buffer = gerar_pdf_prontuario(paciente, evolucoes)
+
+    registrar_acesso(paciente.id, "exportar_prontuario", detalhe=f"total_evolucoes={len(evolucoes)}")
+
+    nome_arquivo = f"prontuario_{paciente.nome.replace(' ', '_')}.pdf"
+    return send_file(
+        pdf_buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=nome_arquivo,
+    )
 
 
 # ---------- Exames e preparo ----------
@@ -1425,6 +1463,76 @@ def medico_bloqueio_remover(bloqueio_id):
     return redirect(url_for("medico.medico_bloqueios", medico_id=medico_id))
 
 
+# ---------- Certificado digital pessoal do médico (assinatura de evolução) ----------
+
+@medico_bp.route("/meu-certificado-digital", methods=["GET", "POST"])
+@login_required
+@staff_required
+def certificado_digital():
+    """Upload do certificado digital pessoal (e-CPF, ICP-Brasil) do
+    médico, usado para assinar digitalmente as evoluções clínicas que ele
+    registrar (ver app/assinatura_clinica.py). Só médicos têm essa tela —
+    é uma assinatura pessoal, não algo que uma secretária faça em nome de
+    outra pessoa."""
+    if current_user.tipo != "medico":
+        flash("Só médicos têm certificado digital pessoal para assinar evoluções.", "danger")
+        return redirect(url_for("medico.dashboard"))
+
+    if request.method == "POST":
+        arquivo = request.files.get("certificado_arquivo")
+        senha = request.form.get("certificado_senha", "")
+
+        if not arquivo or not arquivo.filename:
+            flash("Selecione o arquivo do certificado (.pfx) antes de enviar.", "danger")
+            return redirect(url_for("medico.certificado_digital"))
+        if not senha:
+            flash("Informe a senha do certificado.", "danger")
+            return redirect(url_for("medico.certificado_digital"))
+
+        conteudo = arquivo.read()
+        if len(conteudo) > 5 * 1024 * 1024:
+            flash("Arquivo muito grande para ser um certificado válido.", "danger")
+            return redirect(url_for("medico.certificado_digital"))
+
+        try:
+            _chave_privada, certificado, _cadeia = pkcs12.load_key_and_certificates(
+                conteudo, senha.encode("utf-8")
+            )
+        except Exception:
+            flash(
+                "Não foi possível abrir o certificado — verifique se o arquivo é um .pfx/.p12 "
+                "válido e se a senha está correta.",
+                "danger",
+            )
+            return redirect(url_for("medico.certificado_digital"))
+
+        if certificado is None:
+            flash("O arquivo enviado não contém um certificado válido.", "danger")
+            return redirect(url_for("medico.certificado_digital"))
+
+        titular_extraido = None
+        try:
+            titular_extraido = certificado.subject.rfc4514_string()
+        except Exception:
+            titular_extraido = None
+
+        if hasattr(certificado, "not_valid_after_utc"):
+            validade = certificado.not_valid_after_utc.date()
+        else:
+            validade = certificado.not_valid_after.date()
+
+        current_user.certificado_digital_pfx = criptografar_bytes_clinico(conteudo)
+        current_user.certificado_digital_senha_cripto = criptografar_texto_clinico(senha)
+        current_user.certificado_digital_titular = titular_extraido
+        current_user.certificado_digital_validade = validade
+        db.session.commit()
+
+        flash("Certificado digital validado e salvo com sucesso. Suas próximas evoluções já serão assinadas.", "success")
+        return redirect(url_for("medico.certificado_digital"))
+
+    return render_template("medico/certificado_digital.html")
+
+
 # ---------- Atendimento (continuidade/encerramento da consulta) ----------
 
 @medico_bp.route("/agenda/<int:agendamento_id>/atendimento", methods=["GET", "POST"])
@@ -1508,6 +1616,8 @@ def atendimento(agendamento_id):
         .all()
     )
 
+    registrar_acesso(agendamento.paciente_id, "visualizar_prontuario", detalhe=f"agendamento_id={agendamento.id}")
+
     return render_template(
         "medico/atendimento.html",
         agendamento=agendamento,
@@ -1545,20 +1655,60 @@ def atendimento_evolucao_nova(agendamento_id):
         except ValueError:
             return None
 
+    sinais_vitais = {
+        "peso_kg": _numero("peso_kg"),
+        "altura_cm": _numero("altura_cm", tipo=int),
+        "pressao_arterial": request.form.get("pressao_arterial", "").strip() or None,
+        "frequencia_cardiaca_bpm": _numero("frequencia_cardiaca_bpm", tipo=int),
+        "temperatura_celsius": _numero("temperatura_celsius"),
+    }
+    criado_em = datetime.utcnow()
+
     evolucao = EvolucaoClinica(
         agendamento_id=agendamento.id,
         paciente_id=agendamento.paciente_id,
         autor_id=current_user.id,
         texto=texto,
-        peso_kg=_numero("peso_kg"),
-        altura_cm=_numero("altura_cm", tipo=int),
-        pressao_arterial=request.form.get("pressao_arterial", "").strip() or None,
-        frequencia_cardiaca_bpm=_numero("frequencia_cardiaca_bpm", tipo=int),
-        temperatura_celsius=_numero("temperatura_celsius"),
+        criado_em=criado_em,
+        **sinais_vitais,
     )
+
+    # Tenta assinar digitalmente com o certificado pessoal do autor (só
+    # médico com certificado configurado — ver app/assinatura_clinica.py).
+    # Se não houver certificado, a entrada é salva do mesmo jeito, só sem
+    # assinatura (nível NGS2 em vez de NGS3).
+    assinatura_ok = None
+    try:
+        assinatura_ok = assinar_evolucao_se_possivel(
+            current_user, texto, agendamento.paciente_id, agendamento.id, current_user.id, criado_em, sinais_vitais,
+        )
+    except ErroAssinatura as erro:
+        flash(str(erro), "warning")
+
+    if assinatura_ok:
+        evolucao.assinatura_base64 = assinatura_ok["assinatura_base64"]
+        evolucao.assinatura_certificado_titular = assinatura_ok["assinatura_certificado_titular"]
+        evolucao.assinatura_certificado_serial = assinatura_ok["assinatura_certificado_serial"]
+        evolucao.assinatura_certificado_pem = assinatura_ok["assinatura_certificado_pem"]
+        evolucao.assinatura_hash_sha256 = assinatura_ok["assinatura_hash_sha256"]
+        evolucao.assinado_em = assinatura_ok["assinado_em"]
+
     db.session.add(evolucao)
     db.session.commit()
-    flash("Evolução clínica registrada.", "success")
+
+    registrar_acesso(
+        agendamento.paciente_id, "criar_evolucao",
+        detalhe=f"evolucao_id={evolucao.id} ({'assinada' if assinatura_ok else 'nao assinada'})",
+    )
+
+    if assinatura_ok:
+        flash("Evolução clínica registrada e assinada digitalmente.", "success")
+    else:
+        flash(
+            "Evolução clínica registrada (sem assinatura digital — configure seu certificado em "
+            '"Meu certificado digital", no menu Médico, para assinar automaticamente as próximas).',
+            "success",
+        )
     return redirect(url_for("medico.atendimento", agendamento_id=agendamento.id))
 
 

@@ -148,7 +148,40 @@ ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_emitida_em TIMESTAMP;
 ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS codigo_cadastro_paciente VARCHAR(20);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_clinicas_codigo_cadastro_paciente ON clinicas (codigo_cadastro_paciente) WHERE codigo_cadastro_paciente IS NOT NULL;
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS status_cadastro VARCHAR(20) NOT NULL DEFAULT 'aprovado';
+
+-- Prontuario eletronico "sem papel" (NGS2/NGS3, Resolucao CFM 1.821/2007):
+-- certificado digital pessoal do medico (ver app/assinatura_clinica.py e
+-- medico.certificado_digital) para assinar as evolucoes clinicas.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS certificado_digital_pfx BYTEA;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS certificado_digital_senha_cripto BYTEA;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS certificado_digital_titular VARCHAR(200);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS certificado_digital_validade DATE;
+
+-- Evolucao clinica passa a ser criptografada em repouso (ver
+-- app/cripto_clinico.py e EvolucaoClinica.texto em app/models.py) e ganha
+-- campos de assinatura digital por evolucao.
+--
+-- ATENCAO - RISCO DE PERDA DE DADOS: o "DROP COLUMN IF EXISTS texto" abaixo
+-- apaga permanentemente a coluna antiga em texto plano. Se alguma evolucao
+-- clinica real ja foi registrada em algum ambiente (dev/qa/prod) ANTES
+-- desta migracao rodar la, o conteudo dela sera perdido (nao e possivel
+-- recuperar o texto original a partir da coluna nova, que so passa a ser
+-- preenchida a partir de agora). Rode este migrar_banco.py o quanto antes,
+-- antes que evolucoes reais se acumulem em texto plano nesses ambientes.
+ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS texto_cripto BYTEA;
+ALTER TABLE evolucoes_clinicas DROP COLUMN IF EXISTS texto;
+ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_base64 TEXT;
+ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_titular VARCHAR(200);
+ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_serial VARCHAR(80);
+ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_pem TEXT;
+ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_hash_sha256 VARCHAR(64);
+ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinado_em TIMESTAMP;
 """
+
+# Trilha de auditoria de acesso ao prontuario (ver LogAcessoProntuario em
+# app/models.py e app/auditoria_clinica.py): a tabela em si e criada
+# automaticamente pelo db.create_all() na inicializacao da aplicacao, nao
+# precisa de ALTER/CREATE aqui.
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)
 for comando in SQL.strip().split(";"):

@@ -3,6 +3,7 @@ from datetime import datetime, date, timedelta
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.extensions import db
+from app.cripto_clinico import criptografar_texto, descriptografar_texto
 
 
 def normalizar_telefone(telefone):
@@ -267,6 +268,18 @@ class Usuario(db.Model, UserMixin):
     perm_equipe = db.Column(db.Boolean, nullable=False, default=False)
     perm_filiais = db.Column(db.Boolean, nullable=False, default=False)
     perm_dados_clinica = db.Column(db.Boolean, nullable=False, default=False)
+
+    # Certificado digital pessoal (e-CPF, ICP-Brasil) do médico, usado para
+    # assinar digitalmente as evoluções clínicas que ele registra (ver
+    # app/assinatura_clinica.py) — rumo ao NGS3 do CFM 1.821/2007. Guardado
+    # criptografado (ver app/cripto_clinico.py), igual ao certificado
+    # e-CNPJ da clínica usado na nota fiscal, mas por pessoa em vez de por
+    # clínica: cada médico assina com o próprio certificado, não o da
+    # empresa. Só faz sentido para tipo == "medico".
+    certificado_digital_pfx = db.Column(db.LargeBinary)
+    certificado_digital_senha_cripto = db.Column(db.LargeBinary)
+    certificado_digital_titular = db.Column(db.String(200))
+    certificado_digital_validade = db.Column(db.Date)
 
     paciente = db.relationship("Paciente", back_populates="usuario", uselist=False)
     vinculos_clinica = db.relationship("ClinicaMembro", back_populates="usuario", cascade="all, delete-orphan")
@@ -754,7 +767,10 @@ class EvolucaoClinica(db.Model):
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     autor_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
 
-    texto = db.Column(db.Text, nullable=False)
+    # Conteúdo cifrado (ver app/cripto_clinico.py) — nunca fica em texto
+    # puro no banco. Use a propriedade `texto` abaixo para ler/gravar; ela
+    # cuida de cifrar/decifrar automaticamente.
+    texto_cripto = db.Column(db.LargeBinary)
 
     # Sinais vitais — todos opcionais, preenchidos só quando medidos nessa
     # consulta.
@@ -766,9 +782,57 @@ class EvolucaoClinica(db.Model):
 
     criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
+    # Assinatura digital ICP-Brasil do autor (ver app/assinatura_clinica.py)
+    # — preenchida automaticamente ao salvar, SE o autor for médico e tiver
+    # um certificado digital pessoal configurado (Usuario.certificado_digital_*).
+    # Fica None quando não há certificado disponível: a entrada continua
+    # válida (nível NGS2), só não tem validade de documento assinado (NGS3).
+    assinatura_base64 = db.Column(db.Text)
+    assinatura_certificado_titular = db.Column(db.String(200))
+    assinatura_certificado_serial = db.Column(db.String(80))
+    # Certificado público (PEM, não é sigiloso) usado nesta assinatura,
+    # guardado junto com o registro — permite verificar a assinatura no
+    # futuro mesmo que o médico troque de certificado depois.
+    assinatura_certificado_pem = db.Column(db.Text)
+    assinatura_hash_sha256 = db.Column(db.String(64))
+    assinado_em = db.Column(db.DateTime)
+
     agendamento = db.relationship("Agendamento", backref=db.backref("evolucoes", order_by="EvolucaoClinica.criado_em"))
     paciente = db.relationship("Paciente", backref=db.backref("evolucoes_clinicas", order_by="EvolucaoClinica.criado_em.desc()"))
     autor = db.relationship("Usuario")
+
+    @property
+    def texto(self):
+        return descriptografar_texto(self.texto_cripto)
+
+    @texto.setter
+    def texto(self, valor):
+        self.texto_cripto = criptografar_texto(valor)
+
+    @property
+    def assinada(self):
+        return self.assinatura_base64 is not None
+
+
+class LogAcessoProntuario(db.Model):
+    """Trilha de auditoria de acesso ao prontuário — quem visualizou,
+    criou, assinou ou exportou o histórico clínico de qual paciente, e
+    quando (requisito técnico do CFM 1.821/2007 para os Níveis de Garantia
+    de Segurança NGS2/NGS3). Assim como EvolucaoClinica, é IMUTÁVEL por
+    desenho: só existe rota para criar um registro, nunca editar ou apagar
+    — ver app/auditoria_clinica.py."""
+    __tablename__ = "logs_acesso_prontuario"
+
+    id = db.Column(db.Integer, primary_key=True)
+    paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    # acao: "visualizar_prontuario", "criar_evolucao", "exportar_prontuario"
+    acao = db.Column(db.String(40), nullable=False)
+    detalhe = db.Column(db.Text)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    paciente = db.relationship("Paciente")
+    usuario = db.relationship("Usuario")
 
 
 class ChatMensagem(db.Model):
