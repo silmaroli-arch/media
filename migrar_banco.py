@@ -168,14 +168,20 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS certificado_digital_validade DATE;
 -- recuperar o texto original a partir da coluna nova, que so passa a ser
 -- preenchida a partir de agora). Rode este migrar_banco.py o quanto antes,
 -- antes que evolucoes reais se acumulem em texto plano nesses ambientes.
-ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS texto_cripto BYTEA;
-ALTER TABLE evolucoes_clinicas DROP COLUMN IF EXISTS texto;
-ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_base64 TEXT;
-ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_titular VARCHAR(200);
-ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_serial VARCHAR(80);
-ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_pem TEXT;
-ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_hash_sha256 VARCHAR(64);
-ALTER TABLE evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinado_em TIMESTAMP;
+-- IF EXISTS aqui (alem do IF NOT EXISTS/IF EXISTS de cada coluna) porque
+-- evolucoes_clinicas e uma tabela NOVA: no primeiro deploy que a introduz,
+-- ela ainda nao existe quando este script roda (o predeploy hook roda
+-- ANTES da aplicacao subir e criar a tabela via db.create_all()) - sem o
+-- IF EXISTS aqui, esse primeiro deploy quebra com "relation does not
+-- exist" e o deploy inteiro falha.
+ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS texto_cripto BYTEA;
+ALTER TABLE IF EXISTS evolucoes_clinicas DROP COLUMN IF EXISTS texto;
+ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_base64 TEXT;
+ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_titular VARCHAR(200);
+ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_serial VARCHAR(80);
+ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_pem TEXT;
+ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_hash_sha256 VARCHAR(64);
+ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinado_em TIMESTAMP;
 """
 
 # Trilha de auditoria de acesso ao prontuario (ver LogAcessoProntuario em
