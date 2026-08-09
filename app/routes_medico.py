@@ -7,7 +7,7 @@ from functools import wraps
 
 from flask import (
     Blueprint, render_template, redirect, url_for, request, flash, jsonify, session,
-    send_from_directory, current_app,
+    send_from_directory, send_file, current_app,
 )
 from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
@@ -26,7 +26,7 @@ from app.pdf_preparo import extrair_sugestao_de_pdf
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.agendamento_otimizador import sugerir_horarios, medico_tem_bloqueio
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
-from app.nfse_nacional import emitir_nfse, ErroEmissaoNfse
+from app.nfse_nacional import emitir_nfse, reenviar_nfse_pendente, gerar_pdf_contingencia, ErroEmissaoNfse
 from cryptography.hazmat.primitives.serialization import pkcs12
 
 # Dias da semana usados no formulário de horário de atendimento por médico.
@@ -1667,6 +1667,79 @@ def pagamento_emitir_nfse(agendamento_id):
             "warning",
         )
     return redirect(url_for("medico.pagamento_comprovante", agendamento_id=agendamento.id))
+
+
+@medico_bp.route("/agenda/<int:agendamento_id>/pagamento/nfse/reenviar", methods=["POST"])
+@login_required
+@staff_required
+def pagamento_nfse_reenviar(agendamento_id):
+    """Tenta reenviar ao Ambiente de Dados Nacional uma NFS-e que ficou
+    "assinada_pendente_envio" (o envio anterior falhou), sem gerar um
+    novo número de DPS — usa o mesmo XML já assinado (ver
+    app.nfse_nacional.reenviar_nfse_pendente)."""
+    clinica = clinica_atual()
+    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    if eh_medico():
+        filtros["medico_id"] = current_user.id
+    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+    pagamento = agendamento.pagamento
+    if not pagamento:
+        flash("Registre o pagamento antes de reenviar a nota fiscal.", "danger")
+        return redirect(url_for("medico.pagamento_registrar", agendamento_id=agendamento.id))
+
+    try:
+        resultado = reenviar_nfse_pendente(clinica, pagamento)
+    except ErroEmissaoNfse as erro:
+        flash(str(erro), "danger")
+        return redirect(url_for("medico.pagamento_comprovante", agendamento_id=agendamento.id))
+    except Exception as erro:
+        flash(f"Erro inesperado ao reenviar a NFS-e: {erro}", "danger")
+        return redirect(url_for("medico.pagamento_comprovante", agendamento_id=agendamento.id))
+
+    pagamento.nfse_status = resultado["status"]
+    pagamento.nfse_numero = resultado.get("numero_nfse")
+    pagamento.nfse_codigo_verificacao = resultado.get("codigo_verificacao")
+    pagamento.nfse_xml_assinado = resultado.get("xml_assinado")
+    pagamento.nfse_erro = resultado.get("erro")
+    pagamento.nfse_emitida_em = datetime.utcnow()
+    db.session.commit()
+
+    if resultado["status"] == "enviada":
+        flash("Reenvio concluído — NFS-e transmitida ao Ambiente de Dados Nacional com sucesso.", "success")
+    else:
+        flash(
+            "Reenvio ainda não confirmado (" + (resultado.get("erro") or "motivo desconhecido") +
+            "). Pode tentar novamente mais tarde, ou usar o PDF de contingência enquanto isso.",
+            "warning",
+        )
+    return redirect(url_for("medico.pagamento_comprovante", agendamento_id=agendamento.id))
+
+
+@medico_bp.route("/agenda/<int:agendamento_id>/pagamento/nfse/contingencia.pdf")
+@login_required
+@staff_required
+def pagamento_nfse_contingencia_pdf(agendamento_id):
+    """Gera na hora um PDF provisório (não é o DANFSe oficial — ver aviso
+    em app.nfse_nacional.gerar_pdf_contingencia) para a clínica entregar
+    ao paciente enquanto a NFS-e definitiva não é transmitida com
+    sucesso ao Ambiente de Dados Nacional."""
+    clinica = clinica_atual()
+    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    if eh_medico():
+        filtros["medico_id"] = current_user.id
+    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+    pagamento = agendamento.pagamento
+    if not pagamento or pagamento.nfse_status != "assinada_pendente_envio":
+        flash("Só é possível gerar o comprovante de contingência quando a NFS-e está assinada, mas pendente de envio.", "danger")
+        return redirect(url_for("medico.pagamento_comprovante", agendamento_id=agendamento.id))
+
+    pdf_buffer = gerar_pdf_contingencia(clinica, agendamento.paciente, agendamento, pagamento)
+    return send_file(
+        pdf_buffer,
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name=f"nfse-contingencia-agendamento-{agendamento.id}.pdf",
+    )
 
 
 # ---------- Perguntas pendentes (aprendizado da "IA") ----------

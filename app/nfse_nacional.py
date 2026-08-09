@@ -58,6 +58,7 @@ Fluxo desta versão:
 """
 import base64
 import gzip
+import io
 import re
 import tempfile
 from datetime import datetime
@@ -255,6 +256,80 @@ def _enviar_ao_adn(xml_assinado_bytes, clinica, chave_privada, certificado, cade
     return resposta
 
 
+def _processar_resposta_envio(resposta, numero_dps, xml_assinado_bytes):
+    """Interpreta a resposta HTTP do envio ao SEFIN Nacional/ADN e monta o
+    dicionário de resultado padrão usado tanto na primeira tentativa
+    (emitir_nfse) quanto no reenvio manual (reenviar_nfse_pendente).
+    Nunca lança exceção — falha de envio ou resposta em formato
+    inesperado sempre vira status "assinada_pendente_envio" (nota fica
+    apta a nova tentativa de reenvio, ou emissão do PDF de contingência
+    para entregar ao paciente na hora)."""
+    if resposta.status_code not in (200, 201):
+        erro_msg = f"Ambiente de Dados Nacional respondeu {resposta.status_code}: {resposta.text[:800]}"
+        # Tenta extrair Codigo/Descricao do corpo de erro (formato citado
+        # pela documentação técnica pública), sem depender disso existir.
+        try:
+            corpo_erro = resposta.json()
+            lista_erros = corpo_erro if isinstance(corpo_erro, list) else [corpo_erro]
+            partes = [
+                f"{e.get('Codigo', '?')}: {e.get('Descricao', '')}"
+                for e in lista_erros if isinstance(e, dict) and ("Codigo" in e or "Descricao" in e)
+            ]
+            if partes:
+                erro_msg = "Ambiente de Dados Nacional rejeitou a DPS — " + "; ".join(partes)
+        except Exception:
+            pass
+        return {
+            "status": "assinada_pendente_envio",
+            "numero_dps": numero_dps,
+            "numero_nfse": None,
+            "codigo_verificacao": None,
+            "xml_assinado": xml_assinado_bytes.decode("utf-8"),
+            "erro": erro_msg,
+        }
+
+    # Sucesso (2xx) — tenta decodificar a NFS-e retornada e extrair os
+    # campos principais. Ver aviso no topo do arquivo: nomes de campo
+    # ainda não confirmados contra uma resposta real.
+    numero_nfse = None
+    codigo_verificacao = None
+    xml_nfse_texto = xml_assinado_bytes.decode("utf-8")
+    try:
+        corpo = resposta.json()
+        nfse_gzip_b64 = corpo.get("nfseXmlGZipB64") if isinstance(corpo, dict) else None
+        if nfse_gzip_b64:
+            xml_nfse_bytes = gzip.decompress(base64.b64decode(nfse_gzip_b64))
+            xml_nfse_texto = xml_nfse_bytes.decode("utf-8")
+            numero_nfse = _extrair_texto(xml_nfse_bytes, "nNFSe")
+            codigo_verificacao = _extrair_texto(xml_nfse_bytes, "cVerif")
+        else:
+            numero_nfse = corpo.get("chaveAcesso") if isinstance(corpo, dict) else None
+    except Exception:
+        # Resposta não veio no formato esperado — a nota foi aceita
+        # (status 2xx) mas não conseguimos extrair os dados dela
+        # automaticamente. Fica registrada como enviada, com o texto cru
+        # da resposta guardado no campo de erro só para consulta manual.
+        return {
+            "status": "enviada",
+            "numero_dps": numero_dps,
+            "numero_nfse": None,
+            "codigo_verificacao": None,
+            "xml_assinado": xml_nfse_texto,
+            "erro": f"Nota aceita (HTTP {resposta.status_code}), mas não foi possível interpretar "
+                    f"automaticamente a resposta para extrair número/código de verificação. "
+                    f"Resposta crua: {resposta.text[:800]}",
+        }
+
+    return {
+        "status": "enviada",
+        "numero_dps": numero_dps,
+        "numero_nfse": numero_nfse,
+        "codigo_verificacao": codigo_verificacao,
+        "xml_assinado": xml_nfse_texto,
+        "erro": None,
+    }
+
+
 def emitir_nfse(clinica, paciente, agendamento, pagamento, senha_certificado=None):
     """Orquestra a emissão: monta o DPS, assina (se não estiver em modo
     simulação) e envia ao SEFIN Nacional/ADN via mTLS. Devolve um
@@ -262,7 +337,11 @@ def emitir_nfse(clinica, paciente, agendamento, pagamento, senha_certificado=Non
     (mensagem amigável); a falha do envio em si NÃO levanta exceção —
     vira status "assinada_pendente_envio", pra não travar o fluxo do
     médico (ver aviso no topo do arquivo sobre o que ainda não está
-    confirmado no formato exato da resposta do ADN)."""
+    confirmado no formato exato da resposta do ADN). Nesse caso, a
+    clínica pode imprimir o PDF de contingência (ver
+    gerar_pdf_contingencia) para entregar ao paciente na hora, e tentar
+    reenviar depois (ver reenviar_nfse_pendente) sem gerar um novo
+    número de DPS."""
     numero_dps = (clinica.fiscal_rps_proximo_numero or 0) + 1
 
     if clinica.fiscal_modo_simulacao:
@@ -308,67 +387,154 @@ def emitir_nfse(clinica, paciente, agendamento, pagamento, senha_certificado=Non
             "erro": f"Não foi possível conectar ao Ambiente de Dados Nacional: {erro}",
         }
 
-    if resposta.status_code not in (200, 201):
-        erro_msg = f"Ambiente de Dados Nacional respondeu {resposta.status_code}: {resposta.text[:800]}"
-        # Tenta extrair Codigo/Descricao do corpo de erro (formato citado
-        # pela documentação técnica pública), sem depender disso existir.
-        try:
-            corpo_erro = resposta.json()
-            lista_erros = corpo_erro if isinstance(corpo_erro, list) else [corpo_erro]
-            partes = [
-                f"{e.get('Codigo', '?')}: {e.get('Descricao', '')}"
-                for e in lista_erros if isinstance(e, dict) and ("Codigo" in e or "Descricao" in e)
-            ]
-            if partes:
-                erro_msg = "Ambiente de Dados Nacional rejeitou a DPS — " + "; ".join(partes)
-        except Exception:
-            pass
+    return _processar_resposta_envio(resposta, numero_dps, xml_assinado)
+
+
+def reenviar_nfse_pendente(clinica, pagamento, senha_certificado=None):
+    """Tenta reenviar, sem gerar um novo DPS, uma nota que ficou com
+    status "assinada_pendente_envio" (o envio anterior falhou, mas o XML
+    já assinado continua salvo em pagamento.nfse_xml_assinado). Usado
+    pelo botão "Tentar reenviar" na tela do comprovante, para quando o
+    Ambiente de Dados Nacional estava fora do ar ou inacessível na hora
+    da emissão original."""
+    if pagamento.nfse_status != "assinada_pendente_envio" or not pagamento.nfse_xml_assinado:
+        raise ErroEmissaoNfse(
+            "Não há uma NFS-e assinada pendente de envio para este pagamento."
+        )
+
+    chave_privada, certificado, cadeia = _carregar_certificado(clinica, senha_certificado=senha_certificado)
+    xml_assinado = pagamento.nfse_xml_assinado.encode("utf-8")
+
+    try:
+        resposta = _enviar_ao_adn(xml_assinado, clinica, chave_privada, certificado, cadeia)
+    except Exception as erro:
         return {
             "status": "assinada_pendente_envio",
-            "numero_dps": numero_dps,
+            "numero_dps": pagamento.nfse_numero_dps,
             "numero_nfse": None,
             "codigo_verificacao": None,
-            "xml_assinado": xml_assinado.decode("utf-8"),
-            "erro": erro_msg,
+            "xml_assinado": pagamento.nfse_xml_assinado,
+            "erro": f"Não foi possível conectar ao Ambiente de Dados Nacional: {erro}",
         }
 
-    # Sucesso (2xx) — tenta decodificar a NFS-e retornada e extrair os
-    # campos principais. Ver aviso no topo do arquivo: nomes de campo
-    # ainda não confirmados contra uma resposta real.
-    numero_nfse = None
-    codigo_verificacao = None
-    xml_nfse_texto = xml_assinado.decode("utf-8")
-    try:
-        corpo = resposta.json()
-        nfse_gzip_b64 = corpo.get("nfseXmlGZipB64") if isinstance(corpo, dict) else None
-        if nfse_gzip_b64:
-            xml_nfse_bytes = gzip.decompress(base64.b64decode(nfse_gzip_b64))
-            xml_nfse_texto = xml_nfse_bytes.decode("utf-8")
-            numero_nfse = _extrair_texto(xml_nfse_bytes, "nNFSe")
-            codigo_verificacao = _extrair_texto(xml_nfse_bytes, "cVerif")
-        else:
-            numero_nfse = corpo.get("chaveAcesso") if isinstance(corpo, dict) else None
-    except Exception:
-        # Resposta não veio no formato esperado — a nota foi aceita
-        # (status 2xx) mas não conseguimos extrair os dados dela
-        # automaticamente. Fica registrada como enviada, com o texto cru
-        # da resposta guardado no campo de erro só para consulta manual.
-        return {
-            "status": "enviada",
-            "numero_dps": numero_dps,
-            "numero_nfse": None,
-            "codigo_verificacao": None,
-            "xml_assinado": xml_nfse_texto,
-            "erro": f"Nota aceita (HTTP {resposta.status_code}), mas não foi possível interpretar "
-                    f"automaticamente a resposta para extrair número/código de verificação. "
-                    f"Resposta crua: {resposta.text[:800]}",
-        }
+    return _processar_resposta_envio(resposta, pagamento.nfse_numero_dps, xml_assinado)
 
-    return {
-        "status": "enviada",
-        "numero_dps": numero_dps,
-        "numero_nfse": numero_nfse,
-        "codigo_verificacao": codigo_verificacao,
-        "xml_assinado": xml_nfse_texto,
-        "erro": None,
-    }
+
+def gerar_pdf_contingencia(clinica, paciente, agendamento, pagamento):
+    """Gera um PDF simples para entregar ao paciente na hora, quando o
+    envio automático da NFS-e ao Ambiente de Dados Nacional falhou
+    (status "assinada_pendente_envio") e a clínica precisa de algo em
+    mãos imediatamente.
+
+    AVISO IMPORTANTE: isto NÃO é o DANFSe oficial do padrão NFS-e
+    Nacional — não encontramos, na documentação pública disponível, o
+    leiaute exato do DANFSe (posicionamento de campos, QR Code, código de
+    barras) para reproduzi-lo fielmente. É um recibo provisório e
+    informal, deixando isso explícito no próprio documento, que serve
+    como comprovante de que a prestação de serviço foi registrada e a
+    DPS foi assinada digitalmente, enquanto a transmissão ao ADN não é
+    confirmada. Assim que a nota for enviada com sucesso (reenviar
+    depois pelo botão "Tentar reenviar"), a NFS-e definitiva substitui
+    este documento."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    largura, altura = A4
+
+    # Marca d'água diagonal avisando que é contingência.
+    c.saveState()
+    c.setFont("Helvetica-Bold", 40)
+    c.setFillGray(0.85)
+    c.translate(largura / 2, altura / 2)
+    c.rotate(45)
+    c.drawCentredString(0, 0, "EM CONTINGÊNCIA")
+    c.restoreState()
+
+    y = altura - 60
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, y, "Comprovante provisório de prestação de serviço (NFS-e em contingência)")
+    y -= 22
+    c.setFont("Helvetica", 9)
+    c.setFillGray(0.3)
+    for linha in [
+        "Este documento NÃO é uma NFS-e definitiva. A Declaração de Prestação de Serviço (DPS)",
+        "já foi assinada digitalmente com o certificado da clínica, mas o envio ao Ambiente de",
+        "Dados Nacional (ADN) ainda não foi confirmado. Assim que a transmissão for concluída com",
+        "sucesso, a NFS-e definitiva (com número, chave de acesso e código de verificação oficiais)",
+        "ficará disponível para o paciente.",
+    ]:
+        c.drawString(50, y, linha)
+        y -= 12
+
+    c.setFillGray(0)
+    y -= 15
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(50, y, clinica.razao_social or clinica.nome)
+    y -= 15
+    c.setFont("Helvetica", 10)
+    if clinica.cnpj:
+        c.drawString(50, y, f"CNPJ: {clinica.cnpj}")
+        y -= 14
+    if clinica.fiscal_inscricao_municipal:
+        c.drawString(50, y, f"Inscrição Municipal: {clinica.fiscal_inscricao_municipal}")
+        y -= 14
+
+    y -= 10
+    c.line(50, y, largura - 50, y)
+    y -= 20
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(50, y, "Tomador do serviço (paciente)")
+    y -= 14
+    c.setFont("Helvetica", 10)
+    c.drawString(50, y, f"Nome: {paciente.nome}")
+    y -= 14
+    c.drawString(50, y, f"CPF: {paciente.cpf or '-'}")
+    y -= 20
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(50, y, "Serviço prestado")
+    y -= 14
+    c.setFont("Helvetica", 10)
+    c.drawString(50, y, f"Descrição: Exame/consulta — {agendamento.exame.nome}")
+    y -= 14
+    c.drawString(50, y, f"Data do atendimento: {agendamento.data_hora.strftime('%d/%m/%Y %H:%M')}")
+    y -= 14
+    c.drawString(50, y, f"Código do serviço (LC 116): {clinica.fiscal_codigo_servico or '-'}")
+    y -= 20
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(50, y, "Valores")
+    y -= 14
+    c.setFont("Helvetica", 10)
+    c.drawString(50, y, f"Valor do serviço: R$ {pagamento.valor_final:.2f}")
+    y -= 14
+    if clinica.fiscal_aliquota_iss is not None:
+        c.drawString(50, y, f"Alíquota ISS: {clinica.fiscal_aliquota_iss:.2f}%")
+        y -= 14
+    y -= 10
+
+    c.line(50, y, largura - 50, y)
+    y -= 20
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(50, y, "Identificação da DPS (provisória, até a NFS-e ser emitida)")
+    y -= 14
+    c.setFont("Helvetica", 10)
+    c.drawString(50, y, f"Número da DPS: {pagamento.nfse_numero_dps or '-'}")
+    y -= 14
+    c.drawString(50, y, f"Data/hora de geração deste comprovante: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    y -= 14
+    if pagamento.nfse_erro:
+        c.setFont("Helvetica-Oblique", 8)
+        c.setFillGray(0.4)
+        c.drawString(50, y, f"Motivo do envio pendente: {pagamento.nfse_erro[:110]}")
+        c.setFillGray(0)
+        y -= 20
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return buffer
