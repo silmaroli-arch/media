@@ -96,6 +96,26 @@ git add -A >> "%LOG%" 2>&1
 git diff --cached --quiet
 if %errorlevel%==0 (
     echo [%date% %time%] Nada para comitar. >> "%LOG%"
+
+    REM Mesmo sem nada novo para comitar agora, pode existir um commit local
+    REM de uma execucao anterior que nunca chegou a ser enviado (ex.: um
+    REM commit feito manualmente, ou por outra ferramenta, fora deste
+    REM script) - sem esta checagem, ele fica preso local para sempre, ja
+    REM que so chegamos a rodar "git push" mais abaixo quando ESTE script
+    REM acabou de criar um commit novo.
+    set "COMMITS_PENDENTES=0"
+    for /f %%A in ('git rev-list --count origin/dev..dev') do set "COMMITS_PENDENTES=%%A"
+    if "%COMMITS_PENDENTES%"=="0" (
+        exit /b 0
+    )
+
+    echo [%date% %time%] Existem %COMMITS_PENDENTES% commits locais ainda nao enviados - publicando agora. >> "%LOG%"
+    git push origin dev >> "%LOG%" 2>&1
+    if not %errorlevel%==0 (
+        echo [%date% %time%] ERRO no push - veja acima. >> "%LOG%"
+        exit /b 1
+    )
+    echo [%date% %time%] Push dos commits pendentes concluido com sucesso na branch dev. >> "%LOG%"
     exit /b 0
 )
 
