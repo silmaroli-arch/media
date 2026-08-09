@@ -20,7 +20,7 @@ from app.models import (
     PerguntaPendente, ClinicaMembro, MedicoHorario, MedicoBloqueio, Clinica,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
-    ChatMensagem, ResultadoExame, DescontoConfig, Pagamento,
+    ChatMensagem, ResultadoExame, DescontoConfig, Pagamento, EvolucaoClinica,
 )
 from app.clinica_utils import clinica_atual, clinicas_do_usuario, selecionar_clinica
 from app.pdf_preparo import extrair_sugestao_de_pdf
@@ -1500,12 +1500,66 @@ def atendimento(agendamento_id):
         )
         atendimentos_anteriores.append((a, mensagens_da_consulta))
 
+    # Histórico clínico (evolução) completo do paciente, mais recente
+    # primeiro — inclui entradas de qualquer atendimento, não só deste.
+    evolucoes_paciente = (
+        EvolucaoClinica.query.filter_by(paciente_id=agendamento.paciente_id)
+        .order_by(EvolucaoClinica.criado_em.desc())
+        .all()
+    )
+
     return render_template(
         "medico/atendimento.html",
         agendamento=agendamento,
         mensagens_chat=mensagens_chat,
         atendimentos_anteriores=atendimentos_anteriores,
+        evolucoes_paciente=evolucoes_paciente,
     )
+
+
+@medico_bp.route("/agenda/<int:agendamento_id>/evolucao/nova", methods=["POST"])
+@login_required
+@staff_required
+def atendimento_evolucao_nova(agendamento_id):
+    """Registra uma nova entrada de evolução clínica. Ver
+    app.models.EvolucaoClinica: é IMUTÁVEL por desenho — esta rota só cria,
+    nunca edita nem apaga uma entrada existente. Se algo foi anotado
+    errado, a correção é uma entrada nova, igual num prontuário de papel."""
+    clinica = clinica_atual()
+    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    if eh_medico():
+        filtros["medico_id"] = current_user.id
+    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+
+    texto = request.form.get("texto", "").strip()
+    if not texto:
+        flash("Escreva alguma coisa na evolução antes de salvar.", "danger")
+        return redirect(url_for("medico.atendimento", agendamento_id=agendamento.id))
+
+    def _numero(campo, tipo=float):
+        valor = request.form.get(campo, "").strip().replace(",", ".")
+        if not valor:
+            return None
+        try:
+            return tipo(valor)
+        except ValueError:
+            return None
+
+    evolucao = EvolucaoClinica(
+        agendamento_id=agendamento.id,
+        paciente_id=agendamento.paciente_id,
+        autor_id=current_user.id,
+        texto=texto,
+        peso_kg=_numero("peso_kg"),
+        altura_cm=_numero("altura_cm", tipo=int),
+        pressao_arterial=request.form.get("pressao_arterial", "").strip() or None,
+        frequencia_cardiaca_bpm=_numero("frequencia_cardiaca_bpm", tipo=int),
+        temperatura_celsius=_numero("temperatura_celsius"),
+    )
+    db.session.add(evolucao)
+    db.session.commit()
+    flash("Evolução clínica registrada.", "success")
+    return redirect(url_for("medico.atendimento", agendamento_id=agendamento.id))
 
 
 # ---------- Resultado de exame (upload de PDF) ----------

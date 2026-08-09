@@ -731,6 +731,46 @@ class Agendamento(db.Model):
         return self.encerrado_em is not None
 
 
+class EvolucaoClinica(db.Model):
+    """Registro clínico de uma consulta/atendimento — o começo do que, no
+    futuro, deve se tornar um prontuário eletrônico de verdade (ver
+    conversa sobre CFM 1.821/2007 e os Níveis de Garantia de Segurança).
+
+    Por enquanto isto é conteúdo NGS1/NGS2 (sem assinatura digital
+    ICP-Brasil ainda — teria que ser por médico, com certificado próprio,
+    diferente do certificado e-CNPJ da clínica usado na nota fiscal), mas
+    já segue a regra mais importante de um registro clínico: é
+    IMUTÁVEL POR DESENHO. Não existe rota de editar nem de excluir uma
+    evolução já salva — uma consulta errada não se corrige apagando o
+    registro, se corrige com uma entrada nova. Isso é intencional e não
+    deve mudar sem repensar a arquitetura toda."""
+    __tablename__ = "evolucoes_clinicas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=False)
+    # Guardado também aqui (não só via agendamento.paciente_id) para poder
+    # trazer o histórico clínico completo do paciente com uma consulta
+    # direta, sem precisar sempre passar por Agendamento.
+    paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
+    autor_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+
+    texto = db.Column(db.Text, nullable=False)
+
+    # Sinais vitais — todos opcionais, preenchidos só quando medidos nessa
+    # consulta.
+    peso_kg = db.Column(db.Numeric(5, 2))
+    altura_cm = db.Column(db.Integer)
+    pressao_arterial = db.Column(db.String(20))  # ex.: "120/80"
+    frequencia_cardiaca_bpm = db.Column(db.Integer)
+    temperatura_celsius = db.Column(db.Numeric(4, 1))
+
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    agendamento = db.relationship("Agendamento", backref=db.backref("evolucoes", order_by="EvolucaoClinica.criado_em"))
+    paciente = db.relationship("Paciente", backref=db.backref("evolucoes_clinicas", order_by="EvolucaoClinica.criado_em.desc()"))
+    autor = db.relationship("Usuario")
+
+
 class ChatMensagem(db.Model):
     """Registro de cada pergunta feita pelo paciente no chat do app (e a
     resposta obtida, seja pela FAQ curada, pela IA, pela correspondência
