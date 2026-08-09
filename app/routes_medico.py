@@ -1034,6 +1034,7 @@ CORES_STATUS = {
     "confirmado": "#0dcaf0",
     "realizado": "#198754",
     "cancelado": "#dc3545",
+    "nao_compareceu": "#fd7e14",
 }
 
 
@@ -1220,7 +1221,10 @@ def agenda_status(agendamento_id):
     if eh_medico():
         filtros["medico_id"] = current_user.id
     agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
-    agendamento.status = request.form.get("status", agendamento.status)
+    novo_status = request.form.get("status", agendamento.status)
+    status_validos = {"solicitado", "agendado", "confirmado", "realizado", "cancelado", "nao_compareceu"}
+    if novo_status in status_validos:
+        agendamento.status = novo_status
     db.session.commit()
     flash("Status do agendamento atualizado.", "success")
     return redirect(url_for("medico.agenda"))

@@ -19,7 +19,7 @@
     <div class="card p-3 h-100">
       <div class="text-muted small"><i class="bi bi-calendar-check me-1"></i>Agendamentos no período</div>
       <div class="fs-3 fw-bold">{{ total_agendamentos }}</div>
-      <div class="small text-muted">{{ total_realizados }} realizados · {{ total_cancelados }} cancelados</div>
+      <div class="small text-muted">{{ total_realizados }} realizados · {{ total_cancelados }} cancelados · {{ total_no_show }} não compareceu</div>
       <a href="{{ url_for('relatorios.agenda') }}" class="small">Ver relatório de agenda &rarr;</a>
     </div>
   </div>

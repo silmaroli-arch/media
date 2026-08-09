@@ -37,22 +37,28 @@
 </form>
 
 <div class="row g-3 mb-4">
-  <div class="col-md-4">
+  <div class="col-md-3">
     <div class="card p-3">
       <div class="text-muted small">Total de agendamentos</div>
       <div class="fs-3 fw-bold">{{ total }}</div>
     </div>
   </div>
-  <div class="col-md-4">
+  <div class="col-md-3">
     <div class="card p-3">
       <div class="text-muted small">Realizados</div>
       <div class="fs-3 fw-bold text-success">{{ total_realizados }}</div>
     </div>
   </div>
-  <div class="col-md-4">
+  <div class="col-md-3">
     <div class="card p-3">
       <div class="text-muted small">Cancelados</div>
       <div class="fs-3 fw-bold text-danger">{{ total_cancelados }} <span class="fs-6 text-muted">({{ "%.1f"|format(taxa_cancelamento)|replace(".", ",") }}%)</span></div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="text-muted small">Não compareceu</div>
+      <div class="fs-3 fw-bold" style="color:#fd7e14">{{ total_no_show }} <span class="fs-6 text-muted">({{ "%.1f"|format(taxa_no_show)|replace(".", ",") }}%)</span></div>
     </div>
   </div>
 </div>
@@ -94,7 +100,7 @@
           <td>{{ a.exame.nome }}</td>
           <td>{{ a.medico.nome }}</td>
           <td>
-            <span class="badge {% if a.status == 'realizado' %}bg-success{% elif a.status == 'cancelado' %}bg-danger{% elif a.status == 'confirmado' %}bg-primary{% else %}bg-secondary{% endif %}">
+            <span class="badge {% if a.status == 'realizado' %}bg-success{% elif a.status == 'cancelado' %}bg-danger{% elif a.status == 'nao_compareceu' %}badge-nao-compareceu{% elif a.status == 'confirmado' %}bg-primary{% else %}bg-secondary{% endif %}">
               {{ a.status }}
             </span>
           </td>
@@ -112,7 +118,7 @@
 <script>
 new Chart(document.getElementById('graficoStatus'), {
   type: 'doughnut',
-  data: { labels: {{ por_status.keys()|list|tojson }}, datasets: [{ data: {{ por_status.values()|list|tojson }}, backgroundColor: ['#6c757d', '#0dcaf0', '#0d6efd', '#198754', '#dc3545'] }] }
+  data: { labels: {{ por_status.keys()|list|tojson }}, datasets: [{ data: {{ por_status.values()|list|tojson }}, backgroundColor: ['#6c757d', '#0dcaf0', '#0d6efd', '#198754', '#fd7e14', '#dc3545'] }] }
 });
 new Chart(document.getElementById('graficoExame'), {
   type: 'bar',

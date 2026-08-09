@@ -710,7 +710,10 @@ class Agendamento(db.Model):
     medico_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
     data_hora = db.Column(db.DateTime, nullable=False)
     # status: solicitado (pedido pelo paciente, aguardando confirmação da
-    # clínica), agendado, confirmado, realizado, cancelado.
+    # clínica), agendado, confirmado, realizado, cancelado, nao_compareceu
+    # (paciente não apareceu no horário marcado - usado só em agendamentos
+    # já passados, pra distinguir de um cancelamento de fato e alimentar a
+    # taxa de no-show nos relatórios).
     status = db.Column(db.String(20), default="agendado")
     observacoes = db.Column(db.Text)
 

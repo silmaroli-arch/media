@@ -64,7 +64,7 @@ def dashboard():
     )
     historico = (
         Agendamento.query.filter_by(paciente_id=paciente.id)
-        .filter(or_(Agendamento.status.in_(["cancelado", "realizado"]), Agendamento.data_hora < agora))
+        .filter(or_(Agendamento.status.in_(["cancelado", "realizado", "nao_compareceu"]), Agendamento.data_hora < agora))
         .order_by(Agendamento.data_hora.desc())
         .all()
     )

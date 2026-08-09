@@ -31,12 +31,13 @@
             {% elif a.status == 'agendado' %}bg-secondary
             {% elif a.status == 'confirmado' %}bg-info
             {% elif a.status == 'realizado' %}bg-success
+            {% elif a.status == 'nao_compareceu' %}badge-nao-compareceu
             {% else %}bg-danger{% endif %}">{{ a.status }}</span>
         </td>
         <td class="text-nowrap">
           <form method="post" action="{{ url_for('medico.agenda_status', agendamento_id=a.id) }}" class="d-flex gap-1 mb-1">
             <select name="status" class="form-select form-select-sm" style="width:auto">
-              {% for s in ['solicitado', 'agendado', 'confirmado', 'realizado', 'cancelado'] %}
+              {% for s in ['solicitado', 'agendado', 'confirmado', 'realizado', 'nao_compareceu', 'cancelado'] %}
               <option value="{{ s }}" {% if s == a.status %}selected{% endif %}>{{ s }}</option>
               {% endfor %}
             </select>

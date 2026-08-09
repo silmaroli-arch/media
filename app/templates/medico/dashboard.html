@@ -107,6 +107,7 @@
               {% elif a.status == 'agendado' %}bg-secondary
               {% elif a.status == 'confirmado' %}bg-info
               {% elif a.status == 'realizado' %}bg-success
+              {% elif a.status == 'nao_compareceu' %}badge-nao-compareceu
               {% else %}bg-danger{% endif %}">{{ a.status }}</span>
             {% if a.encerrada %}<span class="badge bg-dark">encerrado</span>{% endif %}
           </td>
@@ -143,6 +144,7 @@
               <option value="agendado">agendado</option>
               <option value="confirmado">confirmado</option>
               <option value="realizado">realizado</option>
+              <option value="nao_compareceu">nao_compareceu</option>
               <option value="cancelado">cancelado</option>
             </select>
             <button type="submit" class="btn btn-primary">Atualizar</button>
