@@ -37,9 +37,39 @@ def login():
 def login_paciente():
     """Login do paciente: sem senha, feito só com telefone + data de
     nascimento (a secretária/médico cadastra o telefone e a data de
-    nascimento na hora de criar o paciente — ver medico.pacientes_novo)."""
+    nascimento na hora de criar o paciente — ver medico.pacientes_novo).
+
+    Telefone não é mais único globalmente (ver app/models.py, classe
+    Usuario): a mesma pessoa pode ser paciente em clínicas diferentes com
+    o mesmo telefone, cada uma com sua própria conta (Usuario). Por isso
+    esse login tem duas etapas quando telefone+data de nascimento batem em
+    mais de uma clínica ao mesmo tempo - a segunda etapa deixa o paciente
+    escolher qual clínica quer acessar (ver
+    auth/login_paciente_escolher_clinica.html)."""
     if current_user.is_authenticated:
         return redirect(url_for("index"))
+
+    # Etapa 2: o paciente já viu a lista de clínicas (etapa 1 encontrou
+    # mais de uma conta válida) e está escolhendo qual delas acessar. Não
+    # confia no valor bruto vindo do form - só aceita um id que a própria
+    # etapa 1 já validou e guardou na sessão do servidor.
+    if request.method == "POST" and "usuario_id_escolhido" in request.form:
+        candidatos_ids = session.get("login_paciente_candidatos") or []
+        try:
+            escolhido_id = int(request.form.get("usuario_id_escolhido", ""))
+        except ValueError:
+            escolhido_id = None
+
+        session.pop("login_paciente_candidatos", None)
+        if escolhido_id in candidatos_ids:
+            usuario = Usuario.query.get(escolhido_id)
+            if usuario and usuario.ativo:
+                session.pop("clinica_id", None)
+                login_user(usuario)
+                return redirect(url_for("index"))
+
+        flash("Seleção inválida — faça login novamente.", "danger")
+        return redirect(url_for("auth.login_paciente"))
 
     if request.method == "POST":
         telefone = normalizar_telefone(request.form.get("telefone", ""))
@@ -57,18 +87,24 @@ def login_paciente():
                 except ValueError:
                     continue
 
-        usuario = Usuario.query.filter_by(telefone=telefone, tipo="paciente").first() if telefone else None
+        candidatos = []
+        if telefone and data_nascimento:
+            for usuario in Usuario.query.filter_by(telefone=telefone, tipo="paciente").all():
+                if (
+                    usuario.ativo
+                    and usuario.paciente
+                    and usuario.paciente.data_nascimento == data_nascimento
+                ):
+                    candidatos.append(usuario)
 
-        if (
-            usuario
-            and usuario.ativo
-            and data_nascimento
-            and usuario.paciente
-            and usuario.paciente.data_nascimento == data_nascimento
-        ):
+        if len(candidatos) == 1:
             session.pop("clinica_id", None)
-            login_user(usuario)
+            login_user(candidatos[0])
             return redirect(url_for("index"))
+
+        if len(candidatos) > 1:
+            session["login_paciente_candidatos"] = [u.id for u in candidatos]
+            return render_template("auth/login_paciente_escolher_clinica.html", candidatos=candidatos)
 
         flash("Telefone ou data de nascimento incorretos.", "danger")
 
@@ -243,16 +279,28 @@ def cadastro_paciente(codigo):
             flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
             return render_template("auth/cadastro_paciente.html", clinica=clinica)
 
-        if Usuario.query.filter_by(telefone=telefone).first():
+        # Telefone/e-mail não são mais únicos globalmente (a mesma pessoa
+        # pode ser paciente em clínicas diferentes) - o que não pode
+        # repetir é dentro da MESMA clínica (ver comentário em
+        # app/models.py, classe Usuario).
+        if (
+            Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
+            .filter(Paciente.clinica_id == clinica.id, Usuario.telefone == telefone)
+            .first()
+        ):
             flash(
-                "Já existe um cadastro com esse telefone. Se já é paciente desta clínica, "
-                "use a tela de login normal.",
+                "Já existe um cadastro com esse telefone nesta clínica. Se já é paciente "
+                "aqui, use a tela de login normal.",
                 "danger",
             )
             return render_template("auth/cadastro_paciente.html", clinica=clinica)
 
-        if email and Usuario.query.filter_by(email=email).first():
-            flash("Já existe um cadastro com esse e-mail.", "danger")
+        if email and (
+            Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
+            .filter(Paciente.clinica_id == clinica.id, Usuario.email == email)
+            .first()
+        ):
+            flash("Já existe um cadastro com esse e-mail nesta clínica.", "danger")
             return render_template("auth/cadastro_paciente.html", clinica=clinica)
 
         if Paciente.query.filter_by(clinica_id=clinica.id, cpf=cpf).first():

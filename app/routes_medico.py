@@ -447,12 +447,24 @@ def pacientes_novo():
             flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
-        if Usuario.query.filter_by(telefone=telefone).first():
-            flash("Já existe um paciente cadastrado com esse telefone.", "danger")
+        # Telefone/e-mail não são mais únicos globalmente (a mesma pessoa
+        # pode ser paciente em clínicas diferentes) - o que não pode
+        # repetir é dentro da MESMA clínica (ver comentário em
+        # app/models.py, classe Usuario).
+        if (
+            Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
+            .filter(Paciente.clinica_id == clinica.id, Usuario.telefone == telefone)
+            .first()
+        ):
+            flash("Já existe um paciente cadastrado com esse telefone nesta clínica.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
-        if email and Usuario.query.filter_by(email=email).first():
-            flash("Já existe um usuário com esse e-mail.", "danger")
+        if email and (
+            Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
+            .filter(Paciente.clinica_id == clinica.id, Usuario.email == email)
+            .first()
+        ):
+            flash("Já existe um paciente com esse e-mail nesta clínica.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
         if Paciente.query.filter_by(clinica_id=clinica.id, cpf=cpf).first():

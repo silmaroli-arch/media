@@ -194,4 +194,50 @@ for comando in SQL.strip().split(";"):
     comando = comando.strip()
     if comando:
         conn.execute(comando)
+
+
+def _remover_constraint_unica(conn, tabela, coluna):
+    """Remove qualquer constraint UNIQUE (nome pode variar por ambiente -
+    foi criada implicitamente pelo unique=True do SQLAlchemy no primeiro
+    db.create_all(), então não dá pra confiar num nome fixo) na coluna
+    indicada. Feito em Python (não como texto dentro de SQL, ver comando
+    abaixo) porque o "SQL.strip().split(';')" usado para rodar o script
+    acima quebraria um bloco DO $$ ... $$ do Postgres em pedaços, já que
+    esse bloco também usa ';' internamente entre EXECUTE/END LOOP/END."""
+    linhas = conn.execute(
+        """
+        SELECT tc.constraint_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+        WHERE tc.table_name = %s AND tc.constraint_type = 'UNIQUE' AND kcu.column_name = %s
+        """,
+        (tabela, coluna),
+    ).fetchall()
+    for (nome_constraint,) in linhas:
+        conn.execute(f'ALTER TABLE "{tabela}" DROP CONSTRAINT "{nome_constraint}"')
+        print(f"Constraint única removida: {tabela}.{coluna} ({nome_constraint})")
+
+
+# Telefone e e-mail de "usuarios" deixaram de ser globalmente únicos: a
+# mesma pessoa pode ser paciente em clínicas diferentes com o mesmo
+# telefone/e-mail (cada clínica tem sua própria conta Usuario para aquele
+# paciente) - ver comentário em app/models.py (classe Usuario) e as rotas
+# app/routes_medico.py:pacientes_novo / app/routes_auth.py:cadastro_paciente
+# (unicidade agora é garantida por clínica, na aplicação) e
+# app/routes_auth.py:login_paciente (que lida com telefone+nascimento
+# batendo em mais de uma clínica, deixando o paciente escolher qual).
+_remover_constraint_unica(conn, "usuarios", "telefone")
+_remover_constraint_unica(conn, "usuarios", "email")
+
+# Substitui a unicidade global de e-mail por uma que só vale pra quem não
+# é paciente (dono/secretária/médico continuam com e-mail único, já que é
+# a credencial de login deles) - índice único parcial, suportado tanto em
+# Postgres quanto em SQLite (db.create_all() cria o mesmo índice em bases
+# novas, ver __table_args__ em app/models.py).
+conn.execute(
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_email_nao_paciente "
+    "ON usuarios (email) WHERE tipo <> 'paciente'"
+)
+
 print("Migração aplicada com sucesso!")

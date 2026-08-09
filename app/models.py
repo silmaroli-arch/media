@@ -243,17 +243,40 @@ class ClinicaMembro(db.Model):
 
 class Usuario(db.Model, UserMixin):
     __tablename__ = "usuarios"
+    # E-mail é único globalmente só para quem não é paciente (dono/
+    # secretária/médico usam e-mail como credencial de login, inclusive
+    # entre clínicas diferentes via ClinicaMembro). Paciente não usa e-mail
+    # pra entrar (ver `telefone` abaixo) e pode legitimamente ser a mesma
+    # pessoa cadastrada em clínicas diferentes com o mesmo e-mail — por
+    # isso a unicidade de e-mail de paciente NÃO é garantida aqui, só a de
+    # quem não é paciente (índice parcial, único que funciona igual em
+    # Postgres e SQLite).
+    __table_args__ = (
+        db.Index(
+            "uq_usuarios_email_nao_paciente", "email", unique=True,
+            postgresql_where=db.text("tipo <> 'paciente'"),
+            sqlite_where=db.text("tipo <> 'paciente'"),
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(150), nullable=False)
     # E-mail/senha só são obrigatórios para dono/secretária/médico — o
     # paciente entra pelo telefone (ver `telefone` abaixo) + data de
     # nascimento, sem precisar de senha (ver rota auth.login_paciente).
-    email = db.Column(db.String(150), unique=True, nullable=True)
+    # Unicidade real: ver __table_args__ acima (índice parcial).
+    email = db.Column(db.String(150), nullable=True)
     senha_hash = db.Column(db.String(255), nullable=True)
-    # Identificador de login do paciente (só ele usa este campo). Único na
-    # plataforma, guardado sempre só com dígitos (ver `normalizar_telefone`).
-    telefone = db.Column(db.String(30), unique=True, nullable=True)
+    # Identificador de login do paciente (só ele usa este campo), guardado
+    # sempre só com dígitos (ver `normalizar_telefone`). NÃO é globalmente
+    # único: a mesma pessoa pode ser paciente em clínicas diferentes com o
+    # mesmo telefone — cada clínica tem sua própria conta (Usuario) pra
+    # aquele telefone, e a unicidade de fato é garantida por clínica na
+    # aplicação (ver app/routes_medico.py:pacientes_novo e
+    # app/routes_auth.py:cadastro_paciente). No login
+    # (auth.login_paciente), se telefone + data de nascimento baterem em
+    # mais de uma clínica, o paciente escolhe qual clínica quer acessar.
+    telefone = db.Column(db.String(30), nullable=True, index=True)
     # tipo: 'dono', 'secretaria', 'medico' ou 'paciente'
     tipo = db.Column(db.String(20), nullable=False)
     ativo = db.Column(db.Boolean, default=True)
