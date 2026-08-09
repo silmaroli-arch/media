@@ -159,11 +159,13 @@ def create_app():
     from app.routes_medico import medico_bp
     from app.routes_paciente import paciente_bp
     from app.routes_dono import dono_bp
+    from app.routes_relatorios import relatorios_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(medico_bp)
     app.register_blueprint(paciente_bp)
     app.register_blueprint(dono_bp)
+    app.register_blueprint(relatorios_bp)
 
     @app.template_filter("hora_hhmm")
     def hora_hhmm(valor):

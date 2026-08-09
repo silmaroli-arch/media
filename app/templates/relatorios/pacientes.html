@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block titulo %}Relatório de pacientes{% endblock %}
+{% block conteudo %}
+{% set endpoint_atual = 'relatorios.pacientes' %}
+{% set kwargs = {'data_inicio': data_inicio.isoformat(), 'data_fim': data_fim.isoformat()} %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h3 class="mb-0">Relatório de pacientes</h3>
+  {% include "relatorios/_exportar.html" %}
+</div>
+
+<form method="get" class="card p-3 mb-4 no-print">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label">De</label>
+      <input type="date" name="data_inicio" class="form-control" value="{{ data_inicio.isoformat() }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Até</label>
+      <input type="date" name="data_fim" class="form-control" value="{{ data_fim.isoformat() }}">
+    </div>
+    <div class="col-md-3">
+      <button type="submit" class="btn btn-primary w-100">Filtrar</button>
+    </div>
+  </div>
+</form>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="text-muted small">Novos no período</div>
+      <div class="fs-3 fw-bold">{{ novos|length }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="text-muted small">Total de pacientes ativos</div>
+      <div class="fs-3 fw-bold">{{ total_ativos }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="text-muted small">Cadastros pendentes</div>
+      <div class="fs-3 fw-bold {% if total_pendentes %}text-warning{% endif %}">{{ total_pendentes }}</div>
+      {% if total_pendentes %}<a href="{{ url_for('medico.pacientes_solicitacoes') }}" class="small">Analisar agora</a>{% endif %}
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="text-muted small">Cadastros rejeitados</div>
+      <div class="fs-3 fw-bold">{{ total_rejeitados }}</div>
+    </div>
+  </div>
+</div>
+
+{% if novos %}
+<div class="row g-3 mb-4">
+  <div class="col-lg-8">
+    <div class="card p-3">
+      <div class="text-muted small mb-2">Novos pacientes por dia</div>
+      <canvas id="graficoPorDia" height="90"></canvas>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card p-3">
+      <div class="text-muted small mb-2">Origem do cadastro</div>
+      <canvas id="graficoOrigem" height="90"></canvas>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead>
+        <tr><th>Cadastrado em</th><th>Nome</th><th>CPF</th><th>Telefone</th><th>Origem</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for p in novos %}
+        <tr>
+          <td>{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+          <td>{{ p.nome }}</td>
+          <td>{{ p.cpf or '-' }}</td>
+          <td>{{ p.telefone or '-' }}</td>
+          <td>{{ 'Auto-cadastro pelo app' if p.usuario_id else 'Cadastrado pela equipe' }}</td>
+          <td>
+            <span class="badge {% if p.status_cadastro == 'aprovado' %}bg-success{% elif p.status_cadastro == 'pendente' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+              {{ p.status_cadastro }}
+            </span>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-center text-muted py-4">Nenhum paciente novo cadastrado neste período.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if novos %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById('graficoPorDia'), {
+  type: 'bar',
+  data: { labels: {{ por_dia.keys()|list|tojson }}, datasets: [{ label: 'Novos pacientes', data: {{ por_dia.values()|list|tojson }}, backgroundColor: '#0d6efd' }] },
+  options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+});
+new Chart(document.getElementById('graficoOrigem'), {
+  type: 'doughnut',
+  data: { labels: {{ por_origem.keys()|list|tojson }}, datasets: [{ data: {{ por_origem.values()|list|tojson }}, backgroundColor: ['#0d6efd', '#20c997'] }] }
+});
+</script>
+{% endif %}
+{% endblock %}

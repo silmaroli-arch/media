@@ -36,6 +36,8 @@
   {% set grupo_config_exames = ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar',
                                  'medico.preparo_modelos_lista', 'medico.preparo_modelos_novo',
                                  'medico.preparo_modelos_editar', 'medico.preparo_modelos_importar_pdf'] %}
+  {% set grupo_relatorios = ['relatorios.index', 'relatorios.financeiro', 'relatorios.agenda',
+                              'relatorios.pacientes', 'relatorios.desempenho_medico'] %}
   <nav class="app-sidebar bg-primary text-white p-3 no-print">
     <a class="d-block text-decoration-none mb-4" href="{{ url_for('medico.dashboard') }}">
       <img src="{{ url_for('static', filename='img/logo-horizontal-claro.svg') }}" alt="MedIA" style="height: 34px;">
@@ -141,6 +143,33 @@
         </div>
       </li>
       {% endif %}
+
+      <li class="nav-item mb-1">
+        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuRelatorios" role="button"
+           aria-expanded="{{ 'true' if request.endpoint in grupo_relatorios else 'false' }}">
+          <span><i class="bi bi-bar-chart-line me-2"></i>Relatórios</span>
+          <i class="bi bi-chevron-down chevron-icon"></i>
+        </a>
+        <div class="collapse nav-sub {% if request.endpoint in grupo_relatorios %}show{% endif %}" id="menuRelatorios">
+          <ul class="nav flex-column">
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'relatorios.index' %}active{% endif %}" href="{{ url_for('relatorios.index') }}">Resumo</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'relatorios.financeiro' %}active{% endif %}" href="{{ url_for('relatorios.financeiro') }}">Financeiro</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'relatorios.agenda' %}active{% endif %}" href="{{ url_for('relatorios.agenda') }}">Agenda / operação</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'relatorios.pacientes' %}active{% endif %}" href="{{ url_for('relatorios.pacientes') }}">Pacientes</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'relatorios.desempenho_medico' %}active{% endif %}" href="{{ url_for('relatorios.desempenho_medico') }}">Desempenho por médico</a>
+            </li>
+          </ul>
+        </div>
+      </li>
 
       <li class="nav-item mb-1">
         <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuIA" role="button"
