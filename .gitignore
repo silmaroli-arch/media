@@ -28,3 +28,14 @@ ultima_mudanca.txt
 # gerava um commit - e um deploy inteiro no GitHub Actions - a cada
 # execucao, so por causa do log crescer. So deve existir localmente.
 auto_commit_push.log
+
+# Pasta de arquivos que o device_bash (ambiente do Claude) nao consegue
+# apagar de verdade, entao move pra ca em vez de remover - so serve como
+# "lixeira" temporaria ate voce apagar manualmente. NUNCA deve ser
+# commitada: um incidente real ja aconteceu aqui (um .tar.gz de teste com
+# um .env de credenciais reais de banco foi parar aqui e quase foi
+# commitado pelo auto_commit_push.bat via "git add -A").
+_to_delete/
+
+# Nunca versionar tarballs de export/backup, seja qual for a origem.
+*.tar.gz
