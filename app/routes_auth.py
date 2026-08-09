@@ -4,7 +4,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_user, logout_user, login_required, current_user
 
 from app.extensions import db
-from app.models import Usuario, Empresa, Clinica, ClinicaMembro, PlataformaConfig, normalizar_telefone
+from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -192,3 +192,96 @@ def cadastro():
         return redirect(url_for("medico.onboarding"))
 
     return render_template("auth/cadastro.html")
+
+
+def _parse_data_nascimento(valor_str):
+    """Mesma conversão usada em medico.pacientes_novo — aceita o formato
+    brasileiro (DD/MM/AAAA, usado pelo campo com máscara) e, por
+    compatibilidade, o formato ISO (AAAA-MM-DD)."""
+    valor_str = (valor_str or "").strip()
+    if not valor_str:
+        return None
+    for formato in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(valor_str, formato).date()
+        except ValueError:
+            continue
+    return None
+
+
+@auth_bp.route("/paciente/cadastro/<codigo>", methods=["GET", "POST"])
+def cadastro_paciente(codigo):
+    """Auto-cadastro do paciente pelo app, usando o link/código público de
+    uma clínica específica (gerado em "Dados da clínica" — ver
+    medico.clinica_configuracoes). O cadastro entra com
+    status_cadastro="pendente": o paciente já consegue entrar no sistema
+    (mesmo login por telefone + data de nascimento de sempre), mas só
+    consegue solicitar agendamento depois que a equipe aceitar o cadastro
+    (ver medico.pacientes_solicitacoes)."""
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+
+    clinica = Clinica.query.filter_by(codigo_cadastro_paciente=codigo).first()
+    if not clinica:
+        flash("Link de cadastro inválido ou expirado. Confira o link com a clínica.", "danger")
+        return render_template("auth/cadastro_paciente_invalido.html")
+
+    if request.method == "POST":
+        nome = request.form.get("nome", "").strip()
+        cpf = request.form.get("cpf", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        telefone_digitado = request.form.get("telefone", "").strip()
+        data_nascimento_str = request.form.get("data_nascimento", "").strip()
+        telefone = normalizar_telefone(telefone_digitado)
+
+        if not nome or not cpf or not telefone or not data_nascimento_str:
+            flash("Nome, CPF, telefone e data de nascimento são obrigatórios.", "danger")
+            return render_template("auth/cadastro_paciente.html", clinica=clinica)
+
+        data_nascimento = _parse_data_nascimento(data_nascimento_str)
+        if not data_nascimento:
+            flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
+            return render_template("auth/cadastro_paciente.html", clinica=clinica)
+
+        if Usuario.query.filter_by(telefone=telefone).first():
+            flash(
+                "Já existe um cadastro com esse telefone. Se já é paciente desta clínica, "
+                "use a tela de login normal.",
+                "danger",
+            )
+            return render_template("auth/cadastro_paciente.html", clinica=clinica)
+
+        if email and Usuario.query.filter_by(email=email).first():
+            flash("Já existe um cadastro com esse e-mail.", "danger")
+            return render_template("auth/cadastro_paciente.html", clinica=clinica)
+
+        if Paciente.query.filter_by(clinica_id=clinica.id, cpf=cpf).first():
+            flash("Já existe um paciente com esse CPF cadastrado nesta clínica.", "danger")
+            return render_template("auth/cadastro_paciente.html", clinica=clinica)
+
+        usuario = Usuario(nome=nome, email=email or None, telefone=telefone, tipo="paciente")
+        db.session.add(usuario)
+        db.session.flush()
+
+        paciente = Paciente(
+            clinica_id=clinica.id,
+            usuario_id=usuario.id,
+            nome=nome,
+            cpf=cpf,
+            data_nascimento=data_nascimento,
+            email=email or None,
+            telefone=telefone,
+            status_cadastro="pendente",
+        )
+        db.session.add(paciente)
+        db.session.commit()
+
+        login_user(usuario)
+        flash(
+            "Cadastro enviado! Assim que a clínica aceitar seu cadastro, você já vai poder "
+            "solicitar agendamento de exames por aqui.",
+            "success",
+        )
+        return redirect(url_for("paciente.dashboard"))
+
+    return render_template("auth/cadastro_paciente.html", clinica=clinica)

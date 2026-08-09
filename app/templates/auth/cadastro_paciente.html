@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block titulo %}Cadastro de paciente{% endblock %}
+{% block conteudo %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card p-4 mt-4">
+      <div class="text-center mb-3"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 52px;"></div>
+      <h5 class="text-center mb-1">Cadastro de paciente — {{ clinica.nome }}</h5>
+      <p class="text-muted small text-center">
+        Preencha seus dados para se cadastrar. Depois de enviado, a clínica precisa aceitar o seu
+        cadastro antes que você possa solicitar agendamento de exames — você já pode acompanhar o
+        status pelo seu painel assim que enviar.
+      </p>
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label">Nome completo</label>
+          <input type="text" name="nome" class="form-control" required autofocus>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">CPF</label>
+          <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Telefone (será seu login de acesso)</label>
+          <input type="text" inputmode="numeric" name="telefone" id="telefone" class="form-control" placeholder="(27) 99999-9999" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Data de nascimento</label>
+          <input type="text" inputmode="numeric" name="data_nascimento" id="data_nascimento"
+                 class="form-control" placeholder="DD/MM/AAAA" autocomplete="bday" required>
+          <div class="form-text">Você vai usar o telefone e a data de nascimento para entrar no sistema — não é preciso criar senha.</div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">E-mail (opcional)</label>
+          <input type="email" name="email" class="form-control">
+        </div>
+        <button type="submit" class="btn btn-primary w-100" id="btn-cadastrar-paciente">Enviar cadastro</button>
+      </form>
+      <div class="text-center mt-3">
+        <a href="{{ url_for('auth.login_paciente') }}" class="small">Já sou paciente cadastrado &rarr; <strong>Entrar</strong></a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function aplicarMascaraFixa(campo, padrao) {
+    if (!campo) return;
+    var maxDigitos = (padrao.match(/9/g) || []).length;
+    campo.addEventListener('input', function () {
+      var digitos = campo.value.replace(/\D/g, '').slice(0, maxDigitos);
+      if (!digitos) {
+        campo.value = '';
+        return;
+      }
+      var resultado = '';
+      var pos = 0;
+      for (var i = 0; i < padrao.length && pos < digitos.length; i++) {
+        if (padrao[i] === '9') {
+          resultado += digitos[pos];
+          pos++;
+        } else {
+          resultado += padrao[i];
+        }
+      }
+      for (var j = i; j < padrao.length; j++) {
+        resultado += padrao[j] === '9' ? '_' : padrao[j];
+      }
+      campo.value = resultado;
+    });
+  }
+  aplicarMascaraFixa(document.getElementById('cpf'), '999.999.999-99');
+  aplicarMascaraFixa(document.getElementById('data_nascimento'), '99/99/9999');
+  aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
+
+  document.querySelector('form').addEventListener('submit', function () {
+    var botao = document.getElementById('btn-cadastrar-paciente');
+    botao.disabled = true;
+    botao.innerHTML = 'Enviando...';
+  });
+</script>
+{% endblock %}

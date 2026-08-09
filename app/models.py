@@ -110,6 +110,12 @@ class Clinica(db.Model):
     cnae = db.Column(db.String(20))
     codigo_ibge_municipio = db.Column(db.String(10))
 
+    # Código público usado no link de auto-cadastro do paciente pelo
+    # app (ver auth.cadastro_paciente) — cada filial tem o seu, gerado
+    # sob demanda na tela "Dados da clínica" (ver
+    # medico.clinica_configuracoes / _gerar_codigo_cadastro_paciente).
+    codigo_cadastro_paciente = db.Column(db.String(20), unique=True, nullable=True)
+
     # Emissão fiscal (NFS-e Nacional — ADN/Serpro) — ver app/cripto_fiscal.py
     # para a criptografia da senha do certificado e do token do provedor.
     # Nenhum dos dois é guardado em texto puro. NFS-e (serviço, ISS
@@ -348,6 +354,12 @@ class Paciente(db.Model):
     contato_emergencia_telefone = db.Column(db.String(30))
 
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # 'aprovado' (padrão — cadastro feito pela equipe já é confiável),
+    # 'pendente' (paciente se cadastrou sozinho pelo app e aguarda a
+    # clínica aceitar) ou 'rejeitado'. Só paciente com status 'aprovado'
+    # pode solicitar agendamento (ver paciente.solicitar_agendamento).
+    status_cadastro = db.Column(db.String(20), nullable=False, default="aprovado")
 
     clinica = db.relationship("Clinica", back_populates="pacientes")
     usuario = db.relationship("Usuario", back_populates="paciente")

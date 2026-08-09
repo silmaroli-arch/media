@@ -141,6 +141,13 @@ ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_codigo_verificacao VARCHAR(
 ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_xml_assinado TEXT;
 ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_erro TEXT;
 ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_emitida_em TIMESTAMP;
+
+-- Auto-cadastro do paciente pelo app (link publico por clinica) e
+-- aprovacao pela equipe antes de poder agendar (ver auth.cadastro_paciente
+-- e medico.pacientes_solicitacoes).
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS codigo_cadastro_paciente VARCHAR(20);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_clinicas_codigo_cadastro_paciente ON clinicas (codigo_cadastro_paciente) WHERE codigo_cadastro_paciente IS NOT NULL;
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS status_cadastro VARCHAR(20) NOT NULL DEFAULT 'aprovado';
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

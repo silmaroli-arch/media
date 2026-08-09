@@ -260,6 +260,13 @@ def pergunta_remover(pergunta_id):
 @paciente_required
 def solicitar_agendamento():
     paciente = current_user.paciente
+    if paciente.status_cadastro != "aprovado":
+        flash(
+            "Seu cadastro ainda está em análise pela clínica — assim que for aceito, "
+            "você poderá solicitar agendamento de exames.",
+            "warning",
+        )
+        return redirect(url_for("paciente.dashboard"))
     exames = Exame.query.filter_by(clinica_id=paciente.clinica_id).order_by(Exame.nome).all()
 
     exame_id = request.form.get("exame_id", type=int) or request.args.get("exame_id", type=int)

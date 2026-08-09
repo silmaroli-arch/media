@@ -190,7 +190,9 @@
           <a href="{{ url_for('paciente.dashboard') }}" class="text-decoration-none d-inline-block me-3"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 30px;"></a>
           <span class="d-none d-md-inline">
             <a href="{{ url_for('paciente.dashboard') }}" class="text-decoration-none me-3">Meus exames</a>
+            {% if current_user.paciente and current_user.paciente.status_cadastro == 'aprovado' %}
             <a href="{{ url_for('paciente.solicitar_agendamento') }}" class="text-decoration-none me-3">Solicitar agendamento</a>
+            {% endif %}
             <a href="{{ url_for('paciente.chat') }}" class="text-decoration-none">Tirar dúvidas</a>
           </span>
         {% endif %}
@@ -221,7 +223,9 @@
       <div class="offcanvas-body d-flex flex-column">
         <div class="mb-3 fw-semibold">{{ current_user.nome }}</div>
         <a href="{{ url_for('paciente.dashboard') }}" class="nav-link p-2 rounded"><i class="bi bi-clipboard2-pulse me-2"></i>Meus exames</a>
+        {% if current_user.paciente and current_user.paciente.status_cadastro == 'aprovado' %}
         <a href="{{ url_for('paciente.solicitar_agendamento') }}" class="nav-link p-2 rounded"><i class="bi bi-calendar-plus me-2"></i>Solicitar agendamento</a>
+        {% endif %}
         <a href="{{ url_for('paciente.chat') }}" class="nav-link p-2 rounded"><i class="bi bi-chat-dots me-2"></i>Tirar dúvidas</a>
         {% if current_user.tem_senha %}
         <a href="{{ url_for('auth.trocar_senha') }}" class="nav-link p-2 rounded"><i class="bi bi-key me-2"></i>Trocar senha</a>

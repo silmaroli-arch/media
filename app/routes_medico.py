@@ -1,5 +1,6 @@
 import os
 import re
+import secrets
 import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -82,6 +83,19 @@ def _destino_pos_onboarding(endpoint_padrao, **kwargs):
     if request.form.get("voltar_onboarding") == "1":
         return redirect(url_for("medico.onboarding"))
     return redirect(url_for(endpoint_padrao, **kwargs))
+
+
+def _gerar_codigo_cadastro_paciente():
+    """Gera um código curto e único (entre as clínicas já cadastradas) para
+    o link público de auto-cadastro de paciente (ver auth.cadastro_paciente
+    e medico.clinica_configuracoes)."""
+    for _ in range(10):
+        codigo = secrets.token_urlsafe(6).replace("_", "").replace("-", "")[:8]
+        if not Clinica.query.filter_by(codigo_cadastro_paciente=codigo).first():
+            return codigo
+    # Praticamente impossível de cair aqui (espaço de códigos é enorme),
+    # mas por segurança nunca deixa a função sem devolver um código.
+    return secrets.token_hex(8)
 
 
 def staff_required(f):
@@ -252,6 +266,11 @@ def dashboard():
     pendentes_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="pendente")
     aguardando_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="aguardando_aprovacao")
     solicitacoes_q = Agendamento.query.filter_by(clinica_id=clinica.id, status="solicitado")
+    # Pacientes que se cadastraram sozinhos pelo app (ver
+    # auth.cadastro_paciente) e aguardam a equipe aceitar o cadastro antes
+    # de poder solicitar agendamento — qualquer um da equipe pode ver e
+    # decidir, não depende de perm_pacientes.
+    cadastros_pendentes_count = Paciente.query.filter_by(clinica_id=clinica.id, status_cadastro="pendente").count()
 
     if eh_medico():
         total_pacientes = (
@@ -292,6 +311,7 @@ def dashboard():
         proximos=proximos,
         pendentes=pendentes,
         solicitacoes_pendentes=solicitacoes_pendentes,
+        cadastros_pendentes=cadastros_pendentes_count,
         agendamentos=agendamentos,
         etapas_configuracao_inicial=[e for e in status_configuracao_inicial(clinica) if not e["concluida"] and not e.get("opcional")],
     )
@@ -344,6 +364,44 @@ def pacientes_lista():
     else:
         pacientes = Paciente.query.filter_by(clinica_id=clinica.id).order_by(Paciente.nome).all()
     return render_template("medico/pacientes_lista.html", pacientes=pacientes)
+
+
+@medico_bp.route("/pacientes/solicitacoes")
+@login_required
+@staff_required
+def pacientes_solicitacoes():
+    """Cadastros de paciente feitos pelo próprio app (ver
+    auth.cadastro_paciente), ainda aguardando a equipe aceitar. Qualquer
+    membro da equipe pode ver e decidir — não é restrito por perm_pacientes,
+    já que aceitar/recusar um cadastro não é a mesma coisa que gerenciar o
+    cadastro completo do paciente."""
+    clinica = clinica_atual()
+    pendentes = (
+        Paciente.query.filter_by(clinica_id=clinica.id, status_cadastro="pendente")
+        .order_by(Paciente.criado_em.asc())
+        .all()
+    )
+    return render_template("medico/pacientes_solicitacoes.html", pendentes=pendentes)
+
+
+@medico_bp.route("/pacientes/<int:paciente_id>/cadastro/decidir", methods=["POST"])
+@login_required
+@staff_required
+def pacientes_cadastro_decidir(paciente_id):
+    clinica = clinica_atual()
+    paciente = Paciente.query.filter_by(id=paciente_id, clinica_id=clinica.id, status_cadastro="pendente").first_or_404()
+    acao = request.form.get("acao")
+    if acao == "aceitar":
+        paciente.status_cadastro = "aprovado"
+        db.session.commit()
+        flash(f"Cadastro de {paciente.nome} aceito — já pode solicitar agendamento.", "success")
+    elif acao == "rejeitar":
+        paciente.status_cadastro = "rejeitado"
+        db.session.commit()
+        flash(f"Cadastro de {paciente.nome} rejeitado.", "success")
+    else:
+        flash("Ação inválida.", "danger")
+    return redirect(url_for("medico.pacientes_solicitacoes"))
 
 
 def _preencher_endereco_emergencia(paciente, form):
@@ -1891,6 +1949,13 @@ def clinica_configuracoes(filial_id=None):
     else:
         clinica = clinica_sessao
 
+    # O link de auto-cadastro do paciente (ver auth.cadastro_paciente)
+    # precisa de um código — gera um na primeira vez que esta tela é
+    # aberta, pra já aparecer pronto pra copiar sem precisar de mais um clique.
+    if not clinica.codigo_cadastro_paciente:
+        clinica.codigo_cadastro_paciente = _gerar_codigo_cadastro_paciente()
+        db.session.commit()
+
     if request.method == "POST":
         # Dados gerais
         nome = request.form.get("nome", "").strip()
@@ -1928,6 +1993,27 @@ def clinica_configuracoes(filial_id=None):
         "medico/clinica_configuracoes.html",
         clinica=clinica,
     )
+
+
+@medico_bp.route("/clinica/codigo-cadastro-paciente/regenerar", methods=["POST"])
+@medico_bp.route("/clinica/codigo-cadastro-paciente/regenerar/<int:filial_id>", methods=["POST"])
+@login_required
+@staff_required
+@permissao_required("perm_dados_clinica")
+def clinica_codigo_cadastro_regenerar(filial_id=None):
+    """Gera um novo código de auto-cadastro, invalidando o link antigo —
+    útil se o link antigo foi compartilhado por engano com quem não deveria
+    ter acesso."""
+    clinica_sessao = clinica_atual()
+    if filial_id:
+        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=clinica_sessao.empresa_id).first_or_404()
+    else:
+        clinica = clinica_sessao
+
+    clinica.codigo_cadastro_paciente = _gerar_codigo_cadastro_paciente()
+    db.session.commit()
+    flash("Novo link de cadastro gerado — o link antigo não funciona mais.", "success")
+    return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
 
 
 @medico_bp.route("/clinica/emissao-fiscal", methods=["POST"])

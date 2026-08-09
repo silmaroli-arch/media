@@ -3,10 +3,24 @@
 {% block conteudo %}
 <h3 class="mb-4">Olá, {{ current_user.nome }}!</h3>
 
+{% if current_user.paciente.status_cadastro == 'pendente' %}
+<div class="alert alert-warning">
+  <strong>Seu cadastro está em análise.</strong> Assim que a clínica aceitar, você vai poder
+  solicitar agendamento de exames por aqui.
+</div>
+{% elif current_user.paciente.status_cadastro == 'rejeitado' %}
+<div class="alert alert-danger">
+  <strong>Seu cadastro não foi aceito pela clínica.</strong> Entre em contato com a clínica para
+  mais informações.
+</div>
+{% endif %}
+
 <div class="card p-3 mb-4">
   <div class="d-flex justify-content-between align-items-center mb-2">
     <h5 class="mb-0">Próximos exames</h5>
+    {% if current_user.paciente.status_cadastro == 'aprovado' %}
     <a href="{{ url_for('paciente.solicitar_agendamento') }}" class="btn btn-sm btn-outline-primary">Solicitar novo agendamento</a>
+    {% endif %}
   </div>
   {% if proximos %}
     {% for a in proximos %}
