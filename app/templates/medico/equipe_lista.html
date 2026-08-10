@@ -7,30 +7,48 @@
 </div>
 <div class="card p-3">
   <table class="table table-hover">
-    <thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Filial</th><th>Permissões administrativas</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Filiais</th><th>Permissões administrativas</th><th></th></tr></thead>
     <tbody>
-      {% for m in membros %}
+      {% for p in pessoas %}
+      {% set usuario = p.usuario %}
       <tr>
-        <td>{{ m.usuario.nome }}</td>
-        <td>{{ m.usuario.email }}</td>
-        <td><span class="badge bg-secondary">{{ m.usuario.tipo }}</span></td>
-        <td>{{ m.clinica.nome }}</td>
+        <td>{{ usuario.nome }}</td>
+        <td>{{ usuario.email }}</td>
+        <td><span class="badge bg-secondary">{{ usuario.tipo }}</span></td>
         <td>
-          {% if m.usuario.perm_pacientes %}<span class="badge bg-light text-dark border me-1">Pacientes</span>{% endif %}
-          {% if m.usuario.perm_equipe %}<span class="badge bg-light text-dark border me-1">Equipe</span>{% endif %}
-          {% if m.usuario.perm_filiais %}<span class="badge bg-light text-dark border me-1">Locais de atendimento</span>{% endif %}
-          {% if m.usuario.perm_dados_clinica %}<span class="badge bg-light text-dark border me-1">Dados Cadastrais</span>{% endif %}
-          {% if not (m.usuario.perm_pacientes or m.usuario.perm_equipe or m.usuario.perm_filiais or m.usuario.perm_dados_clinica) %}
+          {% for v in p.vinculos %}
+          <span class="badge bg-light text-dark border me-1 mb-1">
+            {{ v.clinica.nome }}
+            {% if v.usuario_id != current_user.id %}
+            <form method="post" action="{{ url_for('medico.equipe_remover', membro_id=v.id) }}" onsubmit="return confirm('Remover ' + {{ usuario.nome|tojson }} + ' da filial ' + {{ v.clinica.nome|tojson }} + '?');" class="d-inline">
+              <button type="submit" class="btn btn-link btn-sm p-0 ms-1 text-danger" title="Remover desta filial">&times;</button>
+            </form>
+            {% endif %}
+          </span>
+          {% endfor %}
+          {% if p.filiais_disponiveis %}
+          <form method="post" action="{{ url_for('medico.equipe_associar_filial', usuario_id=usuario.id) }}" class="d-inline-flex gap-1 mt-1">
+            <select name="filial_id" class="form-select form-select-sm" style="width: auto;">
+              {% for f in p.filiais_disponiveis %}
+              <option value="{{ f.id }}">{{ f.nome }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-sm btn-outline-primary">+ Associar a outra filial</button>
+          </form>
+          {% endif %}
+        </td>
+        <td>
+          {% if usuario.perm_pacientes %}<span class="badge bg-light text-dark border me-1">Pacientes</span>{% endif %}
+          {% if usuario.perm_equipe %}<span class="badge bg-light text-dark border me-1">Equipe</span>{% endif %}
+          {% if usuario.perm_filiais %}<span class="badge bg-light text-dark border me-1">Locais de atendimento</span>{% endif %}
+          {% if usuario.perm_dados_clinica %}<span class="badge bg-light text-dark border me-1">Dados Cadastrais</span>{% endif %}
+          {% if not (usuario.perm_pacientes or usuario.perm_equipe or usuario.perm_filiais or usuario.perm_dados_clinica) %}
           <span class="text-muted small">Nenhuma</span>
           {% endif %}
         </td>
         <td class="text-nowrap">
-          <a href="{{ url_for('medico.equipe_permissoes', usuario_id=m.usuario_id) }}" class="btn btn-sm btn-outline-secondary">Permissões</a>
-          {% if m.usuario_id != current_user.id %}
-          <form method="post" action="{{ url_for('medico.equipe_remover', membro_id=m.id) }}" onsubmit="return confirm('Remover esta pessoa desta filial?');" class="d-inline">
-            <button type="submit" class="btn btn-sm btn-outline-danger">Remover</button>
-          </form>
-          {% else %}
+          <a href="{{ url_for('medico.equipe_permissoes', usuario_id=usuario.id) }}" class="btn btn-sm btn-outline-secondary">Permissões</a>
+          {% if usuario.id == current_user.id %}
           <span class="text-muted small">(você)</span>
           {% endif %}
         </td>
@@ -42,11 +60,12 @@
   </table>
 </div>
 <p class="text-muted small mt-3">
-  Essa lista mostra a equipe de todas as filiais da sua empresa. Se a pessoa já tiver conta na
+  Cada pessoa aparece uma única vez aqui, mesmo atuando em mais de uma filial da sua empresa — é uma
+  única conta (um único cadastro), só vinculada a mais de um local. Se a pessoa já tiver conta na
   plataforma (ex.: um médico que atende em mais de uma filial ou empresa), basta cadastrar o mesmo
-  e-mail dela aqui, escolhendo a filial — ela será vinculada sem precisar criar uma nova conta.
-  As permissões administrativas valem para a conta como um todo, em todas as filiais em que a
-  pessoa atua — não são exclusivas do papel médico/secretária, já que nem toda clínica tem
-  secretária.
+  e-mail dela em "Adicionar médico/secretária", escolhendo a filial — ela será vinculada sem criar
+  uma nova conta; ou use "+ Associar a outra filial" na linha dela, aqui embaixo. As permissões
+  administrativas valem para a conta como um todo, em todas as filiais em que a pessoa atua — não
+  são exclusivas do papel médico/secretária, já que nem toda clínica tem secretária.
 </p>
 {% endblock %}

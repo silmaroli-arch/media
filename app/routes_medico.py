@@ -2608,14 +2608,35 @@ def filiais_nova():
 @staff_required
 @permissao_required("perm_equipe")
 def equipe_lista():
+    """Mostra uma linha por PESSOA (não por vínculo) - uma pessoa que atua
+    em mais de uma filial da empresa continua sendo uma única conta
+    (Usuario), só com mais de um vínculo (ClinicaMembro); antes a tela
+    repetia a linha inteira por filial, o que parecia (incorretamente) um
+    cadastro duplicado."""
     clinica = clinica_atual()
-    filial_ids = [f.id for f in Clinica.query.filter_by(empresa_id=clinica.empresa_id).all()]
+    filiais = Clinica.query.filter_by(empresa_id=clinica.empresa_id).order_by(Clinica.nome).all()
+    filial_ids = [f.id for f in filiais]
     membros = (
         ClinicaMembro.query.filter(ClinicaMembro.clinica_id.in_(filial_ids))
         .order_by(ClinicaMembro.clinica_id)
         .all()
     )
-    return render_template("medico/equipe_lista.html", membros=membros)
+
+    pessoas = {}
+    for m in membros:
+        pessoa = pessoas.setdefault(m.usuario_id, {"usuario": m.usuario, "vinculos": []})
+        pessoa["vinculos"].append(m)
+    pessoas = sorted(pessoas.values(), key=lambda p: p["usuario"].nome)
+
+    # Para cada pessoa, quais filiais da empresa ela ainda NÃO integra —
+    # usado pelo pequeno formulário "+ Associar a outra filial" da tela,
+    # que vincula direto sem precisar passar pelo formulário completo de
+    # "Adicionar médico/secretária" de novo.
+    for pessoa in pessoas:
+        ja_vinculadas_ids = {v.clinica_id for v in pessoa["vinculos"]}
+        pessoa["filiais_disponiveis"] = [f for f in filiais if f.id not in ja_vinculadas_ids]
+
+    return render_template("medico/equipe_lista.html", pessoas=pessoas)
 
 
 @medico_bp.route("/equipe-membros/novo", methods=["GET", "POST"])
@@ -2702,6 +2723,44 @@ def equipe_novo():
         return _destino_pos_onboarding("medico.equipe_lista")
 
     return render_template("medico/equipe_form.html", filiais=filiais)
+
+
+@medico_bp.route("/equipe-membros/<int:usuario_id>/associar-filial", methods=["POST"])
+@login_required
+@staff_required
+@permissao_required("perm_equipe")
+def equipe_associar_filial(usuario_id):
+    """Vincula uma pessoa que já faz parte da equipe (em pelo menos uma
+    filial da empresa) a mais uma filial da mesma empresa - atalho direto
+    na tela "Equipe" para o mesmo caso de "e-mail já cadastrado" tratado em
+    equipe_novo, sem precisar passar pelo formulário completo de novo."""
+    clinica = clinica_atual()
+    filiais = Clinica.query.filter_by(empresa_id=clinica.empresa_id).all()
+    filial_ids = {f.id for f in filiais}
+
+    # A pessoa precisa já fazer parte de alguma filial desta empresa —
+    # senão, isso não é "associar a mais uma filial", é criar do zero
+    # (fluxo de medico.equipe_novo).
+    ja_e_da_empresa = ClinicaMembro.query.filter(
+        ClinicaMembro.usuario_id == usuario_id, ClinicaMembro.clinica_id.in_(filial_ids)
+    ).first()
+    if not ja_e_da_empresa:
+        flash("Pessoa não encontrada na equipe desta empresa.", "danger")
+        return redirect(url_for("medico.equipe_lista"))
+
+    filial_destino = next((f for f in filiais if f.id == request.form.get("filial_id", type=int)), None)
+    if not filial_destino:
+        flash("Escolha uma filial válida.", "danger")
+        return redirect(url_for("medico.equipe_lista"))
+
+    if ClinicaMembro.query.filter_by(clinica_id=filial_destino.id, usuario_id=usuario_id).first():
+        flash("Essa pessoa já faz parte dessa filial.", "warning")
+        return redirect(url_for("medico.equipe_lista"))
+
+    db.session.add(ClinicaMembro(clinica_id=filial_destino.id, usuario_id=usuario_id, ativo=True))
+    db.session.commit()
+    flash(f"{ja_e_da_empresa.usuario.nome} foi vinculado(a) à filial '{filial_destino.nome}'.", "success")
+    return redirect(url_for("medico.equipe_lista"))
 
 
 @medico_bp.route("/equipe-membros/<int:usuario_id>/permissoes", methods=["GET", "POST"])
