@@ -29,10 +29,10 @@
 {% set eh_staff_logado = current_user.is_authenticated and current_user.is_staff %}
 <div class="d-flex">
   {% if eh_staff_logado %}
-  {% set grupo_pessoas = ['medico.pacientes_lista', 'medico.pacientes_novo', 'medico.pacientes_editar', 'medico.pacientes_detalhe',
-                           'medico.equipe_lista', 'medico.equipe_novo'] %}
   {% set grupo_medico = ['medico.medico_horarios', 'medico.medico_agenda_pessoal', 'medico.medico_bloqueios', 'medico.certificado_digital'] %}
-  {% set grupo_cadastro_geral = ['medico.filiais_lista', 'medico.filiais_nova',
+  {% set grupo_cadastro_geral = ['medico.pacientes_lista', 'medico.pacientes_novo', 'medico.pacientes_editar', 'medico.pacientes_detalhe',
+                                  'medico.equipe_lista', 'medico.equipe_novo', 'medico.equipe_editar', 'medico.equipe_permissoes',
+                                  'medico.filiais_lista', 'medico.filiais_nova',
                                   'medico.clinica_configuracoes', 'medico.clinica_dados_fiscais'] %}
   {% set grupo_financeiro = ['medico.financeiro_receber_pagamento', 'medico.descontos_lista'] %}
   {% set grupo_ia = ['medico.perguntas_pendentes', 'medico.perguntas_responder',
@@ -60,12 +60,12 @@
       </li>
 
       <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuPessoas" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_pessoas else 'false' }}">
-          <span><i class="bi bi-people me-2"></i>Pessoas</span>
+        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuCadastroGeral" role="button"
+           aria-expanded="{{ 'true' if request.endpoint in grupo_cadastro_geral else 'false' }}">
+          <span><i class="bi bi-journal-plus me-2"></i>Cadastro geral</span>
           <i class="bi bi-chevron-down chevron-icon"></i>
         </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_pessoas %}show{% endif %}" id="menuPessoas">
+        <div class="collapse nav-sub {% if request.endpoint in grupo_cadastro_geral %}show{% endif %}" id="menuCadastroGeral">
           <ul class="nav flex-column">
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">Pacientes</a>
@@ -73,6 +73,11 @@
             {% if current_user.perm_equipe %}
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.equipe') %}active{% endif %}" href="{{ url_for('medico.equipe_lista') }}">Equipe</a>
+            </li>
+            {% endif %}
+            {% if current_user.perm_filiais or current_user.perm_dados_clinica %}
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint in ['medico.filiais_lista', 'medico.filiais_nova', 'medico.clinica_configuracoes', 'medico.clinica_dados_fiscais'] %}active{% endif %}" href="{{ url_for('medico.filiais_lista') }}">Meus locais de atendimento</a>
             </li>
             {% endif %}
           </ul>
@@ -104,25 +109,6 @@
           </ul>
         </div>
       </li>
-
-      {% if current_user.perm_filiais or current_user.perm_dados_clinica %}
-      <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuCadastroGeral" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_cadastro_geral else 'false' }}">
-          <span><i class="bi bi-journal-plus me-2"></i>Cadastro geral</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
-        </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_cadastro_geral %}show{% endif %}" id="menuCadastroGeral">
-          <ul class="nav flex-column">
-            {% if current_user.perm_filiais or current_user.perm_dados_clinica %}
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint in grupo_cadastro_geral %}active{% endif %}" href="{{ url_for('medico.filiais_lista') }}">Meus locais de atendimento</a>
-            </li>
-            {% endif %}
-          </ul>
-        </div>
-      </li>
-      {% endif %}
 
       {% if current_user.perm_dados_clinica %}
       <li class="nav-item mb-1">
