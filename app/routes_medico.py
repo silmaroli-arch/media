@@ -702,11 +702,19 @@ def exames_editar(exame_id):
         # exame em si.
         exame.precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
         if not eh_medico():
+            # Só quem não é médico (secretária) pode trocar o médico
+            # RESPONSÁVEL principal - reatribuir esse papel tem mais
+            # implicações (é quem aparece como titular do exame).
             novo_medico_id = request.form.get("medico_id", type=int)
             if novo_medico_id and any(m.id == novo_medico_id for m in medicos):
                 exame.medico_id = novo_medico_id
-            medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != exame.medico_id}
-            exame.medicos_extra = [m for m in medicos if m.id in medicos_extra_ids]
+        # Já os médicos EXTRAS (outros médicos que também atendem este
+        # exame) qualquer pessoa da equipe pode ajustar - inclusive um
+        # médico editando o próprio exame - já que clínicas sem secretária
+        # (só médicos) também precisam conseguir compartilhar um exame
+        # entre colegas.
+        medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != exame.medico_id}
+        exame.medicos_extra = [m for m in medicos if m.id in medicos_extra_ids]
         preparo_modelo_id = request.form.get("preparo_modelo_id", type=int)
         if preparo_modelo_id:
             modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)

@@ -28,10 +28,13 @@
       <div class="form-text text-danger">Nenhum médico cadastrado nesta clínica ainda. Cadastre um médico na equipe antes de criar exames.</div>
       {% endif %}
     </div>
+    {% endif %}
+    {% if medicos|length > 1 %}
     <div class="mb-3">
       <label class="form-label">Outros médicos que também atendem este exame (opcional)</label>
       <div class="form-text mb-1">
-        Ao agendar este exame, será possível escolher qualquer um dos médicos marcados aqui (além do responsável).
+        Ao agendar este exame, será possível escolher qualquer um dos médicos marcados aqui (além do responsável) -
+        útil quando mais de um médico da equipe faz o mesmo procedimento, mesmo que a clínica não tenha secretária.
       </div>
       {% for m in medicos %}
       <div class="form-check">
