@@ -120,7 +120,7 @@
             {% endif %}
             {% if current_user.perm_dados_clinica %}
             <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.clinica_configuracoes' %}active{% endif %}" href="{{ url_for('medico.clinica_configuracoes') }}">Dados da clínica</a>
+              <a class="nav-link {% if request.endpoint == 'medico.clinica_configuracoes' %}active{% endif %}" href="{{ url_for('medico.clinica_configuracoes') }}">Dados Cadastrais</a>
             </li>
             {% endif %}
           </ul>

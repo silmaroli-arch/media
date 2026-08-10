@@ -113,7 +113,7 @@ class Clinica(db.Model):
 
     # Código público usado no link de auto-cadastro do paciente pelo
     # app (ver auth.cadastro_paciente) — cada filial tem o seu, gerado
-    # sob demanda na tela "Dados da clínica" (ver
+    # sob demanda na tela "Dados Cadastrais" (ver
     # medico.clinica_configuracoes / _gerar_codigo_cadastro_paciente).
     codigo_cadastro_paciente = db.Column(db.String(20), unique=True, nullable=True)
 

@@ -1,6 +1,6 @@
 """Emissão de NFS-e (nota fiscal de serviço eletrônica) pelo padrão
 NFS-e Nacional (Ambiente de Dados Nacional / ADN — SEFIN Nacional), usando
-o certificado digital e-CNPJ já cadastrado em "Dados da clínica" (ver
+o certificado digital e-CNPJ já cadastrado em "Dados Cadastrais" (ver
 app/cripto_fiscal.py e a rota clinica_certificado_upload).
 
 Fluxo desta versão:
@@ -159,7 +159,7 @@ def _carregar_certificado(clinica, senha_certificado=None):
     if not pfx_bytes:
         raise ErroEmissaoNfse(
             "Certificado digital não configurado ou não pôde ser lido — "
-            'envie o certificado em "Dados da clínica" antes de emitir.'
+            'envie o certificado em "Dados Cadastrais" antes de emitir.'
         )
 
     senha = senha_certificado or descriptografar_texto(clinica.fiscal_certificado_senha_cripto)
@@ -357,7 +357,7 @@ def emitir_nfse(clinica, paciente, agendamento, pagamento, senha_certificado=Non
     if not clinica.fiscal_certificado_pfx:
         raise ErroEmissaoNfse(
             "Nenhum certificado digital configurado — envie o certificado "
-            'e-CNPJ em "Dados da clínica" antes de emitir, ou ligue o modo '
+            'e-CNPJ em "Dados Cadastrais" antes de emitir, ou ligue o modo '
             "simulação para apenas testar o fluxo."
         )
 

@@ -177,7 +177,7 @@ def status_configuracao_inicial(clinica):
     etapas = [
         {
             "id": "dados_clinica",
-            "titulo": "Dados da clínica",
+            "titulo": "Dados Cadastrais",
             "descricao": "Endereço, CNPJ e telefone/e-mail de contato da clínica.",
             "concluida": bool(clinica.telefone and clinica.email_contato),
             "endpoint": "medico.clinica_configuracoes",
@@ -329,7 +329,7 @@ def onboarding():
     cadastrar (ver auth.cadastro) e também acessível a qualquer momento
     pelo aviso no Painel — reúne, num só lugar, as etapas sugeridas para
     deixar a clínica pronta para uso. Nenhuma etapa é obrigatória: cada
-    uma só linka para a tela real (Dados da clínica, Equipe, Horário de
+    uma só linka para a tela real (Dados Cadastrais, Equipe, Horário de
     atendimento, Modelos de preparo, Exames), que continua funcionando
     normalmente por fora do assistente também."""
     clinica = clinica_atual()
@@ -2153,7 +2153,7 @@ def faq_novo():
     return render_template("medico/faq_form.html", exames=exames)
 
 
-# ---------- Dados da clínica (gerais, endereço, fiscais) ----------
+# ---------- Dados Cadastrais (gerais, endereço, fiscais) ----------
 
 @medico_bp.route("/clinica/configuracoes", methods=["GET", "POST"])
 @medico_bp.route("/clinica/configuracoes/<int:filial_id>", methods=["GET", "POST"])
@@ -2206,7 +2206,7 @@ def clinica_configuracoes(filial_id=None):
         clinica.codigo_ibge_municipio = request.form.get("codigo_ibge_municipio", "").strip()
 
         db.session.commit()
-        flash("Dados da clínica atualizados com sucesso.", "success")
+        flash("Dados Cadastrais atualizados com sucesso.", "success")
         return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
 
     return render_template(
@@ -2244,7 +2244,7 @@ def clinica_codigo_cadastro_regenerar(filial_id=None):
 def clinica_emissao_fiscal(filial_id=None):
     """Salva a configuração de emissão de NFS-e (ambiente, provedor,
     inscrição municipal, código de serviço, alíquota de ISS, série/número
-    do RPS) — separado do formulário principal de "Dados da clínica"
+    do RPS) — separado do formulário principal de "Dados Cadastrais"
     porque fica em outro <form> na mesma página (ver
     medico/clinica_configuracoes.html). O upload do certificado digital em
     si tem sua própria rota, `clinica_certificado_upload`, abaixo."""

@@ -288,7 +288,7 @@ def _parse_data_nascimento(valor_str):
 @auth_bp.route("/paciente/cadastro/<codigo>", methods=["GET", "POST"])
 def cadastro_paciente(codigo):
     """Auto-cadastro do paciente pelo app, usando o link/código público de
-    uma clínica específica (gerado em "Dados da clínica" — ver
+    uma clínica específica (gerado em "Dados Cadastrais" — ver
     medico.clinica_configuracoes). O cadastro entra com
     status_cadastro="pendente": o paciente já consegue entrar no sistema
     (mesmo login por telefone + data de nascimento de sempre), mas só
