@@ -173,6 +173,7 @@ def status_configuracao_inicial(clinica):
     tem_mais_gente = ClinicaMembro.query.filter_by(clinica_id=clinica.id, ativo=True).count() > 1
     tem_modelo_preparo = PreparoModelo.query.filter_by(clinica_id=clinica.id).first() is not None
     tem_exame = Exame.query.filter_by(clinica_id=clinica.id).first() is not None
+    tem_mais_filiais = Clinica.query.filter_by(empresa_id=clinica.empresa_id).count() > 1
 
     etapas = [
         {
@@ -182,6 +183,18 @@ def status_configuracao_inicial(clinica):
             "concluida": bool(clinica.telefone and clinica.email_contato),
             "endpoint": "medico.clinica_configuracoes",
             "permissao": "perm_dados_clinica",
+        },
+        {
+            "id": "filiais",
+            "titulo": "Adicionar mais locais de atendimento",
+            "descricao": (
+                "Se a clínica atende em mais de um endereço/consultório, cadastre cada um como um "
+                "local separado aqui — esta etapa é totalmente opcional."
+            ),
+            "concluida": tem_mais_filiais,
+            "endpoint": "medico.filiais_nova",
+            "permissao": "perm_filiais",
+            "opcional": True,
         },
         {
             "id": "equipe",
@@ -2646,7 +2659,7 @@ def filiais_nova():
             "navegação para começar a trabalhar nele.",
             "success",
         )
-        return redirect(url_for("medico.filiais_lista"))
+        return _destino_pos_onboarding("medico.filiais_lista")
 
     return render_template("medico/filiais_form.html")
 
@@ -2702,11 +2715,15 @@ def equipe_novo():
         email = request.form.get("email", "").strip().lower()
         papel = request.form.get("papel", "secretaria")
         senha = request.form.get("senha", "").strip()
-        filial_id = request.form.get("filial_id", type=int)
-
-        filial = next((f for f in filiais if f.id == filial_id), None)
-        if not filial:
-            flash("Escolha em qual filial essa pessoa vai atuar.", "danger")
+        # Uma pessoa pode atuar em mais de uma filial da empresa desde já,
+        # marcando todas de uma vez aqui — antes só dava pra escolher uma,
+        # e para as demais era preciso cadastrar a mesma pessoa de novo do
+        # zero (ver medico.equipe_associar_filial para o atalho equivalente
+        # feito depois, direto na tela "Equipe").
+        filial_ids_selecionadas = request.form.getlist("filial_ids", type=int)
+        filiais_selecionadas = [f for f in filiais if f.id in filial_ids_selecionadas]
+        if not filiais_selecionadas:
+            flash("Escolha em qual(is) filial(is) essa pessoa vai atuar.", "danger")
             return render_template("medico/equipe_form.html", filiais=filiais)
 
         if not email or papel not in ("medico", "secretaria"):
@@ -2717,7 +2734,8 @@ def equipe_novo():
 
         if usuario_existente:
             # A conta já existe na plataforma (pode ser de outra clínica) —
-            # só criamos o vínculo dela com esta filial, sem duplicar a conta.
+            # só criamos os vínculos dela com as filiais marcadas, sem
+            # duplicar a conta.
             if not usuario_existente.is_staff:
                 flash("Esse e-mail já está cadastrado, mas não é uma conta de médico/secretária.", "danger")
                 return render_template("medico/equipe_form.html", filiais=filiais)
@@ -2730,17 +2748,19 @@ def equipe_novo():
                 )
                 return render_template("medico/equipe_form.html", filiais=filiais)
 
-            vinculo_existente = ClinicaMembro.query.filter_by(
-                clinica_id=filial.id, usuario_id=usuario_existente.id
-            ).first()
-            if vinculo_existente:
-                flash("Esse usuário já faz parte dessa filial.", "warning")
+            ja_vinculadas_ids = {
+                m.clinica_id for m in ClinicaMembro.query.filter_by(usuario_id=usuario_existente.id).all()
+            }
+            filiais_novas = [f for f in filiais_selecionadas if f.id not in ja_vinculadas_ids]
+            if not filiais_novas:
+                flash("Esse usuário já faz parte de todas as filiais marcadas.", "warning")
                 return _destino_pos_onboarding("medico.equipe_lista")
 
-            vinculo = ClinicaMembro(clinica_id=filial.id, usuario_id=usuario_existente.id, ativo=True)
-            db.session.add(vinculo)
+            for f in filiais_novas:
+                db.session.add(ClinicaMembro(clinica_id=f.id, usuario_id=usuario_existente.id, ativo=True))
             db.session.commit()
-            flash(f"{usuario_existente.nome} foi vinculado(a) à filial '{filial.nome}'.", "success")
+            nomes_filiais = ", ".join(f.nome for f in filiais_novas)
+            flash(f"{usuario_existente.nome} foi vinculado(a) à(s) filial(is) '{nomes_filiais}'.", "success")
             return _destino_pos_onboarding("medico.equipe_lista")
 
         # Conta nova
