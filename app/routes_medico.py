@@ -177,31 +177,22 @@ def status_configuracao_inicial(clinica):
 
     etapas = [
         {
-            "id": "dados_clinica",
-            "titulo": "Dados Cadastrais",
-            "descricao": "Endereço, CNPJ e telefone/e-mail de contato da clínica.",
-            "concluida": bool(clinica.telefone and clinica.email_contato),
-            "endpoint": "medico.clinica_configuracoes",
-            "permissao": "perm_dados_clinica",
-        },
-        {
-            "id": "filiais",
-            "titulo": "Adicionar mais locais de atendimento",
+            "id": "locais_atendimento",
+            "titulo": "Meus Locais de Atendimento",
             "descricao": (
-                "Se a clínica atende em mais de um endereço/consultório, cadastre cada um como um "
-                "local separado aqui — esta etapa é totalmente opcional."
+                "Endereço, CNPJ e telefone/e-mail de contato da clínica — e, se atender em mais de um "
+                "endereço/consultório, cadastre cada local separadamente aqui também (opcional)."
             ),
-            "concluida": tem_mais_filiais,
-            "endpoint": "medico.filiais_nova",
+            "concluida": bool(clinica.telefone and clinica.email_contato),
+            "endpoint": "medico.filiais_lista",
             "permissao": "perm_filiais",
-            "opcional": True,
         },
         {
             "id": "equipe",
             "titulo": "Convidar mais gente para a equipe",
             "descricao": "Adicione outra secretária ou médico, se houver — esta etapa é totalmente opcional.",
             "concluida": tem_mais_gente,
-            "endpoint": "medico.equipe_novo",
+            "endpoint": "medico.equipe_lista",
             "permissao": "perm_equipe",
             "opcional": True,
         },
