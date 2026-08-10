@@ -90,7 +90,7 @@
       </div>
       <div class="col-md-6">
         <label class="form-label">Telefone</label>
-        <input type="text" name="contato_emergencia_telefone" class="form-control" value="{{ paciente.contato_emergencia_telefone if paciente else '' }}">
+        <input type="text" inputmode="numeric" name="contato_emergencia_telefone" id="contato_emergencia_telefone" class="form-control" placeholder="(27) 99999-9999" value="{{ paciente.contato_emergencia_telefone if paciente else '' }}">
       </div>
     </div>
 
@@ -145,6 +145,7 @@
   aplicarMascaraFixa(document.getElementById('data_nascimento'), '99/99/9999');
   aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
   aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
+  aplicarMascaraFixa(document.getElementById('contato_emergencia_telefone'), '(99) 99999-9999');
 
   // Busca de endereço por CEP via ViaCEP — preenche os campos
   // automaticamente; os campos de endereço (rua, bairro, cidade e UF)
