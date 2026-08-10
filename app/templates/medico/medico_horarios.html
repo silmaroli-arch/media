@@ -4,20 +4,49 @@
 <h3 class="mb-1">Horário de atendimento do médico</h3>
 <p class="text-muted mb-4">
   Usado pelo otimizador de agenda para sugerir horários disponíveis conforme a duração de cada exame.
-  Vale só para a filial atual — se o médico atende em mais de uma filial, o horário é configurado
-  separadamente em cada uma.
+  Cada local de atendimento tem seu próprio horário — se o médico atende em mais de um, escolha
+  abaixo qual deles você está configurando.
 </p>
 
-{% if medicos %}
-<div class="mb-4">
-  <label class="form-label">Médico</label>
-  <select class="form-select" style="max-width: 350px" onchange="window.location = '{{ url_for('medico.medico_horarios') }}/' + this.value">
-    {% for m in medicos %}
-    <option value="{{ m.id }}" {% if m.id == medico_alvo.id %}selected{% endif %}>{{ m.nome }}</option>
-    {% endfor %}
-  </select>
+<div class="row g-3 mb-4">
+  {% if medicos %}
+  <div class="col-md-6">
+    <label class="form-label">Médico</label>
+    <select class="form-select" id="seletor_medico">
+      {% for m in medicos %}
+      <option value="{{ m.id }}" {% if m.id == medico_alvo.id %}selected{% endif %}>{{ m.nome }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+  {% if locais_do_medico|length > 1 %}
+  <div class="col-md-6">
+    <label class="form-label">Local de atendimento</label>
+    <select class="form-select" id="seletor_local">
+      {% for c in locais_do_medico %}
+      <option value="{{ c.id }}" {% if c.id == clinica_alvo.id %}selected{% endif %}>{{ c.nome }}</option>
+      {% endfor %}
+    </select>
+    <div class="form-text">O horário salvo aqui vale só para este local — os outros locais do médico têm horários independentes.</div>
+  </div>
+  {% endif %}
 </div>
-{% endif %}
+<script>
+  (function () {
+    var seletorMedico = document.getElementById('seletor_medico');
+    var seletorLocal = document.getElementById('seletor_local');
+    function irParaCombinacao() {
+      var medicoId = seletorMedico ? seletorMedico.value : '{{ medico_alvo.id }}';
+      var url = '{{ url_for("medico.medico_horarios") }}/' + medicoId;
+      if (seletorLocal) {
+        url += '?clinica_id=' + seletorLocal.value;
+      }
+      window.location = url;
+    }
+    if (seletorMedico) seletorMedico.addEventListener('change', irParaCombinacao);
+    if (seletorLocal) seletorLocal.addEventListener('change', irParaCombinacao);
+  })();
+</script>
 
 <div class="mb-4">
   <label class="form-label">Horário base</label>
@@ -32,6 +61,7 @@
 
 <form method="post">
   <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
+  <input type="hidden" name="clinica_id" value="{{ clinica_alvo.id }}">
   <div class="card p-4">
     {% for dia_idx, dia_nome in dias_semana %}
       {% set horario = horarios_por_dia.get(dia_idx) %}

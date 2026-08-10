@@ -1345,10 +1345,28 @@ def medico_horarios(medico_id=None):
         flash("Nenhum médico cadastrado nesta filial ainda.", "danger")
         return redirect(url_for("medico.equipe_lista"))
 
+    # Locais (filiais da mesma empresa) em que esse médico atende - permite
+    # escolher o horário de qualquer um deles direto nesta tela, sem
+    # precisar trocar de filial no menu superior primeiro. Cada local tem
+    # seu próprio horário independente (ver MedicoHorario.clinica_id).
+    locais_do_medico = (
+        Clinica.query.join(ClinicaMembro, ClinicaMembro.clinica_id == Clinica.id)
+        .filter(ClinicaMembro.usuario_id == medico_alvo.id, Clinica.empresa_id == clinica.empresa_id)
+        .order_by(Clinica.nome)
+        .all()
+    )
+    if clinica not in locais_do_medico:
+        # Não deveria acontecer (a filial atual sempre devia estar entre os
+        # locais do médico), mas por segurança garante que apareça como opção.
+        locais_do_medico = [clinica] + locais_do_medico
+
+    clinica_id_escolhida = request.values.get("clinica_id", type=int)
+    clinica_alvo = next((c for c in locais_do_medico if c.id == clinica_id_escolhida), None) or clinica
+
     if request.method == "POST":
         horarios_existentes = {
             h.dia_semana: h
-            for h in MedicoHorario.query.filter_by(clinica_id=clinica.id, medico_id=medico_alvo.id).all()
+            for h in MedicoHorario.query.filter_by(clinica_id=clinica_alvo.id, medico_id=medico_alvo.id).all()
         }
         for dia_idx in range(7):
             ativo = request.form.get(f"dia_{dia_idx}_ativo") == "on"
@@ -1363,7 +1381,7 @@ def medico_horarios(medico_id=None):
 
             horario = horarios_existentes.get(dia_idx)
             if not horario:
-                horario = MedicoHorario(clinica_id=clinica.id, medico_id=medico_alvo.id, dia_semana=dia_idx)
+                horario = MedicoHorario(clinica_id=clinica_alvo.id, medico_id=medico_alvo.id, dia_semana=dia_idx)
                 db.session.add(horario)
 
             horario.ativo = ativo
@@ -1371,17 +1389,19 @@ def medico_horarios(medico_id=None):
             horario.hora_fim = parse_hora(hora_fim_str)
 
         db.session.commit()
-        flash(f"Horário de atendimento de {medico_alvo.nome} atualizado.", "success")
-        return _destino_pos_onboarding("medico.medico_horarios", medico_id=medico_alvo.id)
+        flash(f"Horário de atendimento de {medico_alvo.nome} em {clinica_alvo.nome} atualizado.", "success")
+        return _destino_pos_onboarding("medico.medico_horarios", medico_id=medico_alvo.id, clinica_id=clinica_alvo.id)
 
     horarios_por_dia = {
         h.dia_semana: h
-        for h in MedicoHorario.query.filter_by(clinica_id=clinica.id, medico_id=medico_alvo.id).all()
+        for h in MedicoHorario.query.filter_by(clinica_id=clinica_alvo.id, medico_id=medico_alvo.id).all()
     }
     return render_template(
         "medico/medico_horarios.html",
         medico_alvo=medico_alvo,
         medicos=(medicos_da_clinica(clinica) if pode_escolher_medico else []),
+        locais_do_medico=locais_do_medico,
+        clinica_alvo=clinica_alvo,
         dias_semana=list(enumerate(DIAS_SEMANA)),
         horarios_por_dia=horarios_por_dia,
     )
