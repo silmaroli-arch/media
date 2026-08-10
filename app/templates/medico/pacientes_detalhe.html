@@ -9,6 +9,30 @@
   </div>
 </div>
 <div class="card p-3 mb-3">
+  <p>
+    <strong>Status do cadastro:</strong>
+    {% if paciente.status_cadastro == 'aprovado' %}
+      <span class="badge bg-success">Aprovado</span>
+    {% elif paciente.status_cadastro == 'rejeitado' %}
+      <span class="badge bg-danger">Rejeitado</span>
+    {% else %}
+      <span class="badge bg-warning text-dark">Pendente</span>
+    {% endif %}
+    {% if paciente.status_cadastro != 'aprovado' %}
+    <form method="post" action="{{ url_for('medico.pacientes_cadastro_decidir', paciente_id=paciente.id) }}" class="d-inline ms-2">
+      <input type="hidden" name="acao" value="aceitar">
+      <input type="hidden" name="origem" value="detalhe">
+      <button type="submit" class="btn btn-sm btn-success">Aprovar cadastro</button>
+    </form>
+    {% endif %}
+    {% if paciente.status_cadastro != 'rejeitado' %}
+    <form method="post" action="{{ url_for('medico.pacientes_cadastro_decidir', paciente_id=paciente.id) }}" class="d-inline ms-2" onsubmit="return confirm('Rejeitar o cadastro deste paciente? Ele deixa de poder solicitar agendamento de exames até ser aprovado de novo.');">
+      <input type="hidden" name="acao" value="rejeitar">
+      <input type="hidden" name="origem" value="detalhe">
+      <button type="submit" class="btn btn-sm btn-outline-danger">Rejeitar cadastro</button>
+    </form>
+    {% endif %}
+  </p>
   <p><strong>CPF:</strong> {{ paciente.cpf }}</p>
   <p><strong>Telefone (login de acesso):</strong> {{ paciente.telefone or '-' }}</p>
   <p><strong>Data de nascimento:</strong> {{ paciente.data_nascimento.strftime('%d/%m/%Y') if paciente.data_nascimento else '-' }}</p>

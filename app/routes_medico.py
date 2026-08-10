@@ -392,8 +392,14 @@ def pacientes_solicitacoes():
 @login_required
 @staff_required
 def pacientes_cadastro_decidir(paciente_id):
+    """Aceita ou rejeita o cadastro de um paciente. Usada tanto na fila de
+    solicitações pendentes (medico.pacientes_solicitacoes) quanto na tela
+    de detalhe do paciente (medico.pacientes_detalhe) - essa segunda
+    permite reverter uma decisão a qualquer momento (ex.: rejeitou por
+    engano, ou o paciente resolveu a pendência e agora pode ser aprovado),
+    por isso não exige mais que o status atual seja "pendente"."""
     clinica = clinica_atual()
-    paciente = Paciente.query.filter_by(id=paciente_id, clinica_id=clinica.id, status_cadastro="pendente").first_or_404()
+    paciente = Paciente.query.filter_by(id=paciente_id, clinica_id=clinica.id).first_or_404()
     acao = request.form.get("acao")
     if acao == "aceitar":
         paciente.status_cadastro = "aprovado"
@@ -405,6 +411,11 @@ def pacientes_cadastro_decidir(paciente_id):
         flash(f"Cadastro de {paciente.nome} rejeitado.", "success")
     else:
         flash("Ação inválida.", "danger")
+
+    # Vem da tela de detalhe do paciente -> volta pra lá; vem da fila de
+    # solicitações pendentes -> continua lá (fluxo de processar vários).
+    if request.form.get("origem") == "detalhe":
+        return redirect(url_for("medico.pacientes_detalhe", paciente_id=paciente.id))
     return redirect(url_for("medico.pacientes_solicitacoes"))
 
 
