@@ -29,6 +29,13 @@
   {% if exame_selecionado %}
     <div class="alert alert-info py-2 px-3 mb-3">
       <i class="bi bi-geo-alt"></i> Local de atendimento: <strong>{{ exame_selecionado.clinica.nome }}</strong>
+      {% if exame_selecionado.clinica.rua %}
+      <br>
+      <span class="small">
+        {{ exame_selecionado.clinica.rua }}, {{ exame_selecionado.clinica.numero or 's/n' }}{% if exame_selecionado.clinica.complemento %} - {{ exame_selecionado.clinica.complemento }}{% endif %} —
+        {{ exame_selecionado.clinica.bairro or '' }}, {{ exame_selecionado.clinica.cidade or '' }}/{{ exame_selecionado.clinica.uf or '' }}
+      </span>
+      {% endif %}
     </div>
     {% if sugestoes %}
     <form method="post">

@@ -2,7 +2,8 @@
 mostra a filial/local de atendimento do exame escolhido ANTES da lista de
 horários disponíveis - antes só aparecia o nome do médico, sem indicar em
 qual unidade/filial os horários seriam, o que ficou ambíguo desde que um
-mesmo médico passou a poder atender mais de uma filial."""
+mesmo médico passou a poder atender mais de uma filial. Também mostra o
+endereço da filial (rua, cidade etc.), não só o nome."""
 from app import create_app
 from app.extensions import db
 from app.models import Exame
@@ -28,6 +29,8 @@ def login_paciente(telefone, data_nascimento):
 with app.app_context():
     exame = Exame.query.filter_by(nome="Colonoscopia").first()
     clinica_nome = exame.clinica.nome
+    clinica_rua = exame.clinica.rua
+    clinica_cidade = exame.clinica.cidade
     exame_id = exame.id
 
 # João Pereira (paciente da Clínica Vitória, cadastrado no seed.py).
@@ -38,6 +41,8 @@ html = r.get_data(as_text=True)
 checar("Tela de agendamento responde 200", r.status_code == 200)
 checar("Mostra o rótulo 'Local de atendimento'", "Local de atendimento" in html)
 checar("Mostra o nome da filial/clínica do exame", clinica_nome in html)
+checar("Mostra a rua do endereço da filial", clinica_rua in html)
+checar("Mostra a cidade do endereço da filial", clinica_cidade in html)
 
 # O bloco do local de atendimento aparece ANTES do bloco de horários sugeridos.
 pos_local = html.find("Local de atendimento")
