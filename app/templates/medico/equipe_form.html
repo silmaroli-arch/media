@@ -22,13 +22,15 @@
       </select>
     </div>
     <div class="mb-3">
-      <label class="form-label">Filial em que essa pessoa vai atuar</label>
-      <select name="filial_id" class="form-select" required>
-        {% for f in filiais %}
-        <option value="{{ f.id }}" {% if clinica_atual_navbar and f.id == clinica_atual_navbar.id %}selected{% endif %}>{{ f.nome }}</option>
-        {% endfor %}
-      </select>
-      <div class="form-text">Se a pessoa também atender em outra filial da empresa, cadastre-a de novo depois escolhendo a outra filial.</div>
+      <label class="form-label">Filial(is) em que essa pessoa vai atuar</label>
+      {% for f in filiais %}
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="filial_ids" value="{{ f.id }}" id="filial_{{ f.id }}"
+          {% if clinica_atual_navbar and f.id == clinica_atual_navbar.id %}checked{% endif %}>
+        <label class="form-check-label" for="filial_{{ f.id }}">{{ f.nome }}</label>
+      </div>
+      {% endfor %}
+      <div class="form-text">Marque todas as filiais em que essa pessoa já vai atuar. Depois é possível associá-la a mais filiais pela lista de equipe.</div>
     </div>
     <div class="mb-3">
       <label class="form-label">Senha inicial (só se for uma conta nova)</label>

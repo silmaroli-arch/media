@@ -2782,12 +2782,14 @@ def equipe_novo():
         db.session.add(usuario)
         db.session.flush()
 
-        vinculo = ClinicaMembro(clinica_id=filial.id, usuario_id=usuario.id, ativo=True)
-        db.session.add(vinculo)
+        for f in filiais_selecionadas:
+            db.session.add(ClinicaMembro(clinica_id=f.id, usuario_id=usuario.id, ativo=True))
         db.session.commit()
 
+        nomes_filiais = ", ".join(f.nome for f in filiais_selecionadas)
         flash(
-            f"{nome} cadastrado(a) como {papel} na filial '{filial.nome}'. Senha de acesso inicial: {senha_final}",
+            f"{nome} cadastrado(a) como {papel} na(s) filial(is) '{nomes_filiais}'. "
+            f"Senha de acesso inicial: {senha_final}",
             "success",
         )
         return _destino_pos_onboarding("medico.equipe_lista")
