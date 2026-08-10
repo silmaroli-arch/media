@@ -27,6 +27,9 @@
   </form>
 
   {% if exame_selecionado %}
+    <div class="alert alert-info py-2 px-3 mb-3">
+      <i class="bi bi-geo-alt"></i> Local de atendimento: <strong>{{ exame_selecionado.clinica.nome }}</strong>
+    </div>
     {% if sugestoes %}
     <form method="post">
       <input type="hidden" name="exame_id" value="{{ exame_selecionado.id }}">

@@ -9,7 +9,7 @@
 </div>
 <div class="card p-3">
   <table class="table table-hover">
-    <thead><tr><th>Nome</th><th>CPF</th><th>Telefone (login)</th><th>Data de nascimento</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th>CPF</th><th>Telefone (login)</th><th>Data de nascimento</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for p in pacientes %}
       <tr>
@@ -17,10 +17,19 @@
         <td>{{ p.cpf }}</td>
         <td>{{ p.telefone or '-' }}</td>
         <td>{{ p.data_nascimento.strftime('%d/%m/%Y') if p.data_nascimento else '-' }}</td>
+        <td>
+          {% if p.status_cadastro == 'aprovado' %}
+          <span class="badge bg-success">Aprovado</span>
+          {% elif p.status_cadastro == 'rejeitado' %}
+          <span class="badge bg-danger">Rejeitado</span>
+          {% else %}
+          <span class="badge bg-warning text-dark">Pendente</span>
+          {% endif %}
+        </td>
         <td><a href="{{ url_for('medico.pacientes_detalhe', paciente_id=p.id) }}" class="btn btn-sm btn-outline-secondary">Detalhes</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="text-muted text-center">Nenhum paciente cadastrado ainda.</td></tr>
+      <tr><td colspan="6" class="text-muted text-center">Nenhum paciente cadastrado ainda.</td></tr>
       {% endfor %}
     </tbody>
   </table>
