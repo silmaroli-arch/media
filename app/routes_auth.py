@@ -395,3 +395,52 @@ def cadastro_paciente(codigo):
         return redirect(url_for("paciente.dashboard"))
 
     return render_template("auth/cadastro_paciente.html", clinica=clinica)
+
+
+
+# ---------- Ferramenta temporária: limpar base de dados (uso interno) ----------
+#
+# Botão de uso pessoal do Silvan para limpar dados de teste rapidamente,
+# direto pela tela de login, sem precisar entrar no banco na mão. Fica
+# visível em QUALQUER ambiente onde este código estiver publicado (não é
+# um recurso pensado para clientes) - a única proteção é exigir que a
+# pessoa digite a frase de confirmação abaixo antes de apagar qualquer
+# coisa, já que é um endpoint acessível sem estar logado.
+#
+# ATENÇÃO: remover esta rota, o link em auth/login.html e este comentário
+# assim que a limpeza de dados de teste não for mais necessária - não é
+# para ficar em produção a longo prazo.
+FRASE_CONFIRMACAO_LIMPAR_BASE = "APAGAR TUDO"
+
+# Tabelas que NÃO são "dados de teste" e por isso não são apagadas:
+# histórico de deploy (metadado de infraestrutura) e a config global da
+# plataforma (configuração única, não dado de clínica/paciente).
+TABELAS_PRESERVADAS_LIMPAR_BASE = {"historico_deploy", "plataforma_config"}
+
+
+@auth_bp.route("/dev/limpar-base", methods=["GET", "POST"])
+def dev_limpar_base():
+    erro = None
+    if request.method == "POST":
+        confirmacao = request.form.get("confirmacao", "").strip()
+        if confirmacao != FRASE_CONFIRMACAO_LIMPAR_BASE:
+            erro = f'Frase incorreta. Digite exatamente "{FRASE_CONFIRMACAO_LIMPAR_BASE}" para confirmar.'
+        else:
+            # Apaga na ordem inversa de dependência (tabelas "filhas" antes
+            # das "pai") para não esbarrar em restrições de chave
+            # estrangeira, sem precisar listar cada model manualmente -
+            # assim continua funcionando mesmo se novos models forem
+            # adicionados no futuro.
+            for tabela in reversed(db.metadata.sorted_tables):
+                if tabela.name in TABELAS_PRESERVADAS_LIMPAR_BASE:
+                    continue
+                db.session.execute(tabela.delete())
+            db.session.commit()
+            flash(
+                "Base de dados limpa com sucesso (exceto configuração da plataforma e histórico de "
+                "deploy). Use \"Criar minha clínica\" para começar de novo, ou rode o seed.py.",
+                "success",
+            )
+            return redirect(url_for("auth.login"))
+
+    return render_template("auth/dev_limpar_base.html", erro=erro, frase=FRASE_CONFIRMACAO_LIMPAR_BASE)
