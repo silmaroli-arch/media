@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}Perguntas dos pacientes{% endblock %}
 {% block conteudo %}
 <h3 class="mb-3">Perguntas pendentes de resposta</h3>
@@ -14,7 +15,8 @@
         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#aguardando-{{ p.id }}">
           <span class="me-2"><strong>{{ p.paciente.nome }}</strong> — "{{ p.pergunta }}"</span>
           {% if p.exame %}<span class="badge bg-light text-dark me-2">{{ p.exame.nome }}</span>{% endif %}
-          <span class="text-muted small">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+          {{ badge_filial(p) }}
+          <span class="text-muted small ms-2">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
         </button>
       </h2>
       <div id="aguardando-{{ p.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionAguardando">
@@ -54,7 +56,8 @@
         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#pendente-{{ p.id }}">
           <span class="me-2"><strong>{{ p.paciente.nome }}</strong> — "{{ p.pergunta }}"</span>
           {% if p.exame %}<span class="badge bg-light text-dark me-2">{{ p.exame.nome }}</span>{% endif %}
-          <span class="text-muted small">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+          {{ badge_filial(p) }}
+          <span class="text-muted small ms-2">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
         </button>
       </h2>
       <div id="pendente-{{ p.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionPendentes">
@@ -76,17 +79,18 @@
 
 <h4 class="mt-4">Últimas respondidas</h4>
 <table class="table table-sm">
-  <thead><tr><th>Paciente</th><th>Pergunta</th><th>Resposta</th><th>Por</th></tr></thead>
+  <thead><tr><th>Paciente</th>{{ th_filial() }}<th>Pergunta</th><th>Resposta</th><th>Por</th></tr></thead>
   <tbody>
     {% for p in respondidas %}
     <tr>
       <td>{{ p.paciente.nome }}</td>
+      {{ td_filial(p) }}
       <td>{{ p.pergunta }}</td>
       <td>{{ p.resposta }}</td>
       <td>{{ p.respondida_por }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="4" class="text-muted text-center">Nenhuma respondida ainda.</td></tr>
+    <tr><td colspan="{{ 5 if mostrar_filial else 4 }}" class="text-muted text-center">Nenhuma respondida ainda.</td></tr>
     {% endfor %}
   </tbody>
 </table>

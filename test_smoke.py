@@ -107,14 +107,16 @@ client.get("/logout")
 
 r = login("medico@clinicavitoria.com", "123456")
 texto = r.get_data(as_text=True)
-checar("Médico multi-clínica cai na tela de escolha de clínica",
-       "Em qual clínica" in texto)
+# Agora o que precisa ser escolhido é a EMPRESA (o cliente/tenant), não a
+# filial: este médico atende em duas empresas sem relação entre si.
+checar("Médico com vínculo em duas empresas cai na tela de escolha de empresa",
+       "Em qual empresa" in texto)
 
 r = client.post("/equipe/clinica", data={"clinica_id": "1"}, follow_redirects=True)
 checar("Médico consegue selecionar a Clínica Vitória", "Clínica Vitória" in r.get_data(as_text=True))
 
 r = client.get("/equipe/clinica")
-checar("Tela de troca de clínica ainda lista as duas opções para o médico", "Clínica São Paulo" in r.get_data(as_text=True))
+checar("Tela de troca de empresa ainda lista as duas empresas do médico", "Clínica São Paulo" in r.get_data(as_text=True))
 
 client.get("/logout")
 
@@ -280,9 +282,15 @@ with app.app_context():
     filial_centro_id = Clinica.query.filter_by(nome="Grupo Saúde Total - Centro").first().id
 
 login("secretaria@gruposaude.com", "123456")
-texto = client.get("/equipe/clinica").get_data(as_text=True)
-checar("Secretária multi-filial cai na tela de escolha de filial",
-       "Grupo Saúde Total - Centro" in texto and "Grupo Saúde Total - Praia" in texto)
+# Quem atua em duas filiais da MESMA empresa não escolhe mais nada: cai
+# direto no painel e vê os dados das duas filiais juntos, com a filial
+# indicada em cada registro.
+texto = client.get("/equipe/clinica", follow_redirects=True).get_data(as_text=True)
+checar("Secretária multi-filial NÃO precisa mais escolher filial (vai direto ao painel)",
+       "Em qual empresa" not in texto and "Painel" in texto)
+texto_pacientes = client.get("/equipe/pacientes").get_data(as_text=True)
+checar("A lista de pacientes traz a coluna Filial (mais de uma filial acessível)",
+       "Filial" in texto_pacientes)
 
 client.post("/equipe/clinica", data={"clinica_id": str(filial_centro_id)}, follow_redirects=True)
 
@@ -293,8 +301,8 @@ checar("Secretária do Grupo Saúde Total vê as duas filiais", "Grupo Saúde To
 r = client.post("/equipe/filiais/nova", data={"nome": "Grupo Saúde Total - Norte"}, follow_redirects=True)
 checar("Secretária consegue cadastrar uma terceira filial na mesma empresa", "cadastrado com sucesso" in r.get_data(as_text=True).lower())
 
-r = client.get("/equipe/clinica")
-checar("A nova filial já aparece na troca de clínica (a secretária ficou vinculada a ela)",
+r = client.get("/equipe/filiais")
+checar("A nova filial aparece nos locais de atendimento da secretária (ela ficou vinculada a ela)",
        "Grupo Saúde Total - Norte" in r.get_data(as_text=True))
 client.get("/logout")
 
@@ -329,7 +337,7 @@ with app.app_context():
 
 r = client.post("/equipe/equipe-membros/novo", data={
     "nome": "Dra. Beatriz Costa", "email": "beatriz@gruposaude.com", "papel": "medico",
-    "senha": "", "filial_id": str(filial_praia_id),
+    "senha": "", "filial_ids": str(filial_praia_id),
 }, follow_redirects=True)
 checar("Cadastro de médico exige e usa a filial escolhida", "cadastrado" in r.get_data(as_text=True).lower())
 
@@ -346,7 +354,7 @@ with app.app_context():
 # Cadastrando outra pessoa marcando as permissões pelos checkboxes
 r = client.post("/equipe/equipe-membros/novo", data={
     "nome": "Rafael Souza", "email": "rafael@gruposaude.com", "papel": "secretaria",
-    "senha": "", "filial_id": str(filial_praia_id),
+    "senha": "", "filial_ids": str(filial_praia_id),
     "perm_pacientes": "on", "perm_equipe": "on",
 }, follow_redirects=True)
 checar("Cadastro de novo membro aceita marcar permissões específicas pelos checkboxes", "cadastrado" in r.get_data(as_text=True).lower())

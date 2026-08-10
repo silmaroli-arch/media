@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}Modelos de preparo{% endblock %}
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -16,11 +17,12 @@
 </p>
 <div class="card p-3">
   <table class="table table-hover align-middle">
-    <thead><tr><th>Nome</th><th>Cortes de alimentação</th><th>Medicamentos a suspender</th><th>Outras orientações</th><th>Usado por</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th>{{ th_filial() }}<th>Cortes de alimentação</th><th>Medicamentos a suspender</th><th>Outras orientações</th><th>Usado por</th><th></th></tr></thead>
     <tbody>
       {% for m in modelos %}
       <tr>
         <td>{{ m.nome }}</td>
+        {{ td_filial(m) }}
         <td>
           {% for c in m.cortes %}
           <span class="badge bg-light text-dark border me-1">{{ c.descricao }}: {{ c.horas_antes }}h antes</span>
@@ -57,7 +59,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text-muted text-center">Nenhum modelo de preparo cadastrado ainda.</td></tr>
+      <tr><td colspan="{{ 7 if mostrar_filial else 6 }}" class="text-muted text-center">Nenhum modelo de preparo cadastrado ainda.</td></tr>
       {% endfor %}
     </tbody>
   </table>
