@@ -33,7 +33,12 @@ checar("Não tem mais 'Regime tributário'", "Regime tributário" not in html1)
 checar("Não tem mais o campo de Inscrição estadual", 'name="inscricao_estadual"' not in html1)
 checar("Não tem mais o campo de CNAE", 'name="cnae"' not in html1)
 checar("Não tem mais a seção 'Emissão de NFS-e'", "Emissão de NFS-e" not in html1)
-checar("Tem um link apontando para a nova tela de Dados Fiscais", 'href="/equipe/clinica/dados-fiscais"' in html1)
+with app.app_context():
+    _clinica_vitoria_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
+checar(
+    "Tem um link apontando para a nova tela de Dados Fiscais",
+    f'href="/equipe/clinica/dados-fiscais/{_clinica_vitoria_id}"' in html1,
+)
 
 # A nova tela "Dados Fiscais" tem tudo isso.
 r2 = client.get("/equipe/clinica/dados-fiscais")
