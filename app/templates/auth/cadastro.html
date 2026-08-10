@@ -1,29 +1,51 @@
 {% extends "base.html" %}
-{% block titulo %}Criar empresa{% endblock %}
+{% block titulo %}Criar conta{% endblock %}
 {% block conteudo %}
 <div class="row justify-content-center">
   <div class="col-md-6">
     <div class="card p-4 mt-4">
-      <h4 class="mb-1 text-center"><i class="bi bi-hospital"></i> Cadastre sua empresa</h4>
+      <h4 class="mb-1 text-center"><i class="bi bi-hospital"></i> Criar conta</h4>
       <p class="text-muted text-center small">
-        Crie a conta da sua empresa na plataforma, junto com a primeira filial (unidade/clínica).
-        Depois você poderá cadastrar outras filiais, médicos, secretárias e pacientes.
+        Escolha a opção que combina com o seu caso.
       </p>
+
+      <div class="btn-group w-100 mb-3" role="group">
+        <button type="button" class="btn btn-outline-primary active" id="btn-modo-empresa" onclick="selecionarModo('empresa')">
+          <i class="bi bi-building"></i> Tenho uma clínica/empresa
+        </button>
+        <button type="button" class="btn btn-outline-primary" id="btn-modo-independente" onclick="selecionarModo('independente')">
+          <i class="bi bi-person-badge"></i> Sou médico(a) independente
+        </button>
+      </div>
+
       <form method="post">
-        <div class="mb-3">
-          <label class="form-label">Nome da empresa</label>
-          <input type="text" name="nome_empresa" class="form-control" required autofocus>
+        <input type="hidden" name="modo" id="input-modo" value="empresa">
+
+        <div id="bloco-independente" class="alert alert-info small" style="display:none;">
+          Sem clínica ou empresa por trás — perfeito para quem atende por conta própria.
+          Sua conta já é criada com o primeiro local de atendimento pronto pra usar.
+          Se você atender em mais de um lugar, é só cadastrar os outros locais depois,
+          em "Meus locais de atendimento".
         </div>
-        <div class="mb-3">
-          <label class="form-label">Nome desta filial (unidade)</label>
-          <input type="text" name="nome_filial" class="form-control" required>
-          <div class="form-text">Se sua empresa tiver mais de uma unidade, você cadastra as outras depois, pela área administrativa.</div>
+
+        <div id="campos-empresa">
+          <div class="mb-3">
+            <label class="form-label">Nome da empresa</label>
+            <input type="text" name="nome_empresa" id="input-nome_empresa" class="form-control" required autofocus>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Nome desta filial (unidade)</label>
+            <input type="text" name="nome_filial" id="input-nome_filial" class="form-control" required>
+            <div class="form-text">Se sua empresa tiver mais de uma unidade, você cadastra as outras depois, pela área administrativa.</div>
+          </div>
         </div>
+
         <div class="mb-3">
           <label class="form-label">Seu nome</label>
           <input type="text" name="nome" class="form-control" required>
         </div>
-        <div class="mb-3">
+
+        <div class="mb-3" id="campo-papel">
           <label class="form-label">Você é médico(a) ou secretário(a)?</label>
           <select name="papel" class="form-select" required>
             <option value="secretaria">Secretário(a)</option>
@@ -35,6 +57,7 @@
             da clínica), seja qual for sua escolha aqui.
           </div>
         </div>
+
         <div class="mb-3">
           <label class="form-label">Seu e-mail (será seu login)</label>
           <input type="email" name="email" class="form-control" required>
@@ -44,7 +67,7 @@
           <input type="password" name="senha" class="form-control" minlength="6" required>
           <div class="form-text">Mínimo de 6 caracteres.</div>
         </div>
-        <button type="submit" class="btn btn-primary w-100">Criar minha empresa</button>
+        <button type="submit" class="btn btn-primary w-100" id="btn-submit">Criar minha empresa</button>
       </form>
       <div class="text-center mt-3">
         <a href="{{ url_for('auth.login') }}" class="small">Já tem conta? Fazer login</a>
@@ -52,4 +75,23 @@
     </div>
   </div>
 </div>
+
+<script>
+function selecionarModo(modo) {
+  document.getElementById('input-modo').value = modo;
+  const independente = modo === 'independente';
+
+  document.getElementById('btn-modo-empresa').classList.toggle('active', !independente);
+  document.getElementById('btn-modo-independente').classList.toggle('active', independente);
+
+  document.getElementById('bloco-independente').style.display = independente ? 'block' : 'none';
+  document.getElementById('campos-empresa').style.display = independente ? 'none' : 'block';
+  document.getElementById('campo-papel').style.display = independente ? 'none' : 'block';
+
+  document.getElementById('input-nome_empresa').required = !independente;
+  document.getElementById('input-nome_filial').required = !independente;
+
+  document.getElementById('btn-submit').textContent = independente ? 'Criar minha conta' : 'Criar minha empresa';
+}
+</script>
 {% endblock %}

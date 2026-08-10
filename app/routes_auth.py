@@ -156,25 +156,56 @@ def trocar_senha():
 
 @auth_bp.route("/cadastro", methods=["GET", "POST"])
 def cadastro():
-    """Cadastro público: qualquer pessoa pode criar uma empresa nova na
-    plataforma, já com sua primeira filial. Nem toda clínica tem uma
-    secretária, então quem se cadastra escolhe se é médico ou secretário(a)
-    — mas de qualquer forma, por ser quem está criando a empresa, essa
-    pessoa recebe todas as permissões administrativas (pode cadastrar
-    pacientes, gerenciar equipe, filiais e os dados da clínica). Depois,
-    ela pode ajustar as permissões de cada pessoa que adicionar à equipe."""
+    """Cadastro público. Dois modos, escolhidos pelo campo "modo":
+
+    - "empresa" (padrão/original): quem se cadastra cria uma empresa nova
+      na plataforma, já com sua primeira filial, informando os nomes de
+      ambas. Nem toda clínica tem secretária, então a pessoa escolhe se é
+      médico ou secretário(a) — mas por ser quem está criando a empresa,
+      recebe todas as permissões administrativas.
+
+    - "independente": pensado para o médico que atende por conta própria,
+      sem uma empresa/clínica de verdade por trás. Não pede nome de
+      empresa nem de filial — esses são gerados automaticamente a partir
+      do nome do médico, ficando "invisíveis" pra ele (ele nunca vê as
+      palavras "empresa"/"filial" no cadastro). Por baixo, a estrutura é
+      exatamente a mesma (Empresa -> Clinica -> ClinicaMembro): se esse
+      médico passar a atender em mais de um local, ele cadastra os
+      próximos em "Meus locais de atendimento" (medico.filiais_nova), que
+      viram novas filiais dentro dessa mesma empresa oculta. papel é
+      sempre "medico" nesse modo.
+
+    Em ambos os modos, quem cria a conta recebe todas as permissões
+    administrativas (conceder_todas_permissoes) e pode ajustá-las depois
+    para cada pessoa que adicionar à equipe."""
     if current_user.is_authenticated:
         return redirect(url_for("index"))
 
     if request.method == "POST":
-        nome_empresa = request.form.get("nome_empresa", "").strip()
-        nome_filial = request.form.get("nome_filial", "").strip()
+        modo = request.form.get("modo", "empresa")
+        independente = modo == "independente"
+
         nome = request.form.get("nome", "").strip()
         email = request.form.get("email", "").strip().lower()
         senha = request.form.get("senha", "")
-        papel = request.form.get("papel", "secretaria")
 
-        if not nome_empresa or not nome_filial or not nome or not email or not senha:
+        if independente:
+            papel = "medico"
+            # Nomes gerados a partir do nome do médico — ele não preenche
+            # nem vê "empresa"/"filial" nessa tela. Ficam só como
+            # identificação interna dos registros no banco.
+            nome_empresa = nome
+            nome_filial = "Consultório"
+        else:
+            nome_empresa = request.form.get("nome_empresa", "").strip()
+            nome_filial = request.form.get("nome_filial", "").strip()
+            papel = request.form.get("papel", "secretaria")
+
+        if not nome or not email or not senha:
+            flash("Preencha todos os campos.", "danger")
+            return render_template("auth/cadastro.html")
+
+        if not independente and (not nome_empresa or not nome_filial):
             flash("Preencha todos os campos.", "danger")
             return render_template("auth/cadastro.html")
 
@@ -208,7 +239,9 @@ def cadastro():
         usuario.set_senha(senha)
         # Quem cria a empresa é a administradora inicial — recebe todas as
         # permissões administrativas independentemente de ser médico(a) ou
-        # secretário(a), já que a clínica pode não ter uma secretária.
+        # secretário(a), já que a clínica pode não ter uma secretária. Isso
+        # inclui perm_filiais, essencial pro médico independente poder
+        # cadastrar novos locais de atendimento sozinho depois.
         usuario.conceder_todas_permissoes()
         db.session.add(usuario)
         db.session.flush()
@@ -220,11 +253,18 @@ def cadastro():
         login_user(usuario)
         session["clinica_id"] = filial.id
 
-        flash(
-            f"Empresa '{empresa.nome}' criada com sucesso, com a filial '{filial.nome}'! "
-            "Vamos te ajudar a deixar tudo pronto para uso.",
-            "success",
-        )
+        if independente:
+            flash(
+                f"Conta criada com sucesso, {usuario.nome}! "
+                "Vamos te ajudar a deixar tudo pronto para uso.",
+                "success",
+            )
+        else:
+            flash(
+                f"Empresa '{empresa.nome}' criada com sucesso, com a filial '{filial.nome}'! "
+                "Vamos te ajudar a deixar tudo pronto para uso.",
+                "success",
+            )
         return redirect(url_for("medico.onboarding"))
 
     return render_template("auth/cadastro.html")
