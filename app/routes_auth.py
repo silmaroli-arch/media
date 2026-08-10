@@ -370,6 +370,19 @@ def cadastro_paciente(codigo):
             telefone=telefone,
             status_cadastro="pendente",
         )
+        # Endereço (preenchido via busca de CEP no formulário) e contato de
+        # emergência - mesmos campos que a equipe preenche em
+        # medico.pacientes_novo, mas aqui opcionais, já que quem está se
+        # autocadastrando pode preferir completar depois.
+        paciente.cep = request.form.get("cep", "").strip()
+        paciente.rua = request.form.get("rua", "").strip()
+        paciente.numero = request.form.get("numero", "").strip()
+        paciente.complemento = request.form.get("complemento", "").strip()
+        paciente.bairro = request.form.get("bairro", "").strip()
+        paciente.cidade = request.form.get("cidade", "").strip()
+        paciente.uf = request.form.get("uf", "").strip().upper() or None
+        paciente.contato_emergencia_nome = request.form.get("contato_emergencia_nome", "").strip()
+        paciente.contato_emergencia_telefone = request.form.get("contato_emergencia_telefone", "").strip()
         db.session.add(paciente)
         db.session.commit()
 

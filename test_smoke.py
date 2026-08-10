@@ -56,8 +56,8 @@ checar("Lista de pacientes da Vitória contém João, não contém Maria",
 r = client.get("/equipe/exames")
 checar("Lista de exames da Vitória contém Colonoscopia", "Colonoscopia" in r.get_data(as_text=True))
 
-r = client.get("/equipe/agenda")
-checar("Agenda da Vitória acessível", r.status_code == 200)
+r = client.get("/equipe/agenda", follow_redirects=True)
+checar("Agenda da Vitória acessível (redireciona para o painel)", "Agenda de exames" in r.get_data(as_text=True))
 
 r = client.get("/equipe/equipe-membros")
 texto = r.get_data(as_text=True)
@@ -133,8 +133,8 @@ texto = r.get_data(as_text=True)
 checar("Dr. Carlos vê João (seu paciente), mas não Pedro (paciente da Dra. Fernanda)",
        "João Pereira" in texto and "Pedro Souza" not in texto)
 
-r = client.get("/equipe/agenda")
-checar("Agenda do Dr. Carlos acessível", r.status_code == 200)
+r = client.get("/equipe/agenda", follow_redirects=True)
+checar("Agenda do Dr. Carlos acessível (redireciona para o painel)", "Agenda de exames" in r.get_data(as_text=True))
 
 r = client.get("/equipe/equipe-membros")
 checar("Médico não consegue acessar a gestão de equipe", r.status_code in (302,))
