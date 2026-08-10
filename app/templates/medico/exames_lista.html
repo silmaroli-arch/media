@@ -25,7 +25,7 @@
         {% endif %}
         <p class="small">{{ e.preparo.instrucoes[:150] }}{% if e.preparo.instrucoes|length > 150 %}...{% endif %}</p>
       {% else %}
-        <p class="text-danger small">Nenhum preparo cadastrado.</p>
+        <p class="text-muted small">Sem modelo de preparo — não exige preparo prévio.</p>
       {% endif %}
       <a href="{{ url_for('medico.exames_editar', exame_id=e.id) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
     </div>

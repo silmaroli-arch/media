@@ -638,9 +638,19 @@ def exames_novo():
         medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != medico_id}
         medicos_extra = [m for m in medicos if m.id in medicos_extra_ids]
 
-        modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)
-        if not nome or not modelo:
-            flash("Nome do exame e modelo de preparo são obrigatórios.", "danger")
+        # Modelo de preparo é opcional - cobre tanto exames que exigem
+        # preparo (ex.: colonoscopia) quanto procedimentos simples sem
+        # nenhuma instrução prévia (ex.: uma consulta), que podem ser
+        # agendados sem vincular nenhum modelo.
+        modelo = None
+        if preparo_modelo_id:
+            modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)
+            if not modelo:
+                flash("Escolha um modelo de preparo válido, ou deixe em branco se este procedimento não precisa de preparo.", "danger")
+                return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+
+        if not nome:
+            flash("Nome do exame é obrigatório.", "danger")
             return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
         if Exame.query.filter_by(clinica_id=clinica.id, nome=nome).first():
@@ -649,7 +659,7 @@ def exames_novo():
 
         exame = Exame(
             clinica_id=clinica.id, medico_id=medico_id, nome=nome, descricao=descricao,
-            preparo_modelo_id=modelo.id, duracao_minutos=duracao_minutos, preco=preco,
+            preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos, preco=preco,
             precisa_acompanhante=precisa_acompanhante, medicos_extra=medicos_extra,
         )
         db.session.add(exame)
@@ -688,11 +698,14 @@ def exames_editar(exame_id):
             medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != exame.medico_id}
             exame.medicos_extra = [m for m in medicos if m.id in medicos_extra_ids]
         preparo_modelo_id = request.form.get("preparo_modelo_id", type=int)
-        modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)
-        if not modelo:
-            flash("Escolha um modelo de preparo válido.", "danger")
-            return render_template("medico/exames_form.html", exame=exame, medicos=medicos, modelos=modelos)
-        exame.preparo_modelo_id = modelo.id
+        if preparo_modelo_id:
+            modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)
+            if not modelo:
+                flash("Escolha um modelo de preparo válido, ou deixe em branco se este procedimento não precisa de preparo.", "danger")
+                return render_template("medico/exames_form.html", exame=exame, medicos=medicos, modelos=modelos)
+            exame.preparo_modelo_id = modelo.id
+        else:
+            exame.preparo_modelo_id = None
         db.session.commit()
         flash("Exame atualizado.", "success")
         return redirect(url_for("medico.exames_lista"))

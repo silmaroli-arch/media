@@ -64,16 +64,17 @@
       </div>
     </div>
     <div class="mb-3">
-      <label class="form-label">Modelo de preparo</label>
-      <select name="preparo_modelo_id" class="form-select" required>
-        <option value="" disabled {% if not exame %}selected{% endif %}>Selecione...</option>
+      <label class="form-label">Modelo de preparo <span class="text-muted fw-normal">(opcional)</span></label>
+      <select name="preparo_modelo_id" class="form-select">
+        <option value="" {% if not exame or not exame.preparo_modelo_id %}selected{% endif %}>Nenhum — este procedimento não precisa de preparo</option>
         {% for m in modelos %}
         <option value="{{ m.id }}" {% if exame and exame.preparo_modelo_id == m.id %}selected{% endif %}>{{ m.nome }}</option>
         {% endfor %}
       </select>
-      {% if not modelos %}
-      <div class="form-text text-danger">Nenhum modelo de preparo cadastrado ainda nesta filial.</div>
-      {% endif %}
+      <div class="form-text">
+        Deixe em branco para procedimentos simples sem instruções prévias (ex.: uma consulta).
+        {% if not modelos %}Ainda não há nenhum modelo de preparo cadastrado nesta filial.{% endif %}
+      </div>
       <div class="form-text">
         <a href="{{ url_for('medico.preparo_modelos_novo') }}" target="_blank">Criar um novo modelo de preparo</a>
         numa aba separada e depois voltar aqui para escolhê-lo.
