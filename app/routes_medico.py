@@ -276,7 +276,7 @@ def dashboard():
     # decidir, não depende de perm_pacientes.
     cadastros_pendentes_count = Paciente.query.filter_by(clinica_id=clinica.id, status_cadastro="pendente").count()
 
-    if eh_medico():
+    if eh_medico() and not current_user.perm_pacientes:
         total_pacientes = (
             db.session.query(Agendamento.paciente_id)
             .filter_by(clinica_id=clinica.id, medico_id=current_user.id)
@@ -284,9 +284,11 @@ def dashboard():
             .count()
         )
         agendamentos_q = agendamentos_q.filter(Agendamento.medico_id == current_user.id)
-        # Perguntas pendentes só entram na conta do médico quando forem
-        # sobre um exame de sua responsabilidade (perguntas gerais, sem
-        # exame associado, ficam só para a secretaria responder).
+        # Perguntas pendentes só entram na conta do médico sem a permissão
+        # administrativa quando forem sobre um exame de sua responsabilidade
+        # (perguntas gerais, sem exame associado, ficam só para quem tem
+        # perm_pacientes responder - secretária, ou o médico fundador que
+        # também administra pacientes).
         pendentes_q = pendentes_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
@@ -2085,10 +2087,11 @@ def perguntas_pendentes():
     aguardando_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="aguardando_aprovacao")
     respondidas_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="respondida")
 
-    if eh_medico():
-        # O médico só acompanha perguntas sobre exames de sua
-        # responsabilidade; perguntas gerais (sem exame associado) ficam
-        # só para a secretária responder.
+    if eh_medico() and not current_user.perm_pacientes:
+        # O médico sem a permissão administrativa só acompanha perguntas
+        # sobre exames de sua responsabilidade; perguntas gerais (sem exame
+        # associado) ficam só para quem tem perm_pacientes responder -
+        # secretária, ou o médico fundador que também administra pacientes.
         pendentes_q = pendentes_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
@@ -2114,7 +2117,7 @@ def perguntas_responder(pergunta_id):
     clinica = clinica_atual()
     pergunta = PerguntaPendente.query.filter_by(id=pergunta_id, clinica_id=clinica.id).first_or_404()
 
-    if eh_medico() and (not pergunta.exame or not pergunta.exame.medico_pode_atender(current_user.id)):
+    if eh_medico() and not current_user.perm_pacientes and (not pergunta.exame or not pergunta.exame.medico_pode_atender(current_user.id)):
         flash("Você só pode responder perguntas sobre os seus próprios exames.", "danger")
         return redirect(url_for("medico.perguntas_pendentes"))
 
