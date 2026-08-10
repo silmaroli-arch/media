@@ -47,6 +47,7 @@
           {% endif %}
         </td>
         <td class="text-nowrap">
+          <a href="{{ url_for('medico.equipe_editar', usuario_id=usuario.id) }}" class="btn btn-sm btn-outline-primary">Editar</a>
           <a href="{{ url_for('medico.equipe_permissoes', usuario_id=usuario.id) }}" class="btn btn-sm btn-outline-secondary">Permissões</a>
           {% if usuario.id == current_user.id %}
           <span class="text-muted small">(você)</span>

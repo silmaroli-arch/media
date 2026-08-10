@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block titulo %}Editar {{ usuario.nome }}{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Editar {{ usuario.nome }}</h3>
+<div class="card p-4" style="max-width: 640px;">
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label">Nome</label>
+      <input type="text" name="nome" class="form-control" value="{{ usuario.nome }}" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">E-mail</label>
+      <input type="email" class="form-control bg-light" value="{{ usuario.email }}" readonly>
+      <div class="form-text">O e-mail não pode ser alterado por aqui.</div>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Papel</label>
+      <input type="text" class="form-control bg-light" value="{{ 'Médico' if usuario.tipo == 'medico' else 'Secretária' }}" readonly>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Filial(is) em que essa pessoa atua</label>
+      {% for f in filiais %}
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="filial_ids" value="{{ f.id }}" id="filial_{{ f.id }}"
+          {% if f.id in filial_ids_atuais %}checked{% endif %}>
+        <label class="form-check-label" for="filial_{{ f.id }}">{{ f.nome }}</label>
+      </div>
+      {% endfor %}
+      <div class="form-text">Desmarcar uma filial remove o vínculo dessa pessoa com ela.</div>
+    </div>
+    <button type="submit" class="btn btn-primary">Salvar</button>
+    <a href="{{ url_for('medico.equipe_lista') }}" class="btn btn-link">Cancelar</a>
+  </form>
+</div>
+<p class="mt-3">
+  <a href="{{ url_for('medico.equipe_permissoes', usuario_id=usuario.id) }}">Ajustar permissões administrativas</a>
+</p>
+{% endblock %}

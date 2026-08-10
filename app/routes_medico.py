@@ -2868,6 +2868,71 @@ def equipe_associar_filial(usuario_id):
     return redirect(url_for("medico.equipe_lista"))
 
 
+@medico_bp.route("/equipe-membros/<int:usuario_id>/editar", methods=["GET", "POST"])
+@login_required
+@staff_required
+@permissao_required("perm_equipe")
+def equipe_editar(usuario_id):
+    """Tela de edição de uma pessoa da equipe: o nome e, principalmente,
+    em quais filiais da empresa ela atua — marcando/desmarcando várias de
+    uma vez, ao invés de precisar do atalho "+ Associar a outra filial"
+    (uma filial por vez) ou reabrir "Adicionar médico/secretária" com o
+    mesmo e-mail para vincular mais filiais. Só mexe nos vínculos desta
+    empresa - se a pessoa também atuar em outra empresa (outro médico
+    multiempresa), aquele vínculo não aparece nem é afetado aqui. O papel
+    (médico/secretária) não é editável nesta tela: trocar o tipo de conta
+    tem implicações demais (permissões padrão, agenda, etc.) para ser só
+    mais um campo de formulário."""
+    clinica = clinica_atual()
+    filiais = Clinica.query.filter_by(empresa_id=clinica.empresa_id).order_by(Clinica.nome).all()
+    filial_ids = {f.id for f in filiais}
+
+    usuario = Usuario.query.filter_by(id=usuario_id).first_or_404()
+    vinculos_desta_empresa = ClinicaMembro.query.filter(
+        ClinicaMembro.usuario_id == usuario_id, ClinicaMembro.clinica_id.in_(filial_ids)
+    ).all()
+    if not vinculos_desta_empresa:
+        flash("Pessoa não encontrada na equipe desta empresa.", "danger")
+        return redirect(url_for("medico.equipe_lista"))
+
+    filial_ids_atuais = {v.clinica_id for v in vinculos_desta_empresa}
+
+    if request.method == "POST":
+        nome = request.form.get("nome", "").strip()
+        filial_ids_selecionadas = set(request.form.getlist("filial_ids", type=int)) & filial_ids
+
+        if not nome:
+            flash("Informe o nome da pessoa.", "danger")
+            return render_template(
+                "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
+                filial_ids_atuais=filial_ids_atuais,
+            )
+        if not filial_ids_selecionadas:
+            flash("Marque pelo menos uma filial em que essa pessoa atua.", "danger")
+            return render_template(
+                "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
+                filial_ids_atuais=filial_ids_atuais,
+            )
+
+        usuario.nome = nome
+
+        for f in filiais:
+            if f.id in filial_ids_selecionadas and f.id not in filial_ids_atuais:
+                db.session.add(ClinicaMembro(clinica_id=f.id, usuario_id=usuario.id, ativo=True))
+        for v in vinculos_desta_empresa:
+            if v.clinica_id not in filial_ids_selecionadas:
+                db.session.delete(v)
+
+        db.session.commit()
+        flash(f"Dados de {usuario.nome} atualizados.", "success")
+        return redirect(url_for("medico.equipe_lista"))
+
+    return render_template(
+        "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
+        filial_ids_atuais=filial_ids_atuais,
+    )
+
+
 @medico_bp.route("/equipe-membros/<int:usuario_id>/permissoes", methods=["GET", "POST"])
 @login_required
 @staff_required
