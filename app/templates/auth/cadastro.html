@@ -93,5 +93,15 @@ function selecionarModo(modo) {
 
   document.getElementById('btn-submit').textContent = independente ? 'Criar minha conta' : 'Criar minha empresa';
 }
+
+// Permite chegar direto no modo certo via link (ex.: ?modo=independente,
+// usado no link "Atende por conta própria?" da tela de login), sem o
+// usuário precisar clicar no botão de novo.
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('modo') === 'independente') {
+    selecionarModo('independente');
+  }
+})();
 </script>
 {% endblock %}

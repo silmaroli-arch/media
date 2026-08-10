@@ -20,6 +20,9 @@
         <a href="{{ url_for('auth.cadastro') }}" class="small">Ainda não tem clínica cadastrada? <strong>Criar minha clínica</strong></a>
       </div>
       <div class="text-center mt-2">
+        <a href="{{ url_for('auth.cadastro', modo='independente') }}" class="small">Atende por conta própria, sem clínica? <strong>Criar minha conta de médico independente</strong></a>
+      </div>
+      <div class="text-center mt-2">
         <a href="{{ url_for('auth.login_paciente') }}" class="small">Sou paciente &rarr; <strong>Entrar com telefone e data de nascimento</strong></a>
       </div>
       {% if versao_info %}
