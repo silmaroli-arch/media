@@ -38,6 +38,7 @@
   {% set grupo_ia = ['medico.perguntas_pendentes', 'medico.perguntas_responder',
                       'medico.faq_lista', 'medico.faq_novo'] %}
   {% set grupo_config_exames = ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar',
+                                 'medico.exames_por_filial',
                                  'medico.preparo_modelos_lista', 'medico.preparo_modelos_novo',
                                  'medico.preparo_modelos_editar', 'medico.preparo_modelos_importar_pdf'] %}
   {% set grupo_relatorios = ['relatorios.index', 'relatorios.financeiro', 'relatorios.agenda',
@@ -205,7 +206,10 @@
               <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">Modelos de preparo</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.exames') %}active{% endif %}" href="{{ url_for('medico.exames_lista') }}">Exames &amp; Preparo</a>
+              <a class="nav-link {% if request.endpoint in ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar'] %}active{% endif %}" href="{{ url_for('medico.exames_lista') }}">Exames &amp; Preparo</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'medico.exames_por_filial' %}active{% endif %}" href="{{ url_for('medico.exames_por_filial') }}">Associar exames entre filiais</a>
             </li>
           </ul>
         </div>

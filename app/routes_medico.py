@@ -691,7 +691,11 @@ def exames_editar(exame_id):
         exame.nome = request.form.get("nome", "").strip()
         exame.descricao = request.form.get("descricao", "").strip()
         exame.duracao_minutos = request.form.get("duracao_minutos", type=int)
-        exame.preco = _parse_valor_decimal(request.form.get("preco", ""))
+        # O preço NÃO é editado aqui (de propósito - ver exames_form.html):
+        # ele é específico de cada filial e passou a ser ajustado só pela
+        # tela "Exames por filial" (medico.exames_por_filial_atualizar),
+        # que deixa claro que é um valor por local, não do cadastro do
+        # exame em si.
         exame.precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
         if not eh_medico():
             novo_medico_id = request.form.get("medico_id", type=int)
@@ -818,13 +822,22 @@ def exames_por_filial_associar():
             flash("Escolha um médico válido, vinculado a essa filial.", "danger")
             return redirect(url_for("medico.exames_por_filial"))
 
+    # O preço é específico de cada filial (pode variar de local pra local)
+    # e por isso é informado aqui, na hora da associação — não vem mais
+    # copiado silenciosamente do exame de origem nem editável no cadastro
+    # do exame (ver exames_form.html / exames_editar).
+    preco = _parse_valor_decimal(request.form.get("preco", ""))
+    if preco is None:
+        flash("Informe o preço deste exame nessa filial.", "danger")
+        return redirect(url_for("medico.exames_por_filial"))
+
     novo_exame = Exame(
         clinica_id=clinica_destino.id,
         medico_id=medico_id,
         nome=origem.nome,
         descricao=origem.descricao,
         duracao_minutos=origem.duracao_minutos,
-        preco=origem.preco,
+        preco=preco,
         precisa_acompanhante=origem.precisa_acompanhante,
         # O modelo de preparo é específico de cada filial (PreparoModelo é
         # por clínica) - não dá pra copiar o id de uma filial pra outra,
@@ -837,9 +850,46 @@ def exames_por_filial_associar():
 
     flash(
         f"\"{nome}\" associado à filial {clinica_destino.nome} com {novo_exame.medico.nome} como responsável. "
-        "Revise o preço, a duração e o modelo de preparo dessa filial, se for diferente.",
+        "Revise a duração e o modelo de preparo dessa filial, se for diferente.",
         "success",
     )
+    return redirect(url_for("medico.exames_por_filial"))
+
+
+@medico_bp.route("/exames/por-filial/<int:exame_id>/atualizar", methods=["POST"])
+@login_required
+@staff_required
+def exames_por_filial_atualizar(exame_id):
+    """Atualiza o médico responsável e/ou o preço de uma associação já
+    existente (um exame já criado numa filial) - direto na matriz da tela
+    "Exames por filial", já que o preço deixou de ser editável no
+    formulário de cadastro/edição do exame (ver exames_editar)."""
+    clinica = clinica_atual()
+    empresa = clinica.empresa
+    exame = Exame.query.join(Clinica, Exame.clinica_id == Clinica.id).filter(
+        Exame.id == exame_id, Clinica.empresa_id == empresa.id,
+    ).first_or_404()
+
+    if eh_medico() and not (exame.medico_id == current_user.id or any(m.id == current_user.id for m in exame.medicos_extra)):
+        flash("Você só pode atualizar exames pelos quais é responsável.", "danger")
+        return redirect(url_for("medico.exames_por_filial"))
+
+    preco = _parse_valor_decimal(request.form.get("preco", ""))
+    if preco is None:
+        flash("Informe um preço válido.", "danger")
+        return redirect(url_for("medico.exames_por_filial"))
+    exame.preco = preco
+
+    if not eh_medico():
+        # Só quem não é médico (secretária) pode reatribuir o responsável -
+        # mesma regra já usada em exames_editar.
+        medico_id = request.form.get("medico_id", type=int)
+        medicos_da_filial = medicos_da_clinica(exame.clinica)
+        if medico_id and any(m.id == medico_id for m in medicos_da_filial):
+            exame.medico_id = medico_id
+
+    db.session.commit()
+    flash(f"\"{exame.nome}\" atualizado na filial {exame.clinica.nome}.", "success")
     return redirect(url_for("medico.exames_por_filial"))
 
 

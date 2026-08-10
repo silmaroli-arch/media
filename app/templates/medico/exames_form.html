@@ -52,10 +52,20 @@
         <input type="number" min="1" name="duracao_minutos" class="form-control" value="{{ exame.duracao_minutos if exame and exame.duracao_minutos else '' }}">
         <div class="form-text">Usada pelo otimizador de agenda para calcular horários disponíveis.</div>
       </div>
+      {% if not exame %}
       <div class="col-md-6">
-        <label class="form-label">Preço do procedimento (R$)</label>
-        <input type="text" name="preco" class="form-control" value="{{ '%.2f'|format(exame.preco) if exame and exame.preco else '' }}" placeholder="Ex.: 250,00">
+        <label class="form-label">Preço do procedimento nesta filial (R$)</label>
+        <input type="text" name="preco" class="form-control" placeholder="Ex.: 250,00">
       </div>
+      {% else %}
+      <div class="col-md-6">
+        <label class="form-label">Preço do procedimento nesta filial (R$)</label>
+        <p class="form-control-plaintext">
+          {{ "R$ %.2f"|format(exame.preco)|replace(".", ",") if exame.preco else "Não definido" }}
+          — <a href="{{ url_for('medico.exames_por_filial') }}">alterar na tela "Associar exames entre filiais"</a>
+        </p>
+      </div>
+      {% endif %}
       <div class="col-md-12">
         <div class="form-check">
           <input type="checkbox" name="precisa_acompanhante" id="precisa_acompanhante" class="form-check-input" {% if exame and exame.precisa_acompanhante %}checked{% endif %}>
