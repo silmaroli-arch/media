@@ -45,7 +45,7 @@ checar("Médico vê a tela normalmente", r.status_code == 200)
 checar("Médico vê o próprio exame na matriz", "Raio-X Torax" in html)
 
 r2 = client.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Raio-X Torax", "clinica_destino_id": str(praia_id),
+    "nome": "Raio-X Torax", "clinica_destino_id": str(praia_id), "preco": "90,00",
     # Note: sem medico_id no form - o médico não escolhe, é sempre ele mesmo.
 }, follow_redirects=True)
 checar("Médico consegue se auto-associar na Praia (onde ele atende)", "associado à filial" in r2.get_data(as_text=True))
@@ -53,6 +53,7 @@ checar("Médico consegue se auto-associar na Praia (onde ele atende)", "associad
 with app.app_context():
     exame_praia = Exame.query.filter_by(clinica_id=praia_id, nome="Raio-X Torax").first()
     checar("Exame criado na Praia tem o próprio médico como responsável", exame_praia.medico_id == medico_id)
+    checar("Preço informado na associação foi salvo", float(exame_praia.preco) == 90.0)
 
 client.get("/logout")
 print("\nTodos os testes de restrição por médico em exames por filial passaram.")
