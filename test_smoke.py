@@ -233,16 +233,38 @@ checar("Cadastro de paciente funciona sem e-mail nem senha, só com telefone e d
 checar("Paciente recém-cadastrado (sem agendamento ainda) já aparece na lista para o médico com permissão de pacientes",
        "Beatriz Nunes" in texto)
 
+# Mesmo telefone, MAS data de nascimento diferente - representa outra
+# pessoa (ex.: um familiar) compartilhando o mesmo telefone de contato.
+# Isso agora é permitido (a unicidade real por clínica é por CPF, e o
+# login do paciente já usa telefone + data de nascimento pra diferenciar
+# as contas - ver comentário em routes_medico.pacientes_novo).
 r = client.post("/equipe/pacientes/novo", data={
     "nome": "Outra Pessoa", "cpf": "999.888.777-00", "email": "",
     "telefone": "(28) 98765-4321", "data_nascimento": "1980-01-01",
 }, follow_redirects=True)
-checar("Cadastro rejeita telefone já usado por outro paciente", "já existe um paciente cadastrado com esse telefone" in r.get_data(as_text=True).lower())
+checar("Cadastro com o MESMO telefone mas data de nascimento DIFERENTE agora é permitido (compartilhamento familiar)",
+       "cadastrado" in r.get_data(as_text=True).lower())
+
+# Duplicata DE VERDADE: mesmo telefone E mesma data de nascimento de
+# Beatriz - essa sim continua bloqueada (mesma pessoa se cadastrando de novo).
+r = client.post("/equipe/pacientes/novo", data={
+    "nome": "Beatriz Duplicada", "cpf": "111.111.111-11", "email": "",
+    "telefone": "(28) 98765-4321", "data_nascimento": "1995-06-20",
+}, follow_redirects=True)
+checar("Cadastro com o MESMO telefone E a MESMA data de nascimento continua bloqueado",
+       "já existe um paciente cadastrado com esse telefone e data de nascimento" in r.get_data(as_text=True).lower())
 
 client.get("/logout")
 
 r = login_paciente("(28) 98765-4321", "1980-01-01")
-checar("Login do paciente com data de nascimento errada é rejeitado", "incorretos" in r.get_data(as_text=True).lower())
+texto = r.get_data(as_text=True)
+checar("Login da 'Outra Pessoa' funciona (telefone compartilhado, nascimento próprio identifica a conta certa)",
+       "Meus exames" in texto or "Tirar dúvidas" in texto)
+client.get("/logout")
+
+r = login_paciente("(28) 98765-4321", "1970-12-31")
+checar("Login com telefone existente mas data de nascimento que não bate com NINGUÉM é rejeitado",
+       "incorretos" in r.get_data(as_text=True).lower())
 
 r = login_paciente("(28) 98765-4321", "1995-06-20")
 texto = r.get_data(as_text=True)
