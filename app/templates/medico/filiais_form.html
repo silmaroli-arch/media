@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block titulo %}Nova filial{% endblock %}
+{% block titulo %}Novo local de atendimento{% endblock %}
 {% block conteudo %}
-<h3 class="mb-3">Cadastrar nova filial</h3>
+<h3 class="mb-3">Cadastrar novo local de atendimento</h3>
 <div class="card p-4">
   <form method="post">
     <div class="mb-3">
-      <label class="form-label">Nome da filial</label>
-      <input type="text" name="nome" class="form-control" required autofocus placeholder="ex.: Unidade Praia do Canto">
+      <label class="form-label">Nome do local</label>
+      <input type="text" name="nome" class="form-control" required autofocus placeholder="ex.: Consultório Praia do Canto">
     </div>
     <button type="submit" class="btn btn-primary">Salvar</button>
     <a href="{{ url_for('medico.filiais_lista') }}" class="btn btn-link">Cancelar</a>
   </form>
 </div>
 <p class="text-muted small mt-3">
-  Depois de criada, entre em "Dados da clínica" (com essa filial selecionada) para preencher endereço,
-  horário de funcionamento e dados fiscais dela.
+  Depois de criado, entre em "Dados da clínica" (com esse local selecionado) para preencher endereço,
+  horário de funcionamento e dados fiscais dele.
 </p>
 {% endblock %}

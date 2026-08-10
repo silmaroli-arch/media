@@ -18,7 +18,7 @@
         <td>
           {% if m.usuario.perm_pacientes %}<span class="badge bg-light text-dark border me-1">Pacientes</span>{% endif %}
           {% if m.usuario.perm_equipe %}<span class="badge bg-light text-dark border me-1">Equipe</span>{% endif %}
-          {% if m.usuario.perm_filiais %}<span class="badge bg-light text-dark border me-1">Filiais</span>{% endif %}
+          {% if m.usuario.perm_filiais %}<span class="badge bg-light text-dark border me-1">Locais de atendimento</span>{% endif %}
           {% if m.usuario.perm_dados_clinica %}<span class="badge bg-light text-dark border me-1">Dados da clínica</span>{% endif %}
           {% if not (m.usuario.perm_pacientes or m.usuario.perm_equipe or m.usuario.perm_filiais or m.usuario.perm_dados_clinica) %}
           <span class="text-muted small">Nenhuma</span>

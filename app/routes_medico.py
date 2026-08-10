@@ -2391,11 +2391,11 @@ def filiais_nova():
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
         if not nome:
-            flash("Informe o nome da nova filial.", "danger")
+            flash("Informe o nome do novo local de atendimento.", "danger")
             return render_template("medico/filiais_form.html")
 
         if Clinica.query.filter_by(empresa_id=clinica.empresa_id, nome=nome).first():
-            flash("Já existe uma filial com esse nome nesta empresa.", "danger")
+            flash("Já existe um local de atendimento com esse nome nesta empresa.", "danger")
             return render_template("medico/filiais_form.html")
 
         nova_filial = Clinica(empresa_id=clinica.empresa_id, nome=nome)
@@ -2409,8 +2409,8 @@ def filiais_nova():
         db.session.commit()
 
         flash(
-            f"Filial '{nova_filial.nome}' cadastrada com sucesso. Use o link 'trocar' na barra de "
-            "navegação para começar a trabalhar nela.",
+            f"Local '{nova_filial.nome}' cadastrado com sucesso. Use o link 'trocar' na barra de "
+            "navegação para começar a trabalhar nele.",
             "success",
         )
         return redirect(url_for("medico.filiais_lista"))

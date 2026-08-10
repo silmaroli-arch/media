@@ -115,7 +115,7 @@
           <ul class="nav flex-column">
             {% if current_user.perm_filiais %}
             <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.filiais') %}active{% endif %}" href="{{ url_for('medico.filiais_lista') }}">Filiais</a>
+              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.filiais') %}active{% endif %}" href="{{ url_for('medico.filiais_lista') }}">Meus locais de atendimento</a>
             </li>
             {% endif %}
             {% if current_user.perm_dados_clinica %}

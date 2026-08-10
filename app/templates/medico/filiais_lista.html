@@ -1,39 +1,39 @@
 {% extends "base.html" %}
-{% block titulo %}Filiais{% endblock %}
+{% block titulo %}Meus locais de atendimento{% endblock %}
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h3>Filiais da empresa</h3>
-  <a href="{{ url_for('medico.filiais_nova') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Nova filial</a>
+  <h3>Meus locais de atendimento</h3>
+  <a href="{{ url_for('medico.filiais_nova') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo local</a>
 </div>
 <div class="card p-3">
   <table class="table table-hover">
-    <thead><tr><th>Filial</th><th>Cidade</th><th></th></tr></thead>
+    <thead><tr><th>Local</th><th>Cidade</th><th></th></tr></thead>
     <tbody>
       {% for f in filiais %}
       <tr>
         <td>
           <a href="{{ url_for('medico.clinica_configuracoes', filial_id=f.id) }}">{{ f.nome }}</a>
           {% if f.id == clinica_atual_id %}
-          <span class="badge bg-primary ms-1">filial atual</span>
+          <span class="badge bg-primary ms-1">local atual</span>
           {% endif %}
         </td>
         <td>{{ f.cidade or '-' }}{% if f.uf %}/{{ f.uf }}{% endif %}</td>
         <td>
           {% if f.id != clinica_atual_id %}
-          <a href="{{ url_for('medico.escolher_clinica') }}" class="btn btn-sm btn-outline-secondary">Trocar para esta filial</a>
+          <a href="{{ url_for('medico.escolher_clinica') }}" class="btn btn-sm btn-outline-secondary">Trocar para este local</a>
           {% endif %}
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="3" class="text-muted text-center">Nenhuma filial cadastrada.</td></tr>
+      <tr><td colspan="3" class="text-muted text-center">Nenhum local de atendimento cadastrado.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 <p class="text-muted small mt-3">
-  Cada filial tem seus próprios pacientes, exames, agenda e endereço — cadastre uma filial nova pra
-  cada unidade física da sua empresa. Clique no nome de uma filial para editar seus dados (endereço,
-  horário de funcionamento, dados fiscais) — você pode alterar os dados de qualquer filial daqui,
-  sem precisar trocar para ela primeiro.
+  Cada local de atendimento tem seus próprios pacientes, exames, agenda e endereço — cadastre um local novo pra
+  cada lugar em que você atende. Clique no nome de um local para editar seus dados (endereço,
+  horário de funcionamento, dados fiscais) — você pode alterar os dados de qualquer local daqui,
+  sem precisar trocar para ele primeiro.
 </p>
 {% endblock %}
