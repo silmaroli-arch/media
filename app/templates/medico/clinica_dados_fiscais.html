@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block titulo %}Dados Fiscais{% endblock %}
+{% block conteudo %}
+<h3 class="mb-1">Dados Fiscais</h3>
+<p class="text-muted mb-4">Essas informações podem ser alteradas a qualquer momento.</p>
+
+<form method="post">
+  <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
+  <div class="card p-4 mb-4">
+    <h5 class="mb-1">Dados fiscais</h5>
+    <p class="text-muted small mb-3">
+      Usados futuramente para identificar a clínica em uma eventual nota fiscal ao paciente.
+      Por ora só ficam salvos aqui — a emissão de nota fiscal ainda não está disponível na plataforma.
+    </p>
+    <div class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label">Inscrição estadual</label>
+        <input type="text" name="inscricao_estadual" class="form-control" value="{{ clinica.inscricao_estadual or '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Regime tributário</label>
+        <select name="regime_tributario" class="form-select">
+          <option value="">Selecione...</option>
+          {% for opcao in ["Simples Nacional", "Lucro Presumido", "Lucro Real", "MEI", "Isento"] %}
+          <option value="{{ opcao }}" {% if clinica.regime_tributario == opcao %}selected{% endif %}>{{ opcao }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">CNAE</label>
+        <input type="text" name="cnae" class="form-control" value="{{ clinica.cnae or '' }}" placeholder="0000-0/00">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Código IBGE do município</label>
+        <input type="text" class="form-control bg-light" value="{{ clinica.codigo_ibge_municipio or '' }}" readonly>
+        <div class="form-text">Preenchido automaticamente pelo CEP em Cadastro geral &raquo; Dados Cadastrais.</div>
+      </div>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Salvar</button>
+</form>
+
+<div class="card p-4 mb-4">
+  <h5 class="mb-1">Emissão de NFS-e</h5>
+  <p class="text-muted small mb-3">
+    A emissão da NFS-e (nota fiscal de serviço — exame médico é serviço, não venda de produto) é feita pelo padrão <strong>NFS-e Nacional</strong> (Ambiente de Dados Nacional / ADN), usando o certificado digital e-CNPJ do estabelecimento. Isso evita ter que integrar prefeitura por prefeitura, já que a plataforma atende clínicas em municípios diferentes.
+  </p>
+
+  <form id="form-emissao-fiscal" method="post" action="{{ url_for('medico.clinica_emissao_fiscal', filial_id=clinica.id) }}">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">Ambiente</label>
+        <select name="fiscal_ambiente" class="form-select">
+          <option value="homologacao" {% if clinica.fiscal_ambiente != 'producao' %}selected{% endif %}>Homologação (teste — sem valor fiscal)</option>
+          <option value="producao" {% if clinica.fiscal_ambiente == 'producao' %}selected{% endif %}>Produção (valor fiscal real)</option>
+        </select>
+        <div class="form-text">
+          {% if clinica.fiscal_ambiente == 'producao' %}Produção: as notas emitidas têm valor fiscal real — use com cuidado.{% else %}Homologação: notas de teste, sem valor fiscal — seguro pra validar o fluxo completo antes de emitir de verdade.{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="alert alert-warning mt-3 mb-0">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="fiscal_modo_simulacao" id="fiscal_modo_simulacao" {% if clinica.fiscal_modo_simulacao %}checked{% endif %}>
+        <label class="form-check-label fw-bold" for="fiscal_modo_simulacao">Modo simulação (teste sem certificado)</label>
+      </div>
+      <div class="small mt-1">
+        Gera um número de RPS e um número de nota fictícios e marca como "autorizada" sem enviar nada ao Ambiente de Dados Nacional — não precisa de certificado configurado. Serve só pra testar o restante do fluxo. <strong>Nenhuma nota fiscal real é emitida enquanto isso estiver ligado.</strong> Lembre de desligar antes de emitir notas de verdade.
+      </div>
+    </div>
+
+    <div class="alert alert-info mt-3 mb-0">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="fiscal_simular_falha_conexao" id="fiscal_simular_falha_conexao" {% if clinica.fiscal_simular_falha_conexao %}checked{% endif %}>
+        <label class="form-check-label fw-bold" for="fiscal_simular_falha_conexao">Simular falha de conexão com o Ambiente de Dados Nacional (teste)</label>
+      </div>
+      <div class="small mt-1">
+        Ferramenta de teste: força a próxima emissão a falhar, só pra validar como o sistema trata e informa esse erro sem precisar esperar uma falha de verdade. Só funciona em homologação, mesmo que fique ligada por engano. Lembre de desligar depois do teste.
+      </div>
+    </div>
+  </form>
+
+  {% if clinica.fiscal_certificado_pfx %}
+  <div class="alert alert-success mt-3 mb-0">
+    <strong>Certificado digital configurado.</strong><br>
+    CNPJ do certificado: {{ clinica.fiscal_certificado_cnpj or "não identificado" }}<br>
+    Válido até: {{ clinica.fiscal_certificado_validade.strftime('%d/%m/%Y') if clinica.fiscal_certificado_validade else "desconhecida" }}.
+  </div>
+  {% else %}
+  <div class="alert alert-secondary mt-3 mb-0">
+    Nenhum certificado digital configurado ainda — envie o arquivo do certificado abaixo para habilitar a emissão real de NFS-e.
+  </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('medico.clinica_certificado_upload', filial_id=clinica.id) }}" enctype="multipart/form-data" class="mt-3">
+    <h6 class="mb-1">Substituir certificado</h6>
+    <p class="text-muted small mb-2">
+      Envie o arquivo .pfx do certificado e-CNPJ (A1) e a senha dele. O arquivo é validado e só é guardado depois de conferirmos que abre com essa senha; ambos ficam criptografados no banco, nunca em texto simples.
+    </p>
+    <div class="row g-3 align-items-end">
+      <div class="col-md-5">
+        <label class="form-label">Arquivo do certificado (.pfx)</label>
+        <input type="file" name="certificado_arquivo" class="form-control" accept=".pfx,.p12">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Senha do certificado</label>
+        <input type="password" name="certificado_senha" class="form-control" autocomplete="off">
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-dark w-100">Enviar certificado</button>
+      </div>
+    </div>
+  </form>
+
+  <hr class="my-4">
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label">Provedor de emissão (legado / alternativo)</label>
+      <select name="fiscal_provedor_emissao" form="form-emissao-fiscal" class="form-select">
+        <option value="nenhum" {% if clinica.fiscal_provedor_emissao == 'nenhum' or not clinica.fiscal_provedor_emissao %}selected{% endif %}>Nenhum ainda</option>
+        <option value="focus_nfe" {% if clinica.fiscal_provedor_emissao == 'focus_nfe' %}selected{% endif %}>Focus NFe</option>
+        <option value="nfe_io" {% if clinica.fiscal_provedor_emissao == 'nfe_io' %}selected{% endif %}>NFe.io</option>
+        <option value="tecnospeed" {% if clinica.fiscal_provedor_emissao == 'tecnospeed' %}selected{% endif %}>Tecnospeed</option>
+        <option value="outro" {% if clinica.fiscal_provedor_emissao == 'outro' %}selected{% endif %}>Outro</option>
+      </select>
+      <div class="form-text">Deixe em "Nenhum ainda" se for usar a emissão direta pelo ADN, acima. Esses campos ficam guardados caso um dia você prefira trocar por um provedor.</div>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Token / API Key do provedor</label>
+      <input type="password" name="fiscal_provedor_token_api" form="form-emissao-fiscal" class="form-control" autocomplete="off" placeholder="{{ '••••••••••••••••' if clinica.fiscal_provedor_token_cripto else '' }}">
+      <div class="form-text">{% if clinica.fiscal_provedor_token_cripto %}Já configurado — deixe em branco para manter o valor atual.{% endif %}</div>
+    </div>
+  </div>
+
+  <h6 class="mt-4 mb-2">Dados da NFS-e</h6>
+  <div class="row g-3">
+    <div class="col-md-4">
+      <label class="form-label">Inscrição municipal</label>
+      <input type="text" name="fiscal_inscricao_municipal" form="form-emissao-fiscal" class="form-control" value="{{ clinica.fiscal_inscricao_municipal or '' }}">
+      <div class="form-text">Cadastro da clínica na prefeitura do município onde presta o serviço.</div>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Código do serviço (lista LC 116)</label>
+      <input type="text" name="fiscal_codigo_servico" form="form-emissao-fiscal" class="form-control" placeholder="Ex: 4.03" value="{{ clinica.fiscal_codigo_servico or '' }}">
+      <div class="form-text">Item da lista de serviços (Lei Complementar 116) que corresponde ao exame/consulta.</div>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Alíquota de ISS (%)</label>
+      <input type="text" inputmode="decimal" name="fiscal_aliquota_iss" form="form-emissao-fiscal" class="form-control" placeholder="Ex: 3,00" value="{{ clinica.fiscal_aliquota_iss if clinica.fiscal_aliquota_iss is not none else '' }}">
+      <div class="form-text">Definida pelo município — consulte a prefeitura ou o contador da clínica.</div>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-md-3">
+      <label class="form-label">Série do RPS</label>
+      <input type="text" name="fiscal_rps_serie" form="form-emissao-fiscal" class="form-control" value="{{ clinica.fiscal_rps_serie or '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Próximo número do RPS</label>
+      <input type="text" inputmode="numeric" name="fiscal_rps_proximo_numero" form="form-emissao-fiscal" class="form-control" value="{{ clinica.fiscal_rps_proximo_numero if clinica.fiscal_rps_proximo_numero is not none else '' }}">
+      <div class="form-text">RPS (Recibo Provisório de Serviço) é o número interno usado até a nota ser convertida em NFS-e definitiva.</div>
+    </div>
+  </div>
+
+  <button type="submit" form="form-emissao-fiscal" class="btn btn-dark mt-4">Salvar dados fiscais</button>
+</div>
+{% endblock %}

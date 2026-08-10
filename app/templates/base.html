@@ -33,7 +33,7 @@
                            'medico.equipe_lista', 'medico.equipe_novo'] %}
   {% set grupo_medico = ['medico.medico_horarios', 'medico.medico_agenda_pessoal', 'medico.medico_bloqueios', 'medico.certificado_digital'] %}
   {% set grupo_cadastro_geral = ['medico.filiais_lista', 'medico.filiais_nova',
-                                  'medico.clinica_configuracoes'] %}
+                                  'medico.clinica_configuracoes', 'medico.clinica_dados_fiscais'] %}
   {% set grupo_financeiro = ['medico.financeiro_receber_pagamento', 'medico.descontos_lista'] %}
   {% set grupo_ia = ['medico.perguntas_pendentes', 'medico.perguntas_responder',
                       'medico.faq_lista', 'medico.faq_novo'] %}
@@ -122,6 +122,9 @@
             {% if current_user.perm_dados_clinica %}
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint == 'medico.clinica_configuracoes' %}active{% endif %}" href="{{ url_for('medico.clinica_configuracoes') }}">Dados Cadastrais</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'medico.clinica_dados_fiscais' %}active{% endif %}" href="{{ url_for('medico.clinica_dados_fiscais') }}">Dados Fiscais</a>
             </li>
             {% endif %}
           </ul>

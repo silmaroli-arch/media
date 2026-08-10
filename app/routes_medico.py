@@ -2444,11 +2444,10 @@ def clinica_configuracoes(filial_id=None):
         clinica.bairro = request.form.get("bairro", "").strip()
         clinica.cidade = request.form.get("cidade", "").strip()
         clinica.uf = request.form.get("uf", "").strip().upper() or None
-
-        # Dados fiscais
-        clinica.inscricao_estadual = request.form.get("inscricao_estadual", "").strip()
-        clinica.regime_tributario = request.form.get("regime_tributario", "").strip()
-        clinica.cnae = request.form.get("cnae", "").strip()
+        # O código IBGE do município continua sendo preenchido aqui (a
+        # partir da busca automática do CEP, feita nesta mesma tela) mesmo
+        # com os demais campos fiscais tendo se mudado para a tela "Dados
+        # Fiscais" — ele é derivado do endereço, não é digitado à mão.
         clinica.codigo_ibge_municipio = request.form.get("codigo_ibge_municipio", "").strip()
 
         db.session.commit()
@@ -2457,6 +2456,40 @@ def clinica_configuracoes(filial_id=None):
 
     return render_template(
         "medico/clinica_configuracoes.html",
+        clinica=clinica,
+    )
+
+
+# ---------- Dados Fiscais (inscrição estadual/CNAE/regime + emissão de NFS-e) ----------
+
+@medico_bp.route("/clinica/dados-fiscais", methods=["GET", "POST"])
+@medico_bp.route("/clinica/dados-fiscais/<int:filial_id>", methods=["GET", "POST"])
+@login_required
+@staff_required
+@permissao_required("perm_dados_clinica")
+def clinica_dados_fiscais(filial_id=None):
+    """Tela própria (fora de "Dados Cadastrais") para os dados usados numa
+    eventual nota fiscal: inscrição estadual, regime tributário, CNAE e a
+    configuração de emissão de NFS-e. O código IBGE do município continua
+    sendo mostrado aqui (só leitura), mas é preenchido em "Dados Cadastrais"
+    a partir do CEP do endereço — não é um dado fiscal digitado à mão."""
+    clinica_sessao = clinica_atual()
+    if filial_id:
+        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=clinica_sessao.empresa_id).first_or_404()
+    else:
+        clinica = clinica_sessao
+
+    if request.method == "POST":
+        clinica.inscricao_estadual = request.form.get("inscricao_estadual", "").strip()
+        clinica.regime_tributario = request.form.get("regime_tributario", "").strip()
+        clinica.cnae = request.form.get("cnae", "").strip()
+
+        db.session.commit()
+        flash("Dados Fiscais atualizados com sucesso.", "success")
+        return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
+
+    return render_template(
+        "medico/clinica_dados_fiscais.html",
         clinica=clinica,
     )
 
@@ -2490,9 +2523,9 @@ def clinica_codigo_cadastro_regenerar(filial_id=None):
 def clinica_emissao_fiscal(filial_id=None):
     """Salva a configuração de emissão de NFS-e (ambiente, provedor,
     inscrição municipal, código de serviço, alíquota de ISS, série/número
-    do RPS) — separado do formulário principal de "Dados Cadastrais"
-    porque fica em outro <form> na mesma página (ver
-    medico/clinica_configuracoes.html). O upload do certificado digital em
+    do RPS) — separado do formulário de "Dados fiscais" (inscrição
+    estadual/regime/CNAE) porque fica em outro <form> na mesma página (ver
+    medico/clinica_dados_fiscais.html). O upload do certificado digital em
     si tem sua própria rota, `clinica_certificado_upload`, abaixo."""
     clinica_sessao = clinica_atual()
     if filial_id:
@@ -2530,7 +2563,7 @@ def clinica_emissao_fiscal(filial_id=None):
 
     db.session.commit()
     flash("Dados fiscais de emissão atualizados com sucesso.", "success")
-    return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+    return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
 
 
 @medico_bp.route("/clinica/certificado", methods=["POST"])
@@ -2555,11 +2588,11 @@ def clinica_certificado_upload(filial_id=None):
 
     if not arquivo or not arquivo.filename:
         flash("Selecione o arquivo do certificado (.pfx) antes de enviar.", "danger")
-        return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+        return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
 
     if not senha:
         flash("Informe a senha do certificado.", "danger")
-        return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+        return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
 
     conteudo = arquivo.read()
     # Um certificado .pfx/.p12 normal tem poucos KB — um arquivo muito
@@ -2568,7 +2601,7 @@ def clinica_certificado_upload(filial_id=None):
     # upload indevido).
     if len(conteudo) > 5 * 1024 * 1024:
         flash("Arquivo muito grande para ser um certificado válido.", "danger")
-        return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+        return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
 
     try:
         _chave_privada, certificado, _cadeia = pkcs12.load_key_and_certificates(
@@ -2580,11 +2613,11 @@ def clinica_certificado_upload(filial_id=None):
             "é um .pfx/.p12 válido e se a senha está correta.",
             "danger",
         )
-        return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+        return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
 
     if certificado is None:
         flash("O arquivo enviado não contém um certificado válido.", "danger")
-        return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+        return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
 
     # Tentativa (best-effort) de extrair o CNPJ a partir do "Common Name" do
     # certificado — certificados e-CNPJ da ICP-Brasil costumam trazer o
@@ -2612,7 +2645,7 @@ def clinica_certificado_upload(filial_id=None):
     db.session.commit()
 
     flash("Certificado digital validado e salvo com sucesso.", "success")
-    return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+    return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
 
 
 # ---------- Filiais da empresa ----------
