@@ -22,7 +22,11 @@ from app.models import (
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, DescontoConfig, Pagamento, EvolucaoClinica,
 )
-from app.clinica_utils import clinica_atual, clinicas_do_usuario, selecionar_clinica
+from app.clinica_utils import (
+    clinica_atual, clinicas_do_usuario, selecionar_clinica,
+    empresa_atual, empresas_do_usuario, selecionar_empresa,
+    filiais_atuais, filiais_atuais_ids,
+)
 from app.pdf_preparo import extrair_sugestao_de_pdf
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.agendamento_otimizador import sugerir_horarios, medico_tem_bloqueio
@@ -104,15 +108,16 @@ def _gerar_codigo_cadastro_paciente():
 
 def staff_required(f):
     """Garante que o usuário é da equipe (médico/secretária) e que já tem
-    uma clínica selecionada na sessão. Se tiver mais de uma clínica e
-    nenhuma selecionada ainda, manda para a tela de escolha."""
+    uma EMPRESA (tenant) definida na sessão. Como quase todo mundo só tem
+    vínculo em uma empresa, ela é escolhida automaticamente; só quem atua em
+    empresas diferentes cai na tela de escolha."""
     @wraps(f)
     def decorado(*args, **kwargs):
         if not current_user.is_authenticated or not current_user.is_staff:
             flash("Acesso restrito à equipe médica/secretaria.", "danger")
             return redirect(url_for("auth.login"))
 
-        if clinica_atual() is None:
+        if empresa_atual() is None:
             if not clinicas_do_usuario():
                 # Precisa deslogar de verdade — senão a pessoa continua
                 # autenticada e cai num loop (auth.login manda pra index,
@@ -160,7 +165,29 @@ def medicos_da_clinica(clinica):
     return [m for m in clinica.medicos_e_secretarias if m.tipo == "medico"]
 
 
-def status_configuracao_inicial(clinica):
+def medicos_das_filiais(filiais):
+    """Médicos distintos vinculados a qualquer uma das filiais informadas —
+    uma pessoa que atende em duas filiais da empresa aparece uma única vez."""
+    vistos = {}
+    for f in filiais:
+        for m in f.medicos_e_secretarias:
+            if m.tipo == "medico":
+                vistos.setdefault(m.id, m)
+    return sorted(vistos.values(), key=lambda m: (m.nome or "").lower())
+
+
+def _filial_do_form(filiais, campo="clinica_id"):
+    """Filial escolhida num formulário de cadastro, sempre validada contra
+    as filiais acessíveis do usuário (fronteira de acesso). Quando a pessoa
+    só atua numa filial, o campo nem aparece na tela e essa única filial é
+    usada direto — mesmo comportamento de antes."""
+    if len(filiais) == 1:
+        return filiais[0]
+    filial_id = request.form.get(campo, type=int)
+    return next((f for f in filiais if f.id == filial_id), None)
+
+
+def status_configuracao_inicial(filiais):
     """Calcula, a partir dos dados que já existem no banco (sem guardar
     nenhum estado de "assistente" à parte), quais das etapas sugeridas na
     configuração inicial da clínica já foram feitas. Usado tanto pela tela
@@ -168,12 +195,18 @@ def status_configuracao_inicial(clinica):
     enquanto a configuração não estiver completa — por ser calculado a
     partir dos dados reais, permanece correto mesmo que a pessoa pule
     etapas e preencha as coisas por fora do assistente, em outra ordem."""
-    tem_medico = len(medicos_da_clinica(clinica)) > 0
-    tem_horario = MedicoHorario.query.filter_by(clinica_id=clinica.id, ativo=True).first() is not None
-    tem_mais_gente = ClinicaMembro.query.filter_by(clinica_id=clinica.id, ativo=True).count() > 1
-    tem_modelo_preparo = PreparoModelo.query.filter_by(clinica_id=clinica.id).first() is not None
-    tem_exame = Exame.query.filter_by(clinica_id=clinica.id).first() is not None
-    tem_mais_filiais = Clinica.query.filter_by(empresa_id=clinica.empresa_id).count() > 1
+    filial_ids = [f.id for f in filiais]
+    tem_medico = len(medicos_das_filiais(filiais)) > 0
+    tem_horario = MedicoHorario.query.filter(
+        MedicoHorario.clinica_id.in_(filial_ids), MedicoHorario.ativo.is_(True)
+    ).first() is not None
+    tem_mais_gente = (
+        db.session.query(ClinicaMembro.usuario_id)
+        .filter(ClinicaMembro.clinica_id.in_(filial_ids), ClinicaMembro.ativo.is_(True))
+        .distinct().count() > 1
+    )
+    tem_modelo_preparo = PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(filial_ids)).first() is not None
+    tem_exame = Exame.query.filter(Exame.clinica_id.in_(filial_ids)).first() is not None
 
     etapas = [
         {
@@ -183,7 +216,7 @@ def status_configuracao_inicial(clinica):
                 "Endereço, CNPJ e telefone/e-mail de contato da clínica — e, se atender em mais de um "
                 "endereço/consultório, cadastre cada local separadamente aqui também (opcional)."
             ),
-            "concluida": bool(clinica.telefone and clinica.email_contato),
+            "concluida": bool(filiais) and all(f.telefone and f.email_contato for f in filiais),
             "endpoint": "medico.filiais_lista",
             "permissao": "perm_filiais",
         },
@@ -225,11 +258,18 @@ def status_configuracao_inicial(clinica):
     return etapas
 
 
-# ---------- Seleção de clínica ----------
+# ---------- Seleção de empresa (tenant) ----------
 
 @medico_bp.route("/clinica", methods=["GET", "POST"])
 @login_required
 def escolher_clinica():
+    """Escolha da EMPRESA em que a pessoa vai trabalhar agora. Não existe
+    mais troca de filial: dentro da empresa, os dados de todas as filiais em
+    que a pessoa atua aparecem juntos, com a filial indicada em cada
+    registro. Esta tela só aparece no caso raro de a pessoa ter vínculo em
+    mais de uma empresa (tenants diferentes); com uma só, é automático.
+
+    O nome da rota (e a URL) foi mantido para não quebrar links antigos."""
     if not current_user.is_staff:
         return redirect(url_for("index"))
 
@@ -244,26 +284,35 @@ def escolher_clinica():
         )
         return redirect(url_for("auth.login"))
 
-    if request.method == "POST":
-        clinica_id = request.form.get("clinica_id", type=int)
-        if selecionar_clinica(clinica_id):
-            return redirect(url_for("medico.dashboard"))
-        flash("Clínica inválida.", "danger")
+    empresas = empresas_do_usuario()
 
-    if len(clinicas) == 1:
-        selecionar_clinica(clinicas[0].id)
+    if request.method == "POST":
+        empresa_id = request.form.get("empresa_id", type=int)
+        if empresa_id and selecionar_empresa(empresa_id):
+            return redirect(url_for("medico.dashboard"))
+        # Compatibilidade com links/formulários antigos que mandavam uma
+        # filial: passa a valer só como filial padrão de formulário (e
+        # define a empresa dela) — não filtra mais nada.
+        clinica_id = request.form.get("clinica_id", type=int)
+        if clinica_id and selecionar_clinica(clinica_id):
+            return redirect(url_for("medico.dashboard"))
+        flash("Empresa inválida.", "danger")
+
+    if len(empresas) == 1:
+        selecionar_empresa(empresas[0].id)
         return redirect(url_for("medico.dashboard"))
 
-    return render_template("medico/escolher_clinica.html", clinicas=clinicas)
+    return render_template("medico/escolher_clinica.html", empresas=empresas)
 
 
 @medico_bp.route("/")
 @login_required
 @staff_required
 def dashboard():
-    clinica = clinica_atual()
+    filiais = filiais_atuais()
+    filial_ids = [f.id for f in filiais]
 
-    agendamentos_q = Agendamento.query.filter_by(clinica_id=clinica.id)
+    agendamentos_q = Agendamento.query.filter(Agendamento.clinica_id.in_(filial_ids))
     # "Pendente de resposta" no painel conta as duas situações que
     # aparecem na tela "Perguntas dos pacientes" (ver
     # medico.perguntas_pendentes) esperando alguma ação do médico: as que
@@ -271,19 +320,27 @@ def dashboard():
     # rascunhou mas ainda aguardam aprovação (status "aguardando_aprovacao")
     # — antes só a primeira era contada aqui, então uma pergunta com
     # rascunho da IA aparecia como card zerado mesmo tendo o que revisar.
-    pendentes_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="pendente")
-    aguardando_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="aguardando_aprovacao")
-    solicitacoes_q = Agendamento.query.filter_by(clinica_id=clinica.id, status="solicitado")
+    pendentes_q = PerguntaPendente.query.filter(
+        PerguntaPendente.clinica_id.in_(filial_ids), PerguntaPendente.status == "pendente"
+    )
+    aguardando_q = PerguntaPendente.query.filter(
+        PerguntaPendente.clinica_id.in_(filial_ids), PerguntaPendente.status == "aguardando_aprovacao"
+    )
+    solicitacoes_q = Agendamento.query.filter(
+        Agendamento.clinica_id.in_(filial_ids), Agendamento.status == "solicitado"
+    )
     # Pacientes que se cadastraram sozinhos pelo app (ver
     # auth.cadastro_paciente) e aguardam a equipe aceitar o cadastro antes
     # de poder solicitar agendamento — qualquer um da equipe pode ver e
     # decidir, não depende de perm_pacientes.
-    cadastros_pendentes_count = Paciente.query.filter_by(clinica_id=clinica.id, status_cadastro="pendente").count()
+    cadastros_pendentes_count = Paciente.query.filter(
+        Paciente.clinica_id.in_(filial_ids), Paciente.status_cadastro == "pendente"
+    ).count()
 
     if eh_medico() and not current_user.perm_pacientes:
         total_pacientes = (
             db.session.query(Agendamento.paciente_id)
-            .filter_by(clinica_id=clinica.id, medico_id=current_user.id)
+            .filter(Agendamento.clinica_id.in_(filial_ids), Agendamento.medico_id == current_user.id)
             .distinct()
             .count()
         )
@@ -301,7 +358,7 @@ def dashboard():
         )
         solicitacoes_q = solicitacoes_q.filter(Agendamento.medico_id == current_user.id)
     else:
-        total_pacientes = Paciente.query.filter_by(clinica_id=clinica.id).count()
+        total_pacientes = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids)).count()
 
     proximos = (
         agendamentos_q.filter(Agendamento.data_hora >= datetime.utcnow())
@@ -316,14 +373,16 @@ def dashboard():
     agendamentos = agendamentos_q.order_by(Agendamento.data_hora.asc()).all()
     return render_template(
         "medico/dashboard.html",
-        clinica=clinica,
+        clinica=clinica_atual(),
+        empresa=empresa_atual(),
+        filiais=filiais,
         total_pacientes=total_pacientes,
         proximos=proximos,
         pendentes=pendentes,
         solicitacoes_pendentes=solicitacoes_pendentes,
         cadastros_pendentes=cadastros_pendentes_count,
         agendamentos=agendamentos,
-        etapas_configuracao_inicial=[e for e in status_configuracao_inicial(clinica) if not e["concluida"] and not e.get("opcional")],
+        etapas_configuracao_inicial=[e for e in status_configuracao_inicial(filiais) if not e["concluida"] and not e.get("opcional")],
     )
 
 
@@ -338,12 +397,12 @@ def onboarding():
     uma só linka para a tela real (Dados Cadastrais, Equipe, Horário de
     atendimento, Modelos de preparo, Exames), que continua funcionando
     normalmente por fora do assistente também."""
-    clinica = clinica_atual()
-    etapas = status_configuracao_inicial(clinica)
+    filiais = filiais_atuais()
+    etapas = status_configuracao_inicial(filiais)
     concluidas = sum(1 for e in etapas if e["concluida"])
     return render_template(
         "medico/onboarding.html",
-        clinica=clinica,
+        clinica=clinica_atual(),
         etapas=etapas,
         concluidas=concluidas,
         total=len(etapas),
@@ -356,7 +415,7 @@ def onboarding():
 @login_required
 @staff_required
 def pacientes_lista():
-    clinica = clinica_atual()
+    filial_ids = filiais_atuais_ids()
     if eh_medico() and not current_user.perm_pacientes:
         # Médico sem a permissão administrativa de pacientes: só vê quem já
         # tem algum agendamento com ele mesmo — "acompanhar somente os seus
@@ -366,13 +425,13 @@ def pacientes_lista():
         # acabou de cadastrar apareceria na lista antes do 1º agendamento.
         pacientes = (
             Paciente.query.join(Agendamento, Agendamento.paciente_id == Paciente.id)
-            .filter(Paciente.clinica_id == clinica.id, Agendamento.medico_id == current_user.id)
+            .filter(Paciente.clinica_id.in_(filial_ids), Agendamento.medico_id == current_user.id)
             .distinct()
             .order_by(Paciente.nome)
             .all()
         )
     else:
-        pacientes = Paciente.query.filter_by(clinica_id=clinica.id).order_by(Paciente.nome).all()
+        pacientes = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids)).order_by(Paciente.nome).all()
     return render_template("medico/pacientes_lista.html", pacientes=pacientes)
 
 
@@ -385,9 +444,9 @@ def pacientes_solicitacoes():
     membro da equipe pode ver e decidir — não é restrito por perm_pacientes,
     já que aceitar/recusar um cadastro não é a mesma coisa que gerenciar o
     cadastro completo do paciente."""
-    clinica = clinica_atual()
+    filial_ids = filiais_atuais_ids()
     pendentes = (
-        Paciente.query.filter_by(clinica_id=clinica.id, status_cadastro="pendente")
+        Paciente.query.filter(Paciente.clinica_id.in_(filial_ids), Paciente.status_cadastro == "pendente")
         .order_by(Paciente.criado_em.asc())
         .all()
     )
@@ -404,8 +463,9 @@ def pacientes_cadastro_decidir(paciente_id):
     permite reverter uma decisão a qualquer momento (ex.: rejeitou por
     engano, ou o paciente resolveu a pendência e agora pode ser aprovado),
     por isso não exige mais que o status atual seja "pendente"."""
-    clinica = clinica_atual()
-    paciente = Paciente.query.filter_by(id=paciente_id, clinica_id=clinica.id).first_or_404()
+    paciente = Paciente.query.filter(
+        Paciente.id == paciente_id, Paciente.clinica_id.in_(filiais_atuais_ids())
+    ).first_or_404()
     acao = request.form.get("acao")
     if acao == "aceitar":
         paciente.status_cadastro = "aprovado"
@@ -445,9 +505,16 @@ def _preencher_endereco_emergencia(paciente, form):
 @staff_required
 @permissao_required("perm_pacientes")
 def pacientes_novo():
-    clinica = clinica_atual()
+    filiais = filiais_atuais()
 
     if request.method == "POST":
+        # Filial do paciente: escolhida no formulário quando a pessoa atua
+        # em mais de um local (e sempre validada contra os locais dela).
+        filial = _filial_do_form(filiais)
+        if not filial:
+            flash("Escolha a filial em que este paciente será cadastrado.", "danger")
+            return render_template("medico/pacientes_form.html", paciente=None)
+
         nome = request.form.get("nome", "").strip()
         cpf = request.form.get("cpf", "").strip()
         email = request.form.get("email", "").strip().lower()
@@ -475,7 +542,7 @@ def pacientes_novo():
         if (
             Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
             .filter(
-                Paciente.clinica_id == clinica.id,
+                Paciente.clinica_id == filial.id,
                 Usuario.telefone == telefone,
                 Paciente.data_nascimento == data_nascimento,
             )
@@ -486,13 +553,13 @@ def pacientes_novo():
 
         if email and (
             Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
-            .filter(Paciente.clinica_id == clinica.id, Usuario.email == email)
+            .filter(Paciente.clinica_id == filial.id, Usuario.email == email)
             .first()
         ):
             flash("Já existe um paciente com esse e-mail nesta clínica.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
-        if Paciente.query.filter_by(clinica_id=clinica.id, cpf=cpf).first():
+        if Paciente.query.filter_by(clinica_id=filial.id, cpf=cpf).first():
             flash("Já existe um paciente com esse CPF nesta clínica.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
@@ -503,7 +570,7 @@ def pacientes_novo():
         db.session.flush()
 
         paciente = Paciente(
-            clinica_id=clinica.id,
+            clinica_id=filial.id,
             usuario_id=usuario.id,
             nome=nome,
             cpf=cpf,
@@ -530,8 +597,9 @@ def pacientes_novo():
 @staff_required
 @permissao_required("perm_pacientes")
 def pacientes_editar(paciente_id):
-    clinica = clinica_atual()
-    paciente = Paciente.query.filter_by(id=paciente_id, clinica_id=clinica.id).first_or_404()
+    paciente = Paciente.query.filter(
+        Paciente.id == paciente_id, Paciente.clinica_id.in_(filiais_atuais_ids())
+    ).first_or_404()
 
     if request.method == "POST":
         paciente.nome = request.form.get("nome", "").strip() or paciente.nome
@@ -549,8 +617,9 @@ def pacientes_editar(paciente_id):
 @login_required
 @staff_required
 def pacientes_detalhe(paciente_id):
-    clinica = clinica_atual()
-    paciente = Paciente.query.filter_by(id=paciente_id, clinica_id=clinica.id).first_or_404()
+    paciente = Paciente.query.filter(
+        Paciente.id == paciente_id, Paciente.clinica_id.in_(filiais_atuais_ids())
+    ).first_or_404()
 
     if eh_medico() and not current_user.perm_pacientes:
         tem_vinculo = Agendamento.query.filter_by(
@@ -572,8 +641,9 @@ def pacientes_prontuario_exportar(paciente_id):
     1.821/2007): o sistema precisa conseguir exportar num formato aberto.
     Mesmas checagens de acesso de pacientes_detalhe(), e o próprio acesso
     de exportação também fica registrado na trilha de auditoria."""
-    clinica = clinica_atual()
-    paciente = Paciente.query.filter_by(id=paciente_id, clinica_id=clinica.id).first_or_404()
+    paciente = Paciente.query.filter(
+        Paciente.id == paciente_id, Paciente.clinica_id.in_(filiais_atuais_ids())
+    ).first_or_404()
 
     if eh_medico() and not current_user.perm_pacientes:
         tem_vinculo = Agendamento.query.filter_by(
@@ -603,8 +673,7 @@ def pacientes_prontuario_exportar(paciente_id):
 @login_required
 @staff_required
 def exames_lista():
-    clinica = clinica_atual()
-    query = Exame.query.filter_by(clinica_id=clinica.id)
+    query = Exame.query.filter(Exame.clinica_id.in_(filiais_atuais_ids()))
     if eh_medico():
         query = query.filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -617,11 +686,17 @@ def exames_lista():
 @login_required
 @staff_required
 def exames_novo():
-    clinica = clinica_atual()
-    medicos = medicos_da_clinica(clinica)
-    modelos = PreparoModelo.query.filter_by(clinica_id=clinica.id).order_by(PreparoModelo.nome).all()
+    filiais = filiais_atuais()
+    filial_ids = [f.id for f in filiais]
+    medicos = medicos_das_filiais(filiais)
+    modelos = PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(filial_ids)).order_by(PreparoModelo.nome).all()
 
     if request.method == "POST":
+        filial = _filial_do_form(filiais)
+        if not filial:
+            flash("Escolha a filial em que este exame será cadastrado.", "danger")
+            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+
         nome = request.form.get("nome", "").strip()
         descricao = request.form.get("descricao", "").strip()
         preparo_modelo_id = request.form.get("preparo_modelo_id", type=int)
@@ -633,7 +708,9 @@ def exames_novo():
             medico_id = current_user.id
         else:
             medico_id = request.form.get("medico_id", type=int)
-            medico_valido = medico_id and any(m.id == medico_id for m in medicos)
+            # O médico responsável precisa atender na filial escolhida.
+            medicos_da_filial = medicos_da_clinica(filial)
+            medico_valido = medico_id and any(m.id == medico_id for m in medicos_da_filial)
             if not medico_valido:
                 flash("Escolha o médico responsável pelo exame.", "danger")
                 return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
@@ -642,7 +719,7 @@ def exames_novo():
         # atender esse exame; a escolha de quem atende de fato acontece no
         # momento do agendamento.
         medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != medico_id}
-        medicos_extra = [m for m in medicos if m.id in medicos_extra_ids]
+        medicos_extra = [m for m in medicos_da_clinica(filial) if m.id in medicos_extra_ids]
 
         # Modelo de preparo é opcional - cobre tanto exames que exigem
         # preparo (ex.: colonoscopia) quanto procedimentos simples sem
@@ -650,7 +727,9 @@ def exames_novo():
         # agendados sem vincular nenhum modelo.
         modelo = None
         if preparo_modelo_id:
-            modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)
+            # O modelo de preparo é da filial (PreparoModelo.clinica_id), então
+            # só vale um modelo da própria filial escolhida.
+            modelo = next((m for m in modelos if m.id == preparo_modelo_id and m.clinica_id == filial.id), None)
             if not modelo:
                 flash("Escolha um modelo de preparo válido, ou deixe em branco se este procedimento não precisa de preparo.", "danger")
                 return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
@@ -659,12 +738,12 @@ def exames_novo():
             flash("Nome do exame é obrigatório.", "danger")
             return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
-        if Exame.query.filter_by(clinica_id=clinica.id, nome=nome).first():
+        if Exame.query.filter_by(clinica_id=filial.id, nome=nome).first():
             flash("Já existe um exame com esse nome nesta clínica.", "danger")
             return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
         exame = Exame(
-            clinica_id=clinica.id, medico_id=medico_id, nome=nome, descricao=descricao,
+            clinica_id=filial.id, medico_id=medico_id, nome=nome, descricao=descricao,
             preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos, preco=preco,
             precisa_acompanhante=precisa_acompanhante, medicos_extra=medicos_extra,
         )
@@ -681,15 +760,16 @@ def exames_novo():
 @login_required
 @staff_required
 def exames_editar(exame_id):
-    clinica = clinica_atual()
-    medicos = medicos_da_clinica(clinica)
-    modelos = PreparoModelo.query.filter_by(clinica_id=clinica.id).order_by(PreparoModelo.nome).all()
-    query = Exame.query.filter_by(id=exame_id, clinica_id=clinica.id)
+    filial_ids = filiais_atuais_ids()
+    query = Exame.query.filter(Exame.id == exame_id, Exame.clinica_id.in_(filial_ids))
     if eh_medico():
         query = query.filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
     exame = query.first_or_404()
+    # Médico responsável e modelo de preparo são da filial DO EXAME.
+    medicos = medicos_da_clinica(exame.clinica)
+    modelos = PreparoModelo.query.filter_by(clinica_id=exame.clinica_id).order_by(PreparoModelo.nome).all()
 
     if request.method == "POST":
         exame.nome = request.form.get("nome", "").strip()
@@ -740,8 +820,7 @@ def exames_por_filial():
     hoje, sem essa tela, isso só era possível cadastrando o exame do zero
     de novo (ou mexendo direto no banco), filial por filial, mesmo quando
     é exatamente o mesmo procedimento (nome/descrição/duração/preço)."""
-    clinica = clinica_atual()
-    empresa = clinica.empresa
+    empresa = empresa_atual()
     filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
 
     if len(filiais) < 2:
@@ -794,8 +873,7 @@ def exames_por_filial():
 @login_required
 @staff_required
 def exames_por_filial_associar():
-    clinica = clinica_atual()
-    empresa = clinica.empresa
+    empresa = empresa_atual()
     nome = request.form.get("nome", "").strip()
     clinica_destino = Clinica.query.filter_by(
         id=request.form.get("clinica_destino_id", type=int), empresa_id=empresa.id
@@ -837,7 +915,7 @@ def exames_por_filial_associar():
     # O preço é específico de cada filial (pode variar de local pra local)
     # e por isso é informado aqui, na hora da associação — não vem mais
     # copiado silenciosamente do exame de origem nem editável no cadastro
-    # do exame (ver exames_form.html / exames_editar).
+    # do exame (ver exames_editar).
     preco = _parse_valor_decimal(request.form.get("preco", ""))
     if preco is None:
         flash("Informe o preço deste exame nessa filial.", "danger")
@@ -876,8 +954,7 @@ def exames_por_filial_atualizar(exame_id):
     existente (um exame já criado numa filial) - direto na matriz da tela
     "Exames por filial", já que o preço deixou de ser editável no
     formulário de cadastro/edição do exame (ver exames_editar)."""
-    clinica = clinica_atual()
-    empresa = clinica.empresa
+    empresa = empresa_atual()
     exame = Exame.query.join(Clinica, Exame.clinica_id == Clinica.id).filter(
         Exame.id == exame_id, Clinica.empresa_id == empresa.id,
     ).first_or_404()
@@ -911,8 +988,10 @@ def exames_por_filial_atualizar(exame_id):
 @login_required
 @staff_required
 def preparo_modelos_lista():
-    clinica = clinica_atual()
-    modelos = PreparoModelo.query.filter_by(clinica_id=clinica.id).order_by(PreparoModelo.nome).all()
+    modelos = (
+        PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(filiais_atuais_ids()))
+        .order_by(PreparoModelo.nome).all()
+    )
     return render_template("medico/preparo_modelos_lista.html", modelos=modelos)
 
 
@@ -1082,12 +1161,17 @@ def _salvar_cortes_e_medicamentos(modelo, form):
 @login_required
 @staff_required
 def preparo_modelos_novo():
-    clinica = clinica_atual()
+    filiais = filiais_atuais()
     sugestao = None
     if request.method == "GET" and request.args.get("de_importacao"):
         sugestao = session.pop("preparo_sugestao_importada", None)
 
     if request.method == "POST":
+        filial = _filial_do_form(filiais)
+        if not filial:
+            flash("Escolha a filial em que este modelo de preparo será cadastrado.", "danger")
+            return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+
         nome = request.form.get("nome", "").strip()
         instrucoes = request.form.get("instrucoes", "").strip()
         observacoes_medicamentos = request.form.get("observacoes_medicamentos", "").strip()
@@ -1096,12 +1180,12 @@ def preparo_modelos_novo():
             flash("Nome do modelo e instruções são obrigatórios.", "danger")
             return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
-        if PreparoModelo.query.filter_by(clinica_id=clinica.id, nome=nome).first():
+        if PreparoModelo.query.filter_by(clinica_id=filial.id, nome=nome).first():
             flash("Já existe um modelo de preparo com esse nome nesta filial.", "danger")
             return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
         modelo = PreparoModelo(
-            clinica_id=clinica.id, nome=nome, instrucoes=instrucoes,
+            clinica_id=filial.id, nome=nome, instrucoes=instrucoes,
             observacoes_medicamentos=observacoes_medicamentos or None,
         )
         db.session.add(modelo)
@@ -1119,8 +1203,9 @@ def preparo_modelos_novo():
 @login_required
 @staff_required
 def preparo_modelos_editar(modelo_id):
-    clinica = clinica_atual()
-    modelo = PreparoModelo.query.filter_by(id=modelo_id, clinica_id=clinica.id).first_or_404()
+    modelo = PreparoModelo.query.filter(
+        PreparoModelo.id == modelo_id, PreparoModelo.clinica_id.in_(filiais_atuais_ids())
+    ).first_or_404()
 
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
@@ -1144,8 +1229,9 @@ def preparo_modelos_editar(modelo_id):
 @login_required
 @staff_required
 def preparo_modelos_remover(modelo_id):
-    clinica = clinica_atual()
-    modelo = PreparoModelo.query.filter_by(id=modelo_id, clinica_id=clinica.id).first_or_404()
+    modelo = PreparoModelo.query.filter(
+        PreparoModelo.id == modelo_id, PreparoModelo.clinica_id.in_(filiais_atuais_ids())
+    ).first_or_404()
     if modelo.exames:
         flash(
             f"Esse modelo está em uso por {len(modelo.exames)} exame(s) — troque o modelo desses "
@@ -1291,9 +1377,9 @@ def agenda_eventos():
     """Retorna os agendamentos no formato que o FullCalendar espera. Só
     mostra o que ainda está de pé (solicitado/agendado/confirmado) —
     cancelado e realizado não aparecem mais no calendário do painel."""
-    clinica = clinica_atual()
-    query = Agendamento.query.filter_by(clinica_id=clinica.id).filter(
-        Agendamento.status.in_(["solicitado", "agendado", "confirmado"])
+    query = Agendamento.query.filter(
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+        Agendamento.status.in_(["solicitado", "agendado", "confirmado"]),
     )
     if eh_medico():
         query = query.filter_by(medico_id=current_user.id)
@@ -1302,12 +1388,14 @@ def agenda_eventos():
         {
             "id": a.id,
             "title": f"{a.data_hora.strftime('%H:%M')} · {a.paciente.nome} · {a.exame.nome}",
+            "filial": a.clinica.nome,
             "start": a.data_hora.isoformat(),
             "color": CORES_STATUS.get(a.status, "#6c757d"),
             "extendedProps": {
                 "paciente": a.paciente.nome,
                 "exame": a.exame.nome,
                 "status": a.status,
+                "filial": a.clinica.nome,
                 "observacoes": a.observacoes or "",
             },
         }
@@ -1320,8 +1408,7 @@ def agenda_eventos():
 @login_required
 @staff_required
 def agenda_novo():
-    clinica = clinica_atual()
-    filiais_disponiveis = clinicas_do_usuario()
+    filiais_disponiveis = filiais_atuais()
 
     if request.method == "POST":
         filial_id = request.form.get("filial_id", type=int)
@@ -1411,7 +1498,10 @@ def agenda_novo():
     # a partir da query string, pra permitir trocar filial/médico sem perder
     # o restante do formulário (feito via um pequeno reload no template).
     filial_id_param = request.args.get("filial_id", type=int)
-    filial_selecionada = next((f for f in filiais_disponiveis if f.id == filial_id_param), None) or clinica
+    filial_selecionada = (
+        next((f for f in filiais_disponiveis if f.id == filial_id_param), None)
+        or clinica_atual()
+    )
 
     if eh_medico():
         medicos_disponiveis = []
@@ -1452,11 +1542,13 @@ def agenda_novo():
 @login_required
 @staff_required
 def agenda_status(agendamento_id):
-    clinica = clinica_atual()
-    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+    )
     if eh_medico():
-        filtros["medico_id"] = current_user.id
-    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
     novo_status = request.form.get("status", agendamento.status)
     status_validos = {"solicitado", "agendado", "confirmado", "realizado", "cancelado", "nao_compareceu"}
     if novo_status in status_validos:
@@ -1473,11 +1565,13 @@ def agenda_acompanhante(agendamento_id):
     """Indica/atualiza quem vai acompanhar o paciente no dia do exame —
     pode ser preenchido no momento do agendamento ou alterado depois, até
     o próprio dia do exame."""
-    clinica = clinica_atual()
-    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+    )
     if eh_medico():
-        filtros["medico_id"] = current_user.id
-    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
     agendamento.acompanhante_nome = request.form.get("acompanhante_nome", "").strip() or None
     agendamento.acompanhante_telefone = request.form.get("acompanhante_telefone", "").strip() or None
     db.session.commit()
@@ -1491,10 +1585,11 @@ def agenda_acompanhante(agendamento_id):
 @login_required
 @staff_required
 def agenda_solicitacoes():
-    clinica = clinica_atual()
-    query = Agendamento.query.filter_by(clinica_id=clinica.id, status="solicitado")
+    query = Agendamento.query.filter(
+        Agendamento.clinica_id.in_(filiais_atuais_ids()), Agendamento.status == "solicitado"
+    )
     if eh_medico():
-        query = query.filter_by(medico_id=current_user.id)
+        query = query.filter(Agendamento.medico_id == current_user.id)
     solicitacoes = query.order_by(Agendamento.data_hora.asc()).all()
     return render_template("medico/agenda_solicitacoes.html", solicitacoes=solicitacoes)
 
@@ -1503,11 +1598,13 @@ def agenda_solicitacoes():
 @login_required
 @staff_required
 def agenda_confirmar_solicitacao(agendamento_id):
-    clinica = clinica_atual()
-    filtros = dict(id=agendamento_id, clinica_id=clinica.id, status="solicitado")
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        Agendamento.clinica_id.in_(filiais_atuais_ids()), Agendamento.status == "solicitado",
+    )
     if eh_medico():
-        filtros["medico_id"] = current_user.id
-    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
     acao = request.form.get("acao")
     if acao == "recusar":
         agendamento.status = "cancelado"
@@ -1526,15 +1623,16 @@ def agenda_confirmar_solicitacao(agendamento_id):
 @login_required
 @staff_required
 def medico_horarios(medico_id=None):
-    clinica = clinica_atual()
+    filiais = filiais_atuais()
+    empresa = empresa_atual()
 
     # Um médico sem a permissão de gerir a equipe só configura o próprio
     # horário. Secretárias e médicos com "perm_equipe" (ex.: o médico
-    # fundador da clínica) podem escolher qualquer médico da filial atual —
-    # mesma regra usada nas outras telas administrativas.
-    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(clinica, medico_id)
+    # fundador da clínica) podem escolher qualquer médico dos locais em que
+    # a pessoa atua — mesma regra usada nas outras telas administrativas.
+    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(filiais, medico_id)
     if not medico_alvo:
-        flash("Nenhum médico cadastrado nesta filial ainda.", "danger")
+        flash("Nenhum médico cadastrado ainda.", "danger")
         return redirect(url_for("medico.equipe_lista"))
 
     # Locais (filiais da mesma empresa) em que esse médico atende - permite
@@ -1543,17 +1641,18 @@ def medico_horarios(medico_id=None):
     # seu próprio horário independente (ver MedicoHorario.clinica_id).
     locais_do_medico = (
         Clinica.query.join(ClinicaMembro, ClinicaMembro.clinica_id == Clinica.id)
-        .filter(ClinicaMembro.usuario_id == medico_alvo.id, Clinica.empresa_id == clinica.empresa_id)
+        .filter(ClinicaMembro.usuario_id == medico_alvo.id, Clinica.empresa_id == empresa.id)
         .order_by(Clinica.nome)
         .all()
     )
-    if clinica not in locais_do_medico:
-        # Não deveria acontecer (a filial atual sempre devia estar entre os
-        # locais do médico), mas por segurança garante que apareça como opção.
-        locais_do_medico = [clinica] + locais_do_medico
+    if not locais_do_medico:
+        locais_do_medico = list(filiais)
 
     clinica_id_escolhida = request.values.get("clinica_id", type=int)
-    clinica_alvo = next((c for c in locais_do_medico if c.id == clinica_id_escolhida), None) or clinica
+    clinica_alvo = (
+        next((c for c in locais_do_medico if c.id == clinica_id_escolhida), None)
+        or next((c for c in locais_do_medico if c in filiais), locais_do_medico[0])
+    )
 
     if request.method == "POST":
         horarios_existentes = {
@@ -1591,7 +1690,7 @@ def medico_horarios(medico_id=None):
     return render_template(
         "medico/medico_horarios.html",
         medico_alvo=medico_alvo,
-        medicos=(medicos_da_clinica(clinica) if pode_escolher_medico else []),
+        medicos=(medicos_das_filiais(filiais) if pode_escolher_medico else []),
         locais_do_medico=locais_do_medico,
         clinica_alvo=clinica_alvo,
         dias_semana=list(enumerate(DIAS_SEMANA)),
@@ -1599,16 +1698,16 @@ def medico_horarios(medico_id=None):
     )
 
 
-def _resolver_medico_alvo(clinica, medico_id):
+def _resolver_medico_alvo(filiais, medico_id):
     """Mesma regra usada em toda tela "do médico": um médico sem
     perm_equipe só vê/edita os próprios dados; secretárias e médicos com
-    perm_equipe podem escolher qualquer médico da filial atual. Retorna
-    (pode_escolher_medico, medico_alvo) — medico_alvo é None só quando não
-    há nenhum médico cadastrado na filial (caso em que o chamador deve
+    perm_equipe podem escolher qualquer médico dos locais em que a pessoa
+    atua. Retorna (pode_escolher_medico, medico_alvo) — medico_alvo é None
+    só quando não há nenhum médico cadastrado (caso em que o chamador deve
     redirecionar)."""
     pode_escolher_medico = current_user.perm_equipe or not eh_medico()
     if pode_escolher_medico:
-        medicos = medicos_da_clinica(clinica)
+        medicos = medicos_das_filiais(filiais)
         medico_alvo = next((m for m in medicos if m.id == medico_id), None)
         if not medico_alvo:
             medico_alvo = current_user if eh_medico() else (medicos[0] if medicos else None)
@@ -1624,10 +1723,10 @@ def _resolver_medico_alvo(clinica, medico_id):
 @login_required
 @staff_required
 def medico_agenda_pessoal(medico_id=None):
-    clinica = clinica_atual()
-    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(clinica, medico_id)
+    filiais = filiais_atuais()
+    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(filiais, medico_id)
     if not medico_alvo:
-        flash("Nenhum médico cadastrado nesta filial ainda.", "danger")
+        flash("Nenhum médico cadastrado ainda.", "danger")
         return redirect(url_for("medico.equipe_lista"))
 
     # Só exames confirmados aparecem aqui — é a lista de trabalho do
@@ -1636,14 +1735,18 @@ def medico_agenda_pessoal(medico_id=None):
     # data: um exame de hoje que já passou do horário mas ainda não foi
     # marcado como "realizado" continua precisando aparecer aqui.
     proximos = (
-        Agendamento.query.filter_by(clinica_id=clinica.id, medico_id=medico_alvo.id, status="confirmado")
+        Agendamento.query.filter(
+            Agendamento.clinica_id.in_([f.id for f in filiais]),
+            Agendamento.medico_id == medico_alvo.id,
+            Agendamento.status == "confirmado",
+        )
         .order_by(Agendamento.data_hora.asc())
         .all()
     )
     return render_template(
         "medico/medico_agenda_pessoal.html",
         medico_alvo=medico_alvo,
-        medicos=(medicos_da_clinica(clinica) if pode_escolher_medico else []),
+        medicos=(medicos_das_filiais(filiais) if pode_escolher_medico else []),
         proximos=proximos,
     )
 
@@ -1655,13 +1758,23 @@ def medico_agenda_pessoal(medico_id=None):
 @login_required
 @staff_required
 def medico_bloqueios(medico_id=None):
-    clinica = clinica_atual()
-    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(clinica, medico_id)
+    filiais = filiais_atuais()
+    filial_ids = [f.id for f in filiais]
+    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(filiais, medico_id)
     if not medico_alvo:
-        flash("Nenhum médico cadastrado nesta filial ainda.", "danger")
+        flash("Nenhum médico cadastrado ainda.", "danger")
         return redirect(url_for("medico.equipe_lista"))
 
+    # O bloqueio é de um local específico (a agenda é por filial) — com mais
+    # de um local, a pessoa escolhe qual no próprio formulário.
+    locais_do_medico = [f for f in filiais if any(m.id == medico_alvo.id for m in f.medicos_e_secretarias)] or list(filiais)
+
     if request.method == "POST":
+        filial_bloqueio = _filial_do_form(locais_do_medico)
+        if not filial_bloqueio:
+            flash("Escolha o local do bloqueio de agenda.", "danger")
+            return redirect(url_for("medico.medico_bloqueios", medico_id=medico_alvo.id))
+
         dia_inteiro = request.form.get("dia_inteiro") == "on"
         data_inicio_str = request.form.get("data_inicio", "").strip()
         data_fim_str = request.form.get("data_fim", "").strip()
@@ -1685,7 +1798,7 @@ def medico_bloqueios(medico_id=None):
             flash("Datas/horários inválidos — confira o período informado.", "danger")
         else:
             bloqueio = MedicoBloqueio(
-                clinica_id=clinica.id, medico_id=medico_alvo.id,
+                clinica_id=filial_bloqueio.id, medico_id=medico_alvo.id,
                 data_inicio=data_inicio_dt, data_fim=data_fim_dt,
                 motivo=motivo or None, dia_inteiro=dia_inteiro,
             )
@@ -1695,14 +1808,18 @@ def medico_bloqueios(medico_id=None):
         return redirect(url_for("medico.medico_bloqueios", medico_id=medico_alvo.id))
 
     bloqueios = (
-        MedicoBloqueio.query.filter_by(clinica_id=clinica.id, medico_id=medico_alvo.id)
+        MedicoBloqueio.query.filter(
+            MedicoBloqueio.clinica_id.in_(filial_ids),
+            MedicoBloqueio.medico_id == medico_alvo.id,
+        )
         .order_by(MedicoBloqueio.data_inicio.desc())
         .all()
     )
     return render_template(
         "medico/medico_bloqueios.html",
         medico_alvo=medico_alvo,
-        medicos=(medicos_da_clinica(clinica) if pode_escolher_medico else []),
+        medicos=(medicos_das_filiais(filiais) if pode_escolher_medico else []),
+        locais_do_medico=locais_do_medico,
         bloqueios=bloqueios,
     )
 
@@ -1711,11 +1828,13 @@ def medico_bloqueios(medico_id=None):
 @login_required
 @staff_required
 def medico_bloqueio_remover(bloqueio_id):
-    clinica = clinica_atual()
-    filtros = dict(id=bloqueio_id, clinica_id=clinica.id)
+    query = MedicoBloqueio.query.filter(
+        MedicoBloqueio.id == bloqueio_id,
+        MedicoBloqueio.clinica_id.in_(filiais_atuais_ids()),
+    )
     if eh_medico() and not current_user.perm_equipe:
-        filtros["medico_id"] = current_user.id
-    bloqueio = MedicoBloqueio.query.filter_by(**filtros).first_or_404()
+        query = query.filter(MedicoBloqueio.medico_id == current_user.id)
+    bloqueio = query.first_or_404()
     medico_id = bloqueio.medico_id
     db.session.delete(bloqueio)
     db.session.commit()
@@ -1799,11 +1918,13 @@ def certificado_digital():
 @login_required
 @staff_required
 def atendimento(agendamento_id):
-    clinica = clinica_atual()
-    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+    )
     if eh_medico():
-        filtros["medico_id"] = current_user.id
-    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
 
     if request.method == "POST":
         agendamento.notas_atendimento = request.form.get("notas_atendimento", "").strip() or None
@@ -1895,11 +2016,13 @@ def atendimento_evolucao_nova(agendamento_id):
     app.models.EvolucaoClinica: é IMUTÁVEL por desenho — esta rota só cria,
     nunca edita nem apaga uma entrada existente. Se algo foi anotado
     errado, a correção é uma entrada nova, igual num prontuário de papel."""
-    clinica = clinica_atual()
-    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+    )
     if eh_medico():
-        filtros["medico_id"] = current_user.id
-    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
 
     texto = request.form.get("texto", "").strip()
     if not texto:
@@ -1984,11 +2107,13 @@ def _pasta_resultados():
 @login_required
 @staff_required
 def resultado_upload(agendamento_id):
-    clinica = clinica_atual()
-    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+    )
     if eh_medico():
-        filtros["medico_id"] = current_user.id
-    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
 
     if request.method == "POST":
         arquivo = request.files.get("arquivo_pdf")
@@ -2033,12 +2158,11 @@ def financeiro_receber_pagamento():
     """Lista os agendamentos que ainda não têm pagamento registrado, pra
     quem cuida do financeiro dar baixa sem precisar navegar pela agenda —
     ver medico.pagamento_registrar para o registro em si."""
-    clinica = clinica_atual()
     pendentes = (
         Agendamento.query
         .outerjoin(Pagamento, Pagamento.agendamento_id == Agendamento.id)
         .filter(
-            Agendamento.clinica_id == clinica.id,
+            Agendamento.clinica_id.in_(filiais_atuais_ids()),
             Agendamento.status == "realizado",
             Pagamento.id.is_(None),
         )
@@ -2053,20 +2177,26 @@ def financeiro_receber_pagamento():
 @staff_required
 @permissao_required("perm_dados_clinica")
 def descontos_lista():
-    clinica = clinica_atual()
+    filiais = filiais_atuais()
 
     if request.method == "POST":
+        filial = _filial_do_form(filiais)
         nome = request.form.get("nome", "").strip()
         percentual = _parse_valor_decimal(request.form.get("percentual", ""))
-        if not nome or percentual is None:
+        if not filial:
+            flash("Escolha a filial do desconto.", "danger")
+        elif not nome or percentual is None:
             flash("Informe o nome e o percentual do desconto.", "danger")
         else:
-            db.session.add(DescontoConfig(clinica_id=clinica.id, nome=nome, percentual=percentual, ativo=True))
+            db.session.add(DescontoConfig(clinica_id=filial.id, nome=nome, percentual=percentual, ativo=True))
             db.session.commit()
             flash("Desconto cadastrado.", "success")
         return redirect(url_for("medico.descontos_lista"))
 
-    descontos = DescontoConfig.query.filter_by(clinica_id=clinica.id).order_by(DescontoConfig.nome).all()
+    descontos = (
+        DescontoConfig.query.filter(DescontoConfig.clinica_id.in_([f.id for f in filiais]))
+        .order_by(DescontoConfig.nome).all()
+    )
     return render_template("medico/descontos_lista.html", descontos=descontos)
 
 
@@ -2075,8 +2205,9 @@ def descontos_lista():
 @staff_required
 @permissao_required("perm_dados_clinica")
 def descontos_alternar(desconto_id):
-    clinica = clinica_atual()
-    desconto = DescontoConfig.query.filter_by(id=desconto_id, clinica_id=clinica.id).first_or_404()
+    desconto = DescontoConfig.query.filter(
+        DescontoConfig.id == desconto_id, DescontoConfig.clinica_id.in_(filiais_atuais_ids())
+    ).first_or_404()
     desconto.ativo = not desconto.ativo
     db.session.commit()
     return redirect(url_for("medico.descontos_lista"))
@@ -2086,12 +2217,19 @@ def descontos_alternar(desconto_id):
 @login_required
 @staff_required
 def pagamento_registrar(agendamento_id):
-    clinica = clinica_atual()
-    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+    )
     if eh_medico():
-        filtros["medico_id"] = current_user.id
-    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
-    descontos = DescontoConfig.query.filter_by(clinica_id=clinica.id, ativo=True).order_by(DescontoConfig.nome).all()
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
+    # Descontos são configurados por filial — valem os da filial do
+    # agendamento que está sendo pago.
+    descontos = (
+        DescontoConfig.query.filter_by(clinica_id=agendamento.clinica_id, ativo=True)
+        .order_by(DescontoConfig.nome).all()
+    )
 
     if request.method == "POST":
         if not agendamento.exame.preco:
@@ -2127,15 +2265,19 @@ def pagamento_registrar(agendamento_id):
 @login_required
 @staff_required
 def pagamento_comprovante(agendamento_id):
-    clinica = clinica_atual()
-    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+    )
     if eh_medico():
-        filtros["medico_id"] = current_user.id
-    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
     if not agendamento.pagamento:
         flash("Nenhum pagamento registrado para este agendamento ainda.", "danger")
         return redirect(url_for("medico.pagamento_registrar", agendamento_id=agendamento.id))
-    return render_template("medico/pagamento_comprovante.html", agendamento=agendamento, clinica=clinica)
+    return render_template(
+        "medico/pagamento_comprovante.html", agendamento=agendamento, clinica=agendamento.clinica
+    )
 
 
 @medico_bp.route("/agenda/<int:agendamento_id>/pagamento/emitir-nfse", methods=["POST"])
@@ -2147,18 +2289,20 @@ def pagamento_emitir_nfse(agendamento_id):
     clínica e tenta enviar ao Ambiente de Dados Nacional). Em modo
     simulação, nada é assinado nem enviado — só marca a nota como
     simulada, sem valor fiscal, pra testar o fluxo de tela."""
-    clinica = clinica_atual()
-    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+    )
     if eh_medico():
-        filtros["medico_id"] = current_user.id
-    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
     pagamento = agendamento.pagamento
     if not pagamento:
         flash("Registre o pagamento antes de emitir a nota fiscal.", "danger")
         return redirect(url_for("medico.pagamento_registrar", agendamento_id=agendamento.id))
 
     try:
-        resultado = emitir_nfse(clinica, agendamento.paciente, agendamento, pagamento)
+        resultado = emitir_nfse(agendamento.clinica, agendamento.paciente, agendamento, pagamento)
     except ErroEmissaoNfse as erro:
         flash(str(erro), "danger")
         return redirect(url_for("medico.pagamento_comprovante", agendamento_id=agendamento.id))
@@ -2173,7 +2317,7 @@ def pagamento_emitir_nfse(agendamento_id):
     pagamento.nfse_xml_assinado = resultado.get("xml_assinado")
     pagamento.nfse_erro = resultado.get("erro")
     pagamento.nfse_emitida_em = datetime.utcnow()
-    clinica.fiscal_rps_proximo_numero = resultado["numero_dps"]
+    agendamento.clinica.fiscal_rps_proximo_numero = resultado["numero_dps"]
     db.session.commit()
 
     if resultado["status"] == "simulada":
@@ -2199,18 +2343,20 @@ def pagamento_nfse_reenviar(agendamento_id):
     "assinada_pendente_envio" (o envio anterior falhou), sem gerar um
     novo número de DPS — usa o mesmo XML já assinado (ver
     app.nfse_nacional.reenviar_nfse_pendente)."""
-    clinica = clinica_atual()
-    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+    )
     if eh_medico():
-        filtros["medico_id"] = current_user.id
-    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
     pagamento = agendamento.pagamento
     if not pagamento:
         flash("Registre o pagamento antes de reenviar a nota fiscal.", "danger")
         return redirect(url_for("medico.pagamento_registrar", agendamento_id=agendamento.id))
 
     try:
-        resultado = reenviar_nfse_pendente(clinica, pagamento)
+        resultado = reenviar_nfse_pendente(agendamento.clinica, pagamento)
     except ErroEmissaoNfse as erro:
         flash(str(erro), "danger")
         return redirect(url_for("medico.pagamento_comprovante", agendamento_id=agendamento.id))
@@ -2245,17 +2391,19 @@ def pagamento_nfse_contingencia_pdf(agendamento_id):
     em app.nfse_nacional.gerar_pdf_contingencia) para a clínica entregar
     ao paciente enquanto a NFS-e definitiva não é transmitida com
     sucesso ao Ambiente de Dados Nacional."""
-    clinica = clinica_atual()
-    filtros = dict(id=agendamento_id, clinica_id=clinica.id)
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+    )
     if eh_medico():
-        filtros["medico_id"] = current_user.id
-    agendamento = Agendamento.query.filter_by(**filtros).first_or_404()
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
     pagamento = agendamento.pagamento
     if not pagamento or pagamento.nfse_status != "assinada_pendente_envio":
         flash("Só é possível gerar o comprovante de contingência quando a NFS-e está assinada, mas pendente de envio.", "danger")
         return redirect(url_for("medico.pagamento_comprovante", agendamento_id=agendamento.id))
 
-    pdf_buffer = gerar_pdf_contingencia(clinica, agendamento.paciente, agendamento, pagamento)
+    pdf_buffer = gerar_pdf_contingencia(agendamento.clinica, agendamento.paciente, agendamento, pagamento)
     return send_file(
         pdf_buffer,
         mimetype="application/pdf",
@@ -2270,12 +2418,18 @@ def pagamento_nfse_contingencia_pdf(agendamento_id):
 @login_required
 @staff_required
 def perguntas_pendentes():
-    clinica = clinica_atual()
-    pendentes_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="pendente")
+    filial_ids = filiais_atuais_ids()
+    pendentes_q = PerguntaPendente.query.filter(
+        PerguntaPendente.clinica_id.in_(filial_ids), PerguntaPendente.status == "pendente"
+    )
     # Respostas que a IA já rascunhou e estão esperando o médico revisar,
     # editar se precisar, e aprovar antes de irem para o paciente.
-    aguardando_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="aguardando_aprovacao")
-    respondidas_q = PerguntaPendente.query.filter_by(clinica_id=clinica.id, status="respondida")
+    aguardando_q = PerguntaPendente.query.filter(
+        PerguntaPendente.clinica_id.in_(filial_ids), PerguntaPendente.status == "aguardando_aprovacao"
+    )
+    respondidas_q = PerguntaPendente.query.filter(
+        PerguntaPendente.clinica_id.in_(filial_ids), PerguntaPendente.status == "respondida"
+    )
 
     if eh_medico() and not current_user.perm_pacientes:
         # O médico sem a permissão administrativa só acompanha perguntas
@@ -2304,8 +2458,9 @@ def perguntas_pendentes():
 @login_required
 @staff_required
 def perguntas_responder(pergunta_id):
-    clinica = clinica_atual()
-    pergunta = PerguntaPendente.query.filter_by(id=pergunta_id, clinica_id=clinica.id).first_or_404()
+    pergunta = PerguntaPendente.query.filter(
+        PerguntaPendente.id == pergunta_id, PerguntaPendente.clinica_id.in_(filiais_atuais_ids())
+    ).first_or_404()
 
     if eh_medico() and not current_user.perm_pacientes and (not pergunta.exame or not pergunta.exame.medico_pode_atender(current_user.id)):
         flash("Você só pode responder perguntas sobre os seus próprios exames.", "danger")
@@ -2324,7 +2479,8 @@ def perguntas_responder(pergunta_id):
 
     # "Aprendizado": a pergunta+resposta entra na base de FAQ para uso futuro
     novo_faq = FaqItem(
-        clinica_id=clinica.id,
+        # O item de FAQ nasce na MESMA filial da pergunta respondida.
+        clinica_id=pergunta.clinica_id,
         exame_id=pergunta.exame_id,
         pergunta=pergunta.pergunta,
         resposta=resposta,
@@ -2343,8 +2499,7 @@ def perguntas_responder(pergunta_id):
 @login_required
 @staff_required
 def faq_lista():
-    clinica = clinica_atual()
-    query = FaqItem.query.filter_by(clinica_id=clinica.id)
+    query = FaqItem.query.filter(FaqItem.clinica_id.in_(filiais_atuais_ids()))
     if eh_medico():
         query = query.join(Exame, FaqItem.exame_id == Exame.id).filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -2357,8 +2512,8 @@ def faq_lista():
 @login_required
 @staff_required
 def faq_novo():
-    clinica = clinica_atual()
-    exames_query = Exame.query.filter_by(clinica_id=clinica.id)
+    filiais = filiais_atuais()
+    exames_query = Exame.query.filter(Exame.clinica_id.in_([f.id for f in filiais]))
     if eh_medico():
         exames_query = exames_query.filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -2367,6 +2522,10 @@ def faq_novo():
 
     if request.method == "POST":
         exame_id = request.form.get("exame_id", type=int)
+        exame_escolhido = next((e for e in exames if e.id == exame_id), None)
+        # Item vinculado a um exame nasce na filial DESSE exame; item geral
+        # (sem exame) usa a filial escolhida no formulário.
+        filial = exame_escolhido.clinica if exame_escolhido else _filial_do_form(filiais)
 
         if eh_medico():
             # O médico só pode criar itens de FAQ vinculados a um dos
@@ -2383,8 +2542,12 @@ def faq_novo():
             flash("Pergunta e resposta são obrigatórias.", "danger")
             return render_template("medico/faq_form.html", exames=exames)
 
+        if not filial:
+            flash("Escolha a filial em que este item será cadastrado.", "danger")
+            return render_template("medico/faq_form.html", exames=exames)
+
         item = FaqItem(
-            clinica_id=clinica.id,
+            clinica_id=filial.id,
             exame_id=exame_id,
             pergunta=pergunta,
             resposta=resposta,
@@ -2406,13 +2569,13 @@ def faq_novo():
 @staff_required
 @permissao_required("perm_dados_clinica")
 def clinica_configuracoes(filial_id=None):
-    clinica_sessao = clinica_atual()
+    empresa = empresa_atual()
     if filial_id:
-        # Permite editar qualquer filial da mesma empresa, não só a
-        # selecionada na sessão — usado a partir da tela "Filiais".
-        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=clinica_sessao.empresa_id).first_or_404()
+        # Permite editar qualquer filial da mesma empresa — usado a partir da
+        # tela "Meus locais de atendimento".
+        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
     else:
-        clinica = clinica_sessao
+        clinica = clinica_atual()
 
     # O link de auto-cadastro do paciente (ver auth.cadastro_paciente)
     # precisa de um código — gera um na primeira vez que esta tela é
@@ -2472,11 +2635,11 @@ def clinica_dados_fiscais(filial_id=None):
     configuração de emissão de NFS-e. O código IBGE do município continua
     sendo mostrado aqui (só leitura), mas é preenchido em "Dados Cadastrais"
     a partir do CEP do endereço — não é um dado fiscal digitado à mão."""
-    clinica_sessao = clinica_atual()
+    empresa = empresa_atual()
     if filial_id:
-        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=clinica_sessao.empresa_id).first_or_404()
+        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
     else:
-        clinica = clinica_sessao
+        clinica = clinica_atual()
 
     if request.method == "POST":
         clinica.inscricao_estadual = request.form.get("inscricao_estadual", "").strip()
@@ -2502,11 +2665,11 @@ def clinica_codigo_cadastro_regenerar(filial_id=None):
     """Gera um novo código de auto-cadastro, invalidando o link antigo —
     útil se o link antigo foi compartilhado por engano com quem não deveria
     ter acesso."""
-    clinica_sessao = clinica_atual()
+    empresa = empresa_atual()
     if filial_id:
-        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=clinica_sessao.empresa_id).first_or_404()
+        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
     else:
-        clinica = clinica_sessao
+        clinica = clinica_atual()
 
     clinica.codigo_cadastro_paciente = _gerar_codigo_cadastro_paciente()
     db.session.commit()
@@ -2526,11 +2689,11 @@ def clinica_emissao_fiscal(filial_id=None):
     estadual/regime/CNAE) porque fica em outro <form> na mesma página (ver
     medico/clinica_dados_fiscais.html). O upload do certificado digital em
     si tem sua própria rota, `clinica_certificado_upload`, abaixo."""
-    clinica_sessao = clinica_atual()
+    empresa = empresa_atual()
     if filial_id:
-        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=clinica_sessao.empresa_id).first_or_404()
+        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
     else:
-        clinica = clinica_sessao
+        clinica = clinica_atual()
 
     clinica.fiscal_ambiente = request.form.get("fiscal_ambiente", "homologacao").strip() or "homologacao"
     clinica.fiscal_modo_simulacao = request.form.get("fiscal_modo_simulacao") == "on"
@@ -2576,11 +2739,11 @@ def clinica_certificado_upload(filial_id=None):
     `cryptography`) e só então salva — o arquivo e a senha ficam
     criptografados no banco (ver app/cripto_fiscal.py), nunca em texto
     puro nem em disco."""
-    clinica_sessao = clinica_atual()
+    empresa = empresa_atual()
     if filial_id:
-        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=clinica_sessao.empresa_id).first_or_404()
+        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
     else:
-        clinica = clinica_sessao
+        clinica = clinica_atual()
 
     arquivo = request.files.get("certificado_arquivo")
     senha = request.form.get("certificado_senha", "")
@@ -2666,9 +2829,14 @@ def filiais_lista():
         )
         return redirect(url_for("medico.dashboard"))
 
-    clinica = clinica_atual()
-    filiais = Clinica.query.filter_by(empresa_id=clinica.empresa_id).order_by(Clinica.nome).all()
-    return render_template("medico/filiais_lista.html", filiais=filiais, clinica_atual_id=clinica.id)
+    empresa = empresa_atual()
+    filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
+    # Não existe mais "local atual": os dados de todos os locais em que a
+    # pessoa atua aparecem juntos. Aqui só marcamos quais são os locais dela.
+    meus_ids = set(filiais_atuais_ids())
+    return render_template(
+        "medico/filiais_lista.html", filiais=filiais, empresa=empresa, meus_filiais_ids=meus_ids
+    )
 
 
 @medico_bp.route("/filiais/nova", methods=["GET", "POST"])
@@ -2676,7 +2844,7 @@ def filiais_lista():
 @staff_required
 @permissao_required("perm_filiais")
 def filiais_nova():
-    clinica = clinica_atual()
+    empresa = empresa_atual()
 
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
@@ -2684,11 +2852,11 @@ def filiais_nova():
             flash("Informe o nome do novo local de atendimento.", "danger")
             return render_template("medico/filiais_form.html")
 
-        if Clinica.query.filter_by(empresa_id=clinica.empresa_id, nome=nome).first():
+        if Clinica.query.filter_by(empresa_id=empresa.id, nome=nome).first():
             flash("Já existe um local de atendimento com esse nome nesta empresa.", "danger")
             return render_template("medico/filiais_form.html")
 
-        nova_filial = Clinica(empresa_id=clinica.empresa_id, nome=nome)
+        nova_filial = Clinica(empresa_id=empresa.id, nome=nome)
         db.session.add(nova_filial)
         db.session.flush()
 
@@ -2699,8 +2867,8 @@ def filiais_nova():
         db.session.commit()
 
         flash(
-            f"Local '{nova_filial.nome}' cadastrado com sucesso. Use o link 'trocar' na barra de "
-            "navegação para começar a trabalhar nele.",
+            f"Local '{nova_filial.nome}' cadastrado com sucesso. Os pacientes, exames e a agenda dele "
+            "já aparecem junto com os dos seus outros locais, identificados pelo nome do local.",
             "success",
         )
         return _destino_pos_onboarding("medico.filiais_lista")
@@ -2720,8 +2888,8 @@ def equipe_lista():
     (Usuario), só com mais de um vínculo (ClinicaMembro); antes a tela
     repetia a linha inteira por filial, o que parecia (incorretamente) um
     cadastro duplicado."""
-    clinica = clinica_atual()
-    filiais = Clinica.query.filter_by(empresa_id=clinica.empresa_id).order_by(Clinica.nome).all()
+    empresa = empresa_atual()
+    filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
     filial_ids = [f.id for f in filiais]
     membros = (
         ClinicaMembro.query.filter(ClinicaMembro.clinica_id.in_(filial_ids))
@@ -2751,8 +2919,8 @@ def equipe_lista():
 @staff_required
 @permissao_required("perm_equipe")
 def equipe_novo():
-    clinica = clinica_atual()
-    filiais = Clinica.query.filter_by(empresa_id=clinica.empresa_id).order_by(Clinica.nome).all()
+    empresa = empresa_atual()
+    filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
 
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
@@ -2850,8 +3018,8 @@ def equipe_associar_filial(usuario_id):
     filial da empresa) a mais uma filial da mesma empresa - atalho direto
     na tela "Equipe" para o mesmo caso de "e-mail já cadastrado" tratado em
     equipe_novo, sem precisar passar pelo formulário completo de novo."""
-    clinica = clinica_atual()
-    filiais = Clinica.query.filter_by(empresa_id=clinica.empresa_id).all()
+    empresa = empresa_atual()
+    filiais = Clinica.query.filter_by(empresa_id=empresa.id).all()
     filial_ids = {f.id for f in filiais}
 
     # A pessoa precisa já fazer parte de alguma filial desta empresa —
@@ -2894,8 +3062,8 @@ def equipe_editar(usuario_id):
     (médico/secretária) não é editável nesta tela: trocar o tipo de conta
     tem implicações demais (permissões padrão, agenda, etc.) para ser só
     mais um campo de formulário."""
-    clinica = clinica_atual()
-    filiais = Clinica.query.filter_by(empresa_id=clinica.empresa_id).order_by(Clinica.nome).all()
+    empresa = empresa_atual()
+    filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
     filial_ids = {f.id for f in filiais}
 
     usuario = Usuario.query.filter_by(id=usuario_id).first_or_404()
@@ -2952,8 +3120,8 @@ def equipe_permissoes(usuario_id):
     """Ajusta quais telas administrativas uma pessoa da equipe pode
     acessar. É uma permissão da conta (vale em todas as filiais em que a
     pessoa atua), não só desta filial."""
-    clinica = clinica_atual()
-    filial_ids = [f.id for f in Clinica.query.filter_by(empresa_id=clinica.empresa_id).all()]
+    empresa = empresa_atual()
+    filial_ids = [f.id for f in Clinica.query.filter_by(empresa_id=empresa.id).all()]
     membro = ClinicaMembro.query.filter(
         ClinicaMembro.usuario_id == usuario_id, ClinicaMembro.clinica_id.in_(filial_ids)
     ).first_or_404()
@@ -2976,8 +3144,8 @@ def equipe_permissoes(usuario_id):
 @staff_required
 @permissao_required("perm_equipe")
 def equipe_remover(membro_id):
-    clinica = clinica_atual()
-    filial_ids = [f.id for f in Clinica.query.filter_by(empresa_id=clinica.empresa_id).all()]
+    empresa = empresa_atual()
+    filial_ids = [f.id for f in Clinica.query.filter_by(empresa_id=empresa.id).all()]
     membro = ClinicaMembro.query.filter(
         ClinicaMembro.id == membro_id, ClinicaMembro.clinica_id.in_(filial_ids)
     ).first_or_404()

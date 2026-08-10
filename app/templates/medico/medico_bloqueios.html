@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}Bloquear agenda{% endblock %}
 {% block conteudo %}
 <h3 class="mb-1">Bloqueio de agenda de {{ medico_alvo.nome }}</h3>
@@ -22,6 +23,7 @@
 <div class="card p-4 mb-4">
   <h5 class="mb-3">Novo bloqueio</h5>
   <form method="post" id="formBloqueio">
+    {{ select_filial(filiais=locais_do_medico, rotulo="Local do bloqueio", ajuda="A agenda é por local — o bloqueio vale só para o local escolhido.") }}
     <div class="form-check mb-3">
       <input type="checkbox" name="dia_inteiro" id="dia_inteiro" class="form-check-input" onchange="alternarCamposHora()">
       <label class="form-check-label" for="dia_inteiro">Dia inteiro (ou vários dias inteiros seguidos)</label>
@@ -56,11 +58,12 @@
 <div class="card p-3">
   <h5>Bloqueios cadastrados</h5>
   <table class="table table-hover mt-2">
-    <thead><tr><th>Início</th><th>Fim</th><th>Tipo</th><th>Motivo</th><th></th></tr></thead>
+    <thead><tr><th>Início</th>{{ th_filial() }}<th>Fim</th><th>Tipo</th><th>Motivo</th><th></th></tr></thead>
     <tbody>
       {% for b in bloqueios %}
       <tr>
         <td>{{ b.data_inicio.strftime('%d/%m/%Y %H:%M') }}</td>
+        {{ td_filial(b) }}
         <td>{{ b.data_fim.strftime('%d/%m/%Y %H:%M') }}</td>
         <td>{% if b.dia_inteiro %}<span class="badge bg-dark">dia inteiro</span>{% else %}<span class="badge bg-secondary">período</span>{% endif %}</td>
         <td>{{ b.motivo or '-' }}</td>
@@ -71,7 +74,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="text-muted text-center">Nenhum bloqueio cadastrado.</td></tr>
+      <tr><td colspan="{{ 6 if mostrar_filial else 5 }}" class="text-muted text-center">Nenhum bloqueio cadastrado.</td></tr>
       {% endfor %}
     </tbody>
   </table>

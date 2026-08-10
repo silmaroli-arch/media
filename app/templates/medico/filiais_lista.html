@@ -15,8 +15,8 @@
       <tr>
         <td>
           {{ f.nome }}
-          {% if f.id == clinica_atual_id %}
-          <span class="badge bg-primary ms-1">local atual</span>
+          {% if f.id in meus_filiais_ids %}
+          <span class="badge bg-primary ms-1">você atende aqui</span>
           {% endif %}
         </td>
         <td>{{ f.cidade or '-' }}{% if f.uf %}/{{ f.uf }}{% endif %}</td>
@@ -24,9 +24,6 @@
           {% if current_user.perm_dados_clinica %}
           <a href="{{ url_for('medico.clinica_configuracoes', filial_id=f.id) }}" class="btn btn-sm btn-outline-primary">Dados Cadastrais</a>
           <a href="{{ url_for('medico.clinica_dados_fiscais', filial_id=f.id) }}" class="btn btn-sm btn-outline-primary">Dados Fiscais</a>
-          {% endif %}
-          {% if f.id != clinica_atual_id %}
-          <a href="{{ url_for('medico.escolher_clinica') }}" class="btn btn-sm btn-outline-secondary">Trocar para este local</a>
           {% endif %}
         </td>
       </tr>
@@ -37,9 +34,9 @@
   </table>
 </div>
 <p class="text-muted small mt-3">
-  Cada local de atendimento tem seus próprios pacientes, exames, agenda e endereço — cadastre um local novo pra
-  cada lugar em que você atende. Use os botões "Dados Cadastrais" e "Dados Fiscais" da linha de cada local para
-  editar os dados dele (endereço, horário de funcionamento, dados fiscais) — você pode alterar os dados de
-  qualquer local daqui, sem precisar trocar para ele primeiro.
+  Cada local de atendimento tem seu próprio endereço e seus próprios dados fiscais — cadastre um local novo pra
+  cada lugar em que você atende. Pacientes, exames e agenda de todos os locais em que você atende aparecem
+  juntos nas telas do sistema, identificados pelo nome do local; não é preciso "trocar de local". Use os botões
+  "Dados Cadastrais" e "Dados Fiscais" da linha de cada local para editar os dados dele.
 </p>
 {% endblock %}

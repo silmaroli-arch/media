@@ -149,6 +149,20 @@ def create_app():
     db.init_app(app)
     login_manager.init_app(app)
 
+    from flask import session as sessao_flask
+    from flask_login import user_logged_in, user_logged_out
+
+    @user_logged_in.connect_via(app)
+    @user_logged_out.connect_via(app)
+    def _limpar_contexto_da_sessao(_sender, user=None, **_extra):
+        """Zera o contexto de tenant guardado na sessão (empresa atual e a
+        filial padrão de formulário) a cada login/logout — importante em
+        computadores compartilhados (ex.: recepção da clínica), onde uma
+        pessoa faz logout e outra entra no mesmo navegador. Fica aqui (e não
+        em routes_auth) para valer para qualquer fluxo de login."""
+        sessao_flask.pop("empresa_id", None)
+        sessao_flask.pop("clinica_id", None)
+
     from app.models import Usuario
 
     @login_manager.user_loader
@@ -181,15 +195,28 @@ def create_app():
 
     @app.context_processor
     def injetar_contexto_clinica():
-        """Disponibiliza a clínica atual (e a lista de clínicas do usuário)
-        em todos os templates, para a navbar mostrar o nome da clínica e o
-        link de "trocar clínica" sem cada view precisar passar isso."""
+        """Disponibiliza em todos os templates a EMPRESA atual (o que
+        delimita o que a pessoa vê), as filiais dela em que a pessoa atua e
+        as empresas do usuário — para a navbar mostrar a empresa e o link de
+        "trocar" (só quando há mais de uma empresa), e para as listas
+        mostrarem a coluna "Filial" só quando faz diferença."""
         from flask_login import current_user
         if current_user.is_authenticated and current_user.is_staff:
-            from app.clinica_utils import clinica_atual, clinicas_do_usuario
+            from app.clinica_utils import (
+                clinica_atual, clinicas_do_usuario, empresa_atual,
+                empresas_do_usuario, filiais_atuais,
+            )
+            filiais = filiais_atuais()
             return {
                 "clinica_atual_navbar": clinica_atual(),
                 "clinicas_do_usuario_navbar": clinicas_do_usuario(),
+                "empresa_atual_navbar": empresa_atual(),
+                "empresas_do_usuario_navbar": empresas_do_usuario(),
+                "filiais_atuais_navbar": filiais,
+                # True quando a pessoa atua em mais de uma filial — nesse
+                # caso as telas mostram a filial de cada registro e pedem a
+                # filial nos formulários de cadastro.
+                "mostrar_filial": len(filiais) > 1,
             }
         return {}
 

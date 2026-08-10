@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}Meus exames agendados{% endblock %}
 {% block conteudo %}
 <h3 class="mb-1">Exames agendados de {{ medico_alvo.nome }}</h3>
@@ -18,11 +19,12 @@
 <div class="card p-3">
   <h5>Próximos agendamentos</h5>
   <table class="table table-hover mt-2">
-    <thead><tr><th>Data/Hora</th><th>Paciente</th><th>Exame</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Data/Hora</th>{{ th_filial() }}<th>Paciente</th><th>Exame</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for a in proximos %}
       <tr>
         <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+        {{ td_filial(a) }}
         <td>{{ a.paciente.nome }}</td>
         <td>{{ a.exame.nome }}</td>
         <td>
@@ -50,7 +52,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="text-muted text-center">Nenhum exame confirmado no momento.</td></tr>
+      <tr><td colspan="{{ 6 if mostrar_filial else 5 }}" class="text-muted text-center">Nenhum exame confirmado no momento.</td></tr>
       {% endfor %}
     </tbody>
   </table>

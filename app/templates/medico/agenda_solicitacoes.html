@@ -1,14 +1,16 @@
 {% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}Solicitações de agendamento{% endblock %}
 {% block conteudo %}
 <h3 class="mb-3">Solicitações de agendamento feitas pelos pacientes</h3>
 <div class="card p-3">
   <table class="table table-hover">
-    <thead><tr><th>Paciente</th><th>Exame</th><th>Data/Hora solicitada</th><th></th></tr></thead>
+    <thead><tr><th>Paciente</th>{{ th_filial() }}<th>Exame</th><th>Data/Hora solicitada</th><th></th></tr></thead>
     <tbody>
       {% for a in solicitacoes %}
       <tr>
         <td>{{ a.paciente.nome }}</td>
+        {{ td_filial(a) }}
         <td>{{ a.exame.nome }}</td>
         <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
         <td class="d-flex gap-2">
@@ -23,7 +25,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4" class="text-muted text-center">Nenhuma solicitação pendente.</td></tr>
+      <tr><td colspan="{{ 5 if mostrar_filial else 4 }}" class="text-muted text-center">Nenhuma solicitação pendente.</td></tr>
       {% endfor %}
     </tbody>
   </table>

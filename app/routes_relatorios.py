@@ -5,7 +5,8 @@ query string, mostra uma tabela com totais e um gráfico, e pode ser
 exportado em CSV, Excel ou PDF pela mesma URL (parâmetro `formato`).
 
 Vale sempre a mesma regra de escopo dos outros módulos: tudo é filtrado
-pela `clinica_atual()`, nunca vaza dado de outra clínica/filial."""
+pelas filiais acessíveis do usuário dentro da EMPRESA atual
+(`filiais_atuais_ids()`), nunca vaza dado de outra empresa."""
 from collections import OrderedDict
 
 from flask import Blueprint, render_template, request
@@ -14,8 +15,8 @@ from sqlalchemy import func
 
 from app.extensions import db
 from app.models import Agendamento, Pagamento, Paciente
-from app.clinica_utils import clinica_atual
-from app.routes_medico import staff_required, eh_medico, medicos_da_clinica
+from app.clinica_utils import filiais_atuais, filiais_atuais_ids
+from app.routes_medico import staff_required, eh_medico, medicos_das_filiais
 from app.relatorios_utils import (
     periodo_do_filtro, intervalo_datetime, exportar_csv, exportar_xlsx, exportar_pdf,
 )
@@ -43,7 +44,7 @@ def _medico_restrito_a_si_mesmo():
     return eh_medico() and not current_user.perm_equipe
 
 
-def _filtro_medico_id(clinica):
+def _filtro_medico_id():
     """Lê o médico escolhido no filtro (`medico_id` na query string).
     Quando o usuário logado é um médico sem perm_equipe, ignora o que
     vier na query string e força o próprio id — o filtro na tela nem
@@ -63,19 +64,19 @@ def _filtro_medico_id(clinica):
 def index():
     """Painel com um resumo rápido de cada área — cada card leva para o
     relatório completo, já com os mesmos 30 dias usados aqui."""
-    clinica = clinica_atual()
+    filial_ids = filiais_atuais_ids()
     data_inicio, data_fim = periodo_do_filtro()
     inicio_dt, fim_dt = intervalo_datetime(data_inicio, data_fim)
 
     receita_periodo = (
         db.session.query(func.coalesce(func.sum(Pagamento.valor_final), 0))
         .join(Agendamento, Agendamento.id == Pagamento.agendamento_id)
-        .filter(Agendamento.clinica_id == clinica.id, Pagamento.pago_em.between(inicio_dt, fim_dt))
+        .filter(Agendamento.clinica_id.in_(filial_ids), Pagamento.pago_em.between(inicio_dt, fim_dt))
         .scalar()
     )
 
     agendamentos_periodo = Agendamento.query.filter(
-        Agendamento.clinica_id == clinica.id, Agendamento.data_hora.between(inicio_dt, fim_dt),
+        Agendamento.clinica_id.in_(filial_ids), Agendamento.data_hora.between(inicio_dt, fim_dt),
     )
     total_agendamentos = agendamentos_periodo.count()
     total_realizados = agendamentos_periodo.filter(Agendamento.status == "realizado").count()
@@ -83,9 +84,9 @@ def index():
     total_no_show = agendamentos_periodo.filter(Agendamento.status == "nao_compareceu").count()
 
     novos_pacientes = Paciente.query.filter(
-        Paciente.clinica_id == clinica.id, Paciente.criado_em.between(inicio_dt, fim_dt),
+        Paciente.clinica_id.in_(filial_ids), Paciente.criado_em.between(inicio_dt, fim_dt),
     ).count()
-    cadastros_pendentes = Paciente.query.filter_by(clinica_id=clinica.id, status_cadastro="pendente").count()
+    cadastros_pendentes = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids), Paciente.status_cadastro == "pendente").count()
 
     return render_template(
         "relatorios/index.html",
@@ -101,15 +102,15 @@ def index():
 @login_required
 @staff_required
 def financeiro():
-    clinica = clinica_atual()
+    filial_ids = filiais_atuais_ids()
     data_inicio, data_fim = periodo_do_filtro()
     inicio_dt, fim_dt = intervalo_datetime(data_inicio, data_fim)
-    medico_id = _filtro_medico_id(clinica)
+    medico_id = _filtro_medico_id()
 
     consulta = (
         Pagamento.query
         .join(Agendamento, Agendamento.id == Pagamento.agendamento_id)
-        .filter(Agendamento.clinica_id == clinica.id, Pagamento.pago_em.between(inicio_dt, fim_dt))
+        .filter(Agendamento.clinica_id.in_(filial_ids), Pagamento.pago_em.between(inicio_dt, fim_dt))
     )
     if medico_id:
         consulta = consulta.filter(Agendamento.medico_id == medico_id)
@@ -164,7 +165,7 @@ def financeiro():
     return render_template(
         "relatorios/financeiro.html",
         data_inicio=data_inicio, data_fim=data_fim, medico_id=medico_id,
-        medicos=medicos_da_clinica(clinica), restrito_a_si_mesmo=_medico_restrito_a_si_mesmo(),
+        medicos=medicos_das_filiais(filiais_atuais()), restrito_a_si_mesmo=_medico_restrito_a_si_mesmo(),
         pagamentos=pagamentos, total_bruto=total_bruto, total_descontos=total_descontos, total_liquido=total_liquido,
         por_forma=por_forma, por_dia=por_dia, por_status_nfse=por_status_nfse,
     )
@@ -174,13 +175,13 @@ def financeiro():
 @login_required
 @staff_required
 def agenda():
-    clinica = clinica_atual()
+    filial_ids = filiais_atuais_ids()
     data_inicio, data_fim = periodo_do_filtro()
     inicio_dt, fim_dt = intervalo_datetime(data_inicio, data_fim)
-    medico_id = _filtro_medico_id(clinica)
+    medico_id = _filtro_medico_id()
 
     consulta = Agendamento.query.filter(
-        Agendamento.clinica_id == clinica.id, Agendamento.data_hora.between(inicio_dt, fim_dt),
+        Agendamento.clinica_id.in_(filial_ids), Agendamento.data_hora.between(inicio_dt, fim_dt),
     )
     if medico_id:
         consulta = consulta.filter(Agendamento.medico_id == medico_id)
@@ -230,7 +231,7 @@ def agenda():
     return render_template(
         "relatorios/agenda.html",
         data_inicio=data_inicio, data_fim=data_fim, medico_id=medico_id,
-        medicos=medicos_da_clinica(clinica), restrito_a_si_mesmo=_medico_restrito_a_si_mesmo(),
+        medicos=medicos_das_filiais(filiais_atuais()), restrito_a_si_mesmo=_medico_restrito_a_si_mesmo(),
         agendamentos=agendamentos, total=total, total_realizados=total_realizados,
         total_cancelados=total_cancelados, taxa_cancelamento=taxa_cancelamento,
         total_no_show=total_no_show, taxa_no_show=taxa_no_show,
@@ -242,19 +243,19 @@ def agenda():
 @login_required
 @staff_required
 def pacientes():
-    clinica = clinica_atual()
+    filial_ids = filiais_atuais_ids()
     data_inicio, data_fim = periodo_do_filtro()
     inicio_dt, fim_dt = intervalo_datetime(data_inicio, data_fim)
 
     novos = (
         Paciente.query
-        .filter(Paciente.clinica_id == clinica.id, Paciente.criado_em.between(inicio_dt, fim_dt))
+        .filter(Paciente.clinica_id.in_(filial_ids), Paciente.criado_em.between(inicio_dt, fim_dt))
         .order_by(Paciente.criado_em.asc())
         .all()
     )
-    total_ativos = Paciente.query.filter_by(clinica_id=clinica.id, status_cadastro="aprovado").count()
-    total_pendentes = Paciente.query.filter_by(clinica_id=clinica.id, status_cadastro="pendente").count()
-    total_rejeitados = Paciente.query.filter_by(clinica_id=clinica.id, status_cadastro="rejeitado").count()
+    total_ativos = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids), Paciente.status_cadastro == "aprovado").count()
+    total_pendentes = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids), Paciente.status_cadastro == "pendente").count()
+    total_rejeitados = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids), Paciente.status_cadastro == "rejeitado").count()
 
     por_dia = OrderedDict()
     por_origem = OrderedDict([("Cadastrado pela equipe", 0), ("Auto-cadastro pelo app", 0)])
@@ -304,18 +305,18 @@ def pacientes():
 @login_required
 @staff_required
 def desempenho_medico():
-    clinica = clinica_atual()
+    filial_ids = filiais_atuais_ids()
     data_inicio, data_fim = periodo_do_filtro()
     inicio_dt, fim_dt = intervalo_datetime(data_inicio, data_fim)
 
-    medicos = medicos_da_clinica(clinica)
+    medicos = medicos_das_filiais(filiais_atuais())
     if _medico_restrito_a_si_mesmo():
         medicos = [m for m in medicos if m.id == current_user.id]
 
     linhas_dados = []
     for medico in medicos:
         agendamentos_medico = Agendamento.query.filter(
-            Agendamento.clinica_id == clinica.id, Agendamento.medico_id == medico.id,
+            Agendamento.clinica_id.in_(filial_ids), Agendamento.medico_id == medico.id,
             Agendamento.data_hora.between(inicio_dt, fim_dt),
         ).all()
         total = len(agendamentos_medico)
@@ -327,7 +328,7 @@ def desempenho_medico():
             db.session.query(func.coalesce(func.sum(Pagamento.valor_final), 0))
             .join(Agendamento, Agendamento.id == Pagamento.agendamento_id)
             .filter(
-                Agendamento.clinica_id == clinica.id, Agendamento.medico_id == medico.id,
+                Agendamento.clinica_id.in_(filial_ids), Agendamento.medico_id == medico.id,
                 Pagamento.pago_em.between(inicio_dt, fim_dt),
             )
             .scalar()

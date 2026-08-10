@@ -1,10 +1,16 @@
 {% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}{% if exame %}Editar exame{% else %}Novo exame{% endif %}{% endblock %}
 {% block conteudo %}
 <h3 class="mb-3">{% if exame %}Editar exame{% else %}Cadastrar novo exame{% endif %}</h3>
 <div class="card p-4">
   <form method="post">
     <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
+    {% if not exame %}
+    {{ select_filial(ajuda="Em qual dos seus locais de atendimento este exame será oferecido. O médico responsável e o modelo de preparo precisam ser desse mesmo local.") }}
+    {% elif mostrar_filial %}
+    <p class="text-muted small">Local de atendimento: <strong>{{ exame.clinica.nome }}</strong></p>
+    {% endif %}
     <div class="mb-3">
       <label class="form-label">Nome do exame</label>
       <input type="text" name="nome" class="form-control" value="{{ exame.nome if exame else '' }}" required>
@@ -81,12 +87,13 @@
       <select name="preparo_modelo_id" class="form-select">
         <option value="" {% if not exame or not exame.preparo_modelo_id %}selected{% endif %}>Nenhum — este procedimento não precisa de preparo</option>
         {% for m in modelos %}
-        <option value="{{ m.id }}" {% if exame and exame.preparo_modelo_id == m.id %}selected{% endif %}>{{ m.nome }}</option>
+        <option value="{{ m.id }}" {% if exame and exame.preparo_modelo_id == m.id %}selected{% endif %}>{{ m.nome }}{% if mostrar_filial and not exame %} — {{ m.clinica.nome }}{% endif %}</option>
         {% endfor %}
       </select>
       <div class="form-text">
         Deixe em branco para procedimentos simples sem instruções prévias (ex.: uma consulta).
-        {% if not modelos %}Ainda não há nenhum modelo de preparo cadastrado nesta filial.{% endif %}
+        {% if not modelos %}Ainda não há nenhum modelo de preparo cadastrado.{% endif %}
+        {% if mostrar_filial and not exame %}O modelo precisa ser da mesma filial escolhida acima.{% endif %}
       </div>
       <div class="form-text">
         <a href="{{ url_for('medico.preparo_modelos_novo') }}" target="_blank">Criar um novo modelo de preparo</a>
