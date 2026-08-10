@@ -715,6 +715,134 @@ def exames_editar(exame_id):
     return render_template("medico/exames_form.html", exame=exame, medicos=medicos, modelos=modelos)
 
 
+@medico_bp.route("/exames/por-filial")
+@login_required
+@staff_required
+def exames_por_filial():
+    """Tela central para associar um exame já cadastrado numa filial a
+    outra filial da mesma empresa, escolhendo o médico responsável lá -
+    hoje, sem essa tela, isso só era possível cadastrando o exame do zero
+    de novo (ou mexendo direto no banco), filial por filial, mesmo quando
+    é exatamente o mesmo procedimento (nome/descrição/duração/preço)."""
+    clinica = clinica_atual()
+    empresa = clinica.empresa
+    filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
+
+    if len(filiais) < 2:
+        flash("Esta tela é para associar exames entre filiais — só faz sentido para empresas com mais de uma filial.", "info")
+        return redirect(url_for("medico.exames_lista"))
+
+    exames_todos = (
+        Exame.query.join(Clinica, Exame.clinica_id == Clinica.id)
+        .filter(Clinica.empresa_id == empresa.id)
+        .all()
+    )
+    if eh_medico():
+        # Mesma regra das outras telas de exame: o médico só acompanha e
+        # associa os exames pelos quais é responsável (principal ou extra)
+        # em pelo menos uma filial - não os de outros médicos da empresa.
+        exames_todos = [
+            e for e in exames_todos
+            if e.medico_id == current_user.id or any(m.id == current_user.id for m in e.medicos_extra)
+        ]
+        # E só pode criar a associação numa filial onde ele mesmo atende
+        # (não faz sentido escolher outro médico por ele).
+        filiais_disponiveis = (
+            Clinica.query.join(ClinicaMembro, ClinicaMembro.clinica_id == Clinica.id)
+            .filter(ClinicaMembro.usuario_id == current_user.id, Clinica.empresa_id == empresa.id)
+            .all()
+        )
+        filiais_disponiveis_ids = {c.id for c in filiais_disponiveis}
+    else:
+        filiais_disponiveis_ids = {c.id for c in filiais}
+
+    nomes = sorted({e.nome for e in exames_todos})
+    matriz = {nome: {} for nome in nomes}
+    for e in exames_todos:
+        matriz[e.nome][e.clinica_id] = e
+
+    medicos_por_filial = {f.id: medicos_da_clinica(f) for f in filiais}
+
+    return render_template(
+        "medico/exames_por_filial.html",
+        filiais=filiais,
+        filiais_disponiveis_ids=filiais_disponiveis_ids,
+        nomes=nomes,
+        matriz=matriz,
+        medicos_por_filial=medicos_por_filial,
+        eh_medico=eh_medico(),
+    )
+
+
+@medico_bp.route("/exames/por-filial/associar", methods=["POST"])
+@login_required
+@staff_required
+def exames_por_filial_associar():
+    clinica = clinica_atual()
+    empresa = clinica.empresa
+    nome = request.form.get("nome", "").strip()
+    clinica_destino = Clinica.query.filter_by(
+        id=request.form.get("clinica_destino_id", type=int), empresa_id=empresa.id
+    ).first()
+
+    if not nome or not clinica_destino:
+        flash("Escolha um exame e uma filial válidos.", "danger")
+        return redirect(url_for("medico.exames_por_filial"))
+
+    if Exame.query.filter_by(clinica_id=clinica_destino.id, nome=nome).first():
+        flash(f"\"{nome}\" já está associado à filial {clinica_destino.nome}.", "warning")
+        return redirect(url_for("medico.exames_por_filial"))
+
+    origem = (
+        Exame.query.join(Clinica, Exame.clinica_id == Clinica.id)
+        .filter(Clinica.empresa_id == empresa.id, Exame.nome == nome)
+        .first()
+    )
+    if not origem:
+        flash("Exame não encontrado.", "danger")
+        return redirect(url_for("medico.exames_por_filial"))
+
+    medicos_destino = medicos_da_clinica(clinica_destino)
+
+    if eh_medico():
+        # O médico só pode se associar a si mesmo, numa filial onde ele
+        # mesmo atende (mesma regra usada na criação/edição normal de
+        # exames — ele não escolhe outro médico por ele).
+        if not any(m.id == current_user.id for m in medicos_destino):
+            flash("Você só pode associar exames a filiais onde você mesmo atende.", "danger")
+            return redirect(url_for("medico.exames_por_filial"))
+        medico_id = current_user.id
+    else:
+        medico_id = request.form.get("medico_id", type=int)
+        if not medico_id or not any(m.id == medico_id for m in medicos_destino):
+            flash("Escolha um médico válido, vinculado a essa filial.", "danger")
+            return redirect(url_for("medico.exames_por_filial"))
+
+    novo_exame = Exame(
+        clinica_id=clinica_destino.id,
+        medico_id=medico_id,
+        nome=origem.nome,
+        descricao=origem.descricao,
+        duracao_minutos=origem.duracao_minutos,
+        preco=origem.preco,
+        precisa_acompanhante=origem.precisa_acompanhante,
+        # O modelo de preparo é específico de cada filial (PreparoModelo é
+        # por clínica) - não dá pra copiar o id de uma filial pra outra,
+        # por isso fica em branco aqui, pra revisar/escolher depois na
+        # tela de editar o exame recém-criado.
+        preparo_modelo_id=None,
+    )
+    db.session.add(novo_exame)
+    db.session.commit()
+
+    flash(
+        f"\"{nome}\" associado à filial {clinica_destino.nome} com {novo_exame.medico.nome} como responsável. "
+        "Revise o preço, a duração e o modelo de preparo dessa filial, se for diferente.",
+        "success",
+    )
+    return redirect(url_for("medico.exames_por_filial"))
+
+
 # ---------- Modelos de preparo (reaproveitáveis entre exames) ----------
 
 @medico_bp.route("/preparo-modelos")
