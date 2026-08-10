@@ -3,7 +3,9 @@
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h3>Meus locais de atendimento</h3>
+  {% if current_user.perm_filiais %}
   <a href="{{ url_for('medico.filiais_nova') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo local</a>
+  {% endif %}
 </div>
 <div class="card p-3">
   <table class="table table-hover">
@@ -12,13 +14,17 @@
       {% for f in filiais %}
       <tr>
         <td>
-          <a href="{{ url_for('medico.clinica_configuracoes', filial_id=f.id) }}">{{ f.nome }}</a>
+          {{ f.nome }}
           {% if f.id == clinica_atual_id %}
           <span class="badge bg-primary ms-1">local atual</span>
           {% endif %}
         </td>
         <td>{{ f.cidade or '-' }}{% if f.uf %}/{{ f.uf }}{% endif %}</td>
-        <td>
+        <td class="text-nowrap">
+          {% if current_user.perm_dados_clinica %}
+          <a href="{{ url_for('medico.clinica_configuracoes', filial_id=f.id) }}" class="btn btn-sm btn-outline-primary">Dados Cadastrais</a>
+          <a href="{{ url_for('medico.clinica_dados_fiscais', filial_id=f.id) }}" class="btn btn-sm btn-outline-primary">Dados Fiscais</a>
+          {% endif %}
           {% if f.id != clinica_atual_id %}
           <a href="{{ url_for('medico.escolher_clinica') }}" class="btn btn-sm btn-outline-secondary">Trocar para este local</a>
           {% endif %}
@@ -32,8 +38,8 @@
 </div>
 <p class="text-muted small mt-3">
   Cada local de atendimento tem seus próprios pacientes, exames, agenda e endereço — cadastre um local novo pra
-  cada lugar em que você atende. Clique no nome de um local para editar seus dados (endereço,
-  horário de funcionamento, dados fiscais) — você pode alterar os dados de qualquer local daqui,
-  sem precisar trocar para ele primeiro.
+  cada lugar em que você atende. Use os botões "Dados Cadastrais" e "Dados Fiscais" da linha de cada local para
+  editar os dados dele (endereço, horário de funcionamento, dados fiscais) — você pode alterar os dados de
+  qualquer local daqui, sem precisar trocar para ele primeiro.
 </p>
 {% endblock %}

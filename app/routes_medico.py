@@ -2653,8 +2653,20 @@ def clinica_certificado_upload(filial_id=None):
 @medico_bp.route("/filiais")
 @login_required
 @staff_required
-@permissao_required("perm_filiais")
 def filiais_lista():
+    """Tela "Meus locais de atendimento" - além de listar/trocar de filial
+    (perm_filiais), também é a porta de entrada para editar os dados de
+    cada filial (Dados Cadastrais e Dados Fiscais, que não têm mais item
+    próprio no menu lateral), então continua acessível a quem só tem
+    perm_dados_clinica, mesmo sem perm_filiais."""
+    if not (current_user.perm_filiais or current_user.perm_dados_clinica):
+        flash(
+            "Você não tem permissão para acessar essa área. Fale com "
+            "quem administra sua clínica.",
+            "danger",
+        )
+        return redirect(url_for("medico.dashboard"))
+
     clinica = clinica_atual()
     filiais = Clinica.query.filter_by(empresa_id=clinica.empresa_id).order_by(Clinica.nome).all()
     return render_template("medico/filiais_lista.html", filiais=filiais, clinica_atual_id=clinica.id)

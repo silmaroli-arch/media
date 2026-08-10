@@ -114,17 +114,9 @@
         </a>
         <div class="collapse nav-sub {% if request.endpoint in grupo_cadastro_geral %}show{% endif %}" id="menuCadastroGeral">
           <ul class="nav flex-column">
-            {% if current_user.perm_filiais %}
+            {% if current_user.perm_filiais or current_user.perm_dados_clinica %}
             <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.filiais') %}active{% endif %}" href="{{ url_for('medico.filiais_lista') }}">Meus locais de atendimento</a>
-            </li>
-            {% endif %}
-            {% if current_user.perm_dados_clinica %}
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.clinica_configuracoes' %}active{% endif %}" href="{{ url_for('medico.clinica_configuracoes') }}">Dados Cadastrais</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.clinica_dados_fiscais' %}active{% endif %}" href="{{ url_for('medico.clinica_dados_fiscais') }}">Dados Fiscais</a>
+              <a class="nav-link {% if request.endpoint in grupo_cadastro_geral %}active{% endif %}" href="{{ url_for('medico.filiais_lista') }}">Meus locais de atendimento</a>
             </li>
             {% endif %}
           </ul>
