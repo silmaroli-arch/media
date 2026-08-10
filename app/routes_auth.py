@@ -319,18 +319,27 @@ def cadastro_paciente(codigo):
             flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
             return render_template("auth/cadastro_paciente.html", clinica=clinica)
 
-        # Telefone/e-mail não são mais únicos globalmente (a mesma pessoa
-        # pode ser paciente em clínicas diferentes) - o que não pode
-        # repetir é dentro da MESMA clínica (ver comentário em
-        # app/models.py, classe Usuario).
+        # Telefone não é único por pessoa - é normal uma família inteira
+        # (pais e filhos, por exemplo) compartilhar o mesmo telefone de
+        # contato, cada um com seu próprio cadastro de paciente. Por isso
+        # o login de paciente (auth.login_paciente) já identifica a conta
+        # certa por telefone + data de nascimento, não só telefone. Aqui
+        # só bloqueamos se as duas coisas baterem ao mesmo tempo - aí sim
+        # é a mesma pessoa tentando se cadastrar de novo nesta clínica; a
+        # unicidade que de fato importa (e é garantida pelo banco) é por
+        # CPF, verificada logo abaixo.
         if (
             Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
-            .filter(Paciente.clinica_id == clinica.id, Usuario.telefone == telefone)
+            .filter(
+                Paciente.clinica_id == clinica.id,
+                Usuario.telefone == telefone,
+                Paciente.data_nascimento == data_nascimento,
+            )
             .first()
         ):
             flash(
-                "Já existe um cadastro com esse telefone nesta clínica. Se já é paciente "
-                "aqui, use a tela de login normal.",
+                "Já existe um cadastro com esse telefone e data de nascimento nesta clínica. "
+                "Se já é paciente aqui, use a tela de login normal.",
                 "danger",
             )
             return render_template("auth/cadastro_paciente.html", clinica=clinica)
