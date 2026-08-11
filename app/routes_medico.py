@@ -2902,12 +2902,11 @@ def filiais_lista():
 @login_required
 @staff_required
 def filiais_vincular_me(filial_id):
-    """Ação explícita de "eu também atuo neste local" - para quando a
-    pessoa desmarcou o vínculo automático ao criar o local (ver
-    medico.filiais_nova) e depois muda de ideia, ou para um local que já
-    existia antes desta pessoa fazer parte da empresa. Só vincula A PRÓPRIA
-    pessoa logada - para vincular outra pessoa, o caminho é a tela
-    "Equipe" (medico.equipe_novo / medico.equipe_associar_filial)."""
+    """Ação explícita de "eu também atuo neste local" - cadastrar um local
+    (medico.filiais_nova) não vincula ninguém a ele, então este botão é o
+    caminho para a PRÓPRIA pessoa logada se vincular deliberadamente. Para
+    vincular outra pessoa, o caminho é a tela "Equipe" (medico.equipe_novo /
+    medico.equipe_associar_filial)."""
     empresa = empresa_atual()
     filial = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
 
@@ -2918,6 +2917,45 @@ def filiais_vincular_me(filial_id):
     db.session.add(ClinicaMembro(clinica_id=filial.id, usuario_id=current_user.id, ativo=True))
     db.session.commit()
     flash(f"Você agora está vinculado(a) ao local '{filial.nome}'.", "success")
+    return redirect(url_for("medico.filiais_lista"))
+
+
+@medico_bp.route("/filiais/<int:filial_id>/desvincular-me", methods=["POST"])
+@login_required
+@staff_required
+def filiais_desvincular_me(filial_id):
+    """Ação inversa de filiais_vincular_me: remove o vínculo da PRÓPRIA
+    pessoa logada com o local - para desfazer um vínculo que não deveria
+    existir (ex.: criado automaticamente por versões antigas do cadastro
+    de local, antes de o vínculo virar uma ação explícita e separada).
+
+    Guarda importante: quem NÃO é fundador(a) da empresa
+    (Usuario.empresa_fundadora_id) resolve seu acesso ao sistema
+    exclusivamente pelos vínculos de filial (ver empresas_do_usuario em
+    app/clinica_utils.py) - remover o último vínculo dessa pessoa a
+    deixaria trancada fora da própria conta, então nesse caso bloqueamos
+    e orientamos a usar a tela "Equipe" (onde outra pessoa com permissão
+    gerencia os vínculos dela)."""
+    empresa = empresa_atual()
+    filial = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
+
+    vinculo = ClinicaMembro.query.filter_by(clinica_id=filial.id, usuario_id=current_user.id).first()
+    if not vinculo:
+        flash("Você já não está vinculado(a) a este local.", "warning")
+        return redirect(url_for("medico.filiais_lista"))
+
+    total_vinculos = ClinicaMembro.query.filter_by(usuario_id=current_user.id).count()
+    if total_vinculos <= 1 and not getattr(current_user, "empresa_fundadora_id", None):
+        flash(
+            "Este é seu único vínculo de local — removê-lo deixaria sua conta sem acesso a nenhuma "
+            "clínica. Peça a quem administra a equipe para ajustar seus vínculos na tela \"Equipe\".",
+            "danger",
+        )
+        return redirect(url_for("medico.filiais_lista"))
+
+    db.session.delete(vinculo)
+    db.session.commit()
+    flash(f"Pronto — você não está mais marcado(a) como atuando no local '{filial.nome}'.", "success")
     return redirect(url_for("medico.filiais_lista"))
 
 
@@ -2940,36 +2978,23 @@ def filiais_nova():
 
         nova_filial = Clinica(empresa_id=empresa.id, nome=nome)
         db.session.add(nova_filial)
-        db.session.flush()
-
-        # Cadastrar a estrutura de um local (endereço, dados fiscais) é uma
-        # coisa; dizer que ALGUÉM atua nele é outra - não dá pra assumir
-        # automaticamente que quem cadastrou o local é quem atende lá (ver
-        # "não existe médico principal" - o mesmo motivo por trás de
-        # Exame.medico_confirmado). Por isso isso agora é uma escolha
-        # explícita no formulário (checkbox "vincular_a_mim"), marcada por
-        # padrão só porque é o caso mais comum (quem está montando a
-        # empresa geralmente também vai atuar no primeiro local criado),
-        # não porque seja automático/implícito.
-        vinculado_a_mim = request.form.get("vincular_a_mim") == "on"
-        if vinculado_a_mim:
-            vinculo = ClinicaMembro(clinica_id=nova_filial.id, usuario_id=current_user.id, ativo=True)
-            db.session.add(vinculo)
         db.session.commit()
 
-        if vinculado_a_mim:
-            flash(
-                f"Local '{nova_filial.nome}' cadastrado com sucesso, e você já ficou vinculado(a) a ele. "
-                "Os pacientes, exames e a agenda dele já aparecem junto com os dos seus outros locais, "
-                "identificados pelo nome do local.",
-                "success",
-            )
-        else:
-            flash(
-                f"Local '{nova_filial.nome}' cadastrado com sucesso. Agora vá em \"Equipe\" para vincular "
-                "quem for atuar nele (você pode se vincular por lá também, se mudar de ideia).",
-                "success",
-            )
+        # Cadastrar a estrutura de um local (nome, endereço, dados fiscais)
+        # NÃO vincula ninguém a ele - nem quem cadastrou. "Quem atua em qual
+        # local" é sempre uma associação separada, deliberada e explícita
+        # (mesmo princípio de "não existe médico principal" por trás de
+        # Exame.medico_confirmado e do cadastro público sem filial): pelo
+        # botão "Marcar que você também atua aqui" em "Meus Locais de
+        # Atendimento" (medico.filiais_vincular_me) para a própria pessoa,
+        # ou pela tela "Equipe" para qualquer pessoa. Nenhum vínculo nasce
+        # como efeito colateral de outro cadastro.
+        flash(
+            f"Local '{nova_filial.nome}' cadastrado com sucesso. Isso ainda não vincula ninguém a ele: "
+            "se VOCÊ for atuar neste local, use o botão \"Marcar que você também atua aqui\" na lista "
+            "abaixo; para vincular outras pessoas, use a tela \"Equipe\".",
+            "success",
+        )
         return _destino_pos_onboarding("medico.filiais_lista")
 
     return render_template("medico/filiais_form.html")

@@ -17,6 +17,10 @@
           {{ f.nome }}
           {% if f.id in meus_filiais_ids %}
           <span class="badge bg-primary ms-1">você atua aqui</span>
+          <form method="post" action="{{ url_for('medico.filiais_desvincular_me', filial_id=f.id) }}" class="d-inline">
+            <button type="submit" class="btn btn-sm btn-link text-muted p-0 ms-1 align-baseline"
+                    title="Remover a marcação de que você atua neste local">desmarcar</button>
+          </form>
           {% else %}
           <form method="post" action="{{ url_for('medico.filiais_vincular_me', filial_id=f.id) }}" class="d-inline">
             <button type="submit" class="btn btn-sm btn-outline-secondary ms-1">+ Marcar que você também atua aqui</button>

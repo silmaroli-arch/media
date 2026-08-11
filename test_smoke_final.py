@@ -1,5 +1,13 @@
 """Teste rápido (smoke test) dos principais fluxos, sem precisar de navegador."""
 import io
+import os
+
+# Este teste assume que NENHUMA chave de IA está configurada (a parte de
+# perguntas/aprovação simula as respostas com mock) - remove as variáveis
+# aqui pra ele passar igual em qualquer ambiente, mesmo num que tenha uma
+# chave real no ambiente/CI.
+os.environ.pop("ANTHROPIC_API_KEY", None)
+os.environ.pop("OPENAI_API_KEY", None)
 from datetime import date, datetime, timedelta, time as dt_time
 from unittest.mock import patch
 
@@ -9,7 +17,7 @@ from openpyxl import Workbook
 from app import create_app
 from app.extensions import db
 from app.models import (
-    Empresa, Clinica, PlataformaConfig, Usuario, Paciente, Exame, Agendamento,
+    Empresa, Clinica, ClinicaMembro, PlataformaConfig, Usuario, Paciente, Exame, Agendamento,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, PerguntaPendente, FaqItem,
     MedicoHorario, ChatMensagem, ResultadoExame, DescontoConfig, Pagamento,
@@ -227,12 +235,21 @@ checar(
     "cadastre seu primeiro local de atendimento" in r.get_data(as_text=True).lower(),
 )
 
-# Cadastra o primeiro local de atendimento do médico fundador, requisito
-# para poder cadastrar pacientes (ver guarda em medico.pacientes_novo).
-r = client.post("/equipe/filiais/nova", data={"nome": "Consultório do Dr. Ricardo", "vincular_a_mim": "on"}, follow_redirects=True)
+# Cadastra o primeiro local de atendimento do médico fundador. Cadastrar o
+# local NÃO vincula ninguém a ele (nem quem cadastrou) - o vínculo é sempre
+# uma ação separada e explícita (ver medico.filiais_nova e
+# medico.filiais_vincular_me).
+r = client.post("/equipe/filiais/nova", data={"nome": "Consultório do Dr. Ricardo"}, follow_redirects=True)
 checar("Médico fundador consegue cadastrar seu primeiro local de atendimento", r.status_code == 200)
+with app.app_context():
+    consultorio_ricardo = Clinica.query.filter_by(nome="Consultório do Dr. Ricardo").first()
+    checar("Cadastrar o local NÃO vinculou ninguém a ele automaticamente",
+           ClinicaMembro.query.filter_by(clinica_id=consultorio_ricardo.id).count() == 0)
+    consultorio_ricardo_id = consultorio_ricardo.id
+r = client.post(f"/equipe/filiais/{consultorio_ricardo_id}/vincular-me", follow_redirects=True)
+checar("Médico fundador se vincula ao local explicitamente, pelo botão", r.status_code == 200)
 r = client.get("/equipe/pacientes/novo")
-checar("Depois de ter um local, 'Novo paciente' já é acessível normalmente", r.status_code == 200)
+checar("Depois de ter um local (e estar vinculado a ele), 'Novo paciente' já é acessível normalmente", r.status_code == 200)
 
 # ---------- Cadastro de paciente sem senha: login por telefone + data de nascimento ----------
 
@@ -315,11 +332,11 @@ r = client.get("/equipe/filiais")
 texto = r.get_data(as_text=True)
 checar("Secretária do Grupo Saúde Total vê as duas filiais", "Grupo Saúde Total - Centro" in texto and "Grupo Saúde Total - Praia" in texto)
 
-r = client.post("/equipe/filiais/nova", data={"nome": "Grupo Saúde Total - Norte", "vincular_a_mim": "on"}, follow_redirects=True)
+r = client.post("/equipe/filiais/nova", data={"nome": "Grupo Saúde Total - Norte"}, follow_redirects=True)
 checar("Secretária consegue cadastrar uma terceira filial na mesma empresa", "cadastrado com sucesso" in r.get_data(as_text=True).lower())
 
 r = client.get("/equipe/filiais")
-checar("A nova filial aparece nos locais de atendimento da secretária (ela ficou vinculada a ela)",
+checar("A nova filial aparece na tela de locais da empresa (sem vincular ninguém automaticamente)",
        "Grupo Saúde Total - Norte" in r.get_data(as_text=True))
 client.get("/logout")
 
@@ -736,15 +753,21 @@ client.get("/logout")
 # de uma chave de API real nem de acesso à internet.
 with app.app_context():
     exame_colono_teste = Exame.query.get(colonoscopia_vitoria_id)
+    # responder_com_ia mudou de contrato: em vez de None, sempre devolve um
+    # dicionário {"final", "claude", "chatgpt"} - sem nenhuma chave de API
+    # configurada, todos os campos vêm None e o fluxo segue como antes.
+    resultado_sem_api = responder_com_ia("Posso beber gatorade de uva?", exame_colono_teste)
     checar("Sem ANTHROPIC_API_KEY configurada, a IA nunca é chamada (fica exatamente como antes)",
-           responder_com_ia("Posso beber gatorade de uva?", exame_colono_teste) is None)
+           resultado_sem_api["final"] is None and resultado_sem_api["claude"] is None and resultado_sem_api["chatgpt"] is None)
 
 import app.routes_paciente as routes_paciente_mod
 
 login_paciente("(27) 99999-0000", "1985-04-12")
-with patch.object(routes_paciente_mod, "responder_com_ia", return_value=(
-    "Sim! Gatorade de cor clara está entre os alimentos permitidos deste preparo."
-)):
+with patch.object(routes_paciente_mod, "responder_com_ia", return_value={
+    "final": "Sim! Gatorade de cor clara está entre os alimentos permitidos deste preparo.",
+    "claude": "Sim! Gatorade de cor clara está entre os alimentos permitidos deste preparo.",
+    "chatgpt": None,
+}):
     r = client.post(
         "/paciente/chat",
         data={"pergunta": "Esse gatorade de uva conta como líquido claro?", "exame_id": str(colonoscopia_vitoria_id)},
@@ -771,6 +794,10 @@ client.get("/logout")
 # O médico revisa o rascunho da IA, edita levemente, e aprova — só a partir
 # daqui a resposta deve aparecer para o paciente e ser gravada na FAQ.
 login("medico@clinicavitoria.com", "123456")
+# O Dr. Carlos atua em duas empresas - depois do login é preciso escolher a
+# Clínica Vitória antes de qualquer tela da equipe (mesmo passo do início
+# deste arquivo de teste).
+client.post("/equipe/clinica", data={"clinica_id": "1"}, follow_redirects=True)
 r = client.get("/equipe/perguntas")
 texto = r.get_data(as_text=True)
 checar("A pergunta aguardando aprovação aparece na tela do médico, com o rascunho da IA pré-preenchido",
@@ -810,9 +837,11 @@ client.get("/logout")
 # mesmíssima pergunta, o rascunho novo da IA deve prevalecer — prova de que
 # a base de conhecimento não é consultada primeiro.
 login_paciente("(27) 99999-0000", "1985-04-12")
-with patch.object(routes_paciente_mod, "responder_com_ia", return_value=(
-    "Atualização: esse gatorade específico teve a fórmula alterada e não é mais recomendado."
-)):
+with patch.object(routes_paciente_mod, "responder_com_ia", return_value={
+    "final": "Atualização: esse gatorade específico teve a fórmula alterada e não é mais recomendado.",
+    "claude": "Atualização: esse gatorade específico teve a fórmula alterada e não é mais recomendado.",
+    "chatgpt": None,
+}):
     client.post(
         "/paciente/chat",
         data={"pergunta": "Esse gatorade de uva conta como líquido claro?", "exame_id": str(colonoscopia_vitoria_id)},
@@ -1244,8 +1273,21 @@ checar("Exame atualizado com duração/preço/acompanhante", "atualizado" in r.g
 with app.app_context():
     colonoscopia_checar = Exame.query.get(colonoscopia_id)
     checar("Duração do exame salva (45 minutos)", colonoscopia_checar.duracao_minutos == 45)
-    checar("Preço do exame salvo (350.00)", float(colonoscopia_checar.preco) == 350.00)
     checar("Flag de acompanhante obrigatório salva", colonoscopia_checar.precisa_acompanhante is True)
+
+# O preço saiu DE PROPÓSITO do formulário de editar exame: ele é por
+# filial e agora só é ajustado na tela "Exames por filial"
+# (medico.exames_por_filial_atualizar) - o campo "preco" enviado acima
+# deve ter sido simplesmente ignorado.
+r = client.post(f"/equipe/exames/por-filial/{colonoscopia_id}/atualizar", data={
+    "tipo_origem": "filial",
+    "medico_id": str(medico_carlos_id),
+    "preco": "350,00",
+}, follow_redirects=True)
+with app.app_context():
+    colonoscopia_checar = Exame.query.get(colonoscopia_id)
+    checar("Preço do exame salvo (350.00) pela tela 'Exames por filial' (não pelo editar exame)",
+           colonoscopia_checar.preco is not None and float(colonoscopia_checar.preco) == 350.00)
 
 # Agendar sem informar acompanhante deve ser rejeitado
 r = client.post("/equipe/agenda/novo", data={

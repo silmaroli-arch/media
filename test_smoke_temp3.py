@@ -9,7 +9,7 @@ from openpyxl import Workbook
 from app import create_app
 from app.extensions import db
 from app.models import (
-    Empresa, Clinica, PlataformaConfig, Usuario, Paciente, Exame, Agendamento,
+    Empresa, Clinica, ClinicaMembro, PlataformaConfig, Usuario, Paciente, Exame, Agendamento,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, PerguntaPendente, FaqItem,
     MedicoHorario, ChatMensagem, ResultadoExame, DescontoConfig, Pagamento,
@@ -227,12 +227,21 @@ checar(
     "cadastre seu primeiro local de atendimento" in r.get_data(as_text=True).lower(),
 )
 
-# Cadastra o primeiro local de atendimento do médico fundador, requisito
-# para poder cadastrar pacientes (ver guarda em medico.pacientes_novo).
-r = client.post("/equipe/filiais/nova", data={"nome": "Consultório do Dr. Ricardo", "vincular_a_mim": "on"}, follow_redirects=True)
+# Cadastra o primeiro local de atendimento do médico fundador. Cadastrar o
+# local NÃO vincula ninguém a ele (nem quem cadastrou) - o vínculo é sempre
+# uma ação separada e explícita (ver medico.filiais_nova e
+# medico.filiais_vincular_me).
+r = client.post("/equipe/filiais/nova", data={"nome": "Consultório do Dr. Ricardo"}, follow_redirects=True)
 checar("Médico fundador consegue cadastrar seu primeiro local de atendimento", r.status_code == 200)
+with app.app_context():
+    consultorio_ricardo = Clinica.query.filter_by(nome="Consultório do Dr. Ricardo").first()
+    checar("Cadastrar o local NÃO vinculou ninguém a ele automaticamente",
+           ClinicaMembro.query.filter_by(clinica_id=consultorio_ricardo.id).count() == 0)
+    consultorio_ricardo_id = consultorio_ricardo.id
+r = client.post(f"/equipe/filiais/{consultorio_ricardo_id}/vincular-me", follow_redirects=True)
+checar("Médico fundador se vincula ao local explicitamente, pelo botão", r.status_code == 200)
 r = client.get("/equipe/pacientes/novo")
-checar("Depois de ter um local, 'Novo paciente' já é acessível normalmente", r.status_code == 200)
+checar("Depois de ter um local (e estar vinculado a ele), 'Novo paciente' já é acessível normalmente", r.status_code == 200)
 
 # ---------- Cadastro de paciente sem senha: login por telefone + data de nascimento ----------
 
@@ -293,11 +302,11 @@ r = client.get("/equipe/filiais")
 texto = r.get_data(as_text=True)
 checar("Secretária do Grupo Saúde Total vê as duas filiais", "Grupo Saúde Total - Centro" in texto and "Grupo Saúde Total - Praia" in texto)
 
-r = client.post("/equipe/filiais/nova", data={"nome": "Grupo Saúde Total - Norte", "vincular_a_mim": "on"}, follow_redirects=True)
+r = client.post("/equipe/filiais/nova", data={"nome": "Grupo Saúde Total - Norte"}, follow_redirects=True)
 checar("Secretária consegue cadastrar uma terceira filial na mesma empresa", "cadastrado com sucesso" in r.get_data(as_text=True).lower())
 
 r = client.get("/equipe/filiais")
-checar("A nova filial aparece nos locais de atendimento da secretária (ela ficou vinculada a ela)",
+checar("A nova filial aparece na tela de locais da empresa (sem vincular ninguém automaticamente)",
        "Grupo Saúde Total - Norte" in r.get_data(as_text=True))
 client.get("/logout")
 
