@@ -205,12 +205,15 @@ ALTER TABLE exames ADD COLUMN IF NOT EXISTS medico_confirmado BOOLEAN NOT NULL D
 -- O paciente passou a pertencer à EMPRESA, não a uma filial ("o cliente é
 -- só cliente" - ver Paciente.empresa_id em app/models.py): a filial só é
 -- escolhida na hora de marcar cada consulta (Agendamento.clinica_id).
--- Passos: cria a coluna nova; copia a empresa da filial legada para os
--- cadastros existentes; solta o NOT NULL da filial legada (cadastros novos
--- não a preenchem mais); e troca a unicidade de CPF de por-filial para
--- por-empresa (o índice único novo só é criado se não houver CPF repetido
--- entre filiais da mesma empresa - se houver, fica só a checagem da
--- aplicação, ver medico.pacientes_novo, sem quebrar o deploy).
+-- Passos: cria a coluna nova. Copia a empresa da filial legada para os
+-- cadastros existentes. Solta o NOT NULL da filial legada (cadastros novos
+-- não a preenchem mais). E remove a unicidade de CPF por-filial - a
+-- unicidade nova, por-empresa, é criada mais abaixo (na parte em Python),
+-- só se não houver CPF repetido entre filiais da mesma empresa; se houver,
+-- fica só a checagem da aplicação (ver medico.pacientes_novo), sem quebrar
+-- o deploy. ATENÇÃO: nada de ";" no MEIO de uma frase de comentário aqui
+-- dentro - o executor abaixo divide o bloco por ";" (agora ele descarta
+-- linhas de comentário antes de executar, mas não custa manter o hábito).
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS empresa_id INTEGER REFERENCES empresas(id);
 UPDATE pacientes SET empresa_id = (SELECT empresa_id FROM clinicas WHERE clinicas.id = pacientes.clinica_id) WHERE empresa_id IS NULL AND clinica_id IS NOT NULL;
 ALTER TABLE pacientes ALTER COLUMN clinica_id DROP NOT NULL;
@@ -223,7 +226,16 @@ ALTER TABLE pacientes DROP CONSTRAINT IF EXISTS uq_clinica_cpf;
 # precisa de ALTER/CREATE aqui.
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)
-for comando in SQL.strip().split(";"):
+
+# Remove as linhas de comentário ("-- ...") ANTES de dividir por ";".
+# Sem isso, um comentário com ";" no meio da frase quebra o split: o
+# pedaço depois do ";" perde o prefixo "--" e é executado como se fosse
+# SQL, derrubando a migração inteira (e o deploy) com erro de sintaxe -
+# foi exatamente o que aconteceu no deploy #137.
+sql_sem_comentarios = "\n".join(
+    linha for linha in SQL.splitlines() if not linha.strip().startswith("--")
+)
+for comando in sql_sem_comentarios.strip().split(";"):
     comando = comando.strip()
     if comando:
         conn.execute(comando)
