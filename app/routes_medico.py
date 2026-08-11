@@ -706,7 +706,6 @@ def exames_novo():
         descricao = request.form.get("descricao", "").strip()
         preparo_modelo_id = request.form.get("preparo_modelo_id", type=int)
         duracao_minutos = request.form.get("duracao_minutos", type=int)
-        preco = _parse_valor_decimal(request.form.get("preco", ""))
         precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
 
         # medico_id continua obrigatório no banco (é quem aparece como
@@ -744,17 +743,20 @@ def exames_novo():
             flash("Já existe um exame com esse nome.", "danger")
             return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
+        # Preço fica de fora do cadastro genérico - é definido depois, por
+        # local de atendimento, em "Exames por filial" (mesmo esquema que já
+        # vale pra médico e pra associar o exame a mais de uma filial).
         exame = Exame(
             clinica_id=filial.id, medico_id=medico_id, nome=nome, descricao=descricao,
-            preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos, preco=preco,
+            preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos,
             precisa_acompanhante=precisa_acompanhante,
         )
         db.session.add(exame)
         db.session.commit()
 
         flash(
-            "Exame cadastrado com sucesso. Revise o médico responsável e associe outras filiais em "
-            '"Exames por filial", se necessário.',
+            "Exame cadastrado com sucesso. Defina o médico responsável e o preço em "
+            '"Exames por filial", antes de agendar.',
             "success",
         )
         return _destino_pos_onboarding("medico.exames_lista")

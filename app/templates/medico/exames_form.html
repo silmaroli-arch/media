@@ -61,13 +61,7 @@
         <input type="number" min="1" name="duracao_minutos" class="form-control" value="{{ exame.duracao_minutos if exame and exame.duracao_minutos else '' }}">
         <div class="form-text">Usada pelo otimizador de agenda para calcular horários disponíveis.</div>
       </div>
-      {% if not exame %}
-      <div class="col-md-6">
-        <label class="form-label">Preço do procedimento (R$)</label>
-        <input type="text" name="preco" class="form-control" placeholder="Ex.: 250,00">
-        <div class="form-text">Ponto de partida - ajuste por local em "Exames por filial", se o preço variar entre eles.</div>
-      </div>
-      {% else %}
+      {% if exame %}
       <div class="col-md-6">
         <label class="form-label">Preço do procedimento nesta filial (R$)</label>
         <p class="form-control-plaintext">

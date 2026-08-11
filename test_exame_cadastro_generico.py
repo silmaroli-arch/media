@@ -1,6 +1,6 @@
 """Testa que o cadastro de um novo exame (medico.exames_novo) não pede mais
-filial nem médico responsável - o cadastro fica genérico (nome, descrição,
-duração, preço de partida, preparo), e a associação de médico/filial/preço
+filial, médico responsável nem preço - o cadastro fica genérico (nome,
+descrição, duração, preparo), e a associação de médico/filial/preço
 específicos passa a acontecer só na tela "Exames por filial" (ou depois, ao
 editar o exame). Cobre tanto secretária quanto médico cadastrando."""
 from app import create_app
@@ -29,6 +29,7 @@ html0 = r0.get_data(as_text=True)
 checar("Tela de novo exame responde 200", r0.status_code == 200)
 checar("Não pede filial", 'name="filial_id"' not in html0 and "Escolha o local de atendimento" not in html0)
 checar("Não pede médico responsável", 'name="medico_id"' not in html0)
+checar("Não pede preço", 'name="preco"' not in html0)
 checar("Não mostra 'Outros médicos'", "Outros médicos que também atendem" not in html0)
 checar("Explica que a associação por filial vem depois", "Exames por filial" in html0)
 
@@ -36,15 +37,15 @@ r1 = client.post("/equipe/exames/novo", data={
     "nome": "Exame genérico de teste",
     "descricao": "Descrição de teste",
     "duracao_minutos": "20",
-    "preco": "100,00",
 }, follow_redirects=True)
-checar("Cadastro sem filial/médico funciona", r1.status_code == 200)
+checar("Cadastro sem filial/médico/preço funciona", r1.status_code == 200)
 checar("Mensagem de sucesso aparece", "Exame cadastrado com sucesso" in r1.get_data(as_text=True))
 
 with app.app_context():
     exame = Exame.query.filter_by(nome="Exame genérico de teste").first()
     checar("Exame foi criado", exame is not None)
     checar("Médico responsável foi preenchido automaticamente (obrigatório no banco)", exame.medico_id is not None)
+    checar("Preço fica em branco até ser definido em 'Exames por filial'", exame.preco is None)
     exame_id = exame.id
 
 client.get("/logout")
@@ -63,7 +64,6 @@ r3 = client.post("/equipe/exames/novo", data={
     "nome": "Exame do médico teste",
     "descricao": "",
     "duracao_minutos": "15",
-    "preco": "50,00",
 }, follow_redirects=True)
 checar("Médico consegue cadastrar sem escolher a si mesmo", r3.status_code == 200 and "Exame cadastrado com sucesso" in r3.get_data(as_text=True))
 

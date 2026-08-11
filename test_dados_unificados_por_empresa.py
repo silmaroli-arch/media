@@ -191,14 +191,15 @@ with app.app_context():
     checar("Paciente com filial de outra empresa não foi criado",
            Paciente.query.filter_by(cpf="55511122233").first() is None)
 
-# O cadastro de exame é genérico - não pede filial nem médico (isso é
+# O cadastro de exame é genérico - não pede filial, médico nem preço (isso é
 # resolvido depois, na tela "Exames por filial").
 r = client.get("/equipe/exames/novo")
 html_exame_novo = r.get_data(as_text=True)
 checar("Formulário de novo exame NÃO pede filial", 'name="clinica_id"' not in html_exame_novo)
 checar("Formulário de novo exame NÃO pede médico", 'name="medico_id"' not in html_exame_novo)
+checar("Formulário de novo exame NÃO pede preço", 'name="preco"' not in html_exame_novo)
 r = client.post("/equipe/exames/novo", data={
-    "nome": "Colonoscopia Nova", "descricao": "Colono", "duracao_minutos": "45", "preco": "300",
+    "nome": "Colonoscopia Nova", "descricao": "Colono", "duracao_minutos": "45",
 }, follow_redirects=True)
 checar("Cadastro de exame genérico responde 200", r.status_code == 200)
 with app.app_context():
