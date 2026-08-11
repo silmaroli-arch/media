@@ -306,7 +306,7 @@ r = client.get("/equipe/filiais")
 texto = r.get_data(as_text=True)
 checar("Secretária do Grupo Saúde Total vê as duas filiais", "Grupo Saúde Total - Centro" in texto and "Grupo Saúde Total - Praia" in texto)
 
-r = client.post("/equipe/filiais/nova", data={"nome": "Grupo Saúde Total - Norte"}, follow_redirects=True)
+r = client.post("/equipe/filiais/nova", data={"nome": "Grupo Saúde Total - Norte", "vincular_a_mim": "on"}, follow_redirects=True)
 checar("Secretária consegue cadastrar uma terceira filial na mesma empresa", "cadastrado com sucesso" in r.get_data(as_text=True).lower())
 
 r = client.get("/equipe/filiais")

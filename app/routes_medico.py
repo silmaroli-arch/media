@@ -2898,6 +2898,29 @@ def filiais_lista():
     )
 
 
+@medico_bp.route("/filiais/<int:filial_id>/vincular-me", methods=["POST"])
+@login_required
+@staff_required
+def filiais_vincular_me(filial_id):
+    """Ação explícita de "eu também atuo neste local" - para quando a
+    pessoa desmarcou o vínculo automático ao criar o local (ver
+    medico.filiais_nova) e depois muda de ideia, ou para um local que já
+    existia antes desta pessoa fazer parte da empresa. Só vincula A PRÓPRIA
+    pessoa logada - para vincular outra pessoa, o caminho é a tela
+    "Equipe" (medico.equipe_novo / medico.equipe_associar_filial)."""
+    empresa = empresa_atual()
+    filial = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
+
+    if ClinicaMembro.query.filter_by(clinica_id=filial.id, usuario_id=current_user.id).first():
+        flash("Você já está vinculado(a) a este local.", "warning")
+        return redirect(url_for("medico.filiais_lista"))
+
+    db.session.add(ClinicaMembro(clinica_id=filial.id, usuario_id=current_user.id, ativo=True))
+    db.session.commit()
+    flash(f"Você agora está vinculado(a) ao local '{filial.nome}'.", "success")
+    return redirect(url_for("medico.filiais_lista"))
+
+
 @medico_bp.route("/filiais/nova", methods=["GET", "POST"])
 @login_required
 @staff_required
@@ -2919,17 +2942,34 @@ def filiais_nova():
         db.session.add(nova_filial)
         db.session.flush()
 
-        # Quem cadastra a filial já fica vinculado a ela, pra poder
-        # começar a trabalhar por lá imediatamente.
-        vinculo = ClinicaMembro(clinica_id=nova_filial.id, usuario_id=current_user.id, ativo=True)
-        db.session.add(vinculo)
+        # Cadastrar a estrutura de um local (endereço, dados fiscais) é uma
+        # coisa; dizer que ALGUÉM atua nele é outra - não dá pra assumir
+        # automaticamente que quem cadastrou o local é quem atende lá (ver
+        # "não existe médico principal" - o mesmo motivo por trás de
+        # Exame.medico_confirmado). Por isso isso agora é uma escolha
+        # explícita no formulário (checkbox "vincular_a_mim"), marcada por
+        # padrão só porque é o caso mais comum (quem está montando a
+        # empresa geralmente também vai atuar no primeiro local criado),
+        # não porque seja automático/implícito.
+        vinculado_a_mim = request.form.get("vincular_a_mim") == "on"
+        if vinculado_a_mim:
+            vinculo = ClinicaMembro(clinica_id=nova_filial.id, usuario_id=current_user.id, ativo=True)
+            db.session.add(vinculo)
         db.session.commit()
 
-        flash(
-            f"Local '{nova_filial.nome}' cadastrado com sucesso. Os pacientes, exames e a agenda dele "
-            "já aparecem junto com os dos seus outros locais, identificados pelo nome do local.",
-            "success",
-        )
+        if vinculado_a_mim:
+            flash(
+                f"Local '{nova_filial.nome}' cadastrado com sucesso, e você já ficou vinculado(a) a ele. "
+                "Os pacientes, exames e a agenda dele já aparecem junto com os dos seus outros locais, "
+                "identificados pelo nome do local.",
+                "success",
+            )
+        else:
+            flash(
+                f"Local '{nova_filial.nome}' cadastrado com sucesso. Agora vá em \"Equipe\" para vincular "
+                "quem for atuar nele (você pode se vincular por lá também, se mudar de ideia).",
+                "success",
+            )
         return _destino_pos_onboarding("medico.filiais_lista")
 
     return render_template("medico/filiais_form.html")

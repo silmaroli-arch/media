@@ -16,7 +16,11 @@
         <td>
           {{ f.nome }}
           {% if f.id in meus_filiais_ids %}
-          <span class="badge bg-primary ms-1">você atende aqui</span>
+          <span class="badge bg-primary ms-1">você atua aqui</span>
+          {% else %}
+          <form method="post" action="{{ url_for('medico.filiais_vincular_me', filial_id=f.id) }}" class="d-inline">
+            <button type="submit" class="btn btn-sm btn-outline-secondary ms-1">+ Marcar que você também atua aqui</button>
+          </form>
           {% endif %}
         </td>
         <td>{{ f.cidade or '-' }}{% if f.uf %}/{{ f.uf }}{% endif %}</td>
@@ -35,8 +39,10 @@
 </div>
 <p class="text-muted small mt-3">
   Cada local de atendimento tem seu próprio endereço e seus próprios dados fiscais — cadastre um local novo pra
-  cada lugar em que você atende. Pacientes, exames e agenda de todos os locais em que você atende aparecem
-  juntos nas telas do sistema, identificados pelo nome do local; não é preciso "trocar de local". Use os botões
-  "Dados Cadastrais" e "Dados Fiscais" da linha de cada local para editar os dados dele.
+  cada lugar em que a empresa atua. O selo "você atua aqui" indica em quais locais VOCÊ está vinculado(a)
+  (o que determina o que aparece nas suas telas de pacientes, exames e agenda) — cadastrar um local não
+  vincula ninguém a ele automaticamente; use "Equipe" para vincular médicos/secretárias a cada local, ou o
+  botão acima para se vincular você mesmo(a). Use os botões "Dados Cadastrais" e "Dados Fiscais" da linha de
+  cada local para editar os dados dele (isso não depende de estar vinculado ao local).
 </p>
 {% endblock %}

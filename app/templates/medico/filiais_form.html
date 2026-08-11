@@ -9,6 +9,16 @@
       <label class="form-label">Nome do local</label>
       <input type="text" name="nome" class="form-control" required autofocus placeholder="ex.: Consultório Praia do Canto">
     </div>
+    <div class="form-check mb-3">
+      <input type="checkbox" name="vincular_a_mim" value="on" id="vincular_a_mim" class="form-check-input" checked>
+      <label class="form-check-label" for="vincular_a_mim">
+        Você também vai atuar neste local (fica vinculado a ele, além de tê-lo cadastrado)
+      </label>
+      <div class="form-text">
+        Desmarque se você está só organizando a estrutura da empresa e quem vai atuar aqui são outras
+        pessoas — depois é só ir em "Equipe" e vincular quem for atender neste local.
+      </div>
+    </div>
     <button type="submit" class="btn btn-primary">Salvar</button>
     <a href="{{ url_for('medico.filiais_lista') }}" class="btn btn-link">Cancelar</a>
   </form>

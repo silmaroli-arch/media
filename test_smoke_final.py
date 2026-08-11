@@ -229,7 +229,7 @@ checar(
 
 # Cadastra o primeiro local de atendimento do médico fundador, requisito
 # para poder cadastrar pacientes (ver guarda em medico.pacientes_novo).
-r = client.post("/equipe/filiais/nova", data={"nome": "Consultório do Dr. Ricardo"}, follow_redirects=True)
+r = client.post("/equipe/filiais/nova", data={"nome": "Consultório do Dr. Ricardo", "vincular_a_mim": "on"}, follow_redirects=True)
 checar("Médico fundador consegue cadastrar seu primeiro local de atendimento", r.status_code == 200)
 r = client.get("/equipe/pacientes/novo")
 checar("Depois de ter um local, 'Novo paciente' já é acessível normalmente", r.status_code == 200)
@@ -315,7 +315,7 @@ r = client.get("/equipe/filiais")
 texto = r.get_data(as_text=True)
 checar("Secretária do Grupo Saúde Total vê as duas filiais", "Grupo Saúde Total - Centro" in texto and "Grupo Saúde Total - Praia" in texto)
 
-r = client.post("/equipe/filiais/nova", data={"nome": "Grupo Saúde Total - Norte"}, follow_redirects=True)
+r = client.post("/equipe/filiais/nova", data={"nome": "Grupo Saúde Total - Norte", "vincular_a_mim": "on"}, follow_redirects=True)
 checar("Secretária consegue cadastrar uma terceira filial na mesma empresa", "cadastrado com sucesso" in r.get_data(as_text=True).lower())
 
 r = client.get("/equipe/filiais")
