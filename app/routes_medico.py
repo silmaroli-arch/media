@@ -727,9 +727,10 @@ def exames_novo():
         # agendados sem vincular nenhum modelo.
         modelo = None
         if preparo_modelo_id:
-            # O modelo de preparo é da filial (PreparoModelo.clinica_id), então
-            # só vale um modelo da própria filial escolhida.
-            modelo = next((m for m in modelos if m.id == preparo_modelo_id and m.clinica_id == filial.id), None)
+            # Modelo de preparo é genérico (vale para a empresa toda, não só
+            # para uma filial) - qualquer modelo acessível ao usuário serve,
+            # independente da filial escolhida para o exame.
+            modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)
             if not modelo:
                 flash("Escolha um modelo de preparo válido, ou deixe em branco se este procedimento não precisa de preparo.", "danger")
                 return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
@@ -767,9 +768,10 @@ def exames_editar(exame_id):
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
     exame = query.first_or_404()
-    # Médico responsável e modelo de preparo são da filial DO EXAME.
+    # Médico responsável é da filial DO EXAME, mas modelo de preparo é
+    # genérico - vale qualquer modelo acessível ao usuário na empresa.
     medicos = medicos_da_clinica(exame.clinica)
-    modelos = PreparoModelo.query.filter_by(clinica_id=exame.clinica_id).order_by(PreparoModelo.nome).all()
+    modelos = PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(filial_ids)).order_by(PreparoModelo.nome).all()
 
     if request.method == "POST":
         exame.nome = request.form.get("nome", "").strip()
@@ -1167,10 +1169,16 @@ def preparo_modelos_novo():
         sugestao = session.pop("preparo_sugestao_importada", None)
 
     if request.method == "POST":
-        filial = _filial_do_form(filiais)
-        if not filial:
-            flash("Escolha a filial em que este modelo de preparo será cadastrado.", "danger")
-            return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+        # Modelo de preparo é genérico - não pertence a uma filial específica,
+        # e sim à empresa como um todo (fica disponível em qualquer exame de
+        # qualquer local de atendimento). O campo clinica_id continua
+        # existindo no banco só por exigência técnica da FK/constraint atual;
+        # usamos a primeira filial acessível do usuário sem expor essa
+        # escolha na tela.
+        if not filiais:
+            flash("Você não tem nenhum local de atendimento cadastrado ainda.", "danger")
+            return redirect(url_for("medico.filiais_lista"))
+        filial = filiais[0]
 
         nome = request.form.get("nome", "").strip()
         instrucoes = request.form.get("instrucoes", "").strip()
@@ -1180,8 +1188,8 @@ def preparo_modelos_novo():
             flash("Nome do modelo e instruções são obrigatórios.", "danger")
             return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
-        if PreparoModelo.query.filter_by(clinica_id=filial.id, nome=nome).first():
-            flash("Já existe um modelo de preparo com esse nome nesta filial.", "danger")
+        if PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(filiais_atuais_ids()), PreparoModelo.nome == nome).first():
+            flash("Já existe um modelo de preparo com esse nome.", "danger")
             return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
         modelo = PreparoModelo(

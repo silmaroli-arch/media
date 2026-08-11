@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}{% if modelo %}Editar modelo de preparo{% else %}Novo modelo de preparo{% endif %}{% endblock %}
 {% block conteudo %}
 <h3 class="mb-3">{% if modelo %}Editar modelo de preparo{% else %}Novo modelo de preparo{% endif %}</h3>
@@ -25,11 +24,8 @@
 <div class="card p-4">
   <form method="post">
     <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
-    {% if not modelo %}
-    {{ select_filial(ajuda="Em qual dos seus locais de atendimento este modelo de preparo ficará disponível.") }}
-    {% elif mostrar_filial %}
-    <p class="text-muted small">Local de atendimento: <strong>{{ modelo.clinica.nome }}</strong></p>
-    {% endif %}
+    {# Modelo de preparo é genérico - vale para qualquer local de atendimento
+       da empresa, por isso não pede (nem mostra) filial aqui. #}
     <div class="mb-3">
       <label class="form-label">Nome do modelo</label>
       <input type="text" name="nome" class="form-control" required
