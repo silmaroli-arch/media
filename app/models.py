@@ -346,11 +346,8 @@ class Usuario(db.Model, UserMixin):
         papel — usado só como sugestão inicial ao criar a conta; quem
         administra a equipe pode ajustar cada permissão individualmente
         depois (por exemplo, um médico sem secretária pode precisar de
-        todas elas). "configurador" é o papel de quem só configura os
-        dados do sistema (locais, equipe, exames, preparos) sem atender
-        paciente — por isso nasce com todas as permissões administrativas,
-        igual à secretária."""
-        administrativo = self.tipo in ("secretaria", "configurador")
+        todas elas)."""
+        administrativo = self.tipo == "secretaria"
         self.perm_pacientes = administrativo
         self.perm_equipe = administrativo
         self.perm_filiais = administrativo
@@ -364,10 +361,7 @@ class Usuario(db.Model, UserMixin):
 
     @property
     def is_staff(self):
-        # "configurador" é a pessoa que configura os dados no sistema
-        # (não é médico nem secretária de atendimento) - faz parte da
-        # equipe como qualquer outro papel administrativo.
-        return self.tipo in ("secretaria", "medico", "configurador")
+        return self.tipo in ("secretaria", "medico")
 
     @property
     def is_dono(self):

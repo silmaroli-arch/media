@@ -3115,8 +3115,8 @@ def equipe_novo():
             flash("Escolha em qual(is) filial(is) essa pessoa vai atuar.", "danger")
             return render_template("medico/equipe_form.html", filiais=filiais)
 
-        if not email or papel not in ("medico", "secretaria", "configurador"):
-            flash("Preencha o e-mail e escolha o tipo (médico, secretária ou configurador).", "danger")
+        if not email or papel not in ("medico", "secretaria"):
+            flash("Preencha o e-mail e escolha o tipo (médico ou secretária).", "danger")
             return render_template("medico/equipe_form.html", filiais=filiais)
 
         usuario_existente = Usuario.query.filter_by(email=email).first()

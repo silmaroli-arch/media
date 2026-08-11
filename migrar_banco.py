@@ -218,6 +218,11 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS empresa_id INTEGER REFERENCES emp
 UPDATE pacientes SET empresa_id = (SELECT empresa_id FROM clinicas WHERE clinicas.id = pacientes.clinica_id) WHERE empresa_id IS NULL AND clinica_id IS NOT NULL;
 ALTER TABLE pacientes ALTER COLUMN clinica_id DROP NOT NULL;
 ALTER TABLE pacientes DROP CONSTRAINT IF EXISTS uq_clinica_cpf;
+
+-- O papel "configurador" existiu por pouco tempo e foi removido (só criou
+-- confusão). Qualquer conta criada com ele vira "secretaria" (o papel
+-- administrativo equivalente) para não ficar trancada fora do sistema.
+UPDATE usuarios SET tipo = 'secretaria' WHERE tipo = 'configurador';
 """
 
 # Trilha de auditoria de acesso ao prontuario (ver LogAcessoProntuario em

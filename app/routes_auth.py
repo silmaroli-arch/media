@@ -219,8 +219,8 @@ def cadastro():
             flash("Preencha todos os campos.", "danger")
             return render_template("auth/cadastro.html")
 
-        if papel not in ("medico", "secretaria", "configurador"):
-            flash("Escolha o seu papel: médico(a), secretário(a) ou configurador(a).", "danger")
+        if papel not in ("medico", "secretaria"):
+            flash("Escolha se você é médico(a) ou secretário(a).", "danger")
             return render_template("auth/cadastro.html")
 
         if len(senha) < 6:
