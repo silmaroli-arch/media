@@ -794,13 +794,9 @@ def exames_editar(exame_id):
         # que deixa claro que é um valor por local, não do cadastro do
         # exame em si.
         exame.precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
-        if not eh_medico():
-            # Só quem não é médico (secretária) pode trocar o médico
-            # RESPONSÁVEL principal - reatribuir esse papel tem mais
-            # implicações (é quem aparece como titular do exame).
-            novo_medico_id = request.form.get("medico_id", type=int)
-            if novo_medico_id and any(m.id == novo_medico_id for m in medicos):
-                exame.medico_id = novo_medico_id
+        # Reatribuir o médico RESPONSÁVEL principal saiu desta tela (fica
+        # para uma funcionalidade própria, futura) - por ora só os médicos
+        # EXTRAS continuam editáveis abaixo.
         # Já os médicos EXTRAS (outros médicos que também atendem este
         # exame) qualquer pessoa da equipe pode ajustar - inclusive um
         # médico editando o próprio exame - já que clínicas sem secretária

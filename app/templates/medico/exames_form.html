@@ -25,16 +25,6 @@
         texto do preparo.
       </div>
     </div>
-    {% if exame and current_user.tipo == "secretaria" %}
-    <div class="mb-3">
-      <label class="form-label">Médico responsável</label>
-      <select name="medico_id" class="form-select" required>
-        {% for m in medicos %}
-        <option value="{{ m.id }}" {% if exame.medico_id == m.id %}selected{% endif %}>{{ m.nome }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    {% endif %}
     {% if exame and medicos|length > 1 %}
     <div class="mb-3">
       <label class="form-label">Outros médicos que também atendem este exame (opcional)</label>
