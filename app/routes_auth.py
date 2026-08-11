@@ -159,10 +159,15 @@ def cadastro():
     """Cadastro público. Dois modos, escolhidos pelo campo "modo":
 
     - "empresa" (padrão/original): quem se cadastra cria uma empresa nova
-      na plataforma, já com sua primeira filial, informando os nomes de
-      ambas. Nem toda clínica tem secretária, então a pessoa escolhe se é
-      médico ou secretário(a) — mas por ser quem está criando a empresa,
-      recebe todas as permissões administrativas.
+      na plataforma, informando só o nome DELA. A primeira filial já vem
+      criada com um nome técnico/genérico ("Matriz") — a pessoa não
+      preenche nem vê nada de "filial" nesta tela; o cadastro completo
+      dessa filial (endereço, CNPJ, telefone, ou até o nome de verdade)
+      é feito depois, ao entrar no app, na etapa "Meus Locais de
+      Atendimento" do assistente de configuração inicial (ver
+      medico.onboarding). Nem toda clínica tem secretária, então a
+      pessoa escolhe se é médico ou secretário(a) — mas por ser quem
+      está criando a empresa, recebe todas as permissões administrativas.
 
     - "independente": pensado para o médico que atende por conta própria,
       sem uma empresa/clínica de verdade por trás. Não pede nome de
@@ -198,14 +203,19 @@ def cadastro():
             nome_filial = "Consultório"
         else:
             nome_empresa = request.form.get("nome_empresa", "").strip()
-            nome_filial = request.form.get("nome_filial", "").strip()
+            # O cadastro público só pede o nome da EMPRESA - a filial
+            # nasce com um nome técnico genérico ("Matriz") e é
+            # configurada de verdade (nome, endereço, CNPJ, telefone)
+            # depois, ao entrar no app, em "Meus Locais de Atendimento"
+            # (etapa do assistente de configuração inicial).
+            nome_filial = "Matriz"
             papel = request.form.get("papel", "secretaria")
 
         if not nome or not email or not senha:
             flash("Preencha todos os campos.", "danger")
             return render_template("auth/cadastro.html")
 
-        if not independente and (not nome_empresa or not nome_filial):
+        if not independente and not nome_empresa:
             flash("Preencha todos os campos.", "danger")
             return render_template("auth/cadastro.html")
 
@@ -261,8 +271,9 @@ def cadastro():
             )
         else:
             flash(
-                f"Empresa '{empresa.nome}' criada com sucesso, com a filial '{filial.nome}'! "
-                "Vamos te ajudar a deixar tudo pronto para uso.",
+                f"Empresa '{empresa.nome}' criada com sucesso! "
+                "Vamos te ajudar a deixar tudo pronto para uso — o primeiro passo é configurar os "
+                "dados do seu local de atendimento.",
                 "success",
             )
         return redirect(url_for("medico.onboarding"))

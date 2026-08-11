@@ -65,10 +65,12 @@ r = client.post("/cadastro", data={"modo": "independente", "nome": "", "email": 
 checar("Cadastro independente sem dados obrigatórios é rejeitado", r.status_code == 200 and "Preencha todos os campos" in r.get_data(as_text=True))
 
 # ---------- Fluxo 'empresa' original continua funcionando sem alterações ----------
+# O cadastro público só pede o nome da EMPRESA agora - não pede mais nome de
+# filial (isso é configurado depois, ao entrar no app, em "Meus Locais de
+# Atendimento"). A primeira filial nasce com um nome técnico ("Matriz").
 r = client.post("/cadastro", data={
     "modo": "empresa",
     "nome_empresa": "Clínica Teste Regressão",
-    "nome_filial": "Unidade Central",
     "nome": "Dra. Empresa Teste",
     "email": "dra.empresa.teste@example.com",
     "senha": "123456",
@@ -78,6 +80,6 @@ with app.app_context():
     empresa2 = Empresa.query.filter_by(nome="Clínica Teste Regressão").first()
     checar("Fluxo 'empresa' tradicional continua criando empresa com o nome informado", empresa2 is not None)
     filial2 = Clinica.query.filter_by(empresa_id=empresa2.id).first()
-    checar("Fluxo 'empresa' tradicional continua criando filial com o nome informado", filial2.nome == "Unidade Central")
+    checar("Fluxo 'empresa' tradicional cria a primeira filial com nome técnico 'Matriz'", filial2.nome == "Matriz")
 
 print("\nTodos os testes do fluxo médico independente passaram.")

@@ -32,11 +32,10 @@
           <div class="mb-3">
             <label class="form-label">Nome da empresa</label>
             <input type="text" name="nome_empresa" id="input-nome_empresa" class="form-control" required autofocus>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Nome desta filial (unidade)</label>
-            <input type="text" name="nome_filial" id="input-nome_filial" class="form-control" required>
-            <div class="form-text">Se sua empresa tiver mais de uma unidade, você cadastra as outras depois, pela área administrativa.</div>
+            <div class="form-text">
+              Os dados do seu local de atendimento (nome da unidade, endereço, CNPJ, telefone) você
+              preenche depois, ao entrar no app — inclusive se tiver mais de uma unidade.
+            </div>
           </div>
         </div>
 
@@ -89,7 +88,6 @@ function selecionarModo(modo) {
   document.getElementById('campo-papel').style.display = independente ? 'none' : 'block';
 
   document.getElementById('input-nome_empresa').required = !independente;
-  document.getElementById('input-nome_filial').required = !independente;
 
   document.getElementById('btn-submit').textContent = independente ? 'Criar minha conta' : 'Criar minha empresa';
 }
