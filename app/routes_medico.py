@@ -704,7 +704,7 @@ def exames_novo():
 
         nome = request.form.get("nome", "").strip()
         descricao = request.form.get("descricao", "").strip()
-        preparo_modelo_id = request.form.get("preparo_modelo_id", type=int)
+        preparo_modelo_raw = request.form.get("preparo_modelo_id", "").strip()
         duracao_minutos = request.form.get("duracao_minutos", type=int)
         precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
 
@@ -722,18 +722,21 @@ def exames_novo():
             flash("Cadastre um médico na equipe antes de criar exames.", "danger")
             return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
-        # Modelo de preparo é obrigatório no cadastro - o exame precisa
-        # nascer já com um modelo escolhido (mesmo modelo genérico serve pra
-        # "sem preparo nenhum", se for o caso; ver preparo_modelos_novo).
-        if not modelos:
-            flash("Cadastre um modelo de preparo antes de criar exames.", "danger")
-            return redirect(url_for("medico.preparo_modelos_novo"))
-
-        # Modelo de preparo é genérico (vale para a empresa toda, não só
-        # para uma filial) - qualquer modelo acessível ao usuário serve.
-        modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)
-        if not modelo:
-            flash("Escolha um modelo de preparo.", "danger")
+        # É obrigatório escolher uma opção no cadastro - mas a opção pode ser
+        # "nenhum" (procedimento simples, sem instrução prévia, ex.: uma
+        # consulta). O que não pode é deixar sem escolher nada.
+        modelo = None
+        if preparo_modelo_raw == "nenhum":
+            modelo = None
+        elif preparo_modelo_raw:
+            # Modelo de preparo é genérico (vale para a empresa toda, não só
+            # para uma filial) - qualquer modelo acessível ao usuário serve.
+            modelo = next((m for m in modelos if str(m.id) == preparo_modelo_raw), None)
+            if not modelo:
+                flash("Escolha um modelo de preparo válido, ou \"Nenhum\".", "danger")
+                return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+        else:
+            flash("Escolha uma opção de modelo de preparo (pode ser \"Nenhum\").", "danger")
             return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
         if not nome:
@@ -749,7 +752,7 @@ def exames_novo():
         # vale pra médico e pra associar o exame a mais de uma filial).
         exame = Exame(
             clinica_id=filial.id, medico_id=medico_id, nome=nome, descricao=descricao,
-            preparo_modelo_id=modelo.id, duracao_minutos=duracao_minutos,
+            preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos,
             precisa_acompanhante=precisa_acompanhante,
         )
         db.session.add(exame)

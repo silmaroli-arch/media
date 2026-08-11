@@ -84,6 +84,7 @@
         <option value="" {% if not exame.preparo_modelo_id %}selected{% endif %}>Nenhum — este procedimento não precisa de preparo</option>
         {% else %}
         <option value="" disabled selected>Selecione...</option>
+        <option value="nenhum">Nenhum — este procedimento não precisa de preparo (ex.: uma consulta)</option>
         {% endif %}
         {% for m in modelos %}
         <option value="{{ m.id }}" {% if exame and exame.preparo_modelo_id == m.id %}selected{% endif %}>{{ m.nome }}</option>
@@ -91,8 +92,8 @@
       </select>
       <div class="form-text">
         {% if not exame %}
-        Obrigatório - se este procedimento não precisa de nenhuma instrução prévia, crie (ou use) um
-        modelo de preparo genérico como "Sem preparo".
+        Obrigatório escolher uma opção - pode ser "Nenhum", se o procedimento não precisar de nenhuma
+        instrução prévia (ex.: uma consulta simples).
         {% else %}
         Deixe em branco para procedimentos simples sem instruções prévias (ex.: uma consulta).
         {% endif %}
