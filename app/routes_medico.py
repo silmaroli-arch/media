@@ -833,41 +833,34 @@ def exames_por_filial():
       quando é exatamente o mesmo procedimento (nome/descrição/duração/
       preço).
     - "medico": ajustar o médico responsável e os médicos extras de cada
-      exame já existente em cada filial, sem mexer em preço."""
-    tipo = request.args.get("tipo", "filial")
-    if tipo not in ("filial", "medico"):
-        tipo = "filial"
+      exame já existente em cada filial, sem mexer em preço.
 
+    Não existe "médico principal": um médico é só mais um médico, mesmo
+    quando é ele quem faz todo o próprio cadastro (clínica sem
+    secretária) - por isso não há mais nenhum atalho especial pra
+    médico aqui. Todo mundo (médico ou secretária) segue exatamente o
+    mesmo fluxo: escolhe o médico responsável numa lista, igual a
+    qualquer outro campo do formulário. Essa tela também nunca mais
+    redireciona pra outro lugar - antes ficava inacessível pra empresas
+    de uma filial só (o caso mais comum de médico independente), o que
+    fazia a "associação" parecer sumir/quebrar."""
     empresa = empresa_atual()
     filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
 
-    if len(filiais) < 2:
-        flash("Esta tela é para associar exames entre filiais — só faz sentido para empresas com mais de uma filial.", "info")
-        return redirect(url_for("medico.exames_lista"))
+    # Com uma filial só não faz sentido a grade "Exame × Filial" (só
+    # teria uma coluna), então o combobox nem mostra essa opção e o
+    # padrão vira direto "Exame × Médico".
+    tipo_padrao = "filial" if len(filiais) > 1 else "medico"
+    tipo = request.args.get("tipo", tipo_padrao)
+    if tipo not in ("filial", "medico") or (tipo == "filial" and len(filiais) < 2):
+        tipo = tipo_padrao
 
     exames_todos = (
         Exame.query.join(Clinica, Exame.clinica_id == Clinica.id)
         .filter(Clinica.empresa_id == empresa.id)
         .all()
     )
-    if eh_medico():
-        # Mesma regra das outras telas de exame: o médico só acompanha e
-        # associa os exames pelos quais é responsável (principal ou extra)
-        # em pelo menos uma filial - não os de outros médicos da empresa.
-        exames_todos = [
-            e for e in exames_todos
-            if e.medico_id == current_user.id or any(m.id == current_user.id for m in e.medicos_extra)
-        ]
-        # E só pode criar a associação numa filial onde ele mesmo atende
-        # (não faz sentido escolher outro médico por ele).
-        filiais_disponiveis = (
-            Clinica.query.join(ClinicaMembro, ClinicaMembro.clinica_id == Clinica.id)
-            .filter(ClinicaMembro.usuario_id == current_user.id, Clinica.empresa_id == empresa.id)
-            .all()
-        )
-        filiais_disponiveis_ids = {c.id for c in filiais_disponiveis}
-    else:
-        filiais_disponiveis_ids = {c.id for c in filiais}
+    filiais_disponiveis_ids = {c.id for c in filiais}
 
     nomes = sorted({e.nome for e in exames_todos})
     matriz = {nome: {} for nome in nomes}
@@ -887,7 +880,6 @@ def exames_por_filial():
         matriz=matriz,
         medicos_por_filial=medicos_por_filial,
         linhas_medico=linhas_medico,
-        eh_medico=eh_medico(),
     )
 
 
@@ -920,19 +912,13 @@ def exames_por_filial_associar():
 
     medicos_destino = medicos_da_clinica(clinica_destino)
 
-    if eh_medico():
-        # O médico só pode se associar a si mesmo, numa filial onde ele
-        # mesmo atende (mesma regra usada na criação/edição normal de
-        # exames — ele não escolhe outro médico por ele).
-        if not any(m.id == current_user.id for m in medicos_destino):
-            flash("Você só pode associar exames a filiais onde você mesmo atende.", "danger")
-            return redirect(url_for("medico.exames_por_filial"))
-        medico_id = current_user.id
-    else:
-        medico_id = request.form.get("medico_id", type=int)
-        if not medico_id or not any(m.id == medico_id for m in medicos_destino):
-            flash("Escolha um médico válido, vinculado a essa filial.", "danger")
-            return redirect(url_for("medico.exames_por_filial"))
+    # Não existe "médico principal" - médico e secretária seguem o mesmo
+    # fluxo aqui, escolhendo o médico responsável numa lista (que inclui
+    # o próprio médico logado, se ele atender nessa filial).
+    medico_id = request.form.get("medico_id", type=int)
+    if not medico_id or not any(m.id == medico_id for m in medicos_destino):
+        flash("Escolha um médico válido, vinculado a essa filial.", "danger")
+        return redirect(url_for("medico.exames_por_filial"))
 
     # O preço é específico de cada filial (pode variar de local pra local)
     # e por isso é informado aqui, na hora da associação — não vem mais
@@ -988,10 +974,6 @@ def exames_por_filial_atualizar(exame_id):
     if tipo_origem not in ("filial", "medico"):
         tipo_origem = "filial"
 
-    if eh_medico() and not (exame.medico_id == current_user.id or any(m.id == current_user.id for m in exame.medicos_extra)):
-        flash("Você só pode atualizar exames pelos quais é responsável.", "danger")
-        return redirect(url_for("medico.exames_por_filial", tipo=tipo_origem))
-
     # A tela "Exame × Médico" não mexe em preço, então nem manda o campo -
     # só valida/atualiza o preço quando ele veio no formulário (tela
     # "Exame × Filial").
@@ -1002,13 +984,13 @@ def exames_por_filial_atualizar(exame_id):
             return redirect(url_for("medico.exames_por_filial", tipo=tipo_origem))
         exame.preco = preco
 
-    if not eh_medico():
-        # Só quem não é médico (secretária) pode reatribuir o responsável -
-        # mesma regra já usada em exames_editar.
-        medico_id = request.form.get("medico_id", type=int)
-        medicos_da_filial = medicos_da_clinica(exame.clinica)
-        if medico_id and any(m.id == medico_id for m in medicos_da_filial):
-            exame.medico_id = medico_id
+    # Não existe "médico principal" - qualquer pessoa da equipe (médico
+    # ou secretária) pode reatribuir o médico responsável aqui, escolhendo
+    # numa lista igual a qualquer outro campo do formulário.
+    medico_id = request.form.get("medico_id", type=int)
+    medicos_da_filial = medicos_da_clinica(exame.clinica)
+    if medico_id and any(m.id == medico_id for m in medicos_da_filial):
+        exame.medico_id = medico_id
 
     if request.form.get("atualizar_extras") == "1":
         # Só a tela "Exame × Médico" manda esse campo - as outras não

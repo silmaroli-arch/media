@@ -7,9 +7,11 @@
 </div>
 <p class="text-muted">
   Veja quais associações de exame já existem e crie novas direto aqui — em vez de cadastrar o exame do zero de
-  novo em cada filial. Escolha abaixo qual tipo de associação você quer ver e ajustar.
+  novo em cada filial.
+  {% if filiais|length > 1 %}Escolha abaixo qual tipo de associação você quer ver e ajustar.{% endif %}
 </p>
 
+{% if filiais|length > 1 %}
 <div class="mb-3" style="max-width: 320px;">
   <label class="form-label">Tipo de associação</label>
   <select class="form-select" onchange="window.location.href = this.value">
@@ -17,6 +19,7 @@
     <option value="{{ url_for('medico.exames_por_filial', tipo='medico') }}" {% if tipo == 'medico' %}selected{% endif %}>Exame × Médico</option>
   </select>
 </div>
+{% endif %}
 
 {% if tipo == 'filial' %}
 <p class="text-muted small">
@@ -52,13 +55,11 @@
                 <summary class="small">Ajustar médico/preço nesta filial</summary>
                 <form method="post" action="{{ url_for('medico.exames_por_filial_atualizar', exame_id=exame_aqui.id) }}" class="d-flex flex-column gap-1 mt-1">
                   <input type="hidden" name="tipo_origem" value="filial">
-                  {% if not eh_medico %}
                   <select name="medico_id" class="form-select form-select-sm">
                     {% for m in medicos_por_filial[f.id] %}
                     <option value="{{ m.id }}" {% if m.id == exame_aqui.medico_id %}selected{% endif %}>{{ m.nome }}</option>
                     {% endfor %}
                   </select>
-                  {% endif %}
                   <input type="text" name="preco" class="form-control form-control-sm" placeholder="Ex.: 250,00"
                          value="{{ '%.2f'|format(exame_aqui.preco)|replace('.', ',') if exame_aqui.preco else '' }}">
                   <button type="submit" class="btn btn-sm btn-outline-secondary">Salvar</button>
@@ -68,14 +69,12 @@
               <form method="post" action="{{ url_for('medico.exames_por_filial_associar') }}" class="d-flex flex-column gap-1">
                 <input type="hidden" name="nome" value="{{ nome }}">
                 <input type="hidden" name="clinica_destino_id" value="{{ f.id }}">
-                {% if not eh_medico %}
                 <select name="medico_id" class="form-select form-select-sm" required>
                   <option value="">Médico...</option>
                   {% for m in medicos_por_filial[f.id] %}
                   <option value="{{ m.id }}">{{ m.nome }}</option>
                   {% endfor %}
                 </select>
-                {% endif %}
                 <input type="text" name="preco" class="form-control form-control-sm" placeholder="Preço nesta filial (R$)" required>
                 <button type="submit" class="btn btn-sm btn-outline-primary">+ Associar</button>
               </form>
@@ -122,15 +121,11 @@
           <td><strong>{{ e.nome }}</strong></td>
           <td>{{ e.clinica.nome }}</td>
           <td>
-            {% if not eh_medico %}
             <select name="medico_id" form="form_medico_{{ e.id }}" class="form-select form-select-sm">
               {% for m in medicos_por_filial[e.clinica_id] %}
               <option value="{{ m.id }}" {% if m.id == e.medico_id %}selected{% endif %}>{{ m.nome }}</option>
               {% endfor %}
             </select>
-            {% else %}
-            {{ e.medico.nome }}
-            {% endif %}
           </td>
           <td>
             {% for m in medicos_por_filial[e.clinica_id] %}
