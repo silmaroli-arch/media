@@ -78,15 +78,24 @@
       </div>
     </div>
     <div class="mb-3">
-      <label class="form-label">Modelo de preparo <span class="text-muted fw-normal">(opcional)</span></label>
-      <select name="preparo_modelo_id" class="form-select">
-        <option value="" {% if not exame or not exame.preparo_modelo_id %}selected{% endif %}>Nenhum — este procedimento não precisa de preparo</option>
+      <label class="form-label">Modelo de preparo</label>
+      <select name="preparo_modelo_id" class="form-select" {% if not exame %}required{% endif %}>
+        {% if exame %}
+        <option value="" {% if not exame.preparo_modelo_id %}selected{% endif %}>Nenhum — este procedimento não precisa de preparo</option>
+        {% else %}
+        <option value="" disabled selected>Selecione...</option>
+        {% endif %}
         {% for m in modelos %}
         <option value="{{ m.id }}" {% if exame and exame.preparo_modelo_id == m.id %}selected{% endif %}>{{ m.nome }}</option>
         {% endfor %}
       </select>
       <div class="form-text">
+        {% if not exame %}
+        Obrigatório - se este procedimento não precisa de nenhuma instrução prévia, crie (ou use) um
+        modelo de preparo genérico como "Sem preparo".
+        {% else %}
         Deixe em branco para procedimentos simples sem instruções prévias (ex.: uma consulta).
+        {% endif %}
         {% if not modelos %}Ainda não há nenhum modelo de preparo cadastrado.{% endif %}
       </div>
       <div class="form-text">

@@ -722,18 +722,19 @@ def exames_novo():
             flash("Cadastre um médico na equipe antes de criar exames.", "danger")
             return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
-        # Modelo de preparo é opcional - cobre tanto exames que exigem
-        # preparo (ex.: colonoscopia) quanto procedimentos simples sem
-        # nenhuma instrução prévia (ex.: uma consulta), que podem ser
-        # agendados sem vincular nenhum modelo.
-        modelo = None
-        if preparo_modelo_id:
-            # Modelo de preparo é genérico (vale para a empresa toda, não só
-            # para uma filial) - qualquer modelo acessível ao usuário serve.
-            modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)
-            if not modelo:
-                flash("Escolha um modelo de preparo válido, ou deixe em branco se este procedimento não precisa de preparo.", "danger")
-                return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+        # Modelo de preparo é obrigatório no cadastro - o exame precisa
+        # nascer já com um modelo escolhido (mesmo modelo genérico serve pra
+        # "sem preparo nenhum", se for o caso; ver preparo_modelos_novo).
+        if not modelos:
+            flash("Cadastre um modelo de preparo antes de criar exames.", "danger")
+            return redirect(url_for("medico.preparo_modelos_novo"))
+
+        # Modelo de preparo é genérico (vale para a empresa toda, não só
+        # para uma filial) - qualquer modelo acessível ao usuário serve.
+        modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)
+        if not modelo:
+            flash("Escolha um modelo de preparo.", "danger")
+            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
         if not nome:
             flash("Nome do exame é obrigatório.", "danger")
@@ -748,7 +749,7 @@ def exames_novo():
         # vale pra médico e pra associar o exame a mais de uma filial).
         exame = Exame(
             clinica_id=filial.id, medico_id=medico_id, nome=nome, descricao=descricao,
-            preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos,
+            preparo_modelo_id=modelo.id, duracao_minutos=duracao_minutos,
             precisa_acompanhante=precisa_acompanhante,
         )
         db.session.add(exame)

@@ -198,8 +198,11 @@ html_exame_novo = r.get_data(as_text=True)
 checar("Formulário de novo exame NÃO pede filial", 'name="clinica_id"' not in html_exame_novo)
 checar("Formulário de novo exame NÃO pede médico", 'name="medico_id"' not in html_exame_novo)
 checar("Formulário de novo exame NÃO pede preço", 'name="preco"' not in html_exame_novo)
+with app.app_context():
+    modelo_qualquer_id = PreparoModelo.query.filter(PreparoModelo.clinica_id.in_([centro_id, praia_id])).first().id
 r = client.post("/equipe/exames/novo", data={
     "nome": "Colonoscopia Nova", "descricao": "Colono", "duracao_minutos": "45",
+    "preparo_modelo_id": str(modelo_qualquer_id),
 }, follow_redirects=True)
 checar("Cadastro de exame genérico responde 200", r.status_code == 200)
 with app.app_context():

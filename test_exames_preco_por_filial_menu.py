@@ -6,7 +6,7 @@
    só é definido/ajustado depois, por local, na tela "Exames por filial"."""
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Exame
+from app.models import Usuario, Exame, PreparoModelo, Clinica
 
 app = create_app()
 client = app.test_client()
@@ -26,6 +26,9 @@ login("secretaria@clinicavitoria.com", "123456")
 
 with app.app_context():
     medico_id = Usuario.query.filter_by(email="medico@clinicavitoria.com").first().id
+    modelo_id = PreparoModelo.query.filter_by(
+        clinica_id=Clinica.query.filter_by(nome="Clínica Vitória").first().id
+    ).first().id
 
 # A tela de Exames & Preparo não tem mais o botão "Associar exames entre filiais".
 r = client.get("/equipe/exames")
@@ -51,6 +54,7 @@ checar("Formulário de novo exame NÃO tem o campo de preço", 'name="preco"' no
 # Cadastra o exame (genérico) e define o preço depois, via "Exames por filial".
 client.post("/equipe/exames/novo", data={
     "nome": "Eletrocardiograma", "descricao": "ECG", "duracao_minutos": "20",
+    "preparo_modelo_id": str(modelo_id),
 }, follow_redirects=True)
 with app.app_context():
     exame_id = Exame.query.filter_by(nome="Eletrocardiograma").first().id

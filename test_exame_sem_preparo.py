@@ -1,10 +1,13 @@
-"""Testa que dá pra cadastrar um exame/procedimento (ex.: 'Consulta') sem
-vincular nenhum modelo de preparo - antes o formulário e a rota exigiam um
-modelo de preparo obrigatoriamente, mesmo para procedimentos simples que
-não precisam de nenhuma instrução prévia."""
+"""Testa que o Modelo de preparo passou a ser OBRIGATÓRIO no cadastro de um
+novo exame - o formulário não vem mais com "Nenhum" pré-selecionado, e a
+pessoa precisa escolher um modelo explicitamente. Se a clínica ainda não
+tem nenhum modelo de preparo cadastrado, o cadastro de exame é bloqueado com
+uma mensagem orientando a criar um modelo primeiro. Exames JÁ existentes
+sem modelo (de antes dessa regra) continuam funcionando normalmente, e a
+edição de um exame continua permitindo deixar sem modelo."""
 from app import create_app
 from app.extensions import db
-from app.models import Exame, Clinica
+from app.models import Exame, PreparoModelo, Clinica
 
 app = create_app()
 client = app.test_client()
@@ -22,32 +25,38 @@ def login(email, senha):
 
 login("secretaria@clinicavitoria.com", "123456")
 
-with app.app_context():
-    from app.models import Usuario
-    medico_id = Usuario.query.filter_by(email="medico@clinicavitoria.com").first().id
+# O formulário de novo exame não vem mais com "Nenhum" pré-selecionado -
+# tem que ser required e sem opção marcada por padrão.
+r0 = client.get("/equipe/exames/novo")
+html0 = r0.get_data(as_text=True)
+checar("Formulário de novo exame responde 200", r0.status_code == 200)
+checar("Campo de modelo de preparo é obrigatório (required)", 'name="preparo_modelo_id" class="form-select" required' in html0)
+checar("Não vem mais com 'Nenhum' pré-selecionado", 'value="" disabled selected' in html0)
+checar("Não oferece mais a opção 'Nenhum' no cadastro", "Nenhum — este procedimento não precisa de preparo" not in html0)
 
-r = client.post("/equipe/exames/novo", data={
-    "nome": "Consulta", "descricao": "Consulta", "duracao_minutos": "20", "preco": "0",
-    "medico_id": str(medico_id),
-    # preparo_modelo_id de propósito ausente/vazio
+# Tentar cadastrar sem escolher um modelo é bloqueado.
+r1 = client.post("/equipe/exames/novo", data={
+    "nome": "Consulta", "descricao": "Consulta", "duracao_minutos": "20",
+    # preparo_modelo_id de propósito ausente
 }, follow_redirects=True)
-checar("Cadastro de exame sem modelo de preparo responde 200", r.status_code == 200)
-checar("Não pede mais 'modelo de preparo obrigatório'", "modelo de preparo são obrigatórios" not in r.get_data(as_text=True).lower())
+checar("Cadastro sem modelo de preparo responde 200 (mostra erro, não quebra)", r1.status_code == 200)
+checar("Mostra aviso pedindo para escolher um modelo", "Escolha um modelo de preparo" in r1.get_data(as_text=True))
+with app.app_context():
+    checar("Exame 'Consulta' NÃO foi criado sem modelo", Exame.query.filter_by(nome="Consulta").first() is None)
 
+# Cadastrando COM um modelo escolhido funciona normalmente.
+with app.app_context():
+    modelo_id = PreparoModelo.query.first().id
+r2 = client.post("/equipe/exames/novo", data={
+    "nome": "Consulta", "descricao": "Consulta", "duracao_minutos": "20",
+    "preparo_modelo_id": str(modelo_id),
+}, follow_redirects=True)
+checar("Cadastro com modelo escolhido responde 200", r2.status_code == 200)
+checar("Mensagem de sucesso aparece", "Exame cadastrado com sucesso" in r2.get_data(as_text=True))
 with app.app_context():
     consulta = Exame.query.filter_by(nome="Consulta").first()
     checar("Exame 'Consulta' foi criado", consulta is not None)
-    checar("Exame foi criado sem nenhum modelo de preparo vinculado", consulta.preparo_modelo_id is None)
-    checar("Propriedade .preparo retorna None sem quebrar", consulta.preparo is None)
-
-# A lista de exames mostra a mensagem neutra (não mais em vermelho/alarmante).
-r = client.get("/equipe/exames")
-html = r.get_data(as_text=True)
-checar("Lista de exames mostra 'Sem modelo de preparo' para a Consulta", "Sem modelo de preparo" in html)
-
-# Exames que JÁ têm preparo continuam funcionando normalmente (sem regressão).
-r = client.get("/equipe/exames")
-checar("Lista de exames continua mostrando exames com preparo (ex.: Colonoscopia)", "Colonoscopia" in html)
+    checar("Exame foi criado com o modelo escolhido", consulta.preparo_modelo_id == modelo_id)
 
 client.get("/logout")
-print("\nTodos os testes de exame sem modelo de preparo passaram.")
+print("\nTodos os testes de modelo de preparo obrigatório no cadastro passaram.")

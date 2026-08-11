@@ -4,7 +4,7 @@ e só pode criar a associação em filiais onde ele mesmo atende - não escolhe
 outro médico por ele."""
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Clinica, Exame
+from app.models import Usuario, Clinica, Exame, PreparoModelo
 
 app = create_app()
 client = app.test_client()
@@ -25,19 +25,28 @@ with app.app_context():
     praia = Clinica.query.filter_by(nome="Grupo Saúde Total - Praia").first()
     medico_grupo = Usuario.query.filter_by(email="medico@gruposaude.com").first()
     centro_id, praia_id, medico_id = centro.id, praia.id, medico_grupo.id
+    modelo = PreparoModelo(clinica_id=centro_id, nome="Preparo Raio-X", instrucoes="Retirar objetos metálicos.")
+    db.session.add(modelo)
+    db.session.commit()
+    modelo_id = modelo.id
 
 login("secretaria@gruposaude.com", "123456")
-client.post("/equipe/clinica", data={"clinica_id": str(centro_id)}, follow_redirects=True)
+# Cadastro genérico (sem filial/médico/preço) - o médico/preço da filial de
+# origem são definidos depois, na tela "Exames por filial".
 client.post("/equipe/exames/novo", data={
-    "nome": "Raio-X Torax", "descricao": "Raio-X", "duracao_minutos": "15", "preco": "80",
-    "medico_id": str(medico_id),
+    "nome": "Raio-X Torax", "descricao": "Raio-X", "duracao_minutos": "15",
+    "preparo_modelo_id": str(modelo_id),
+}, follow_redirects=True)
+with app.app_context():
+    exame_origem_id = Exame.query.filter_by(nome="Raio-X Torax").first().id
+client.post(f"/equipe/exames/por-filial/{exame_origem_id}/atualizar", data={
+    "medico_id": str(medico_id), "preco": "80,00",
 }, follow_redirects=True)
 client.get("/logout")
 
 # O médico (que atende Centro e Praia) consegue se auto-associar na Praia,
 # sem precisar escolher médico (é sempre ele mesmo).
 login("medico@gruposaude.com", "123456")
-client.post("/equipe/clinica", data={"clinica_id": str(centro_id)}, follow_redirects=True)
 
 r = client.get("/equipe/exames/por-filial")
 html = r.get_data(as_text=True)

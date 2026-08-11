@@ -5,7 +5,7 @@ cadastrando o exame do zero de novo em cada filial (ou mexendo direto no
 banco). Usa o seed's Grupo Saúde Total (filiais Centro e Praia)."""
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Clinica, Exame
+from app.models import Usuario, Clinica, Exame, PreparoModelo
 
 app = create_app()
 client = app.test_client()
@@ -25,7 +25,13 @@ with app.app_context():
     centro = Clinica.query.filter_by(nome="Grupo Saúde Total - Centro").first()
     praia = Clinica.query.filter_by(nome="Grupo Saúde Total - Praia").first()
     medico_grupo = Usuario.query.filter_by(email="medico@gruposaude.com").first()
-    centro_id, praia_id, medico_id = centro.id, praia.id, medico_grupo.id
+    centro_id, praia_id, medico_id, medico_nome = centro.id, praia.id, medico_grupo.id, medico_grupo.nome
+    # Modelo de preparo é obrigatório no cadastro do exame - o Grupo Saúde
+    # Total não tem nenhum no seed, então criamos um aqui.
+    modelo = PreparoModelo(clinica_id=centro_id, nome="Preparo Grupo Saúde", instrucoes="Jejum de 8 horas.")
+    db.session.add(modelo)
+    db.session.commit()
+    modelo_id = modelo.id
 
 login("secretaria@gruposaude.com", "123456")
 
@@ -35,6 +41,7 @@ login("secretaria@gruposaude.com", "123456")
 # filial" (mesmo fluxo usado para os OUTROS locais).
 r = client.post("/equipe/exames/novo", data={
     "nome": "Ultrassom Abdominal", "descricao": "Ultrassom", "duracao_minutos": "30",
+    "preparo_modelo_id": str(modelo_id),
 }, follow_redirects=True)
 checar("Cadastro genérico do exame responde 200", r.status_code == 200)
 
@@ -59,7 +66,7 @@ r = client.get("/equipe/exames/por-filial")
 html = r.get_data(as_text=True)
 checar("Tela responde 200", r.status_code == 200)
 checar("Mostra o nome do exame na matriz", "Ultrassom Abdominal" in html)
-checar(f"Mostra o médico responsável na filial {nome_origem}", medico_grupo.nome in html)
+checar(f"Mostra o médico responsável na filial {nome_origem}", medico_nome in html)
 checar(f"Mostra o botão de associar para a filial {nome_destino} (ainda não tem)", "+ Associar" in html)
 
 # Tentar associar sem informar preço é bloqueado (testado ANTES da associação bem-sucedida,

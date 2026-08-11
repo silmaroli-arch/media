@@ -5,7 +5,7 @@ específicos passa a acontecer só na tela "Exames por filial" (ou depois, ao
 editar o exame). Cobre tanto secretária quanto médico cadastrando."""
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Exame, Clinica
+from app.models import Usuario, Exame, Clinica, PreparoModelo
 
 app = create_app()
 client = app.test_client()
@@ -33,10 +33,15 @@ checar("Não pede preço", 'name="preco"' not in html0)
 checar("Não mostra 'Outros médicos'", "Outros médicos que também atendem" not in html0)
 checar("Explica que a associação por filial vem depois", "Exames por filial" in html0)
 
+with app.app_context():
+    clinica_vitoria_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
+    modelo_vitoria_id = PreparoModelo.query.filter_by(clinica_id=clinica_vitoria_id).first().id
+
 r1 = client.post("/equipe/exames/novo", data={
     "nome": "Exame genérico de teste",
     "descricao": "Descrição de teste",
     "duracao_minutos": "20",
+    "preparo_modelo_id": str(modelo_vitoria_id),
 }, follow_redirects=True)
 checar("Cadastro sem filial/médico/preço funciona", r1.status_code == 200)
 checar("Mensagem de sucesso aparece", "Exame cadastrado com sucesso" in r1.get_data(as_text=True))
@@ -64,6 +69,7 @@ r3 = client.post("/equipe/exames/novo", data={
     "nome": "Exame do médico teste",
     "descricao": "",
     "duracao_minutos": "15",
+    "preparo_modelo_id": str(modelo_vitoria_id),
 }, follow_redirects=True)
 checar("Médico consegue cadastrar sem escolher a si mesmo", r3.status_code == 200 and "Exame cadastrado com sucesso" in r3.get_data(as_text=True))
 
