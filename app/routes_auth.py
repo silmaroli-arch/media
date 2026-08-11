@@ -321,8 +321,15 @@ def cadastro_paciente(codigo):
     if current_user.is_authenticated:
         return redirect(url_for("index"))
 
-    clinica = Clinica.query.filter_by(codigo_cadastro_paciente=codigo).first()
-    if not clinica:
+    # O link agora é da EMPRESA (o paciente é da empresa, não de uma
+    # filial - ver Empresa.codigo_cadastro_paciente). Links antigos, com o
+    # código legado por filial, continuam funcionando: caem na empresa
+    # dona daquela filial.
+    empresa = Empresa.query.filter_by(codigo_cadastro_paciente=codigo).first()
+    if not empresa:
+        clinica_legada = Clinica.query.filter_by(codigo_cadastro_paciente=codigo).first()
+        empresa = clinica_legada.empresa if clinica_legada else None
+    if not empresa:
         flash("Link de cadastro inválido ou expirado. Confira o link com a clínica.", "danger")
         return render_template("auth/cadastro_paciente_invalido.html")
 
@@ -336,12 +343,12 @@ def cadastro_paciente(codigo):
 
         if not nome or not cpf or not telefone or not data_nascimento_str:
             flash("Nome, CPF, telefone e data de nascimento são obrigatórios.", "danger")
-            return render_template("auth/cadastro_paciente.html", clinica=clinica)
+            return render_template("auth/cadastro_paciente.html", empresa=empresa)
 
         data_nascimento = _parse_data_nascimento(data_nascimento_str)
         if not data_nascimento:
             flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
-            return render_template("auth/cadastro_paciente.html", clinica=clinica)
+            return render_template("auth/cadastro_paciente.html", empresa=empresa)
 
         # Telefone não é único por pessoa - é normal uma família inteira
         # (pais e filhos, por exemplo) compartilhar o mesmo telefone de
@@ -356,9 +363,9 @@ def cadastro_paciente(codigo):
         # link/código continua sendo por filial (é como a clínica divulga),
         # mas o cadastro resultante vale para a empresa inteira, e a
         # filial de cada atendimento é escolhida na hora de agendar.
-        filiais_da_empresa = db.session.query(Clinica.id).filter(Clinica.empresa_id == clinica.empresa_id)
+        filiais_da_empresa = db.session.query(Clinica.id).filter(Clinica.empresa_id == empresa.id)
         filtro_empresa = or_(
-            Paciente.empresa_id == clinica.empresa_id,
+            Paciente.empresa_id == empresa.id,
             Paciente.clinica_id.in_(filiais_da_empresa),
         )
         if (
@@ -375,7 +382,7 @@ def cadastro_paciente(codigo):
                 "Se já é paciente aqui, use a tela de login normal.",
                 "danger",
             )
-            return render_template("auth/cadastro_paciente.html", clinica=clinica)
+            return render_template("auth/cadastro_paciente.html", empresa=empresa)
 
         if email and (
             Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
@@ -383,18 +390,18 @@ def cadastro_paciente(codigo):
             .first()
         ):
             flash("Já existe um cadastro com esse e-mail nesta clínica.", "danger")
-            return render_template("auth/cadastro_paciente.html", clinica=clinica)
+            return render_template("auth/cadastro_paciente.html", empresa=empresa)
 
         if Paciente.query.filter(filtro_empresa, Paciente.cpf == cpf).first():
             flash("Já existe um paciente com esse CPF cadastrado nesta clínica.", "danger")
-            return render_template("auth/cadastro_paciente.html", clinica=clinica)
+            return render_template("auth/cadastro_paciente.html", empresa=empresa)
 
         usuario = Usuario(nome=nome, email=email or None, telefone=telefone, tipo="paciente")
         db.session.add(usuario)
         db.session.flush()
 
         paciente = Paciente(
-            empresa_id=clinica.empresa_id,
+            empresa_id=empresa.id,
             usuario_id=usuario.id,
             nome=nome,
             cpf=cpf,
@@ -427,7 +434,7 @@ def cadastro_paciente(codigo):
         )
         return redirect(url_for("paciente.dashboard"))
 
-    return render_template("auth/cadastro_paciente.html", clinica=clinica)
+    return render_template("auth/cadastro_paciente.html", empresa=empresa)
 
 
 

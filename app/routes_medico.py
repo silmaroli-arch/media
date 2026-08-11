@@ -16,7 +16,7 @@ from sqlalchemy import or_, and_
 
 from app.extensions import db
 from app.models import (
-    Paciente, Usuario, Exame, Agendamento, FaqItem,
+    Paciente, Usuario, Exame, Agendamento, FaqItem, Empresa,
     PerguntaPendente, ClinicaMembro, MedicoHorario, MedicoBloqueio, Clinica,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
@@ -139,12 +139,16 @@ def _filtro_pacientes_da_empresa():
 
 
 def _gerar_codigo_cadastro_paciente():
-    """Gera um código curto e único (entre as clínicas já cadastradas) para
-    o link público de auto-cadastro de paciente (ver auth.cadastro_paciente
-    e medico.clinica_configuracoes)."""
+    """Gera um código curto e único para o link público de auto-cadastro
+    de paciente (ver auth.cadastro_paciente). O código agora vive na
+    EMPRESA (o paciente é da empresa) - a checagem inclui também os
+    códigos legados por filial, que continuam válidos em links antigos."""
     for _ in range(10):
         codigo = secrets.token_urlsafe(6).replace("_", "").replace("-", "")[:8]
-        if not Clinica.query.filter_by(codigo_cadastro_paciente=codigo).first():
+        if (
+            not Empresa.query.filter_by(codigo_cadastro_paciente=codigo).first()
+            and not Clinica.query.filter_by(codigo_cadastro_paciente=codigo).first()
+        ):
             return codigo
     # Praticamente impossível de cair aqui (espaço de códigos é enorme),
     # mas por segurança nunca deixa a função sem devolver um código.
@@ -413,6 +417,13 @@ def dashboard():
     else:
         total_pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).count()
 
+    # Link de auto-cadastro de paciente é da EMPRESA e fica aqui no
+    # Painel - gera o código na primeira vez que o painel é aberto.
+    empresa = empresa_atual()
+    if not empresa.codigo_cadastro_paciente:
+        empresa.codigo_cadastro_paciente = _gerar_codigo_cadastro_paciente()
+        db.session.commit()
+
     proximos = (
         agendamentos_q.filter(Agendamento.data_hora >= datetime.utcnow())
         .order_by(Agendamento.data_hora.asc())
@@ -427,7 +438,7 @@ def dashboard():
     return render_template(
         "medico/dashboard.html",
         clinica=clinica_atual(),
-        empresa=empresa_atual(),
+        empresa=empresa,
         filiais=filiais,
         total_pacientes=total_pacientes,
         proximos=proximos,
@@ -2699,13 +2710,6 @@ def clinica_configuracoes(filial_id=None):
         flash("Cadastre seu primeiro local de atendimento antes de preencher os dados dele.", "info")
         return redirect(url_for("medico.filiais_lista"))
 
-    # O link de auto-cadastro do paciente (ver auth.cadastro_paciente)
-    # precisa de um código — gera um na primeira vez que esta tela é
-    # aberta, pra já aparecer pronto pra copiar sem precisar de mais um clique.
-    if not clinica.codigo_cadastro_paciente:
-        clinica.codigo_cadastro_paciente = _gerar_codigo_cadastro_paciente()
-        db.session.commit()
-
     if request.method == "POST":
         # Dados gerais
         nome = request.form.get("nome", "").strip()
@@ -2788,19 +2792,20 @@ def clinica_dados_fiscais(filial_id=None):
 @staff_required
 @permissao_required("perm_dados_clinica")
 def clinica_codigo_cadastro_regenerar(filial_id=None):
-    """Gera um novo código de auto-cadastro, invalidando o link antigo —
-    útil se o link antigo foi compartilhado por engano com quem não deveria
-    ter acesso."""
+    """Gera um novo código de auto-cadastro DA EMPRESA, invalidando o link
+    antigo — útil se o link foi compartilhado por engano com quem não
+    deveria ter acesso. (A rota manteve o nome antigo por compatibilidade,
+    mas o código é da empresa - o paciente é da empresa, e o link fica no
+    Painel. Também zera os códigos legados por filial, senão os links
+    antigos continuariam funcionando e "gerar novo link" não invalidaria
+    nada de verdade.)"""
     empresa = empresa_atual()
-    if filial_id:
-        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
-    else:
-        clinica = clinica_atual()
-
-    clinica.codigo_cadastro_paciente = _gerar_codigo_cadastro_paciente()
+    empresa.codigo_cadastro_paciente = _gerar_codigo_cadastro_paciente()
+    for filial in Clinica.query.filter_by(empresa_id=empresa.id).all():
+        filial.codigo_cadastro_paciente = None
     db.session.commit()
     flash("Novo link de cadastro gerado — o link antigo não funciona mais.", "success")
-    return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+    return redirect(url_for("medico.dashboard"))
 
 
 @medico_bp.route("/clinica/emissao-fiscal", methods=["POST"])

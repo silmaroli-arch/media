@@ -56,6 +56,48 @@
   </div>
 </div>
 
+<div class="card p-3 mb-4">
+  <h6 class="mb-1">Cadastro de pacientes pelo app</h6>
+  <p class="text-muted small mb-2">
+    Compartilhe este link com os pacientes (site, WhatsApp, QR code) para que eles se cadastrem
+    sozinhos. O link é da EMPRESA — o paciente cadastrado vale para todos os locais de atendimento,
+    e a filial é escolhida na hora de marcar cada consulta. Todo cadastro feito por este link entra
+    como pendente: alguém da equipe precisa aceitar em "Cadastros pendentes" antes que o paciente
+    possa solicitar agendamento.
+  </p>
+  <div class="input-group mb-2" style="max-width: 560px;">
+    <input type="text" class="form-control" id="link-cadastro-paciente" readonly
+           value="{{ request.url_root.rstrip('/') }}{{ url_for('auth.cadastro_paciente', codigo=empresa.codigo_cadastro_paciente) }}">
+    <button class="btn btn-outline-secondary" type="button" onclick="copiarLinkCadastro(this)">Copiar</button>
+  </div>
+  {% if current_user.perm_dados_clinica %}
+  <form method="post" action="{{ url_for('medico.clinica_codigo_cadastro_regenerar') }}"
+        onsubmit="return confirm('Gerar um novo link? O link antigo deixa de funcionar.');">
+    <button type="submit" class="btn btn-sm btn-outline-danger">Gerar novo link</button>
+  </form>
+  {% endif %}
+</div>
+<script>
+  // Copia o link direto pra área de transferência (equivalente a Ctrl+C).
+  // Usa primeiro o document.execCommand('copy') porque a Clipboard API
+  // (navigator.clipboard) NÃO funciona em páginas http:// (só https/
+  // localhost) — e o ambiente de dev roda em http, então era por isso que
+  // o botão parecia não copiar nada.
+  function copiarLinkCadastro(botao) {
+    var campo = document.getElementById('link-cadastro-paciente');
+    campo.select();
+    campo.setSelectionRange(0, 99999);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    if (!ok && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(campo.value);
+      ok = true;
+    }
+    botao.innerHTML = ok ? 'Copiado!' : 'Selecionado — use Ctrl+C';
+    setTimeout(function () { botao.innerHTML = 'Copiar'; }, 2000);
+  }
+</script>
+
 <div id="agenda-completa">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h5 class="mb-0">Agenda de exames</h5>

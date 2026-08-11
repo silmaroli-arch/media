@@ -223,6 +223,15 @@ ALTER TABLE pacientes DROP CONSTRAINT IF EXISTS uq_clinica_cpf;
 -- confusão). Qualquer conta criada com ele vira "secretaria" (o papel
 -- administrativo equivalente) para não ficar trancada fora do sistema.
 UPDATE usuarios SET tipo = 'secretaria' WHERE tipo = 'configurador';
+
+-- O link de auto-cadastro de paciente passou a ser da EMPRESA (o paciente
+-- é da empresa) e fica no Painel - ver Empresa.codigo_cadastro_paciente em
+-- app/models.py e auth.cadastro_paciente. Cada empresa herda o código da
+-- primeira filial que já tinha um (assim o link que a clínica já divulgou
+-- continua funcionando igual). Os códigos legados por filial continuam
+-- válidos como fallback em links antigos.
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS codigo_cadastro_paciente VARCHAR(20);
+UPDATE empresas SET codigo_cadastro_paciente = (SELECT c.codigo_cadastro_paciente FROM clinicas c WHERE c.empresa_id = empresas.id AND c.codigo_cadastro_paciente IS NOT NULL ORDER BY c.id LIMIT 1) WHERE codigo_cadastro_paciente IS NULL;
 """
 
 # Trilha de auditoria de acesso ao prontuario (ver LogAcessoProntuario em
@@ -310,5 +319,13 @@ if duplicados:
     )
 else:
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_empresa_cpf ON pacientes (empresa_id, cpf)")
+
+# O código de auto-cadastro da empresa é único (em bases novas o
+# db.create_all() já cria isso pelo unique=True do modelo - aqui é para as
+# bases que só ganharam a coluna via ALTER TABLE acima).
+conn.execute(
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_empresas_codigo_cadastro "
+    "ON empresas (codigo_cadastro_paciente)"
+)
 
 print("Migração aplicada com sucesso!")

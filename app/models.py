@@ -42,6 +42,13 @@ class Empresa(db.Model):
     # quanto cobrar; não existe emissão automática de fatura.
     valor_por_medico = db.Column(db.Numeric(10, 2))
 
+    # Código público do link de auto-cadastro de paciente (ver
+    # auth.cadastro_paciente). O paciente é da EMPRESA, então o link
+    # também é - um só por empresa, mostrado no Painel. (O campo homônimo
+    # em Clinica virou legado: links antigos por filial continuam
+    # funcionando, mas o cadastro resultante sempre entra na empresa.)
+    codigo_cadastro_paciente = db.Column(db.String(20), unique=True, nullable=True)
+
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     filiais = db.relationship("Clinica", back_populates="empresa", cascade="all, delete-orphan")
