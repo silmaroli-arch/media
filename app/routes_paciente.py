@@ -13,10 +13,49 @@ from app.extensions import db
 from app.models import Agendamento, Exame, PerguntaPendente, FaqItem, ChatMensagem, Usuario, MedicoHorario
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.ia_preparo import responder_com_ia
-from app.clinica_utils import verificar_vencimento
+from app.clinica_utils import verificar_vencimento_empresa
 from app.agendamento_otimizador import sugerir_horarios
 
 paciente_bp = Blueprint("paciente", __name__, url_prefix="/paciente")
+
+
+def _exames_da_empresa(paciente):
+    """Exames disponíveis para o paciente: os de TODAS as filiais da
+    empresa dele (o paciente é da empresa, não de uma filial - a filial
+    do atendimento é escolhida na hora de marcar, através do exame, que é
+    por filial)."""
+    empresa = paciente.empresa_efetiva
+    if not empresa:
+        return []
+    filial_ids = [c.id for c in empresa.filiais]
+    return (
+        Exame.query.filter(Exame.clinica_id.in_(filial_ids))
+        .order_by(Exame.nome)
+        .all()
+    )
+
+
+def _clinica_ancora(paciente, exame=None, agendamento=None):
+    """Filial usada para ROTEAR registros do paciente que ainda são por
+    filial no banco (PerguntaPendente/FAQ): a do agendamento em questão,
+    senão a do exame em questão, senão a do agendamento mais recente do
+    paciente, senão a primeira filial da empresa. É só um endereçamento
+    para a equipe certa ver a pergunta - não é um vínculo do paciente."""
+    if agendamento is not None:
+        return agendamento.clinica_id
+    if exame is not None:
+        return exame.clinica_id
+    ultimo = (
+        Agendamento.query.filter_by(paciente_id=paciente.id)
+        .order_by(Agendamento.data_hora.desc())
+        .first()
+    )
+    if ultimo:
+        return ultimo.clinica_id
+    empresa = paciente.empresa_efetiva
+    if empresa and empresa.filiais:
+        return empresa.filiais[0].id
+    return paciente.clinica_id
 
 
 def paciente_required(f):
@@ -27,9 +66,10 @@ def paciente_required(f):
             return redirect(url_for("auth.login"))
 
         paciente = current_user.paciente
-        if paciente and paciente.clinica:
-            verificar_vencimento(paciente.clinica)
-        if paciente and paciente.clinica and paciente.clinica.bloqueada:
+        empresa = paciente.empresa_efetiva if paciente else None
+        if empresa:
+            verificar_vencimento_empresa(empresa)
+        if empresa and empresa.bloqueada:
             # Precisa deslogar de verdade aqui — senão a pessoa continua
             # autenticada e cai num loop (auth.login manda de volta pra
             # index, que manda de volta pra esta view).
@@ -153,7 +193,7 @@ def chat():
             if resultado_ia and resultado_ia["final"]:
                 origem = "ia_aguardando"
                 pendente = PerguntaPendente(
-                    clinica_id=paciente.clinica_id,
+                    clinica_id=_clinica_ancora(paciente, exame_selecionado, agendamento_selecionado),
                     paciente_id=paciente.id,
                     exame_id=exame_selecionado.id,
                     pergunta=pergunta_enviada,
@@ -178,7 +218,7 @@ def chat():
                 # de alimento/medicamento entram como alternativa.
                 faq_item, score = buscar_resposta(
                     pergunta_enviada,
-                    clinica_id=paciente.clinica_id,
+                    clinica_id=_clinica_ancora(paciente, exame_selecionado, agendamento_selecionado),
                     exame_id=int(exame_id_selecionado) if exame_id_selecionado else None,
                 )
                 if faq_item:
@@ -198,7 +238,7 @@ def chat():
                     origem = "medicamento"
                 else:
                     pendente = PerguntaPendente(
-                        clinica_id=paciente.clinica_id,
+                        clinica_id=_clinica_ancora(paciente, exame_selecionado, agendamento_selecionado),
                         paciente_id=paciente.id,
                         exame_id=exame_id_selecionado,
                         pergunta=pergunta_enviada,
@@ -267,7 +307,10 @@ def solicitar_agendamento():
             "warning",
         )
         return redirect(url_for("paciente.dashboard"))
-    exames = Exame.query.filter_by(clinica_id=paciente.clinica_id).order_by(Exame.nome).all()
+    # Exames de TODAS as filiais da empresa - é escolhendo o exame que o
+    # paciente escolhe também a filial de destino da consulta (cada exame
+    # pertence a uma filial; o template mostra o nome da filial junto).
+    exames = _exames_da_empresa(paciente)
 
     exame_id = request.form.get("exame_id", type=int) or request.args.get("exame_id", type=int)
     exame_selecionado = next((e for e in exames if e.id == exame_id), None) if exame_id else None
@@ -307,7 +350,9 @@ def solicitar_agendamento():
                 ))
 
             agendamento = Agendamento(
-                clinica_id=paciente.clinica_id,
+                # A filial do agendamento é a filial DO EXAME escolhido -
+                # o paciente é da empresa, não de uma filial fixa.
+                clinica_id=exame_selecionado.clinica_id,
                 paciente_id=paciente.id,
                 exame_id=exame_selecionado.id,
                 medico_id=medico_selecionado.id,

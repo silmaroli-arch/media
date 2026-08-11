@@ -346,8 +346,11 @@ class Usuario(db.Model, UserMixin):
         papel — usado só como sugestão inicial ao criar a conta; quem
         administra a equipe pode ajustar cada permissão individualmente
         depois (por exemplo, um médico sem secretária pode precisar de
-        todas elas)."""
-        administrativo = self.tipo == "secretaria"
+        todas elas). "configurador" é o papel de quem só configura os
+        dados do sistema (locais, equipe, exames, preparos) sem atender
+        paciente — por isso nasce com todas as permissões administrativas,
+        igual à secretária."""
+        administrativo = self.tipo in ("secretaria", "configurador")
         self.perm_pacientes = administrativo
         self.perm_equipe = administrativo
         self.perm_filiais = administrativo
@@ -361,7 +364,10 @@ class Usuario(db.Model, UserMixin):
 
     @property
     def is_staff(self):
-        return self.tipo in ("secretaria", "medico")
+        # "configurador" é a pessoa que configura os dados no sistema
+        # (não é médico nem secretária de atendimento) - faz parte da
+        # equipe como qualquer outro papel administrativo.
+        return self.tipo in ("secretaria", "medico", "configurador")
 
     @property
     def is_dono(self):
@@ -379,10 +385,21 @@ class Usuario(db.Model, UserMixin):
 
 class Paciente(db.Model):
     __tablename__ = "pacientes"
-    __table_args__ = (db.UniqueConstraint("clinica_id", "cpf", name="uq_clinica_cpf"),)
+    __table_args__ = (db.UniqueConstraint("empresa_id", "cpf", name="uq_empresa_cpf"),)
 
     id = db.Column(db.Integer, primary_key=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
+    # O paciente pertence à EMPRESA, não a uma filial - "o cliente é só
+    # cliente". A filial só entra em cena na hora de marcar a consulta:
+    # cada Agendamento tem sua própria clinica_id (a filial escolhida
+    # naquele agendamento), escolhida tanto pela equipe (medico.agenda_novo)
+    # quanto pelo próprio paciente no pedido de agendamento
+    # (paciente.solicitar_agendamento, via exame - que é por filial).
+    empresa_id = db.Column(db.Integer, db.ForeignKey("empresas.id"), nullable=True)
+    # LEGADO: antes o paciente era amarrado a uma filial no cadastro. O
+    # campo fica só para dados históricos (a migração copia
+    # clinicas.empresa_id para empresa_id) - código novo não deve ler nem
+    # gravar clinica_id em pacientes.
+    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
     usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), unique=True)
     nome = db.Column(db.String(150), nullable=False)
     cpf = db.Column(db.String(20), nullable=False)
@@ -412,7 +429,17 @@ class Paciente(db.Model):
     # pode solicitar agendamento (ver paciente.solicitar_agendamento).
     status_cadastro = db.Column(db.String(20), nullable=False, default="aprovado")
 
+    empresa = db.relationship("Empresa", foreign_keys=[empresa_id])
     clinica = db.relationship("Clinica", back_populates="pacientes")
+
+    @property
+    def empresa_efetiva(self):
+        """Empresa do paciente, cobrindo também registros antigos que só
+        têm a filial legada (clinica_id) e ainda não passaram pela
+        migração que preenche empresa_id."""
+        if self.empresa is not None:
+            return self.empresa
+        return self.clinica.empresa if self.clinica else None
     usuario = db.relationship("Usuario", back_populates="paciente")
     agendamentos = db.relationship("Agendamento", back_populates="paciente", cascade="all, delete-orphan")
     perguntas_pendentes = db.relationship("PerguntaPendente", back_populates="paciente", cascade="all, delete-orphan")

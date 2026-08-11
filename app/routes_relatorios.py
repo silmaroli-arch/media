@@ -16,7 +16,7 @@ from sqlalchemy import func
 from app.extensions import db
 from app.models import Agendamento, Pagamento, Paciente
 from app.clinica_utils import filiais_atuais, filiais_atuais_ids
-from app.routes_medico import staff_required, eh_medico, medicos_das_filiais
+from app.routes_medico import staff_required, eh_medico, medicos_das_filiais, _filtro_pacientes_da_empresa
 from app.relatorios_utils import (
     periodo_do_filtro, intervalo_datetime, exportar_csv, exportar_xlsx, exportar_pdf,
 )
@@ -84,9 +84,9 @@ def index():
     total_no_show = agendamentos_periodo.filter(Agendamento.status == "nao_compareceu").count()
 
     novos_pacientes = Paciente.query.filter(
-        Paciente.clinica_id.in_(filial_ids), Paciente.criado_em.between(inicio_dt, fim_dt),
+        _filtro_pacientes_da_empresa(), Paciente.criado_em.between(inicio_dt, fim_dt),
     ).count()
-    cadastros_pendentes = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids), Paciente.status_cadastro == "pendente").count()
+    cadastros_pendentes = Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.status_cadastro == "pendente").count()
 
     return render_template(
         "relatorios/index.html",
@@ -249,13 +249,13 @@ def pacientes():
 
     novos = (
         Paciente.query
-        .filter(Paciente.clinica_id.in_(filial_ids), Paciente.criado_em.between(inicio_dt, fim_dt))
+        .filter(_filtro_pacientes_da_empresa(), Paciente.criado_em.between(inicio_dt, fim_dt))
         .order_by(Paciente.criado_em.asc())
         .all()
     )
-    total_ativos = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids), Paciente.status_cadastro == "aprovado").count()
-    total_pendentes = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids), Paciente.status_cadastro == "pendente").count()
-    total_rejeitados = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids), Paciente.status_cadastro == "rejeitado").count()
+    total_ativos = Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.status_cadastro == "aprovado").count()
+    total_pendentes = Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.status_cadastro == "pendente").count()
+    total_rejeitados = Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.status_cadastro == "rejeitado").count()
 
     por_dia = OrderedDict()
     por_origem = OrderedDict([("Cadastrado pela equipe", 0), ("Auto-cadastro pelo app", 0)])

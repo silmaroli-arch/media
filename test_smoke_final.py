@@ -323,8 +323,10 @@ texto = client.get("/equipe/clinica", follow_redirects=True).get_data(as_text=Tr
 checar("Secretária multi-filial NÃO precisa mais escolher filial (vai direto ao painel)",
        "Em qual empresa" not in texto and "Painel" in texto)
 texto_pacientes = client.get("/equipe/pacientes").get_data(as_text=True)
-checar("A lista de pacientes traz a coluna Filial (mais de uma filial acessível)",
-       "Filial" in texto_pacientes)
+# O paciente é da EMPRESA ("o cliente é só cliente") - a lista de
+# pacientes não tem mais coluna de filial; a filial fica em cada agendamento.
+checar("A lista de pacientes NÃO traz coluna de filial (paciente é da empresa)",
+       "<th>Filial</th>" not in texto_pacientes)
 
 client.post("/equipe/clinica", data={"clinica_id": str(filial_centro_id)}, follow_redirects=True)
 
@@ -1254,7 +1256,7 @@ with app.app_context():
     medico_carlos_id = medico_carlos.id
     colonoscopia = Exame.query.filter_by(clinica_id=clinica_vitoria_id, nome="Colonoscopia").first()
     colonoscopia_id = colonoscopia.id
-    joao_id = Paciente.query.filter_by(clinica_id=clinica_vitoria_id, nome="João Pereira").first().id
+    joao_id = Paciente.query.filter_by(nome="João Pereira").first().id  # paciente é da empresa agora, não da filial
 
 login("secretaria@clinicavitoria.com", "123456")
 

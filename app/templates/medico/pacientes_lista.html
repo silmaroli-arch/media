@@ -10,12 +10,13 @@
 </div>
 <div class="card p-3">
   <table class="table table-hover">
-    <thead><tr><th>Nome</th>{{ th_filial() }}<th>CPF</th><th>Telefone (login)</th><th>Data de nascimento</th><th>Status</th><th></th></tr></thead>
+    {# O paciente é da EMPRESA, não de uma filial - por isso não há coluna
+       de filial aqui; a filial aparece em cada AGENDAMENTO do paciente. #}
+    <thead><tr><th>Nome</th><th>CPF</th><th>Telefone (login)</th><th>Data de nascimento</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for p in pacientes %}
       <tr>
         <td>{{ p.nome }}</td>
-        {{ td_filial(p) }}
         <td>{{ p.cpf }}</td>
         <td>{{ p.telefone or '-' }}</td>
         <td>{{ p.data_nascimento.strftime('%d/%m/%Y') if p.data_nascimento else '-' }}</td>
@@ -31,7 +32,7 @@
         <td><a href="{{ url_for('medico.pacientes_detalhe', paciente_id=p.id) }}" class="btn btn-sm btn-outline-secondary">Detalhes</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="{{ 7 if mostrar_filial else 6 }}" class="text-muted text-center">Nenhum paciente cadastrado ainda.</td></tr>
+      <tr><td colspan="6" class="text-muted text-center">Nenhum paciente cadastrado ainda.</td></tr>
       {% endfor %}
     </tbody>
   </table>

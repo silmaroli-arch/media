@@ -5,11 +5,9 @@
 <h3 class="mb-3">{% if paciente %}Editar cadastro de {{ paciente.nome }}{% else %}Cadastrar novo paciente{% endif %}</h3>
 <div class="card p-4">
   <form method="post">
-    {% if not paciente %}
-    {{ select_filial(ajuda="Em qual dos seus locais de atendimento este paciente será cadastrado.") }}
-    {% elif mostrar_filial %}
-    <p class="text-muted small">Local de atendimento: <strong>{{ paciente.clinica.nome }}</strong></p>
-    {% endif %}
+    {# O paciente é cadastrado na EMPRESA - não se escolhe filial aqui
+       ("o cliente é só cliente"). A filial é escolhida em cada
+       agendamento, na hora de marcar a consulta. #}
     <div class="row g-3">
       <div class="col-md-6">
         <label class="form-label">Nome completo</label>

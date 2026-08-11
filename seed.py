@@ -350,7 +350,7 @@ with app.app_context():
     db.session.flush()
 
     joao = Paciente(
-        clinica_id=clinica_vitoria.id,
+        empresa_id=clinica_vitoria.empresa_id,
         usuario_id=usuario_joao.id,
         nome="João Pereira",
         cpf="123.456.789-00",
@@ -366,7 +366,7 @@ with app.app_context():
     db.session.flush()
 
     maria = Paciente(
-        clinica_id=clinica_sp.id,
+        empresa_id=clinica_sp.empresa_id,
         usuario_id=usuario_maria.id,
         nome="Maria Silva",
         cpf="987.654.321-00",
@@ -384,7 +384,7 @@ with app.app_context():
     db.session.flush()
 
     pedro = Paciente(
-        clinica_id=clinica_vitoria.id,
+        empresa_id=clinica_vitoria.empresa_id,
         usuario_id=usuario_pedro.id,
         nome="Pedro Souza",
         cpf="111.222.333-00",

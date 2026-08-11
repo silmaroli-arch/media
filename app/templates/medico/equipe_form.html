@@ -19,6 +19,7 @@
       <select name="papel" id="sel_papel" class="form-select" onchange="ajustarPermissoesPadrao()">
         <option value="secretaria">Secretária</option>
         <option value="medico">Médico</option>
+        <option value="configurador">Configurador(a) — configura os dados do sistema</option>
       </select>
     </div>
     <div class="mb-3">
@@ -68,9 +69,10 @@
   // Só um ponto de partida sugerido — todas as permissões continuam
   // editáveis manualmente antes de salvar.
   function ajustarPermissoesPadrao() {
-    var ehSecretaria = document.getElementById('sel_papel').value === 'secretaria';
+    var papel = document.getElementById('sel_papel').value;
+    var administrativo = papel === 'secretaria' || papel === 'configurador';
     document.querySelectorAll('.perm-checkbox').forEach(function (cb) {
-      cb.checked = ehSecretaria;
+      cb.checked = administrativo;
     });
   }
 </script>

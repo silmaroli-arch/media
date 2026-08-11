@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, session
 from flask_login import login_user, logout_user, login_required, current_user
+from sqlalchemy import or_
 
 from app.extensions import db
 from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone
@@ -218,8 +219,8 @@ def cadastro():
             flash("Preencha todos os campos.", "danger")
             return render_template("auth/cadastro.html")
 
-        if papel not in ("medico", "secretaria"):
-            flash("Escolha se você é médico(a) ou secretário(a).", "danger")
+        if papel not in ("medico", "secretaria", "configurador"):
+            flash("Escolha o seu papel: médico(a), secretário(a) ou configurador(a).", "danger")
             return render_template("auth/cadastro.html")
 
         if len(senha) < 6:
@@ -351,10 +352,19 @@ def cadastro_paciente(codigo):
         # é a mesma pessoa tentando se cadastrar de novo nesta clínica; a
         # unicidade que de fato importa (e é garantida pelo banco) é por
         # CPF, verificada logo abaixo.
+        # O paciente é cadastrado na EMPRESA dona da filial do link - o
+        # link/código continua sendo por filial (é como a clínica divulga),
+        # mas o cadastro resultante vale para a empresa inteira, e a
+        # filial de cada atendimento é escolhida na hora de agendar.
+        filiais_da_empresa = db.session.query(Clinica.id).filter(Clinica.empresa_id == clinica.empresa_id)
+        filtro_empresa = or_(
+            Paciente.empresa_id == clinica.empresa_id,
+            Paciente.clinica_id.in_(filiais_da_empresa),
+        )
         if (
             Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
             .filter(
-                Paciente.clinica_id == clinica.id,
+                filtro_empresa,
                 Usuario.telefone == telefone,
                 Paciente.data_nascimento == data_nascimento,
             )
@@ -369,13 +379,13 @@ def cadastro_paciente(codigo):
 
         if email and (
             Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
-            .filter(Paciente.clinica_id == clinica.id, Usuario.email == email)
+            .filter(filtro_empresa, Usuario.email == email)
             .first()
         ):
             flash("Já existe um cadastro com esse e-mail nesta clínica.", "danger")
             return render_template("auth/cadastro_paciente.html", clinica=clinica)
 
-        if Paciente.query.filter_by(clinica_id=clinica.id, cpf=cpf).first():
+        if Paciente.query.filter(filtro_empresa, Paciente.cpf == cpf).first():
             flash("Já existe um paciente com esse CPF cadastrado nesta clínica.", "danger")
             return render_template("auth/cadastro_paciente.html", clinica=clinica)
 
@@ -384,7 +394,7 @@ def cadastro_paciente(codigo):
         db.session.flush()
 
         paciente = Paciente(
-            clinica_id=clinica.id,
+            empresa_id=clinica.empresa_id,
             usuario_id=usuario.id,
             nome=nome,
             cpf=cpf,

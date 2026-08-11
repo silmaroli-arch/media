@@ -72,7 +72,11 @@ def empresa_detalhe(empresa_id):
     verificar_vencimento_empresa(empresa)
 
     filial_ids = [f.id for f in empresa.filiais]
-    total_pacientes = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids)).count() if filial_ids else 0
+    # Pacientes são da EMPRESA (Paciente.empresa_id); a comparação com a
+    # filial legada cobre cadastros de antes dessa mudança.
+    total_pacientes = Paciente.query.filter(
+        (Paciente.empresa_id == empresa.id) | (Paciente.clinica_id.in_(filial_ids or [0]))
+    ).count()
     total_agendamentos = Agendamento.query.filter(Agendamento.clinica_id.in_(filial_ids)).count() if filial_ids else 0
     membros_por_filial = {
         f.id: ClinicaMembro.query.filter_by(clinica_id=f.id).all() for f in empresa.filiais

@@ -43,6 +43,7 @@ with app.app_context():
     medico_grupo = Usuario.query.filter_by(email="medico@gruposaude.com").first()
     centro_id, praia_id, medico_id = centro.id, praia.id, medico_grupo.id
     outra_clinica_id = outra_empresa_clinica.id
+    grupo_id = centro.empresa_id
 
     # Modelo de preparo em cada filial (o modelo é por filial).
     for c in (centro, praia):
@@ -104,9 +105,10 @@ html = r.get_data(as_text=True)
 checar("Lista de pacientes responde 200", r.status_code == 200)
 checar("Lista de pacientes mostra o paciente da filial Centro", "Paciente Centro" in html)
 checar("Lista de pacientes mostra TAMBÉM o paciente da filial Praia", "Paciente Praia" in html)
-checar("Lista de pacientes tem a coluna Filial", "<th>Filial</th>" in html)
-checar("Lista de pacientes identifica a filial Centro na linha", "Grupo Saúde Total - Centro" in html)
-checar("Lista de pacientes identifica a filial Praia na linha", "Grupo Saúde Total - Praia" in html)
+# O paciente agora é da EMPRESA, não de uma filial ("o cliente é só
+# cliente") - a lista de pacientes não tem mais coluna de filial; a filial
+# aparece em cada AGENDAMENTO (ver a checagem da agenda logo abaixo).
+checar("Lista de pacientes NÃO tem coluna de filial (paciente é da empresa)", "<th>Filial</th>" not in html)
 checar("Lista de pacientes NÃO mostra paciente de outra empresa",
        "Paciente De Outra Empresa" not in html)
 
@@ -153,43 +155,34 @@ checar("Barra superior mostra o nome da empresa", "Grupo Saúde Total<" in html 
 
 # ---------- (b) Cadastro escolhendo a filial ----------
 
+# O paciente é da EMPRESA - o cadastro não pede (nem aceita) filial
+# nenhuma; a filial é escolhida em cada agendamento.
 r = client.get("/equipe/pacientes/novo")
 html = r.get_data(as_text=True)
-checar("Formulário de novo paciente pede a filial", 'name="clinica_id"' in html)
-checar("Formulário de novo paciente lista as duas filiais como opção",
-       "Grupo Saúde Total - Centro" in html and "Grupo Saúde Total - Praia" in html)
+checar("Formulário de novo paciente NÃO pede filial (paciente é da empresa)", 'name="clinica_id"' not in html)
 
 r = client.post("/equipe/pacientes/novo", data={
-    "clinica_id": str(praia_id),
-    "nome": "Novo Paciente Da Praia", "cpf": "77711122233", "telefone": "(27) 98888-7777",
+    "nome": "Novo Paciente Da Empresa", "cpf": "77711122233", "telefone": "(27) 98888-7777",
     "data_nascimento": "10/04/1990",
 }, follow_redirects=True)
-checar("Cadastro de paciente com filial escolhida responde 200", r.status_code == 200)
+checar("Cadastro de paciente (sem filial) responde 200", r.status_code == 200)
 with app.app_context():
     novo = Paciente.query.filter_by(cpf="77711122233").first()
     checar("Paciente novo foi salvo", novo is not None)
-    checar("Paciente novo ficou na filial ESCOLHIDA (Praia)", novo.clinica_id == praia_id)
+    checar("Paciente novo pertence à EMPRESA (empresa_id), sem filial", novo.empresa_id == grupo_id and novo.clinica_id is None)
 
 r = client.post("/equipe/pacientes/novo", data={
-    # sem clinica_id -> não dá pra adivinhar a filial, tem que ser bloqueado
-    "nome": "Paciente Sem Filial", "cpf": "66611122233", "telefone": "(27) 97777-6666",
-    "data_nascimento": "10/04/1990",
-}, follow_redirects=True)
-checar("Cadastro sem filial é bloqueado com aviso", "Escolha a filial" in r.get_data(as_text=True))
-with app.app_context():
-    checar("Paciente sem filial não foi criado",
-           Paciente.query.filter_by(cpf="66611122233").first() is None)
-
-r = client.post("/equipe/pacientes/novo", data={
-    # filial de OUTRA empresa -> tem que ser rejeitada
+    # um clinica_id forjado no POST (inclusive de OUTRA empresa) é
+    # simplesmente ignorado - o paciente nasce sempre na empresa atual.
     "clinica_id": str(outra_clinica_id),
-    "nome": "Paciente Filial Invalida", "cpf": "55511122233", "telefone": "(27) 96666-5555",
+    "nome": "Paciente Campo Forjado", "cpf": "55511122233", "telefone": "(27) 96666-5555",
     "data_nascimento": "10/04/1990",
 }, follow_redirects=True)
-checar("Cadastro com filial de outra empresa é bloqueado", "Escolha a filial" in r.get_data(as_text=True))
+checar("POST com clinica_id forjado responde 200", r.status_code == 200)
 with app.app_context():
-    checar("Paciente com filial de outra empresa não foi criado",
-           Paciente.query.filter_by(cpf="55511122233").first() is None)
+    forjado = Paciente.query.filter_by(cpf="55511122233").first()
+    checar("clinica_id forjado é ignorado - paciente fica na empresa atual, sem filial",
+           forjado is not None and forjado.empresa_id == grupo_id and forjado.clinica_id is None)
 
 # O cadastro de exame é genérico - não pede filial, médico nem preço (isso é
 # resolvido depois, na tela "Exames por filial").

@@ -7,10 +7,14 @@
   <form method="get" class="row g-3 mb-3">
     <div class="col-md-8">
       <label class="form-label">Exame</label>
+      {# Cada exame pertence a uma filial — escolhendo o exame, o paciente
+         escolhe também a filial de destino da consulta. Quando a empresa
+         tem mais de uma filial, o nome dela aparece junto na opção. #}
+      {% set varias_filiais = exames|map(attribute='clinica_id')|unique|list|length > 1 %}
       <select name="exame_id" class="form-select" onchange="this.form.submit()">
         <option value="">Selecione um exame...</option>
         {% for e in exames %}
-        <option value="{{ e.id }}" {% if exame_selecionado and exame_selecionado.id == e.id %}selected{% endif %}>{{ e.nome }}</option>
+        <option value="{{ e.id }}" {% if exame_selecionado and exame_selecionado.id == e.id %}selected{% endif %}>{{ e.nome }}{% if varias_filiais %} — {{ e.clinica.nome }}{% endif %}</option>
         {% endfor %}
       </select>
     </div>

@@ -201,6 +201,20 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS empresa_fundadora_id INTEGER REFER
 -- criados a partir de agora, pelo cadastro genérico, nascem FALSE (isso é
 -- feito explicitamente no código, em exames_novo, não por este default).
 ALTER TABLE exames ADD COLUMN IF NOT EXISTS medico_confirmado BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- O paciente passou a pertencer à EMPRESA, não a uma filial ("o cliente é
+-- só cliente" - ver Paciente.empresa_id em app/models.py): a filial só é
+-- escolhida na hora de marcar cada consulta (Agendamento.clinica_id).
+-- Passos: cria a coluna nova; copia a empresa da filial legada para os
+-- cadastros existentes; solta o NOT NULL da filial legada (cadastros novos
+-- não a preenchem mais); e troca a unicidade de CPF de por-filial para
+-- por-empresa (o índice único novo só é criado se não houver CPF repetido
+-- entre filiais da mesma empresa - se houver, fica só a checagem da
+-- aplicação, ver medico.pacientes_novo, sem quebrar o deploy).
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS empresa_id INTEGER REFERENCES empresas(id);
+UPDATE pacientes SET empresa_id = (SELECT empresa_id FROM clinicas WHERE clinicas.id = pacientes.clinica_id) WHERE empresa_id IS NULL AND clinica_id IS NOT NULL;
+ALTER TABLE pacientes ALTER COLUMN clinica_id DROP NOT NULL;
+ALTER TABLE pacientes DROP CONSTRAINT IF EXISTS uq_clinica_cpf;
 """
 
 # Trilha de auditoria de acesso ao prontuario (ver LogAcessoProntuario em
@@ -258,5 +272,26 @@ conn.execute(
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_email_nao_paciente "
     "ON usuarios (email) WHERE tipo <> 'paciente'"
 )
+
+# O CPF do paciente agora é único por EMPRESA, não mais por filial (o
+# paciente é da empresa - ver Paciente.empresa_id e o bloco de ALTERs de
+# "pacientes" no SQL acima). Antes de criar o índice único novo, confere
+# se a base migrada não tem a mesma pessoa cadastrada em duas filiais da
+# mesma empresa (era possível no modelo antigo): se tiver, o índice não é
+# criado (a unicidade fica garantida só pela aplicação, ver
+# medico.pacientes_novo) e o deploy segue normalmente - unificar esses
+# cadastros duplicados é uma tarefa manual, avisada no log.
+duplicados = conn.execute(
+    "SELECT empresa_id, cpf, COUNT(*) FROM pacientes "
+    "WHERE empresa_id IS NOT NULL GROUP BY empresa_id, cpf HAVING COUNT(*) > 1"
+).fetchall()
+if duplicados:
+    print(
+        f"AVISO: {len(duplicados)} CPF(s) aparecem em mais de um cadastro na mesma empresa "
+        "(paciente repetido entre filiais, do modelo antigo). O índice único uq_empresa_cpf "
+        "NÃO foi criado - unifique esses cadastros e rode a migração de novo."
+    )
+else:
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_empresa_cpf ON pacientes (empresa_id, cpf)")
 
 print("Migração aplicada com sucesso!")

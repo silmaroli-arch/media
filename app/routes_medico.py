@@ -93,6 +93,21 @@ def _destino_pos_onboarding(endpoint_padrao, **kwargs):
     return redirect(url_for(endpoint_padrao, **kwargs))
 
 
+def _filtro_pacientes_da_empresa():
+    """Filtro SQLAlchemy para "pacientes da EMPRESA atual". O paciente
+    pertence à empresa, não a uma filial ("o cliente é só cliente" - a
+    filial só é escolhida na hora de marcar cada consulta, ver
+    Agendamento.clinica_id). Cobre também cadastros antigos, de antes
+    dessa mudança, que só têm a filial legada (Paciente.clinica_id) e
+    ainda não passaram pela migração que preenche empresa_id."""
+    empresa = empresa_atual()
+    filiais_da_empresa = db.session.query(Clinica.id).filter(Clinica.empresa_id == empresa.id)
+    return or_(
+        Paciente.empresa_id == empresa.id,
+        Paciente.clinica_id.in_(filiais_da_empresa),
+    )
+
+
 def _gerar_codigo_cadastro_paciente():
     """Gera um código curto e único (entre as clínicas já cadastradas) para
     o link público de auto-cadastro de paciente (ver auth.cadastro_paciente
@@ -313,6 +328,13 @@ def dashboard():
     filial_ids = [f.id for f in filiais]
 
     agendamentos_q = Agendamento.query.filter(Agendamento.clinica_id.in_(filial_ids))
+    # Médico logado com o próprio login vê no painel APENAS a agenda DELE -
+    # independente das permissões administrativas que tenha (um médico
+    # fundador com todas as permissões continua vendo as telas
+    # administrativas, mas a agenda do painel é a dele, não a da clínica
+    # inteira). Secretária/configurador continuam vendo a agenda de todos.
+    if eh_medico():
+        agendamentos_q = agendamentos_q.filter(Agendamento.medico_id == current_user.id)
     # "Pendente de resposta" no painel conta as duas situações que
     # aparecem na tela "Perguntas dos pacientes" (ver
     # medico.perguntas_pendentes) esperando alguma ação do médico: as que
@@ -334,7 +356,7 @@ def dashboard():
     # de poder solicitar agendamento — qualquer um da equipe pode ver e
     # decidir, não depende de perm_pacientes.
     cadastros_pendentes_count = Paciente.query.filter(
-        Paciente.clinica_id.in_(filial_ids), Paciente.status_cadastro == "pendente"
+        _filtro_pacientes_da_empresa(), Paciente.status_cadastro == "pendente"
     ).count()
 
     if eh_medico() and not current_user.perm_pacientes:
@@ -344,7 +366,8 @@ def dashboard():
             .distinct()
             .count()
         )
-        agendamentos_q = agendamentos_q.filter(Agendamento.medico_id == current_user.id)
+        # (a agenda do painel já vem filtrada pro médico logo acima,
+        # independente de permissão - aqui só os contadores/perguntas)
         # Perguntas pendentes só entram na conta do médico sem a permissão
         # administrativa quando forem sobre um exame de sua responsabilidade
         # (perguntas gerais, sem exame associado, ficam só para quem tem
@@ -358,7 +381,7 @@ def dashboard():
         )
         solicitacoes_q = solicitacoes_q.filter(Agendamento.medico_id == current_user.id)
     else:
-        total_pacientes = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids)).count()
+        total_pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).count()
 
     proximos = (
         agendamentos_q.filter(Agendamento.data_hora >= datetime.utcnow())
@@ -425,13 +448,13 @@ def pacientes_lista():
         # acabou de cadastrar apareceria na lista antes do 1º agendamento.
         pacientes = (
             Paciente.query.join(Agendamento, Agendamento.paciente_id == Paciente.id)
-            .filter(Paciente.clinica_id.in_(filial_ids), Agendamento.medico_id == current_user.id)
+            .filter(_filtro_pacientes_da_empresa(), Agendamento.medico_id == current_user.id)
             .distinct()
             .order_by(Paciente.nome)
             .all()
         )
     else:
-        pacientes = Paciente.query.filter(Paciente.clinica_id.in_(filial_ids)).order_by(Paciente.nome).all()
+        pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).order_by(Paciente.nome).all()
     return render_template("medico/pacientes_lista.html", pacientes=pacientes)
 
 
@@ -446,7 +469,7 @@ def pacientes_solicitacoes():
     cadastro completo do paciente."""
     filial_ids = filiais_atuais_ids()
     pendentes = (
-        Paciente.query.filter(Paciente.clinica_id.in_(filial_ids), Paciente.status_cadastro == "pendente")
+        Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.status_cadastro == "pendente")
         .order_by(Paciente.criado_em.asc())
         .all()
     )
@@ -464,7 +487,7 @@ def pacientes_cadastro_decidir(paciente_id):
     engano, ou o paciente resolveu a pendência e agora pode ser aprovado),
     por isso não exige mais que o status atual seja "pendente"."""
     paciente = Paciente.query.filter(
-        Paciente.id == paciente_id, Paciente.clinica_id.in_(filiais_atuais_ids())
+        Paciente.id == paciente_id, _filtro_pacientes_da_empresa()
     ).first_or_404()
     acao = request.form.get("acao")
     if acao == "aceitar":
@@ -511,14 +534,13 @@ def pacientes_novo():
         flash("Cadastre seu primeiro local de atendimento antes de cadastrar pacientes.", "info")
         return redirect(url_for("medico.filiais_lista"))
 
-    if request.method == "POST":
-        # Filial do paciente: escolhida no formulário quando a pessoa atua
-        # em mais de um local (e sempre validada contra os locais dela).
-        filial = _filial_do_form(filiais)
-        if not filial:
-            flash("Escolha a filial em que este paciente será cadastrado.", "danger")
-            return render_template("medico/pacientes_form.html", paciente=None)
+    empresa = empresa_atual()
 
+    if request.method == "POST":
+        # O paciente é cadastrado na EMPRESA - não se escolhe filial aqui
+        # ("o cliente é só cliente"). A filial só é escolhida na hora de
+        # marcar cada consulta (medico.agenda_novo /
+        # paciente.solicitar_agendamento).
         nome = request.form.get("nome", "").strip()
         cpf = request.form.get("cpf", "").strip()
         email = request.form.get("email", "").strip().lower()
@@ -546,25 +568,25 @@ def pacientes_novo():
         if (
             Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
             .filter(
-                Paciente.clinica_id == filial.id,
+                _filtro_pacientes_da_empresa(),
                 Usuario.telefone == telefone,
                 Paciente.data_nascimento == data_nascimento,
             )
             .first()
         ):
-            flash("Já existe um paciente cadastrado com esse telefone e data de nascimento nesta clínica.", "danger")
+            flash("Já existe um paciente cadastrado com esse telefone e data de nascimento nesta empresa.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
         if email and (
             Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
-            .filter(Paciente.clinica_id == filial.id, Usuario.email == email)
+            .filter(_filtro_pacientes_da_empresa(), Usuario.email == email)
             .first()
         ):
-            flash("Já existe um paciente com esse e-mail nesta clínica.", "danger")
+            flash("Já existe um paciente com esse e-mail nesta empresa.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
-        if Paciente.query.filter_by(clinica_id=filial.id, cpf=cpf).first():
-            flash("Já existe um paciente com esse CPF nesta clínica.", "danger")
+        if Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.cpf == cpf).first():
+            flash("Já existe um paciente com esse CPF nesta empresa.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
         # Paciente não usa e-mail/senha para entrar — o acesso é feito
@@ -574,7 +596,7 @@ def pacientes_novo():
         db.session.flush()
 
         paciente = Paciente(
-            clinica_id=filial.id,
+            empresa_id=empresa.id,
             usuario_id=usuario.id,
             nome=nome,
             cpf=cpf,
@@ -602,7 +624,7 @@ def pacientes_novo():
 @permissao_required("perm_pacientes")
 def pacientes_editar(paciente_id):
     paciente = Paciente.query.filter(
-        Paciente.id == paciente_id, Paciente.clinica_id.in_(filiais_atuais_ids())
+        Paciente.id == paciente_id, _filtro_pacientes_da_empresa()
     ).first_or_404()
 
     if request.method == "POST":
@@ -622,7 +644,7 @@ def pacientes_editar(paciente_id):
 @staff_required
 def pacientes_detalhe(paciente_id):
     paciente = Paciente.query.filter(
-        Paciente.id == paciente_id, Paciente.clinica_id.in_(filiais_atuais_ids())
+        Paciente.id == paciente_id, _filtro_pacientes_da_empresa()
     ).first_or_404()
 
     if eh_medico() and not current_user.perm_pacientes:
@@ -646,7 +668,7 @@ def pacientes_prontuario_exportar(paciente_id):
     Mesmas checagens de acesso de pacientes_detalhe(), e o próprio acesso
     de exportação também fica registrado na trilha de auditoria."""
     paciente = Paciente.query.filter(
-        Paciente.id == paciente_id, Paciente.clinica_id.in_(filiais_atuais_ids())
+        Paciente.id == paciente_id, _filtro_pacientes_da_empresa()
     ).first_or_404()
 
     if eh_medico() and not current_user.perm_pacientes:
@@ -1483,8 +1505,10 @@ def agenda_novo():
         # do exame.
         medico_id_form = request.form.get("medico_id", type=int)
 
-        # confirma que o paciente e o exame pertencem mesmo à filial escolhida
-        paciente = Paciente.query.filter_by(id=paciente_id, clinica_id=filial.id).first()
+        # O exame precisa pertencer à filial escolhida; o paciente é da
+        # EMPRESA (qualquer paciente da empresa pode ser agendado em
+        # qualquer filial - a filial do atendimento é a deste agendamento).
+        paciente = Paciente.query.filter(Paciente.id == paciente_id, _filtro_pacientes_da_empresa()).first()
         exame_query = Exame.query.filter_by(id=exame_id, clinica_id=filial.id)
         if eh_medico():
             exame_query = exame_query.filter(
@@ -1561,7 +1585,9 @@ def agenda_novo():
         if medico_selecionado_id is None and len(medicos_disponiveis) == 1:
             medico_selecionado_id = medicos_disponiveis[0].id
 
-    pacientes = Paciente.query.filter_by(clinica_id=filial_selecionada.id).order_by(Paciente.nome).all()
+    # Pacientes são da EMPRESA - a lista não depende da filial escolhida
+    # (a filial vale só para o exame e para onde o atendimento acontece).
+    pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).order_by(Paciente.nome).all()
 
     exames_query = Exame.query.filter_by(clinica_id=filial_selecionada.id)
     if eh_medico():
@@ -3062,8 +3088,8 @@ def equipe_novo():
             flash("Escolha em qual(is) filial(is) essa pessoa vai atuar.", "danger")
             return render_template("medico/equipe_form.html", filiais=filiais)
 
-        if not email or papel not in ("medico", "secretaria"):
-            flash("Preencha o e-mail e escolha o tipo (médico ou secretária).", "danger")
+        if not email or papel not in ("medico", "secretaria", "configurador"):
+            flash("Preencha o e-mail e escolha o tipo (médico, secretária ou configurador).", "danger")
             return render_template("medico/equipe_form.html", filiais=filiais)
 
         usuario_existente = Usuario.query.filter_by(email=email).first()

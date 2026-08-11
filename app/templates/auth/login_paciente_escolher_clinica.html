@@ -14,7 +14,10 @@
           {% for c in candidatos %}
           <label class="list-group-item d-flex align-items-center gap-2">
             <input class="form-check-input mt-0" type="radio" name="usuario_id_escolhido" value="{{ c.id }}" {% if loop.first %}checked{% endif %} required>
-            <span>{{ c.paciente.clinica.nome }}</span>
+            {# O paciente agora é da EMPRESA (não de uma filial) — mostra o
+               nome da empresa; cadastros antigos sem empresa preenchida
+               caem no nome da filial legada. #}
+            <span>{{ c.paciente.empresa_efetiva.nome if c.paciente.empresa_efetiva else (c.paciente.clinica.nome if c.paciente.clinica else '-') }}</span>
           </label>
           {% endfor %}
         </div>
