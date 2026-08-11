@@ -93,6 +93,20 @@ def _destino_pos_onboarding(endpoint_padrao, **kwargs):
     return redirect(url_for(endpoint_padrao, **kwargs))
 
 
+def _pessoa_da_empresa(usuario_id, empresa, filial_ids):
+    """O usuário faz parte desta empresa? Ou por vínculo de filial
+    (ClinicaMembro), ou por ser quem FUNDOU a empresa
+    (Usuario.empresa_fundadora_id) - o fundador faz parte da equipe desde
+    o cadastro público, mesmo antes de (ou sem nunca) se vincular a um
+    local de atendimento."""
+    if ClinicaMembro.query.filter(
+        ClinicaMembro.usuario_id == usuario_id, ClinicaMembro.clinica_id.in_(filial_ids)
+    ).first():
+        return True
+    u = Usuario.query.get(usuario_id)
+    return bool(u and u.empresa_fundadora_id == empresa.id)
+
+
 def _filiais_da_empresa():
     """TODAS as filiais da EMPRESA atual, independente de o usuário estar
     vinculado a elas. Usado nas telas de CONFIGURAÇÃO (modelos de preparo,
@@ -3078,6 +3092,15 @@ def equipe_lista():
     for m in membros:
         pessoa = pessoas.setdefault(m.usuario_id, {"usuario": m.usuario, "vinculos": []})
         pessoa["vinculos"].append(m)
+
+    # Quem FUNDOU a empresa faz parte da equipe desde o cadastro público,
+    # mesmo sem vínculo com local nenhum (cadastrar local não vincula
+    # ninguém automaticamente) - sem isso, o fundador não aparecia em
+    # lugar nenhum da tela de Equipe.
+    for u in Usuario.query.filter_by(empresa_fundadora_id=empresa.id).all():
+        if u.is_staff and u.ativo:
+            pessoas.setdefault(u.id, {"usuario": u, "vinculos": []})
+
     pessoas = sorted(pessoas.values(), key=lambda p: p["usuario"].nome)
 
     # Para cada pessoa, quais filiais da empresa ela ainda NÃO integra —
@@ -3199,15 +3222,14 @@ def equipe_associar_filial(usuario_id):
     filiais = Clinica.query.filter_by(empresa_id=empresa.id).all()
     filial_ids = {f.id for f in filiais}
 
-    # A pessoa precisa já fazer parte de alguma filial desta empresa —
-    # senão, isso não é "associar a mais uma filial", é criar do zero
+    # A pessoa precisa já fazer parte desta empresa (por vínculo de
+    # filial, ou por ser quem fundou a empresa - ver _pessoa_da_empresa).
+    # Senão, isso não é "associar a mais uma filial", é criar do zero
     # (fluxo de medico.equipe_novo).
-    ja_e_da_empresa = ClinicaMembro.query.filter(
-        ClinicaMembro.usuario_id == usuario_id, ClinicaMembro.clinica_id.in_(filial_ids)
-    ).first()
-    if not ja_e_da_empresa:
+    if not _pessoa_da_empresa(usuario_id, empresa, filial_ids):
         flash("Pessoa não encontrada na equipe desta empresa.", "danger")
         return redirect(url_for("medico.equipe_lista"))
+    usuario_alvo = Usuario.query.get(usuario_id)
 
     filial_destino = next((f for f in filiais if f.id == request.form.get("filial_id", type=int)), None)
     if not filial_destino:
@@ -3220,7 +3242,7 @@ def equipe_associar_filial(usuario_id):
 
     db.session.add(ClinicaMembro(clinica_id=filial_destino.id, usuario_id=usuario_id, ativo=True))
     db.session.commit()
-    flash(f"{ja_e_da_empresa.usuario.nome} foi vinculado(a) à filial '{filial_destino.nome}'.", "success")
+    flash(f"{usuario_alvo.nome} foi vinculado(a) à filial '{filial_destino.nome}'.", "success")
     return redirect(url_for("medico.equipe_lista"))
 
 
@@ -3247,7 +3269,8 @@ def equipe_editar(usuario_id):
     vinculos_desta_empresa = ClinicaMembro.query.filter(
         ClinicaMembro.usuario_id == usuario_id, ClinicaMembro.clinica_id.in_(filial_ids)
     ).all()
-    if not vinculos_desta_empresa:
+    eh_fundador_desta_empresa = usuario.empresa_fundadora_id == empresa.id
+    if not vinculos_desta_empresa and not eh_fundador_desta_empresa:
         flash("Pessoa não encontrada na equipe desta empresa.", "danger")
         return redirect(url_for("medico.equipe_lista"))
 
@@ -3263,7 +3286,10 @@ def equipe_editar(usuario_id):
                 "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
                 filial_ids_atuais=filial_ids_atuais,
             )
-        if not filial_ids_selecionadas:
+        if not filial_ids_selecionadas and not eh_fundador_desta_empresa:
+            # O fundador pode ficar sem vínculo nenhum (o acesso dele vem
+            # de empresa_fundadora_id) - as demais pessoas precisam de
+            # pelo menos um vínculo, senão perdem o acesso à empresa.
             flash("Marque pelo menos uma filial em que essa pessoa atua.", "danger")
             return render_template(
                 "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
@@ -3299,10 +3325,10 @@ def equipe_permissoes(usuario_id):
     pessoa atua), não só desta filial."""
     empresa = empresa_atual()
     filial_ids = [f.id for f in Clinica.query.filter_by(empresa_id=empresa.id).all()]
-    membro = ClinicaMembro.query.filter(
-        ClinicaMembro.usuario_id == usuario_id, ClinicaMembro.clinica_id.in_(filial_ids)
-    ).first_or_404()
-    usuario_alvo = membro.usuario
+    if not _pessoa_da_empresa(usuario_id, empresa, filial_ids):
+        flash("Pessoa não encontrada na equipe desta empresa.", "danger")
+        return redirect(url_for("medico.equipe_lista"))
+    usuario_alvo = Usuario.query.get_or_404(usuario_id)
 
     if request.method == "POST":
         usuario_alvo.perm_pacientes = request.form.get("perm_pacientes") == "on"

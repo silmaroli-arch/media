@@ -26,6 +26,9 @@
             {% endif %}
           </span>
           {% endfor %}
+          {% if not p.vinculos %}
+          <span class="text-muted small d-block mb-1">Não atua em nenhum local ainda.</span>
+          {% endif %}
           {% if p.filiais_disponiveis %}
           <form method="post" action="{{ url_for('medico.equipe_associar_filial', usuario_id=usuario.id) }}" class="d-inline-flex gap-1 mt-1">
             <select name="filial_id" class="form-select form-select-sm" style="width: auto;">
