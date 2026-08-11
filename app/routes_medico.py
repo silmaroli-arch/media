@@ -93,6 +93,22 @@ def _destino_pos_onboarding(endpoint_padrao, **kwargs):
     return redirect(url_for(endpoint_padrao, **kwargs))
 
 
+def _filiais_da_empresa():
+    """TODAS as filiais da EMPRESA atual, independente de o usuário estar
+    vinculado a elas. Usado nas telas de CONFIGURAÇÃO (modelos de preparo,
+    exames), que são dados da empresa: quem está configurando o sistema
+    (ex.: o fundador, ou um "configurador") não precisa estar vinculado a
+    local de atendimento nenhum pra cadastrar esses dados - o vínculo
+    ("você atua aqui") só diz respeito a atuação/agenda, não à
+    configuração."""
+    empresa = empresa_atual()
+    return Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
+
+
+def _filiais_da_empresa_ids():
+    return [f.id for f in _filiais_da_empresa()]
+
+
 def _filtro_pacientes_da_empresa():
     """Filtro SQLAlchemy para "pacientes da EMPRESA atual". O paciente
     pertence à empresa, não a uma filial ("o cliente é só cliente" - a
@@ -405,7 +421,7 @@ def dashboard():
         solicitacoes_pendentes=solicitacoes_pendentes,
         cadastros_pendentes=cadastros_pendentes_count,
         agendamentos=agendamentos,
-        etapas_configuracao_inicial=[e for e in status_configuracao_inicial(filiais) if not e["concluida"] and not e.get("opcional")],
+        etapas_configuracao_inicial=[e for e in status_configuracao_inicial(_filiais_da_empresa()) if not e["concluida"] and not e.get("opcional")],
     )
 
 
@@ -420,7 +436,10 @@ def onboarding():
     uma só linka para a tela real (Dados Cadastrais, Equipe, Horário de
     atendimento, Modelos de preparo, Exames), que continua funcionando
     normalmente por fora do assistente também."""
-    filiais = filiais_atuais()
+    # As etapas medem a configuração da EMPRESA (todas as filiais), não só
+    # dos locais em que o usuário atua - um fundador/configurador sem
+    # vínculo nenhum precisa ver o progresso real do que já cadastrou.
+    filiais = _filiais_da_empresa()
     etapas = status_configuracao_inicial(filiais)
     concluidas = sum(1 for e in etapas if e["concluida"])
     return render_template(
@@ -699,7 +718,9 @@ def pacientes_prontuario_exportar(paciente_id):
 @login_required
 @staff_required
 def exames_lista():
-    query = Exame.query.filter(Exame.clinica_id.in_(filiais_atuais_ids()))
+    # Exames são dados de CONFIGURAÇÃO da empresa - a lista mostra os de
+    # todas as filiais, mesmo pra quem não está vinculado a local nenhum.
+    query = Exame.query.filter(Exame.clinica_id.in_(_filiais_da_empresa_ids()))
     if eh_medico():
         query = query.filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -712,7 +733,9 @@ def exames_lista():
 @login_required
 @staff_required
 def exames_novo():
-    filiais = filiais_atuais()
+    # Cadastro de exame é CONFIGURAÇÃO da empresa - não depende de o
+    # usuário estar vinculado a alguma filial (ver _filiais_da_empresa).
+    filiais = _filiais_da_empresa()
     filial_ids = [f.id for f in filiais]
     medicos = medicos_das_filiais(filiais)
     modelos = PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(filial_ids)).order_by(PreparoModelo.nome).all()
@@ -724,7 +747,7 @@ def exames_novo():
         # tela "Exames por filial" (medico.exames_por_filial), que é onde
         # médico e preço realmente variam por local de atendimento.
         if not filiais:
-            flash("Você não tem nenhum local de atendimento cadastrado ainda.", "danger")
+            flash("A empresa ainda não tem nenhum local de atendimento cadastrado.", "danger")
             return redirect(url_for("medico.filiais_lista"))
         filial = filiais[0]
 
@@ -806,7 +829,7 @@ def exames_novo():
 @login_required
 @staff_required
 def exames_editar(exame_id):
-    filial_ids = filiais_atuais_ids()
+    filial_ids = _filiais_da_empresa_ids()
     query = Exame.query.filter(Exame.id == exame_id, Exame.clinica_id.in_(filial_ids))
     if eh_medico():
         query = query.filter(
@@ -1053,7 +1076,7 @@ def exames_por_filial_atualizar(exame_id):
 @staff_required
 def preparo_modelos_lista():
     modelos = (
-        PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(filiais_atuais_ids()))
+        PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(_filiais_da_empresa_ids()))
         .order_by(PreparoModelo.nome).all()
     )
     return render_template("medico/preparo_modelos_lista.html", modelos=modelos)
@@ -1225,7 +1248,11 @@ def _salvar_cortes_e_medicamentos(modelo, form):
 @login_required
 @staff_required
 def preparo_modelos_novo():
-    filiais = filiais_atuais()
+    # Modelo de preparo é CONFIGURAÇÃO da empresa - quem configura não
+    # precisa estar vinculado a local nenhum (era exatamente esse o bug:
+    # o fundador sem vínculo perdia o formulário inteiro com um aviso de
+    # "nenhum local cadastrado", mesmo com a empresa tendo locais).
+    filiais = _filiais_da_empresa()
     sugestao = None
     if request.method == "GET" and request.args.get("de_importacao"):
         sugestao = session.pop("preparo_sugestao_importada", None)
@@ -1238,7 +1265,7 @@ def preparo_modelos_novo():
         # usamos a primeira filial acessível do usuário sem expor essa
         # escolha na tela.
         if not filiais:
-            flash("Você não tem nenhum local de atendimento cadastrado ainda.", "danger")
+            flash("A empresa ainda não tem nenhum local de atendimento cadastrado.", "danger")
             return redirect(url_for("medico.filiais_lista"))
         filial = filiais[0]
 
@@ -1250,7 +1277,7 @@ def preparo_modelos_novo():
             flash("Nome do modelo e instruções são obrigatórios.", "danger")
             return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
-        if PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(filiais_atuais_ids()), PreparoModelo.nome == nome).first():
+        if PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(_filiais_da_empresa_ids()), PreparoModelo.nome == nome).first():
             flash("Já existe um modelo de preparo com esse nome.", "danger")
             return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
@@ -1274,7 +1301,7 @@ def preparo_modelos_novo():
 @staff_required
 def preparo_modelos_editar(modelo_id):
     modelo = PreparoModelo.query.filter(
-        PreparoModelo.id == modelo_id, PreparoModelo.clinica_id.in_(filiais_atuais_ids())
+        PreparoModelo.id == modelo_id, PreparoModelo.clinica_id.in_(_filiais_da_empresa_ids())
     ).first_or_404()
 
     if request.method == "POST":
@@ -1300,7 +1327,7 @@ def preparo_modelos_editar(modelo_id):
 @staff_required
 def preparo_modelos_remover(modelo_id):
     modelo = PreparoModelo.query.filter(
-        PreparoModelo.id == modelo_id, PreparoModelo.clinica_id.in_(filiais_atuais_ids())
+        PreparoModelo.id == modelo_id, PreparoModelo.clinica_id.in_(_filiais_da_empresa_ids())
     ).first_or_404()
     if modelo.exames:
         flash(
