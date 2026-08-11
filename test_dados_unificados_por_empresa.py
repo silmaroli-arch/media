@@ -191,17 +191,21 @@ with app.app_context():
     checar("Paciente com filial de outra empresa não foi criado",
            Paciente.query.filter_by(cpf="55511122233").first() is None)
 
+# O cadastro de exame é genérico - não pede filial nem médico (isso é
+# resolvido depois, na tela "Exames por filial").
 r = client.get("/equipe/exames/novo")
-checar("Formulário de novo exame pede a filial", 'name="clinica_id"' in r.get_data(as_text=True))
+html_exame_novo = r.get_data(as_text=True)
+checar("Formulário de novo exame NÃO pede filial", 'name="clinica_id"' not in html_exame_novo)
+checar("Formulário de novo exame NÃO pede médico", 'name="medico_id"' not in html_exame_novo)
 r = client.post("/equipe/exames/novo", data={
-    "clinica_id": str(centro_id), "nome": "Colonoscopia Nova", "descricao": "Colono",
-    "duracao_minutos": "45", "preco": "300", "medico_id": str(medico_id),
+    "nome": "Colonoscopia Nova", "descricao": "Colono", "duracao_minutos": "45", "preco": "300",
 }, follow_redirects=True)
-checar("Cadastro de exame com filial escolhida responde 200", r.status_code == 200)
+checar("Cadastro de exame genérico responde 200", r.status_code == 200)
 with app.app_context():
     exame_novo = Exame.query.filter_by(nome="Colonoscopia Nova").first()
     checar("Exame novo foi salvo", exame_novo is not None)
-    checar("Exame novo ficou na filial ESCOLHIDA (Centro)", exame_novo.clinica_id == centro_id)
+    checar("Exame novo ficou numa filial acessível da empresa", exame_novo.clinica_id in (centro_id, praia_id))
+    checar("Exame novo já tem um médico responsável preenchido automaticamente", exame_novo.medico_id is not None)
 
 
 # ---------- (c) Isolamento por empresa continua valendo ----------

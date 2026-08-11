@@ -1,15 +1,19 @@
 {% extends "base.html" %}
-{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}{% if exame %}Editar exame{% else %}Novo exame{% endif %}{% endblock %}
 {% block conteudo %}
 <h3 class="mb-3">{% if exame %}Editar exame{% else %}Cadastrar novo exame{% endif %}</h3>
 <div class="card p-4">
   <form method="post">
     <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
-    {% if not exame %}
-    {{ select_filial(ajuda="Em qual dos seus locais de atendimento este exame será oferecido. O médico responsável precisa ser desse mesmo local (o modelo de preparo é genérico e vale para qualquer local).") }}
-    {% elif mostrar_filial %}
+    {% if exame and mostrar_filial %}
     <p class="text-muted small">Local de atendimento: <strong>{{ exame.clinica.nome }}</strong></p>
+    {% endif %}
+    {% if not exame %}
+    <p class="text-muted small">
+      Este cadastro é genérico (nome, descrição, duração e preparo) - válido para a empresa toda.
+      Depois de salvar, use <a href="{{ url_for('medico.exames_por_filial') }}">"Exames por filial"</a>
+      para associar este exame a cada local de atendimento, escolhendo o médico responsável e o preço em cada um.
+    </p>
     {% endif %}
     <div class="mb-3">
       <label class="form-label">Nome do exame</label>
@@ -21,21 +25,17 @@
         texto do preparo.
       </div>
     </div>
-    {% if current_user.tipo == "secretaria" %}
+    {% if exame and current_user.tipo == "secretaria" %}
     <div class="mb-3">
       <label class="form-label">Médico responsável</label>
       <select name="medico_id" class="form-select" required>
-        <option value="" disabled {% if not exame %}selected{% endif %}>Selecione...</option>
         {% for m in medicos %}
-        <option value="{{ m.id }}" {% if exame and exame.medico_id == m.id %}selected{% endif %}>{{ m.nome }}</option>
+        <option value="{{ m.id }}" {% if exame.medico_id == m.id %}selected{% endif %}>{{ m.nome }}</option>
         {% endfor %}
       </select>
-      {% if not medicos %}
-      <div class="form-text text-danger">Nenhum médico cadastrado nesta clínica ainda. Cadastre um médico na equipe antes de criar exames.</div>
-      {% endif %}
     </div>
     {% endif %}
-    {% if medicos|length > 1 %}
+    {% if exame and medicos|length > 1 %}
     <div class="mb-3">
       <label class="form-label">Outros médicos que também atendem este exame (opcional)</label>
       <div class="form-text mb-1">
@@ -63,8 +63,9 @@
       </div>
       {% if not exame %}
       <div class="col-md-6">
-        <label class="form-label">Preço do procedimento nesta filial (R$)</label>
+        <label class="form-label">Preço do procedimento (R$)</label>
         <input type="text" name="preco" class="form-control" placeholder="Ex.: 250,00">
+        <div class="form-text">Ponto de partida - ajuste por local em "Exames por filial", se o preço variar entre eles.</div>
       </div>
       {% else %}
       <div class="col-md-6">

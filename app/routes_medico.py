@@ -692,10 +692,15 @@ def exames_novo():
     modelos = PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(filial_ids)).order_by(PreparoModelo.nome).all()
 
     if request.method == "POST":
-        filial = _filial_do_form(filiais)
-        if not filial:
-            flash("Escolha a filial em que este exame será cadastrado.", "danger")
-            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+        # O cadastro de exame é genérico - só define nome/descrição/duração/
+        # preparo, sem escolher filial nem médico responsável. Quem atende
+        # esse exame em cada local (e com qual médico) é decidido depois, na
+        # tela "Exames por filial" (medico.exames_por_filial), que é onde
+        # médico e preço realmente variam por local de atendimento.
+        if not filiais:
+            flash("Você não tem nenhum local de atendimento cadastrado ainda.", "danger")
+            return redirect(url_for("medico.filiais_lista"))
+        filial = filiais[0]
 
         nome = request.form.get("nome", "").strip()
         descricao = request.form.get("descricao", "").strip()
@@ -704,22 +709,19 @@ def exames_novo():
         preco = _parse_valor_decimal(request.form.get("preco", ""))
         precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
 
+        # medico_id continua obrigatório no banco (é quem aparece como
+        # titular do exame) - se quem está cadastrando é médico, ele mesmo é
+        # o responsável inicial; se é secretária, usamos o primeiro médico
+        # disponível na empresa como responsável provisório, e a tela
+        # "Exames por filial" (ou "editar exame") serve para corrigir isso
+        # exame a exame, sem travar o cadastro pedindo essa escolha aqui.
         if eh_medico():
             medico_id = current_user.id
+        elif medicos:
+            medico_id = medicos[0].id
         else:
-            medico_id = request.form.get("medico_id", type=int)
-            # O médico responsável precisa atender na filial escolhida.
-            medicos_da_filial = medicos_da_clinica(filial)
-            medico_valido = medico_id and any(m.id == medico_id for m in medicos_da_filial)
-            if not medico_valido:
-                flash("Escolha o médico responsável pelo exame.", "danger")
-                return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
-
-        # Médicos adicionais, além do principal — qualquer um deles pode
-        # atender esse exame; a escolha de quem atende de fato acontece no
-        # momento do agendamento.
-        medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != medico_id}
-        medicos_extra = [m for m in medicos_da_clinica(filial) if m.id in medicos_extra_ids]
+            flash("Cadastre um médico na equipe antes de criar exames.", "danger")
+            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
         # Modelo de preparo é opcional - cobre tanto exames que exigem
         # preparo (ex.: colonoscopia) quanto procedimentos simples sem
@@ -728,8 +730,7 @@ def exames_novo():
         modelo = None
         if preparo_modelo_id:
             # Modelo de preparo é genérico (vale para a empresa toda, não só
-            # para uma filial) - qualquer modelo acessível ao usuário serve,
-            # independente da filial escolhida para o exame.
+            # para uma filial) - qualquer modelo acessível ao usuário serve.
             modelo = next((m for m in modelos if m.id == preparo_modelo_id), None)
             if not modelo:
                 flash("Escolha um modelo de preparo válido, ou deixe em branco se este procedimento não precisa de preparo.", "danger")
@@ -739,19 +740,23 @@ def exames_novo():
             flash("Nome do exame é obrigatório.", "danger")
             return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
-        if Exame.query.filter_by(clinica_id=filial.id, nome=nome).first():
-            flash("Já existe um exame com esse nome nesta clínica.", "danger")
+        if Exame.query.filter(Exame.clinica_id.in_(filial_ids), Exame.nome == nome).first():
+            flash("Já existe um exame com esse nome.", "danger")
             return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
         exame = Exame(
             clinica_id=filial.id, medico_id=medico_id, nome=nome, descricao=descricao,
             preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos, preco=preco,
-            precisa_acompanhante=precisa_acompanhante, medicos_extra=medicos_extra,
+            precisa_acompanhante=precisa_acompanhante,
         )
         db.session.add(exame)
         db.session.commit()
 
-        flash("Exame cadastrado com sucesso.", "success")
+        flash(
+            "Exame cadastrado com sucesso. Revise o médico responsável e associe outras filiais em "
+            '"Exames por filial", se necessário.',
+            "success",
+        )
         return _destino_pos_onboarding("medico.exames_lista")
 
     return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
