@@ -18,6 +18,14 @@
     .app-sidebar .nav-group-toggle .chevron-icon { transition: transform .2s; font-size: .75rem; }
     .app-sidebar .nav-group-toggle[aria-expanded="true"] .chevron-icon { transform: rotate(180deg); }
     .app-sidebar .nav-sub .nav-link { padding-left: 2.25rem; font-size: .92rem; }
+    /* Menu lateral escondível - por padrão fica fixo (afixado/"pinado"),
+       igual sempre foi; só some quando o usuário desafixa e clica em
+       esconder (ver botão .sidebar-toggle-btn e .sidebar-pin-btn abaixo). */
+    body.sidebar-hidden .app-sidebar { display: none; }
+    .sidebar-pin-btn { background: none; border: none; color: rgba(255,255,255,.75); padding: .25rem; line-height: 1; }
+    .sidebar-pin-btn:hover { color: #fff; }
+    .sidebar-pin-btn.pinned { color: #fff; }
+    .sidebar-toggle-btn[disabled] { opacity: .35; cursor: not-allowed; }
     @media print { .no-print { display: none !important; } }
     /* Badge de status "não compareceu" - cor própria (laranja), distinta
        de cancelado (vermelho) e realizado (verde), usada em todas as telas
@@ -44,9 +52,14 @@
   {% set grupo_relatorios = ['relatorios.index', 'relatorios.financeiro', 'relatorios.agenda',
                               'relatorios.pacientes', 'relatorios.desempenho_medico'] %}
   <nav class="app-sidebar bg-primary text-white p-3 no-print">
-    <a class="d-block text-decoration-none mb-4" href="{{ url_for('medico.dashboard') }}">
-      <img src="{{ url_for('static', filename='img/logo-horizontal-claro.svg') }}" alt="MedIA" style="height: 34px;">
-    </a>
+    <div class="d-flex align-items-center justify-content-between mb-4">
+      <a class="d-block text-decoration-none" href="{{ url_for('medico.dashboard') }}">
+        <img src="{{ url_for('static', filename='img/logo-horizontal-claro.svg') }}" alt="MedIA" style="height: 34px;">
+      </a>
+      <button type="button" id="sidebarPinBtn" class="sidebar-pin-btn" title="Fixar o menu (impede esconder)">
+        <i class="bi bi-pin-angle-fill" id="sidebarPinIcon"></i>
+      </button>
+    </div>
     <ul class="nav nav-pills flex-column">
       <li class="nav-item mb-1">
         <a class="nav-link {% if request.endpoint == 'medico.dashboard' %}active{% endif %}" href="{{ url_for('medico.dashboard') }}">
@@ -203,6 +216,12 @@
     {% if current_user.is_authenticated %}
     <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom bg-white no-print">
       <div class="d-flex align-items-center">
+        {% if eh_staff_logado %}
+        <button type="button" id="sidebarToggleBtn" class="btn btn-sm btn-outline-secondary sidebar-toggle-btn me-2"
+                title="Mostrar/esconder o menu lateral (fixe o menu para poder escondê-lo)">
+          <i class="bi bi-list"></i>
+        </button>
+        {% endif %}
         {% if current_user.is_dono %}
           <a href="{{ url_for('dono.dashboard') }}" class="text-decoration-none d-inline-block"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 30px;"></a>
         {% elif not current_user.is_staff %}
@@ -279,5 +298,66 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+{% if eh_staff_logado %}
+<script>
+  // Menu lateral: por padrão fica fixo ("pinado"), igual sempre foi - só
+  // pode ser escondido depois que o usuário desafixa. Preferência salva no
+  // navegador (localStorage), não é algo do servidor/conta.
+  (function () {
+    var CHAVE_PINADO = "media.sidebarPinado";
+    var CHAVE_ESCONDIDO = "media.sidebarEscondido";
+
+    function estaPinado() { return localStorage.getItem(CHAVE_PINADO) !== "false"; }
+    function estaEscondido() { return localStorage.getItem(CHAVE_ESCONDIDO) === "true"; }
+
+    function aplicar() {
+      var pinado = estaPinado();
+      var escondido = !pinado && estaEscondido();
+      document.body.classList.toggle("sidebar-hidden", escondido);
+
+      var pinIcon = document.getElementById("sidebarPinIcon");
+      var pinBtn = document.getElementById("sidebarPinBtn");
+      if (pinIcon && pinBtn) {
+        pinIcon.className = pinado ? "bi bi-pin-angle-fill" : "bi bi-pin-angle";
+        pinBtn.classList.toggle("pinned", pinado);
+        pinBtn.title = pinado ? "Desafixar o menu (permite esconder)" : "Fixar o menu (impede esconder)";
+      }
+      var toggleBtn = document.getElementById("sidebarToggleBtn");
+      if (toggleBtn) {
+        toggleBtn.disabled = pinado;
+        toggleBtn.title = pinado
+          ? "Desafixe o menu (ícone de pin) para poder escondê-lo"
+          : "Mostrar/esconder o menu lateral";
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      aplicar();
+
+      var pinBtn = document.getElementById("sidebarPinBtn");
+      if (pinBtn) {
+        pinBtn.addEventListener("click", function () {
+          var novoPinado = !estaPinado();
+          localStorage.setItem(CHAVE_PINADO, novoPinado ? "true" : "false");
+          if (novoPinado) {
+            // Fixar sempre deixa o menu visível.
+            localStorage.setItem(CHAVE_ESCONDIDO, "false");
+          }
+          aplicar();
+        });
+      }
+
+      var toggleBtn = document.getElementById("sidebarToggleBtn");
+      if (toggleBtn) {
+        toggleBtn.addEventListener("click", function () {
+          if (estaPinado()) return; // não esconde enquanto estiver fixo
+          localStorage.setItem(CHAVE_ESCONDIDO, estaEscondido() ? "false" : "true");
+          aplicar();
+        });
+      }
+    });
+  })();
+</script>
+{% endif %}
 </body>
 </html>
