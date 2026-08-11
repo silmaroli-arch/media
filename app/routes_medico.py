@@ -824,11 +824,20 @@ def exames_editar(exame_id):
 @login_required
 @staff_required
 def exames_por_filial():
-    """Tela central para associar um exame já cadastrado numa filial a
-    outra filial da mesma empresa, escolhendo o médico responsável lá -
-    hoje, sem essa tela, isso só era possível cadastrando o exame do zero
-    de novo (ou mexendo direto no banco), filial por filial, mesmo quando
-    é exatamente o mesmo procedimento (nome/descrição/duração/preço)."""
+    """Tela central de associações de exame. Tem dois "tipos" de tela,
+    escolhidos pelo combobox (parâmetro `tipo` na URL):
+    - "filial" (padrão): associar um exame já cadastrado numa filial a
+      outra filial da mesma empresa, escolhendo o médico responsável lá -
+      hoje, sem essa tela, isso só era possível cadastrando o exame do
+      zero de novo (ou mexendo direto no banco), filial por filial, mesmo
+      quando é exatamente o mesmo procedimento (nome/descrição/duração/
+      preço).
+    - "medico": ajustar o médico responsável e os médicos extras de cada
+      exame já existente em cada filial, sem mexer em preço."""
+    tipo = request.args.get("tipo", "filial")
+    if tipo not in ("filial", "medico"):
+        tipo = "filial"
+
     empresa = empresa_atual()
     filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
 
@@ -867,13 +876,17 @@ def exames_por_filial():
 
     medicos_por_filial = {f.id: medicos_da_clinica(f) for f in filiais}
 
+    linhas_medico = sorted(exames_todos, key=lambda e: (e.nome, e.clinica.nome))
+
     return render_template(
         "medico/exames_por_filial.html",
+        tipo=tipo,
         filiais=filiais,
         filiais_disponiveis_ids=filiais_disponiveis_ids,
         nomes=nomes,
         matriz=matriz,
         medicos_por_filial=medicos_por_filial,
+        linhas_medico=linhas_medico,
         eh_medico=eh_medico(),
     )
 
@@ -959,24 +972,35 @@ def exames_por_filial_associar():
 @login_required
 @staff_required
 def exames_por_filial_atualizar(exame_id):
-    """Atualiza o médico responsável e/ou o preço de uma associação já
-    existente (um exame já criado numa filial) - direto na matriz da tela
-    "Exames por filial", já que o preço deixou de ser editável no
-    formulário de cadastro/edição do exame (ver exames_editar)."""
+    """Atualiza o médico responsável, o preço e/ou os médicos extras de
+    uma associação já existente (um exame já criado numa filial) - direto
+    na tela "Exames por filial", já que esses dados deixaram de ser
+    editáveis no formulário de cadastro/edição do exame (ver
+    exames_editar). Usada tanto pela grade "Exame × Filial" (que mexe em
+    médico responsável + preço) quanto pela grade "Exame × Médico" (que
+    mexe em médico responsável + médicos extras, sem preço) - cada uma só
+    envia os campos que faz sentido editar."""
     empresa = empresa_atual()
     exame = Exame.query.join(Clinica, Exame.clinica_id == Clinica.id).filter(
         Exame.id == exame_id, Clinica.empresa_id == empresa.id,
     ).first_or_404()
+    tipo_origem = request.form.get("tipo_origem", "filial")
+    if tipo_origem not in ("filial", "medico"):
+        tipo_origem = "filial"
 
     if eh_medico() and not (exame.medico_id == current_user.id or any(m.id == current_user.id for m in exame.medicos_extra)):
         flash("Você só pode atualizar exames pelos quais é responsável.", "danger")
-        return redirect(url_for("medico.exames_por_filial"))
+        return redirect(url_for("medico.exames_por_filial", tipo=tipo_origem))
 
-    preco = _parse_valor_decimal(request.form.get("preco", ""))
-    if preco is None:
-        flash("Informe um preço válido.", "danger")
-        return redirect(url_for("medico.exames_por_filial"))
-    exame.preco = preco
+    # A tela "Exame × Médico" não mexe em preço, então nem manda o campo -
+    # só valida/atualiza o preço quando ele veio no formulário (tela
+    # "Exame × Filial").
+    if "preco" in request.form:
+        preco = _parse_valor_decimal(request.form.get("preco", ""))
+        if preco is None:
+            flash("Informe um preço válido.", "danger")
+            return redirect(url_for("medico.exames_por_filial", tipo=tipo_origem))
+        exame.preco = preco
 
     if not eh_medico():
         # Só quem não é médico (secretária) pode reatribuir o responsável -
@@ -986,9 +1010,16 @@ def exames_por_filial_atualizar(exame_id):
         if medico_id and any(m.id == medico_id for m in medicos_da_filial):
             exame.medico_id = medico_id
 
+    if request.form.get("atualizar_extras") == "1":
+        # Só a tela "Exame × Médico" manda esse campo - as outras não
+        # devem mexer nos médicos extras sem querer.
+        medicos_da_filial = medicos_da_clinica(exame.clinica)
+        medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != exame.medico_id}
+        exame.medicos_extra = [m for m in medicos_da_filial if m.id in medicos_extra_ids]
+
     db.session.commit()
     flash(f"\"{exame.nome}\" atualizado na filial {exame.clinica.nome}.", "success")
-    return redirect(url_for("medico.exames_por_filial"))
+    return redirect(url_for("medico.exames_por_filial", tipo=tipo_origem))
 
 
 # ---------- Modelos de preparo (reaproveitáveis entre exames) ----------

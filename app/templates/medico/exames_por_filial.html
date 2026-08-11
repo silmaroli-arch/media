@@ -6,11 +6,23 @@
   <a href="{{ url_for('medico.exames_lista') }}" class="btn btn-outline-secondary">Voltar para Exames</a>
 </div>
 <p class="text-muted">
-  Veja em quais filiais cada exame já está associado, com qual médico e a qual preço, e associe direto aqui
-  quando faltar — em vez de cadastrar o exame do zero de novo em cada filial. O preço de cada exame é definido
-  por filial, aqui nesta tela, não no cadastro do exame.
+  Veja quais associações de exame já existem e crie novas direto aqui — em vez de cadastrar o exame do zero de
+  novo em cada filial. Escolha abaixo qual tipo de associação você quer ver e ajustar.
 </p>
 
+<div class="mb-3" style="max-width: 320px;">
+  <label class="form-label">Tipo de associação</label>
+  <select class="form-select" onchange="window.location.href = this.value">
+    <option value="{{ url_for('medico.exames_por_filial', tipo='filial') }}" {% if tipo == 'filial' %}selected{% endif %}>Exame × Filial</option>
+    <option value="{{ url_for('medico.exames_por_filial', tipo='medico') }}" {% if tipo == 'medico' %}selected{% endif %}>Exame × Médico</option>
+  </select>
+</div>
+
+{% if tipo == 'filial' %}
+<p class="text-muted small">
+  Associação de exame por filial: em quais filiais cada exame já está disponível, com qual médico e a qual preço.
+  O preço de cada exame é definido por filial, aqui nesta tela, não no cadastro do exame.
+</p>
 <div class="card p-3">
   <div class="table-responsive">
     <table class="table table-bordered align-middle">
@@ -39,6 +51,7 @@
               <details class="mt-1">
                 <summary class="small">Ajustar médico/preço nesta filial</summary>
                 <form method="post" action="{{ url_for('medico.exames_por_filial_atualizar', exame_id=exame_aqui.id) }}" class="d-flex flex-column gap-1 mt-1">
+                  <input type="hidden" name="tipo_origem" value="filial">
                   {% if not eh_medico %}
                   <select name="medico_id" class="form-select form-select-sm">
                     {% for m in medicos_por_filial[f.id] %}
@@ -79,4 +92,69 @@
     </table>
   </div>
 </div>
+{% else %}
+<p class="text-muted small">
+  Associação de exame por médico: para cada exame já existente numa filial, quem é o médico responsável e quais
+  outros médicos também podem atendê-lo (extras). Marque ou desmarque um médico extra e clique em "Salvar" para
+  criar ou remover essa associação.
+</p>
+<div class="card p-3">
+  {% for e in linhas_medico %}
+  <form id="form_medico_{{ e.id }}" method="post" action="{{ url_for('medico.exames_por_filial_atualizar', exame_id=e.id) }}">
+    <input type="hidden" name="tipo_origem" value="medico">
+    <input type="hidden" name="atualizar_extras" value="1">
+  </form>
+  {% endfor %}
+  <div class="table-responsive">
+    <table class="table table-bordered align-middle">
+      <thead>
+        <tr>
+          <th>Exame</th>
+          <th>Filial</th>
+          <th>Médico responsável</th>
+          <th>Outros médicos (extras)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in linhas_medico %}
+        <tr>
+          <td><strong>{{ e.nome }}</strong></td>
+          <td>{{ e.clinica.nome }}</td>
+          <td>
+            {% if not eh_medico %}
+            <select name="medico_id" form="form_medico_{{ e.id }}" class="form-select form-select-sm">
+              {% for m in medicos_por_filial[e.clinica_id] %}
+              <option value="{{ m.id }}" {% if m.id == e.medico_id %}selected{% endif %}>{{ m.nome }}</option>
+              {% endfor %}
+            </select>
+            {% else %}
+            {{ e.medico.nome }}
+            {% endif %}
+          </td>
+          <td>
+            {% for m in medicos_por_filial[e.clinica_id] %}
+              {% if m.id != e.medico_id %}
+              <div class="form-check">
+                <input type="checkbox" name="medicos_extra_ids" form="form_medico_{{ e.id }}" value="{{ m.id }}"
+                       id="extra_{{ e.id }}_{{ m.id }}" class="form-check-input"
+                       {% if m in e.medicos_extra %}checked{% endif %}>
+                <label class="form-check-label small" for="extra_{{ e.id }}_{{ m.id }}">{{ m.nome }}</label>
+              </div>
+              {% endif %}
+            {% endfor %}
+            {% if medicos_por_filial[e.clinica_id]|length <= 1 %}
+            <span class="text-muted small">Nenhum outro médico nesta filial.</span>
+            {% endif %}
+          </td>
+          <td><button type="submit" form="form_medico_{{ e.id }}" class="btn btn-sm btn-outline-secondary">Salvar</button></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-muted text-center">Nenhum exame cadastrado ainda nesta empresa.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
