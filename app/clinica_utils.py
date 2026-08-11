@@ -47,10 +47,25 @@ def clinicas_do_usuario():
 
 def empresas_do_usuario():
     """Empresas distintas (tenants) em que o usuário tem vínculo ativo.
-    Na esmagadora maioria dos casos é uma só."""
+    Na esmagadora maioria dos casos é uma só.
+
+    Também inclui a empresa que a pessoa criou no cadastro público (ver
+    Usuario.empresa_fundadora_id), mesmo que ela ainda não tenha nenhuma
+    filial/ClinicaMembro - o cadastro público não cria mais a primeira
+    filial automaticamente (isso é feito depois, ao entrar no app, em
+    "Meus Locais de Atendimento"), então por um tempo a pessoa não tem
+    nenhum vínculo de filial ainda, e sem este fallback ela ficaria sem
+    empresa nenhuma (empresa_atual() retornaria None) logo após criar a
+    conta."""
     empresas = {}
     for c in clinicas_do_usuario():
         empresas.setdefault(c.empresa_id, c.empresa)
+    if (
+        current_user.is_authenticated
+        and getattr(current_user, "empresa_fundadora_id", None)
+        and current_user.empresa_fundadora_id not in empresas
+    ):
+        empresas[current_user.empresa_fundadora_id] = current_user.empresa_fundadora
     return sorted(empresas.values(), key=lambda e: (e.nome or "").lower())
 
 

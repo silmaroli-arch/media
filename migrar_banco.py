@@ -182,6 +182,25 @@ ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_cer
 ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_pem TEXT;
 ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_hash_sha256 VARCHAR(64);
 ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinado_em TIMESTAMP;
+
+-- Cadastro público (modo "empresa") deixou de criar a primeira filial
+-- automaticamente - agora cria só a Empresa, e a pessoa cadastra o
+-- primeiro local de atendimento depois, ao entrar no app. Até lá, ela
+-- não tem nenhum ClinicaMembro ainda, então precisa de uma âncora direta
+-- com a empresa que criou (ver Usuario.empresa_fundadora_id em
+-- app/models.py e empresas_do_usuario() em app/clinica_utils.py).
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS empresa_fundadora_id INTEGER REFERENCES empresas(id);
+
+-- O cadastro genérico de exame (medico.exames_novo) preenche medico_id com
+-- um valor técnico/provisório só pra passar pela constraint NOT NULL (não
+-- existe "médico principal" assumido automaticamente) - esta flag marca se
+-- esse valor já foi CONFIRMADO de propósito em "Exames por filial" (ver
+-- Exame.medico_confirmado em app/models.py). Registros JÁ EXISTENTES viram
+-- TRUE (DEFAULT TRUE aqui) porque foram criados quando o cadastro de exame
+-- ainda pedia o médico de verdade no próprio formulário - só os exames
+-- criados a partir de agora, pelo cadastro genérico, nascem FALSE (isso é
+-- feito explicitamente no código, em exames_novo, não por este default).
+ALTER TABLE exames ADD COLUMN IF NOT EXISTS medico_confirmado BOOLEAN NOT NULL DEFAULT TRUE;
 """
 
 # Trilha de auditoria de acesso ao prontuario (ver LogAcessoProntuario em

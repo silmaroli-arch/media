@@ -177,16 +177,18 @@ r = client.post("/cadastro", data={
     "papel": "secretaria",
 }, follow_redirects=True)
 texto = r.get_data(as_text=True)
-checar("Cadastro público cria empresa+filial e loga automaticamente", "Painel" in texto)
+checar("Cadastro público cria a empresa e loga automaticamente", "Painel" in texto)
 checar("Nome da empresa aparece na navbar", "Empresa Teste Automatizado" in texto)
-# O cadastro público não pede mais nome de filial - a 1ª filial nasce com um
-# nome técnico ("Matriz"), configurado de verdade depois em "Meus Locais de
-# Atendimento" (por isso não aparece destacado nesta tela).
+# O cadastro público (modo "empresa") não cria mais NENHUMA filial
+# automaticamente - isso é feito depois, ao entrar no app, em "Meus
+# Locais de Atendimento" (ver test_cadastro_empresa_sem_filial.py para o
+# fluxo completo).
 with app.app_context():
     empresa_nova = Empresa.query.filter_by(nome="Empresa Teste Automatizado").first()
     checar("Empresa nova foi criada", empresa_nova is not None)
-    filial_nova = Clinica.query.filter_by(empresa_id=empresa_nova.id).first()
-    checar("1ª filial foi criada automaticamente com nome técnico 'Matriz'", filial_nova is not None and filial_nova.nome == "Matriz")
+    checar("NENHUMA filial foi criada automaticamente no cadastro", Clinica.query.filter_by(empresa_id=empresa_nova.id).first() is None)
+    usuario_novo = Usuario.query.filter_by(email="fulano@clinicateste.com").first()
+    checar("Usuário fica vinculado à empresa via empresa_fundadora_id", usuario_novo.empresa_fundadora_id == empresa_nova.id)
 
 r = client.get("/equipe/pacientes")
 checar("Filial nova começa sem nenhum paciente de outras empresas", "João Pereira" not in r.get_data(as_text=True))
@@ -216,11 +218,21 @@ with app.app_context():
 r = client.get("/equipe/equipe-membros")
 checar("Médico fundador consegue acessar a tela de Equipe mesmo sendo médico", "Equipe da empresa" in r.get_data(as_text=True))
 r = client.get("/equipe/filiais")
-checar("Médico fundador consegue acessar a tela de Filiais", "Matriz" in r.get_data(as_text=True))
-r = client.get("/equipe/clinica/configuracoes")
-checar("Médico fundador consegue acessar Dados da clínica", r.status_code == 200)
+checar("Médico fundador consegue acessar a tela de Filiais (ainda vazia)", "Nenhum local de atendimento cadastrado" in r.get_data(as_text=True))
+r = client.get("/equipe/clinica/configuracoes", follow_redirects=True)
+checar("Médico fundador consegue acessar Dados da clínica (com aviso, sem filial ainda)", r.status_code == 200)
+r = client.get("/equipe/pacientes/novo", follow_redirects=True)
+checar(
+    "Sem nenhum local ainda, 'Novo paciente' redireciona pedindo pra cadastrar o local primeiro",
+    "cadastre seu primeiro local de atendimento" in r.get_data(as_text=True).lower(),
+)
+
+# Cadastra o primeiro local de atendimento do médico fundador, requisito
+# para poder cadastrar pacientes (ver guarda em medico.pacientes_novo).
+r = client.post("/equipe/filiais/nova", data={"nome": "Consultório do Dr. Ricardo"}, follow_redirects=True)
+checar("Médico fundador consegue cadastrar seu primeiro local de atendimento", r.status_code == 200)
 r = client.get("/equipe/pacientes/novo")
-checar("Médico fundador consegue acessar Novo paciente", r.status_code == 200)
+checar("Depois de ter um local, 'Novo paciente' já é acessível normalmente", r.status_code == 200)
 
 # ---------- Cadastro de paciente sem senha: login por telefone + data de nascimento ----------
 

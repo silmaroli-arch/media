@@ -507,6 +507,10 @@ def _preencher_endereco_emergencia(paciente, form):
 def pacientes_novo():
     filiais = filiais_atuais()
 
+    if not filiais:
+        flash("Cadastre seu primeiro local de atendimento antes de cadastrar pacientes.", "info")
+        return redirect(url_for("medico.filiais_lista"))
+
     if request.method == "POST":
         # Filial do paciente: escolhida no formulário quando a pessoa atua
         # em mais de um local (e sempre validada contra os locais dela).
@@ -754,6 +758,14 @@ def exames_novo():
             clinica_id=filial.id, medico_id=medico_id, nome=nome, descricao=descricao,
             preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos,
             precisa_acompanhante=precisa_acompanhante,
+            # medico_id acima é só um valor técnico/provisório pra passar
+            # pela constraint do banco - não foi uma escolha de verdade
+            # (nem quando é o próprio médico logado cadastrando, já que
+            # não existe "médico principal" assumido automaticamente).
+            # Só vira confirmado quando alguém escolhe de propósito em
+            # "Exames por filial" (ver exames_por_filial_associar /
+            # exames_por_filial_atualizar).
+            medico_confirmado=False,
         )
         db.session.add(exame)
         db.session.commit()
@@ -942,6 +954,10 @@ def exames_por_filial_associar():
         # por isso fica em branco aqui, pra revisar/escolher depois na
         # tela de editar o exame recém-criado.
         preparo_modelo_id=None,
+        # Médico escolhido de propósito aqui, na tela de associação - vale
+        # como confirmado (diferente do valor técnico/provisório do
+        # cadastro genérico do exame, ver exames_novo).
+        medico_confirmado=True,
     )
     db.session.add(novo_exame)
     db.session.commit()
@@ -986,11 +1002,15 @@ def exames_por_filial_atualizar(exame_id):
 
     # Não existe "médico principal" - qualquer pessoa da equipe (médico
     # ou secretária) pode reatribuir o médico responsável aqui, escolhendo
-    # numa lista igual a qualquer outro campo do formulário.
+    # numa lista igual a qualquer outro campo do formulário. Escolher (ou
+    # confirmar) o médico aqui é o que torna esse valor "confirmado" -
+    # antes disso, pode ter sido só um valor técnico/provisório do
+    # cadastro genérico do exame (ver exames_novo).
     medico_id = request.form.get("medico_id", type=int)
     medicos_da_filial = medicos_da_clinica(exame.clinica)
     if medico_id and any(m.id == medico_id for m in medicos_da_filial):
         exame.medico_id = medico_id
+        exame.medico_confirmado = True
 
     if request.form.get("atualizar_extras") == "1":
         # Só a tela "Exame × Médico" manda esse campo - as outras não
@@ -2605,6 +2625,13 @@ def clinica_configuracoes(filial_id=None):
     else:
         clinica = clinica_atual()
 
+    if not clinica:
+        # Empresa recém-criada, ainda sem nenhum local de atendimento
+        # cadastrado (isso agora é feito depois do cadastro público, ao
+        # entrar no app - não mais automaticamente no cadastro).
+        flash("Cadastre seu primeiro local de atendimento antes de preencher os dados dele.", "info")
+        return redirect(url_for("medico.filiais_lista"))
+
     # O link de auto-cadastro do paciente (ver auth.cadastro_paciente)
     # precisa de um código — gera um na primeira vez que esta tela é
     # aberta, pra já aparecer pronto pra copiar sem precisar de mais um clique.
@@ -2668,6 +2695,10 @@ def clinica_dados_fiscais(filial_id=None):
         clinica = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
     else:
         clinica = clinica_atual()
+
+    if not clinica:
+        flash("Cadastre seu primeiro local de atendimento antes de preencher os dados fiscais dele.", "info")
+        return redirect(url_for("medico.filiais_lista"))
 
     if request.method == "POST":
         clinica.inscricao_estadual = request.form.get("inscricao_estadual", "").strip()

@@ -159,21 +159,26 @@ def cadastro():
     """Cadastro público. Dois modos, escolhidos pelo campo "modo":
 
     - "empresa" (padrão/original): quem se cadastra cria uma empresa nova
-      na plataforma, informando só o nome DELA. A primeira filial já vem
-      criada com um nome técnico/genérico ("Matriz") — a pessoa não
-      preenche nem vê nada de "filial" nesta tela; o cadastro completo
-      dessa filial (endereço, CNPJ, telefone, ou até o nome de verdade)
-      é feito depois, ao entrar no app, na etapa "Meus Locais de
-      Atendimento" do assistente de configuração inicial (ver
-      medico.onboarding). Nem toda clínica tem secretária, então a
-      pessoa escolhe se é médico ou secretário(a) — mas por ser quem
-      está criando a empresa, recebe todas as permissões administrativas.
+      na plataforma, informando só o nome DELA — nenhuma filial é criada
+      aqui. O cadastro do(s) local(is) de atendimento de verdade (nome,
+      endereço, CNPJ, telefone) é feito depois, ao entrar no app, na
+      etapa "Meus Locais de Atendimento" do assistente de configuração
+      inicial (ver medico.onboarding e medico.filiais_nova) — até lá, o
+      vínculo da pessoa com a empresa é feito por
+      Usuario.empresa_fundadora_id (ver app/models.py e
+      empresas_do_usuario() em app/clinica_utils.py), não por
+      ClinicaMembro. Nem toda clínica tem secretária, então a pessoa
+      escolhe se é médico ou secretário(a) — mas por ser quem está
+      criando a empresa, recebe todas as permissões administrativas.
 
     - "independente": pensado para o médico que atende por conta própria,
       sem uma empresa/clínica de verdade por trás. Não pede nome de
       empresa nem de filial — esses são gerados automaticamente a partir
       do nome do médico, ficando "invisíveis" pra ele (ele nunca vê as
-      palavras "empresa"/"filial" no cadastro). Por baixo, a estrutura é
+      palavras "empresa"/"filial" no cadastro). Diferente do modo
+      "empresa" acima, aqui a primeira filial JÁ vem criada (com o
+      ClinicaMembro correspondente) — é a promessa explícita dessa
+      opção, pra pessoa já cair pronta pra usar. Por baixo, a estrutura é
       exatamente a mesma (Empresa -> Clinica -> ClinicaMembro): se esse
       médico passar a atender em mais de um local, ele cadastra os
       próximos em "Meus locais de atendimento" (medico.filiais_nova), que
@@ -203,12 +208,6 @@ def cadastro():
             nome_filial = "Consultório"
         else:
             nome_empresa = request.form.get("nome_empresa", "").strip()
-            # O cadastro público só pede o nome da EMPRESA - a filial
-            # nasce com um nome técnico genérico ("Matriz") e é
-            # configurada de verdade (nome, endereço, CNPJ, telefone)
-            # depois, ao entrar no app, em "Meus Locais de Atendimento"
-            # (etapa do assistente de configuração inicial).
-            nome_filial = "Matriz"
             papel = request.form.get("papel", "secretaria")
 
         if not nome or not email or not senha:
@@ -241,10 +240,6 @@ def cadastro():
         db.session.add(empresa)
         db.session.flush()
 
-        filial = Clinica(empresa_id=empresa.id, nome=nome_filial, email_contato=email)
-        db.session.add(filial)
-        db.session.flush()
-
         usuario = Usuario(nome=nome, email=email, tipo=papel)
         usuario.set_senha(senha)
         # Quem cria a empresa é a administradora inicial — recebe todas as
@@ -253,27 +248,44 @@ def cadastro():
         # inclui perm_filiais, essencial pro médico independente poder
         # cadastrar novos locais de atendimento sozinho depois.
         usuario.conceder_todas_permissoes()
-        db.session.add(usuario)
-        db.session.flush()
-
-        vinculo = ClinicaMembro(clinica_id=filial.id, usuario_id=usuario.id, ativo=True)
-        db.session.add(vinculo)
-        db.session.commit()
-
-        login_user(usuario)
-        session["clinica_id"] = filial.id
 
         if independente:
+            # Modo "independente" continua vindo com o primeiro local já
+            # pronto pra usar (promessa explícita dessa opção - a pessoa
+            # nunca vê "filial" nessa tela) - diferente do modo "empresa"
+            # logo abaixo.
+            filial = Clinica(empresa_id=empresa.id, nome=nome_filial, email_contato=email)
+            db.session.add(filial)
+            db.session.flush()
+            db.session.add(usuario)
+            db.session.flush()
+            vinculo = ClinicaMembro(clinica_id=filial.id, usuario_id=usuario.id, ativo=True)
+            db.session.add(vinculo)
+            db.session.commit()
+            login_user(usuario)
+            session["clinica_id"] = filial.id
             flash(
                 f"Conta criada com sucesso, {usuario.nome}! "
                 "Vamos te ajudar a deixar tudo pronto para uso.",
                 "success",
             )
         else:
+            # Modo "empresa": o cadastro público cria só a EMPRESA - nenhuma
+            # filial/ClinicaMembro ainda. A pessoa cadastra o(s) local(is)
+            # de atendimento de verdade depois, ao entrar no app, em "Meus
+            # Locais de Atendimento" (etapa do assistente de configuração
+            # inicial) - até lá, o vínculo com a empresa é feito por
+            # empresa_fundadora_id (ver Usuario em app/models.py e
+            # empresas_do_usuario() em app/clinica_utils.py), não por
+            # ClinicaMembro.
+            usuario.empresa_fundadora_id = empresa.id
+            db.session.add(usuario)
+            db.session.commit()
+            login_user(usuario)
             flash(
                 f"Empresa '{empresa.nome}' criada com sucesso! "
-                "Vamos te ajudar a deixar tudo pronto para uso — o primeiro passo é configurar os "
-                "dados do seu local de atendimento.",
+                "Vamos te ajudar a deixar tudo pronto para uso — o primeiro passo é cadastrar "
+                "seu local de atendimento.",
                 "success",
             )
         return redirect(url_for("medico.onboarding"))

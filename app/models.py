@@ -282,6 +282,21 @@ class Usuario(db.Model, UserMixin):
     ativo = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Empresa que esta pessoa CRIOU no cadastro público (auth.cadastro,
+    # modo "empresa"), usado só como âncora ANTES de ela ter qualquer
+    # filial/ClinicaMembro - o cadastro público não cria mais a primeira
+    # filial automaticamente (isso agora é feito depois, ao entrar no
+    # app, em "Meus Locais de Atendimento"), então por um tempinho a
+    # pessoa não tem nenhum vínculo de filial ainda. Sem esta âncora,
+    # empresa_atual() (ver app/clinica_utils.py) não teria como saber a
+    # qual empresa ela pertence, e ela cairia fora do sistema até
+    # cadastrar o primeiro local. Uma vez que a primeira filial é
+    # cadastrada (com o ClinicaMembro correspondente), o vínculo normal
+    # passa a resolver tudo e este campo vira só um resquício histórico -
+    # não precisa ser limpo.
+    empresa_fundadora_id = db.Column(db.Integer, db.ForeignKey("empresas.id"), nullable=True)
+    empresa_fundadora = db.relationship("Empresa", foreign_keys=[empresa_fundadora_id])
+
     # Permissões administrativas (só fazem sentido para médico/secretária).
     # Como nem toda clínica tem uma secretária, essas permissões não são
     # amarradas ao papel ('tipo') — quem administra a equipe decide quais
@@ -420,11 +435,27 @@ class Exame(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
-    # Médico principal do exame (quem cadastrou/é o dono padrão). Além
-    # dele, outros médicos podem ser associados ao mesmo exame (ver
-    # `medicos_extra` abaixo e a propriedade `medicos`) — nesse caso, ao
-    # agendar, a secretária escolhe qual dos médicos associados atende.
+    # Médico principal do exame. Além dele, outros médicos podem ser
+    # associados ao mesmo exame (ver `medicos_extra` abaixo e a
+    # propriedade `medicos`) — nesse caso, ao agendar, a secretária
+    # escolhe qual dos médicos associados atende.
     medico_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    # Continua sendo obrigatório escolher ALGUM médico no banco (não dá
+    # pra deixar em branco), mas o cadastro do exame (medico.exames_novo)
+    # é genérico e não pergunta quem faz o exame - só preenche medico_id
+    # com um valor técnico/provisório pra passar pela constraint. Esta
+    # flag marca se essa escolha já foi CONFIRMADA de propósito por
+    # alguém, na tela "Exames por filial" - não existe "médico principal"
+    # que seja assumido automaticamente só por ter cadastrado a empresa
+    # ou o exame; até essa confirmação, a tela de associação mostra um
+    # aviso em vez de tratar o valor técnico como se já estivesse certo.
+    # O default é True (não False) porque a maioria dos caminhos que criam
+    # um Exame sem passar este campo explicitamente (seed de dados de
+    # teste, exames já existentes antes desta mudança) representam
+    # cadastros de quando o médico ainda era escolhido de verdade no
+    # próprio formulário - só o cadastro genérico atual (exames_novo)
+    # passa medico_confirmado=False explicitamente, de propósito.
+    medico_confirmado = db.Column(db.Boolean, nullable=False, default=True)
     nome = db.Column(db.String(150), nullable=False)
     descricao = db.Column(db.Text)
 

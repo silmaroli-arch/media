@@ -45,10 +45,16 @@
           <td>
             {% set exame_aqui = matriz[nome].get(f.id) %}
             {% if exame_aqui %}
+              {% if exame_aqui.medico_confirmado %}
               <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle mb-1">
                 <i class="bi bi-check-circle"></i> {{ exame_aqui.medico.nome }}
                 — R$ {{ "%.2f"|format(exame_aqui.preco)|replace(".", ",") if exame_aqui.preco else "0,00" }}
               </span>
+              {% else %}
+              <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle mb-1">
+                <i class="bi bi-exclamation-triangle"></i> Médico ainda não confirmado (valor provisório: {{ exame_aqui.medico.nome }})
+              </span>
+              {% endif %}
               <br>
               <a href="{{ url_for('medico.exames_editar', exame_id=exame_aqui.id) }}" class="small">Editar dados do exame</a>
               <details class="mt-1">
@@ -121,6 +127,11 @@
           <td><strong>{{ e.nome }}</strong></td>
           <td>{{ e.clinica.nome }}</td>
           <td>
+            {% if not e.medico_confirmado %}
+            <div class="small text-warning-emphasis mb-1">
+              <i class="bi bi-exclamation-triangle"></i> Ainda não confirmado (valor provisório) — escolha e salve para confirmar.
+            </div>
+            {% endif %}
             <select name="medico_id" form="form_medico_{{ e.id }}" class="form-select form-select-sm">
               {% for m in medicos_por_filial[e.clinica_id] %}
               <option value="{{ m.id }}" {% if m.id == e.medico_id %}selected{% endif %}>{{ m.nome }}</option>
