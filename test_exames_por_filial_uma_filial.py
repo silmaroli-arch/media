@@ -39,15 +39,17 @@ login("secretaria@clinicavitoria.com", "123456")
 r = client.get("/equipe/exames/por-filial", follow_redirects=False)
 checar("Tela responde 200 (não redireciona)", r.status_code == 200)
 html = r.get_data(as_text=True)
-checar("Mostra o título da tela", "Exames por filial" in html)
-checar("Mostra a grade de médico responsável direto (sem precisar escolher no combobox)", "Médico responsável" in html)
+checar("Mostra o título da tela", "Associar exames" in html)
+# A tela virou um cadastro básico (lista + Adicionar) - igual pra
+# empresa de 1 ou várias filiais.
+checar("Mostra o botão Adicionar e a lista de associações", "Adicionar" in html and "<th>Exame</th>" in html)
 checar("NÃO mostra o combobox de tipo (só teria uma opção útil)", "Tipo de associação" not in html)
 checar("NÃO mostra a mensagem antiga de bloqueio por filial única", "só faz sentido para empresas com mais de uma filial" not in html)
 
 # Também não teve nenhum redirect: se eu tivesse seguido follow_redirects, o
 # destino não deveria ser a lista de exames.
 r2 = client.get("/equipe/exames/por-filial", follow_redirects=True)
-checar("Seguindo redirect (se houvesse) ainda mostra a própria tela de associação", "Exames por filial" in r2.get_data(as_text=True))
+checar("Seguindo redirect (se houvesse) ainda mostra a própria tela de associação", "Associar exames" in r2.get_data(as_text=True))
 
 client.get("/logout")
 print("\nTodos os testes de 'Exames por filial' com uma filial só (sem redirecionar) passaram.")

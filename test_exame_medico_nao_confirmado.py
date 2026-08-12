@@ -34,7 +34,7 @@ def login(email, senha):
     return client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
 
 
-# ---------- Grade "Exame × Médico" (Clínica Vitória, uma filial só) ----------
+# ---------- Lista de associações (Clínica Vitória, uma filial só) ----------
 
 login("secretaria@clinicavitoria.com", "123456")
 
@@ -59,11 +59,13 @@ with app.app_context():
 r2 = client.get("/equipe/exames/por-filial")
 html2 = r2.get_data(as_text=True)
 checar("Mostra o exame recém-criado", "Endoscopia Digestiva Alta" in html2)
-checar("Grade de médico mostra aviso de não confirmado (não trata como já resolvido)", "Ainda não confirmado" in html2)
+# A tela virou um cadastro básico (lista) - o aviso aparece na linha do exame.
+checar("A linha do exame mostra aviso de não confirmado (não trata como já resolvido)",
+       "não confirmado" in html2.rsplit("Endoscopia Digestiva Alta", 1)[1].split("</tr>")[0])
 
 # Confirmando o médico responsável em "Exames por filial" marca medico_confirmado=True.
 r3 = client.post(f"/equipe/exames/por-filial/{exame_id}/atualizar", data={
-    "tipo_origem": "medico", "atualizar_extras": "1", "medico_id": str(dr_carlos_id),
+    "atualizar_extras": "1", "medico_id": str(dr_carlos_id),
 }, follow_redirects=True)
 checar("Confirmar médico responde 200", r3.status_code == 200)
 with app.app_context():
@@ -74,12 +76,12 @@ r4 = client.get("/equipe/exames/por-filial")
 html4 = r4.get_data(as_text=True)
 checar(
     "Depois de confirmado, NÃO mostra mais o aviso pra este exame",
-    "Ainda não confirmado" not in html4.split("Endoscopia Digestiva Alta")[1].split("</tr>")[0],
+    "não confirmado" not in html4.rsplit("Endoscopia Digestiva Alta", 1)[1].split("</tr>")[0],
 )
 
 client.get("/logout")
 
-# ---------- Grade "Exame × Filial" (Grupo Saúde Total, duas filiais) ----------
+# ---------- Empresa com duas filiais (Grupo Saúde Total) ----------
 
 login("secretaria@gruposaude.com", "123456")
 with app.app_context():
@@ -95,13 +97,12 @@ r5 = client.post("/equipe/exames/novo", data={
 }, follow_redirects=True)
 checar("Cadastro genérico no Grupo Saúde Total responde 200", r5.status_code == 200)
 
-r6 = client.get("/equipe/exames/por-filial?tipo=filial")
+r6 = client.get("/equipe/exames/por-filial")
 html6 = r6.get_data(as_text=True)
-checar("Mostra o exame na grade de filial", "Exame Nao Confirmado Teste" in html6)
-checar("Grade de filial mostra o AVISO (não o selo verde) pra um exame recém-criado", "Médico ainda não confirmado" in html6)
+checar("Mostra o exame na lista", "Exame Nao Confirmado Teste" in html6)
 checar(
-    "NÃO mostra o selo verde de confirmado pra esse exame específico",
-    "bg-success-subtle" not in html6.split("Exame Nao Confirmado Teste")[1].split("</tr>")[0],
+    "A linha mostra o AVISO de não confirmado pra um exame recém-criado",
+    "não confirmado" in html6.rsplit("Exame Nao Confirmado Teste", 1)[1].split("</tr>")[0],
 )
 
 client.get("/logout")

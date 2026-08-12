@@ -52,12 +52,14 @@ client.get("/logout")
 # o médico responsável no select (mesmo sendo ele mesmo a única opção).
 login("medico@gruposaude.com", "123456")
 
-r = client.get("/equipe/exames/por-filial?tipo=filial")  # a tela abre sem seleção; o teste pede a matriz explicitamente
+r = client.get("/equipe/exames/por-filial")
 html = r.get_data(as_text=True)
 checar("Médico vê a tela normalmente", r.status_code == 200)
-checar("Médico vê o próprio exame na matriz", "Raio-X Torax" in html)
+checar("Médico vê o próprio exame na lista", "Raio-X Torax" in html)
+# No formulário "Adicionar", o select de médico existe pro médico também
+# (mesmo fluxo da secretária) - as opções carregam data-filial.
 checar("O select de médico aparece pro médico também (mesmo fluxo da secretária)",
-       f'<option value="{medico_id}">' in html or f'value="{medico_id}" selected' in html)
+       'name="medico_id"' in html and f'value="{medico_id}"' in html)
 
 # Tentar associar SEM escolher médico é bloqueado - não existe mais o atalho
 # de auto-associação silenciosa.

@@ -61,13 +61,16 @@ r0 = client.post(f"/equipe/exames/por-filial/{exame_origem_id}/atualizar", data=
 }, follow_redirects=True)
 checar("Definir médico/preço do local de origem responde 200", r0.status_code == 200)
 
-# A tela "Exames por filial" mostra a matriz: origem preenchida, destino com botão de associar.
-r = client.get("/equipe/exames/por-filial?tipo=filial")  # a tela abre sem seleção; o teste pede a matriz explicitamente
+# A tela "Associar exames" (cadastro básico) mostra a lista das
+# associações e o formulário Adicionar com os 4 campos.
+r = client.get("/equipe/exames/por-filial")
 html = r.get_data(as_text=True)
 checar("Tela responde 200", r.status_code == 200)
-checar("Mostra o nome do exame na matriz", "Ultrassom Abdominal" in html)
-checar(f"Mostra o médico responsável na filial {nome_origem}", medico_nome in html)
-checar(f"Mostra o botão de associar para a filial {nome_destino} (ainda não tem)", "+ Associar" in html)
+checar("Mostra o nome do exame na lista", "Ultrassom Abdominal" in html)
+checar(f"Mostra o médico responsável na linha da filial {nome_origem}", medico_nome in html)
+checar("Mostra o formulário Adicionar com os 4 campos",
+       'name="nome"' in html and 'name="clinica_destino_id"' in html
+       and 'name="medico_id"' in html and 'name="preco"' in html)
 
 # Tentar associar sem informar preço é bloqueado (testado ANTES da associação bem-sucedida,
 # senão o exame já existiria no destino e o bloqueio seria por duplicidade, não por falta de preço).
@@ -112,13 +115,13 @@ with app.app_context():
         Exame.query.filter_by(clinica_id=destino_id, nome="Ultrassom Abdominal").count() == 1,
     )
 
-# A matriz mostra o preço de cada filial.
-r4 = client.get("/equipe/exames/por-filial?tipo=filial")  # a tela abre sem seleção; o teste pede a matriz explicitamente
+# A lista mostra o preço de cada associação (um por filial).
+r4 = client.get("/equipe/exames/por-filial")
 html4 = r4.get_data(as_text=True)
-checar("Matriz mostra o preço da origem", "150,00" in html4)
-checar("Matriz mostra o preço do destino", "180,00" in html4)
+checar("Lista mostra o preço da origem", "150,00" in html4)
+checar("Lista mostra o preço do destino", "180,00" in html4)
 
-# Ajusta o preço do destino direto pela tela de matriz (não mais pelo cadastro do exame).
+# Ajusta o preço do destino direto pela tela de associações (não mais pelo cadastro do exame).
 r5 = client.post(f"/equipe/exames/por-filial/{exame_destino.id}/atualizar", data={
     "medico_id": str(medico_id), "preco": "200,00",
 }, follow_redirects=True)
@@ -135,7 +138,7 @@ r6 = client.post(f"/equipe/exames/{exame_destino.id}/editar", data={
 }, follow_redirects=True)
 checar("Editar exame responde 200", r6.status_code == 200)
 with app.app_context():
-    checar("Editar o exame NÃO altera o preço (só a tela de matriz altera)", float(Exame.query.get(exame_destino.id).preco) == 200.0)
+    checar("Editar o exame NÃO altera o preço (só a tela de associações altera)", float(Exame.query.get(exame_destino.id).preco) == 200.0)
 
 client.get("/logout")
 print("\nTodos os testes de exames por filial passaram.")
