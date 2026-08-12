@@ -929,13 +929,17 @@ def exames_por_filial():
     empresa = empresa_atual()
     filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
 
-    # Com uma filial só não faz sentido a grade "Exame × Filial" (só
-    # teria uma coluna), então o combobox nem mostra essa opção e o
-    # padrão vira direto "Exame × Médico".
-    tipo_padrao = "filial" if len(filiais) > 1 else "medico"
-    tipo = request.args.get("tipo", tipo_padrao)
+    # Com mais de uma filial, a tela abre SEM nenhum tipo selecionado -
+    # o usuário escolhe de propósito o que quer fazer ("Exame × Filial"
+    # ou "Exame × Médico") antes de qualquer grade aparecer; nada vem
+    # pré-selecionado. Com uma filial só, não há escolha a fazer (a grade
+    # "Exame × Filial" teria uma coluna só), então vai direto pra grade
+    # "Exame × Médico", sem combobox.
+    tipo = request.args.get("tipo")
     if tipo not in ("filial", "medico") or (tipo == "filial" and len(filiais) < 2):
-        tipo = tipo_padrao
+        tipo = None
+    if len(filiais) < 2:
+        tipo = "medico"
 
     exames_todos = (
         Exame.query.join(Clinica, Exame.clinica_id == Clinica.id)

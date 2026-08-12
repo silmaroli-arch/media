@@ -64,7 +64,10 @@ checar("Tela responde 200 (tipo padrão)", r0.status_code == 200)
 checar("Combobox de tipo de associação aparece", "Tipo de associação" in html0)
 checar("Opção Exame × Filial aparece", "Exame × Filial" in html0)
 checar("Opção Exame × Médico aparece", "Exame × Médico" in html0)
-checar("Grade da matriz por filial ainda aparece por padrão", "Ajustar médico/preço nesta filial" in html0)
+# A tela agora abre SEM nenhum tipo pré-selecionado (o usuário escolhe o
+# que quer fazer) - nenhuma grade aparece antes da escolha.
+checar("Nenhuma grade aparece antes de escolher o tipo", "Ajustar médico/preço nesta filial" not in html0)
+checar("Aparece a orientação de escolher o tipo", "Escolha acima o tipo de associação" in html0)
 
 # tipo=medico mostra a grade de médico responsável + extras, sem os campos de preço.
 r1 = client.get("/equipe/exames/por-filial?tipo=medico")

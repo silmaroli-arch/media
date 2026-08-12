@@ -52,7 +52,7 @@ client.get("/logout")
 # o médico responsável no select (mesmo sendo ele mesmo a única opção).
 login("medico@gruposaude.com", "123456")
 
-r = client.get("/equipe/exames/por-filial")
+r = client.get("/equipe/exames/por-filial?tipo=filial")  # a tela abre sem seleção; o teste pede a matriz explicitamente
 html = r.get_data(as_text=True)
 checar("Médico vê a tela normalmente", r.status_code == 200)
 checar("Médico vê o próprio exame na matriz", "Raio-X Torax" in html)

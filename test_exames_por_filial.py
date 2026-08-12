@@ -62,7 +62,7 @@ r0 = client.post(f"/equipe/exames/por-filial/{exame_origem_id}/atualizar", data=
 checar("Definir médico/preço do local de origem responde 200", r0.status_code == 200)
 
 # A tela "Exames por filial" mostra a matriz: origem preenchida, destino com botão de associar.
-r = client.get("/equipe/exames/por-filial")
+r = client.get("/equipe/exames/por-filial?tipo=filial")  # a tela abre sem seleção; o teste pede a matriz explicitamente
 html = r.get_data(as_text=True)
 checar("Tela responde 200", r.status_code == 200)
 checar("Mostra o nome do exame na matriz", "Ultrassom Abdominal" in html)
@@ -113,7 +113,7 @@ with app.app_context():
     )
 
 # A matriz mostra o preço de cada filial.
-r4 = client.get("/equipe/exames/por-filial")
+r4 = client.get("/equipe/exames/por-filial?tipo=filial")  # a tela abre sem seleção; o teste pede a matriz explicitamente
 html4 = r4.get_data(as_text=True)
 checar("Matriz mostra o preço da origem", "150,00" in html4)
 checar("Matriz mostra o preço do destino", "180,00" in html4)

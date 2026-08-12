@@ -14,11 +14,23 @@
 {% if filiais|length > 1 %}
 <div class="mb-3" style="max-width: 320px;">
   <label class="form-label">Tipo de associação</label>
-  <select class="form-select" onchange="window.location.href = this.value">
+  {# A tela abre SEM nada selecionado - o usuário escolhe de propósito o
+     que quer fazer; a grade só aparece depois da escolha. #}
+  <select class="form-select" onchange="if (this.value) window.location.href = this.value">
+    <option value="" {% if not tipo %}selected{% endif %}>Selecione o que você quer fazer...</option>
     <option value="{{ url_for('medico.exames_por_filial', tipo='filial') }}" {% if tipo == 'filial' %}selected{% endif %}>Exame × Filial</option>
     <option value="{{ url_for('medico.exames_por_filial', tipo='medico') }}" {% if tipo == 'medico' %}selected{% endif %}>Exame × Médico</option>
   </select>
 </div>
+
+{% if not tipo %}
+<div class="card p-4 text-center text-muted">
+  <div><i class="bi bi-arrow-up-circle" style="font-size: 1.5rem;"></i></div>
+  Escolha acima o tipo de associação que você quer ver e ajustar:
+  <strong>Exame × Filial</strong> (em quais filiais cada exame está disponível, com qual médico e preço)
+  ou <strong>Exame × Médico</strong> (médico responsável e médicos extras de cada exame).
+</div>
+{% endif %}
 {% endif %}
 
 {% if tipo == 'filial' %}
@@ -56,7 +68,9 @@
               </span>
               {% endif %}
               <br>
-              <a href="{{ url_for('medico.exames_editar', exame_id=exame_aqui.id) }}" class="small">Editar dados do exame</a>
+              {# Sem link de "Editar dados do exame" aqui - esta tela é só
+                 de ASSOCIAÇÃO (médico/preço por filial); os dados do exame
+                 em si são editados na lista de Exames & Preparo. #}
               <details class="mt-1">
                 <summary class="small">Ajustar médico/preço nesta filial</summary>
                 <form method="post" action="{{ url_for('medico.exames_por_filial_atualizar', exame_id=exame_aqui.id) }}" class="d-flex flex-column gap-1 mt-1">
@@ -97,7 +111,7 @@
     </table>
   </div>
 </div>
-{% else %}
+{% elif tipo == 'medico' %}
 <p class="text-muted small">
   Associação de exame por médico: para cada exame já existente numa filial, quem é o médico responsável e quais
   outros médicos também podem atendê-lo (extras). Marque ou desmarque um médico extra e clique em "Salvar" para
