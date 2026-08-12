@@ -135,6 +135,9 @@
             <i class="bi bi-exclamation-triangle"></i> não confirmado (provisório: {{ e.medico.nome }})
           </span>
           {% endif %}
+          {% for m in e.medicos_extra %}
+          <span class="badge bg-light text-dark border ms-1">+ {{ m.nome }}</span>
+          {% endfor %}
         </td>
         <td>{% if e.preco %}R$ {{ "%.2f"|format(e.preco)|replace(".", ",") }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
         <td class="text-nowrap">

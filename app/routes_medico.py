@@ -978,7 +978,32 @@ def exames_por_filial_associar():
 
     existente = Exame.query.filter_by(clinica_id=clinica_destino.id, nome=nome).first()
     if existente and existente.associado:
-        flash(f"\"{nome}\" já está associado à filial {clinica_destino.nome}.", "warning")
+        # A associação exame+filial já existe - mas um exame pode ter MAIS
+        # de um médico na mesma filial (o responsável + outros que também
+        # o atendem). Se o médico escolhido for novo, ele é ADICIONADO à
+        # associação existente como médico extra, em vez de rejeitar.
+        medico_novo_id = request.form.get("medico_id", type=int)
+        medicos_destino = medicos_da_clinica(clinica_destino)
+        medico_novo = next((m for m in medicos_destino if m.id == medico_novo_id), None)
+        if not medico_novo:
+            flash("Escolha um médico válido, vinculado a essa filial.", "danger")
+            return redirect(url_for("medico.exames_por_filial"))
+
+        if medico_novo.id == existente.medico_id or medico_novo in existente.medicos_extra:
+            flash(
+                f"\"{nome}\" já está associado à filial {clinica_destino.nome} com {medico_novo.nome}.",
+                "warning",
+            )
+            return redirect(url_for("medico.exames_por_filial"))
+
+        existente.medicos_extra = list(existente.medicos_extra) + [medico_novo]
+        db.session.commit()
+        flash(
+            f"{medico_novo.nome} foi adicionado(a) como médico que também atende \"{nome}\" na filial "
+            f"{clinica_destino.nome} (responsável: {existente.medico.nome}). O preço continua o já "
+            "definido para essa associação — ajuste pelo Editar, se precisar.",
+            "success",
+        )
         return redirect(url_for("medico.exames_por_filial"))
 
     origem = (

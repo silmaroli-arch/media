@@ -76,12 +76,49 @@ with app.app_context():
     checar("Médico escolhido no formulário vale como confirmado", exame_praia.medico_confirmado is True)
     exame_praia_id = exame_praia.id
 
-# Duplicar a mesma associação é barrado com aviso.
+# Repetir a MESMA associação com o MESMO médico é barrado com aviso.
 r = client.post("/equipe/exames/por-filial/associar", data={
     "nome": "Endoscopia Assoc", "clinica_destino_id": str(praia_id),
     "medico_id": str(medico_grupo_id), "preco": "300,00",
 }, follow_redirects=True)
-checar("Associação repetida (mesmo exame + mesma filial) é barrada", "já está associado" in r.get_data(as_text=True))
+checar("Associação repetida (mesmo exame + filial + médico) é barrada", "já está associado" in r.get_data(as_text=True))
+
+# Mas um MÉDICO NOVO na mesma associação exame+filial é ADICIONADO como
+# médico que também atende (era o caso do usuário: criou um médico novo e
+# quis associá-lo a um exame que já existia na filial).
+with app.app_context():
+    from app.models import ClinicaMembro
+    medico2 = Usuario(nome="Medico Dois Assoc", email="medico2.assoc@gruposaude.com", tipo="medico")
+    medico2.set_senha("123456")
+    db.session.add(medico2)
+    db.session.flush()
+    db.session.add(ClinicaMembro(clinica_id=praia_id, usuario_id=medico2.id, ativo=True))
+    db.session.commit()
+    medico2_id = medico2.id
+
+r = client.post("/equipe/exames/por-filial/associar", data={
+    "nome": "Endoscopia Assoc", "clinica_destino_id": str(praia_id),
+    "medico_id": str(medico2_id), "preco": "0",
+}, follow_redirects=True)
+html_extra = r.get_data(as_text=True)
+checar("Médico NOVO na mesma associação é adicionado (não é rejeitado)",
+       "foi adicionado(a) como médico que também atende" in html_extra)
+with app.app_context():
+    e_praia = Exame.query.filter_by(clinica_id=praia_id, nome="Endoscopia Assoc").first()
+    checar("O médico novo entrou como médico extra da associação",
+           medico2_id in [m.id for m in e_praia.medicos_extra])
+    checar("O responsável original continua o mesmo", e_praia.medico_id == medico_grupo_id)
+    checar("O preço da associação NÃO foi alterado pelo médico extra", float(e_praia.preco) == 300.0)
+    checar("Continua UMA associação só (não duplicou a linha)",
+           Exame.query.filter_by(clinica_id=praia_id, nome="Endoscopia Assoc").count() == 1)
+checar("O médico extra aparece na linha da lista", "+ Medico Dois Assoc" in html_extra)
+
+# Repetir o mesmo médico extra também é barrado.
+r = client.post("/equipe/exames/por-filial/associar", data={
+    "nome": "Endoscopia Assoc", "clinica_destino_id": str(praia_id),
+    "medico_id": str(medico2_id), "preco": "0",
+}, follow_redirects=True)
+checar("Repetir o médico extra é barrado com aviso", "já está associado" in r.get_data(as_text=True))
 
 # ---------- Editar: trocar o preço pela própria tela ----------
 
