@@ -93,24 +93,23 @@ r = client.get("/equipe/pacientes")
 checar("Clínica SP NÃO vê a Ana (ainda não é paciente lá)", "Ana Portatil" not in r.get_data(as_text=True))
 client.get("/logout")
 
-# ---------- 3ª empresa (auto-cadastro pelo link): também reusa ----------
+# ---------- 3ª empresa (importação pelo CPF): também reusa ----------
 
-r = client.post(f"/paciente/cadastro/{codigo_sp}", data={
-    "nome": "Ana Portatil", "cpf": "710.820.930-04", "email": "",
-    "telefone": TEL, "data_nascimento": "15/04/1991",
-}, follow_redirects=True)
-checar("Auto-cadastro pelo link da 3ª empresa funciona", r.status_code == 200)
+# O link de auto-cadastro por clínica foi desativado: agora a SECRETÁRIA
+# da 3ª empresa importa a Ana pelo CPF (ver medico.pacientes_importar).
+login_equipe("secretaria@clinicasp.com")
+r = client.post("/equipe/pacientes/importar", data={"cpf": "710.820.930-04"},
+                follow_redirects=True)
+checar("Importar pelo CPF na 3ª empresa funciona", "importado(a) da plataforma" in r.get_data(as_text=True))
+client.get("/logout")
 with app.app_context():
     contas = Usuario.query.filter_by(telefone=TEL_NORM, tipo="paciente").all()
-    checar("Auto-cadastro também NÃO criou outra conta", len(contas) == 1)
+    checar("A importação também NÃO criou outra conta", len(contas) == 1)
     checar("Agora são TRÊS cadastros na mesma conta",
            len(contas[0].pacientes) == 3)
     pac_sp = next(p for p in contas[0].pacientes if p.empresa_id == sp_emp_id)
-    checar("O cadastro pelo link entra pendente (aprovação da clínica), como sempre",
-           pac_sp.status_cadastro == "pendente")
-
-# O auto-cadastro deixa a pessoa logada - sai antes de voltar como equipe.
-client.get("/logout")
+    checar("O cadastro importado pela equipe já entra aprovado",
+           pac_sp.status_cadastro == "aprovado")
 
 # ---------- Família: mesmo telefone, nascimento diferente = OUTRA conta ----------
 

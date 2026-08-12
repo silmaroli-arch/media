@@ -12,7 +12,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, func
 
 from app.extensions import db
 from app.models import (
@@ -598,6 +598,23 @@ def _preencher_endereco_emergencia(paciente, form):
     paciente.contato_emergencia_telefone = form.get("contato_emergencia_telefone", "").strip()
 
 
+def _buscar_paciente_por_cpf_plataforma(cpf):
+    """Acha o cadastro mais recente de um paciente na PLATAFORMA inteira
+    pelo CPF (comparado só nos dígitos - o CPF é guardado como digitado).
+    É a base do fluxo "importar paciente": o paciente se cadastra uma vez,
+    independente de clínica (ver auth.cadastro_paciente_global), e cada
+    clínica o importa pelo CPF na recepção."""
+    digitos = re.sub(r"\D", "", cpf or "")
+    if len(digitos) < 11:
+        return None
+    expr = func.replace(func.replace(func.replace(Paciente.cpf, ".", ""), "-", ""), " ", "")
+    return (
+        Paciente.query.filter(expr == digitos)
+        .order_by(Paciente.id.desc())
+        .first()
+    )
+
+
 @medico_bp.route("/pacientes/novo", methods=["GET", "POST"])
 @login_required
 @staff_required
@@ -610,6 +627,25 @@ def pacientes_novo():
         return redirect(url_for("medico.filiais_lista"))
 
     empresa = empresa_atual()
+
+    # Busca por CPF ("importar paciente da plataforma"): antes de digitar
+    # tudo de novo, a secretária consulta o CPF - se o paciente já tem
+    # cadastro (global ou em outra clínica), é só importar.
+    cpf_busca = request.args.get("cpf_busca", "").strip()
+    encontrado = None
+    busca_feita = False
+    if request.method == "GET" and cpf_busca:
+        busca_feita = True
+        encontrado = _buscar_paciente_por_cpf_plataforma(cpf_busca)
+        if encontrado and Paciente.query.filter(
+            _filtro_pacientes_da_empresa(), Paciente.id.in_(
+                [pp.id for pp in Paciente.query.filter(Paciente.cpf == encontrado.cpf).all()]
+            )
+        ).first():
+            flash(f"{encontrado.nome} já é paciente desta empresa.", "warning")
+            return redirect(url_for("medico.pacientes_lista"))
+        if not encontrado:
+            flash("CPF não encontrado na plataforma — preencha o cadastro completo abaixo.", "info")
 
     if request.method == "POST":
         # O paciente é cadastrado na EMPRESA - não se escolhe filial aqui
@@ -696,7 +732,61 @@ def pacientes_novo():
         )
         return redirect(url_for("medico.pacientes_lista"))
 
-    return render_template("medico/pacientes_form.html", paciente=None)
+    return render_template(
+        "medico/pacientes_form.html", paciente=None,
+        cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
+    )
+
+
+@medico_bp.route("/pacientes/importar", methods=["POST"])
+@login_required
+@staff_required
+@permissao_required("perm_pacientes")
+def pacientes_importar():
+    """Importa pra ESTA empresa um paciente que já existe na plataforma
+    (cadastro global ou de outra clínica), achado pelo CPF em
+    pacientes_novo. Cria o cadastro (Paciente) desta empresa copiando os
+    dados do cadastro mais recente - a conta de login é a MESMA (conta
+    única), então o paciente passa a ver esta clínica no app dele. Os
+    dados clínicos de outras clínicas NÃO vêm junto (cada clínica só vê
+    o que é dela)."""
+    empresa = empresa_atual()
+    origem = _buscar_paciente_por_cpf_plataforma(request.form.get("cpf", ""))
+    if not origem:
+        flash("CPF não encontrado na plataforma.", "danger")
+        return redirect(url_for("medico.pacientes_novo"))
+
+    ja_daqui = Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.cpf == origem.cpf).first()
+    if ja_daqui:
+        flash(f"{origem.nome} já é paciente desta empresa.", "warning")
+        return redirect(url_for("medico.pacientes_lista"))
+
+    novo = Paciente(
+        empresa_id=empresa.id,
+        usuario_id=origem.usuario_id,
+        nome=origem.nome,
+        cpf=origem.cpf,
+        data_nascimento=origem.data_nascimento,
+        email=origem.email,
+        telefone=origem.telefone,
+        # Importado pela própria equipe = aceito por definição (não passa
+        # pela fila de "cadastros pendentes").
+        status_cadastro="aprovado",
+        cep=origem.cep, rua=origem.rua, numero=origem.numero,
+        complemento=origem.complemento, bairro=origem.bairro,
+        cidade=origem.cidade, uf=origem.uf,
+        contato_emergencia_nome=origem.contato_emergencia_nome,
+        contato_emergencia_telefone=origem.contato_emergencia_telefone,
+    )
+    db.session.add(novo)
+    db.session.commit()
+    flash(
+        f"{origem.nome} foi importado(a) da plataforma para esta empresa - dados de contato e "
+        "endereço vieram junto; o histórico dele(a) em outras clínicas continua lá (cada clínica "
+        "vê só o que é dela).",
+        "success",
+    )
+    return redirect(url_for("medico.pacientes_lista"))
 
 
 @medico_bp.route("/pacientes/<int:paciente_id>/editar", methods=["GET", "POST"])

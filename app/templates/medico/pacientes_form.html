@@ -3,6 +3,36 @@
 {% block titulo %}{% if paciente %}Editar paciente{% else %}Novo paciente{% endif %}{% endblock %}
 {% block conteudo %}
 <h3 class="mb-3">{% if paciente %}Editar cadastro de {{ paciente.nome }}{% else %}Cadastrar novo paciente{% endif %}</h3>
+
+{% if not paciente %}
+<div class="card p-3 mb-3">
+  <h6 class="mb-1"><i class="bi bi-search me-1"></i>Importar paciente pelo CPF</h6>
+  <p class="text-muted small mb-2">
+    O paciente pode já ter cadastro na plataforma (feito por ele mesmo no app, ou por outra
+    clínica). Digite o CPF: se ele existir, os dados são importados na hora — só preencha o
+    formulário completo abaixo se o CPF não for encontrado.
+  </p>
+  <form method="get" class="d-flex gap-2" style="max-width: 420px;">
+    <input type="text" inputmode="numeric" name="cpf_busca" class="form-control"
+           placeholder="000.000.000-00" value="{{ cpf_busca or '' }}">
+    <button type="submit" class="btn btn-outline-primary text-nowrap">Buscar CPF</button>
+  </form>
+  {% if encontrado %}
+  <div class="alert alert-success d-flex justify-content-between align-items-center mt-3 mb-0">
+    <div>
+      Encontramos <strong>{{ encontrado.nome }}</strong>
+      {% if encontrado.data_nascimento %}(nascimento: {{ encontrado.data_nascimento.strftime('%d/%m/%Y') }}){% endif %}
+      na plataforma.
+    </div>
+    <form method="post" action="{{ url_for('medico.pacientes_importar') }}">
+      <input type="hidden" name="cpf" value="{{ encontrado.cpf }}">
+      <button type="submit" class="btn btn-success text-nowrap">Importar para esta clínica</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="card p-4">
   <form method="post">
     {# O paciente é cadastrado na EMPRESA - não se escolhe filial aqui
@@ -16,7 +46,8 @@
       {% if not paciente %}
       <div class="col-md-6">
         <label class="form-label">CPF</label>
-        <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" required>
+        <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00"
+               value="{{ cpf_busca if (busca_feita and not encontrado) else '' }}" required>
       </div>
       <div class="col-md-6">
         <label class="form-label">Telefone (login de acesso)</label>

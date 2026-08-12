@@ -25,7 +25,7 @@ with app.app_context():
         clinica.codigo_cadastro_paciente = codigo
         db.session.commit()
 
-r = client.post(f"/paciente/cadastro/{codigo}", data={
+r = client.post("/cadastro-paciente", data={
     "nome": "Paciente Endereco Teste", "cpf": "321.654.987-00",
     "telefone": "(27) 95555-4444", "data_nascimento": "05/05/1995",
     "cep": "29010-000", "rua": "Av. Jerônimo Monteiro", "numero": "123",
@@ -50,7 +50,7 @@ with app.app_context():
 client.get("/logout")
 
 # ---------- Campos continuam opcionais: cadastro sem endereço/emergência ainda funciona ----------
-r = client.post(f"/paciente/cadastro/{codigo}", data={
+r = client.post("/cadastro-paciente", data={
     "nome": "Paciente Sem Endereco", "cpf": "444.555.666-77",
     "telefone": "(27) 94444-3333", "data_nascimento": "10/10/2000",
 }, follow_redirects=True)

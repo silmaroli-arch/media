@@ -5,9 +5,6 @@ diferente, não deve mais ser bloqueado. Cobre as duas rotas afetadas:
 - app/routes_auth.py -> auth.cadastro_paciente (autocadastro do paciente pelo link público)
 Continua bloqueando o caso real de duplicata: mesmo telefone E mesma data de
 nascimento na mesma clínica (a própria pessoa tentando se cadastrar de novo).
-
-Roda contra SQLite local (não usa a DATABASE_URL do .env) e depende do
-seed.py já ter rodado antes (usa a Clínica Vitória e a secretária padrão).
 """
 from app import create_app
 from app.extensions import db
@@ -68,19 +65,13 @@ with app.app_context():
 
 client.get("/logout")
 
-# ---------- Autocadastro público (link da clínica) com o mesmo telefone, nascimento diferente ----------
-with app.app_context():
-    clinica_vitoria = Clinica.query.filter_by(nome="Clínica Vitória").first()
-    codigo = clinica_vitoria.codigo_cadastro_paciente
-    if not codigo:
-        import secrets
-        codigo = secrets.token_urlsafe(8)
-        clinica_vitoria.codigo_cadastro_paciente = codigo
-        db.session.commit()
+# ---------- Cadastro GLOBAL (plataforma) com o mesmo telefone, nascimento diferente ----------
+# (o link por clínica foi desativado - o paciente se cadastra na
+# plataforma, ver auth.cadastro_paciente_global)
 
 TELEFONE_FAMILIA2 = "(27) 96666-5555"
 
-r = client.post(f"/paciente/cadastro/{codigo}", data={
+r = client.post("/cadastro-paciente", data={
     "nome": "Mãe Autocadastro", "cpf": "222.333.444-55",
     "telefone": TELEFONE_FAMILIA2, "data_nascimento": "01/01/1985",
 }, follow_redirects=True)
@@ -88,7 +79,7 @@ with app.app_context():
     checar("Autocadastro da mãe funciona", Paciente.query.filter_by(cpf="222.333.444-55").first() is not None)
 client.get("/logout")
 
-r = client.post(f"/paciente/cadastro/{codigo}", data={
+r = client.post("/cadastro-paciente", data={
     "nome": "Filha Autocadastro", "cpf": "666.777.888-99",
     "telefone": TELEFONE_FAMILIA2, "data_nascimento": "15/09/2018",
 }, follow_redirects=True)

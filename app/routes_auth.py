@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timedelta
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, session
@@ -330,29 +331,23 @@ def _parse_data_nascimento(valor_str):
     return None
 
 
-@auth_bp.route("/paciente/cadastro/<codigo>", methods=["GET", "POST"])
-def cadastro_paciente(codigo):
-    """Auto-cadastro do paciente pelo app, usando o link/código público de
-    uma clínica específica (gerado em "Dados Cadastrais" — ver
-    medico.clinica_configuracoes). O cadastro entra com
-    status_cadastro="pendente": o paciente já consegue entrar no sistema
-    (mesmo login por telefone + data de nascimento de sempre), mas só
-    consegue solicitar agendamento depois que a equipe aceitar o cadastro
-    (ver medico.pacientes_solicitacoes)."""
+
+
+def _cpf_digitos(cpf):
+    """Só os dígitos do CPF - os cadastros guardam o CPF como digitado
+    (com ou sem pontuação), então toda comparação é feita nos dígitos."""
+    return re.sub(r"\D", "", cpf or "")
+
+
+@auth_bp.route("/cadastro-paciente", methods=["GET", "POST"])
+def cadastro_paciente_global():
+    """Cadastro do paciente INDEPENDENTE de clínica: o paciente se
+    cadastra uma vez na plataforma (cadastro global, Paciente sem
+    empresa) e as clínicas o IMPORTAM pelo CPF quando ele chega lá (ver
+    medico.pacientes_importar). Substitui o antigo link de auto-cadastro
+    por clínica - o paciente não se cadastra mais "numa clínica"."""
     if current_user.is_authenticated:
         return redirect(url_for("index"))
-
-    # O link agora é da EMPRESA (o paciente é da empresa, não de uma
-    # filial - ver Empresa.codigo_cadastro_paciente). Links antigos, com o
-    # código legado por filial, continuam funcionando: caem na empresa
-    # dona daquela filial.
-    empresa = Empresa.query.filter_by(codigo_cadastro_paciente=codigo).first()
-    if not empresa:
-        clinica_legada = Clinica.query.filter_by(codigo_cadastro_paciente=codigo).first()
-        empresa = clinica_legada.empresa if clinica_legada else None
-    if not empresa:
-        flash("Link de cadastro inválido ou expirado. Confira o link com a clínica.", "danger")
-        return render_template("auth/cadastro_paciente_invalido.html")
 
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
@@ -362,85 +357,49 @@ def cadastro_paciente(codigo):
         data_nascimento_str = request.form.get("data_nascimento", "").strip()
         telefone = normalizar_telefone(telefone_digitado)
 
-        if not nome or not cpf or not telefone or not data_nascimento_str:
+        if not nome or not _cpf_digitos(cpf) or not telefone or not data_nascimento_str:
             flash("Nome, CPF, telefone e data de nascimento são obrigatórios.", "danger")
-            return render_template("auth/cadastro_paciente.html", empresa=empresa)
+            return render_template("auth/cadastro_paciente.html")
 
         data_nascimento = _parse_data_nascimento(data_nascimento_str)
         if not data_nascimento:
             flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
-            return render_template("auth/cadastro_paciente.html", empresa=empresa)
+            return render_template("auth/cadastro_paciente.html")
 
-        # Telefone não é único por pessoa - é normal uma família inteira
-        # (pais e filhos, por exemplo) compartilhar o mesmo telefone de
-        # contato, cada um com seu próprio cadastro de paciente. Por isso
-        # o login de paciente (auth.login_paciente) já identifica a conta
-        # certa por telefone + data de nascimento, não só telefone. Aqui
-        # só bloqueamos se as duas coisas baterem ao mesmo tempo - aí sim
-        # é a mesma pessoa tentando se cadastrar de novo nesta clínica; a
-        # unicidade que de fato importa (e é garantida pelo banco) é por
-        # CPF, verificada logo abaixo.
-        # O paciente é cadastrado na EMPRESA dona da filial do link - o
-        # link/código continua sendo por filial (é como a clínica divulga),
-        # mas o cadastro resultante vale para a empresa inteira, e a
-        # filial de cada atendimento é escolhida na hora de agendar.
-        filiais_da_empresa = db.session.query(Clinica.id).filter(Clinica.empresa_id == empresa.id)
-        filtro_empresa = or_(
-            Paciente.empresa_id == empresa.id,
-            Paciente.clinica_id.in_(filiais_da_empresa),
-        )
-        if (
-            Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
-            .filter(
-                filtro_empresa,
-                Usuario.telefone == telefone,
-                Paciente.data_nascimento == data_nascimento,
-            )
-            .first()
-        ):
-            flash(
-                "Já existe um cadastro com esse telefone e data de nascimento nesta clínica. "
-                "Se já é paciente aqui, use a tela de login normal.",
-                "danger",
-            )
-            return render_template("auth/cadastro_paciente.html", empresa=empresa)
+        # A pessoa já tem conta (telefone + nascimento)? Então já está
+        # cadastrada na plataforma - é só entrar.
+        if encontrar_conta_paciente(telefone, data_nascimento):
+            flash("Você já tem cadastro na plataforma — entre pelo login (telefone + data de nascimento).", "warning")
+            return redirect(url_for("auth.login_paciente"))
 
-        if email and (
-            Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
-            .filter(filtro_empresa, Usuario.email == email)
-            .first()
-        ):
-            flash("Já existe um cadastro com esse e-mail nesta clínica.", "danger")
-            return render_template("auth/cadastro_paciente.html", empresa=empresa)
+        # CPF já cadastrado por alguém (em qualquer clínica ou global)?
+        cpf_alvo = _cpf_digitos(cpf)
+        for p_existente in Paciente.query.filter(Paciente.cpf.isnot(None)).all():
+            if _cpf_digitos(p_existente.cpf) == cpf_alvo:
+                flash(
+                    "Esse CPF já está cadastrado na plataforma. Se é você, entre pelo login "
+                    "(telefone + data de nascimento) — ou fale com a sua clínica.",
+                    "danger",
+                )
+                return render_template("auth/cadastro_paciente.html")
 
-        if Paciente.query.filter(filtro_empresa, Paciente.cpf == cpf).first():
-            flash("Já existe um paciente com esse CPF cadastrado nesta clínica.", "danger")
-            return render_template("auth/cadastro_paciente.html", empresa=empresa)
+        usuario = Usuario(nome=nome, email=email or None, telefone=telefone, tipo="paciente")
+        db.session.add(usuario)
+        db.session.flush()
 
-        # CONTA ÚNICA: se essa pessoa já usa o app por outra empresa
-        # (mesmo telefone + data de nascimento), reaproveita a conta dela -
-        # só o cadastro (Paciente) desta empresa é novo. Ver
-        # encontrar_conta_paciente em app/models.py.
-        usuario = encontrar_conta_paciente(telefone, data_nascimento)
-        if not usuario:
-            usuario = Usuario(nome=nome, email=email or None, telefone=telefone, tipo="paciente")
-            db.session.add(usuario)
-            db.session.flush()
-
+        # Cadastro GLOBAL: sem empresa nenhuma (empresa_id vazio). Não há
+        # "aprovação" aqui - quem aceita o paciente é cada clínica, no ato
+        # de importá-lo pelo CPF (medico.pacientes_importar).
         paciente = Paciente(
-            empresa_id=empresa.id,
+            empresa_id=None,
             usuario_id=usuario.id,
             nome=nome,
             cpf=cpf,
             data_nascimento=data_nascimento,
             email=email or None,
             telefone=telefone,
-            status_cadastro="pendente",
+            status_cadastro="aprovado",
         )
-        # Endereço (preenchido via busca de CEP no formulário) e contato de
-        # emergência - mesmos campos que a equipe preenche em
-        # medico.pacientes_novo, mas aqui opcionais, já que quem está se
-        # autocadastrando pode preferir completar depois.
         paciente.cep = request.form.get("cep", "").strip()
         paciente.rua = request.form.get("rua", "").strip()
         paciente.numero = request.form.get("numero", "").strip()
@@ -454,14 +413,25 @@ def cadastro_paciente(codigo):
         db.session.commit()
 
         login_user(usuario)
+        session["paciente_id"] = paciente.id
         flash(
-            "Cadastro enviado! Assim que a clínica aceitar seu cadastro, você já vai poder "
-            "solicitar agendamento de exames por aqui.",
+            "Cadastro criado! Informe seu CPF na recepção da clínica para que ela puxe seus "
+            "dados — a partir daí você acompanha e solicita seus exames por aqui.",
             "success",
         )
         return redirect(url_for("paciente.dashboard"))
 
-    return render_template("auth/cadastro_paciente.html", empresa=empresa)
+    return render_template("auth/cadastro_paciente.html")
+
+
+@auth_bp.route("/paciente/cadastro/<codigo>", methods=["GET", "POST"])
+def cadastro_paciente(codigo):
+    """LEGADO: o auto-cadastro por link de clínica foi desativado - o
+    paciente agora se cadastra na plataforma, independente de clínica
+    (ver cadastro_paciente_global), e a clínica o importa pelo CPF (ver
+    medico.pacientes_importar). Links antigos divulgados pelas clínicas
+    caem aqui e são redirecionados pro cadastro global."""
+    return redirect(url_for("auth.cadastro_paciente_global"))
 
 
 

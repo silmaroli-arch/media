@@ -2,39 +2,81 @@
 {% block titulo %}Cadastro de paciente{% endblock %}
 {% block conteudo %}
 <div class="row justify-content-center">
-  <div class="col-md-6">
+  <div class="col-md-7">
     <div class="card p-4 mt-4">
       <div class="text-center mb-3"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 52px;"></div>
-      <h5 class="text-center mb-1">Cadastro de paciente — {{ empresa.nome }}</h5>
+      <h5 class="text-center mb-1">Cadastro de paciente</h5>
       <p class="text-muted small text-center">
-        Preencha seus dados para se cadastrar. Depois de enviado, a clínica precisa aceitar o seu
-        cadastro antes que você possa solicitar agendamento de exames — você já pode acompanhar o
-        status pelo seu painel assim que enviar.
+        Seu cadastro é único e vale para <strong>qualquer clínica</strong> que use a plataforma —
+        você não se cadastra "numa clínica". Quando chegar à recepção, informe o seu CPF: a
+        clínica puxa seus dados na hora.
       </p>
       <form method="post">
-        <div class="mb-3">
-          <label class="form-label">Nome completo</label>
-          <input type="text" name="nome" class="form-control" required autofocus>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Nome completo</label>
+            <input type="text" name="nome" class="form-control" required autofocus>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">CPF</label>
+            <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Telefone (será seu login de acesso)</label>
+            <input type="text" inputmode="numeric" name="telefone" id="telefone" class="form-control" placeholder="(27) 99999-9999" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Data de nascimento</label>
+            <input type="text" inputmode="numeric" name="data_nascimento" id="data_nascimento"
+                   class="form-control" placeholder="DD/MM/AAAA" autocomplete="bday" required>
+            <div class="form-text">Você vai usar o telefone e a data de nascimento para entrar no sistema — não é preciso criar senha.</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">E-mail (opcional)</label>
+            <input type="email" name="email" class="form-control">
+          </div>
+
+          <div class="col-12"><h6 class="mb-0 mt-2">Endereço</h6></div>
+          <div class="col-md-3">
+            <label class="form-label">CEP</label>
+            <input type="text" inputmode="numeric" name="cep" id="cep" class="form-control" placeholder="00000-000">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Rua</label>
+            <input type="text" name="rua" class="form-control">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Número</label>
+            <input type="text" name="numero" class="form-control">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Complemento</label>
+            <input type="text" name="complemento" class="form-control">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Bairro</label>
+            <input type="text" name="bairro" class="form-control">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Cidade</label>
+            <input type="text" name="cidade" class="form-control">
+          </div>
+          <div class="col-md-1">
+            <label class="form-label">UF</label>
+            <input type="text" name="uf" class="form-control" maxlength="2">
+          </div>
+
+          <div class="col-12"><h6 class="mb-0 mt-2">Contato de emergência</h6></div>
+          <div class="col-md-6">
+            <label class="form-label">Nome</label>
+            <input type="text" name="contato_emergencia_nome" class="form-control">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Telefone</label>
+            <input type="text" inputmode="numeric" name="contato_emergencia_telefone" class="form-control">
+          </div>
         </div>
-        <div class="mb-3">
-          <label class="form-label">CPF</label>
-          <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" required>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Telefone (será seu login de acesso)</label>
-          <input type="text" inputmode="numeric" name="telefone" id="telefone" class="form-control" placeholder="(27) 99999-9999" required>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Data de nascimento</label>
-          <input type="text" inputmode="numeric" name="data_nascimento" id="data_nascimento"
-                 class="form-control" placeholder="DD/MM/AAAA" autocomplete="bday" required>
-          <div class="form-text">Você vai usar o telefone e a data de nascimento para entrar no sistema — não é preciso criar senha.</div>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">E-mail (opcional)</label>
-          <input type="email" name="email" class="form-control">
-        </div>
-        <button type="submit" class="btn btn-primary w-100" id="btn-cadastrar-paciente">Enviar cadastro</button>
+        <button type="submit" class="btn btn-primary w-100 mt-4" id="btn-cadastrar-paciente">Criar meu cadastro</button>
       </form>
       <div class="text-center mt-3">
         <a href="{{ url_for('auth.login_paciente') }}" class="small">Já sou paciente cadastrado &rarr; <strong>Entrar</strong></a>
@@ -72,6 +114,7 @@
   aplicarMascaraFixa(document.getElementById('cpf'), '999.999.999-99');
   aplicarMascaraFixa(document.getElementById('data_nascimento'), '99/99/9999');
   aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
+  aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
 
   document.querySelector('form').addEventListener('submit', function () {
     var botao = document.getElementById('btn-cadastrar-paciente');
