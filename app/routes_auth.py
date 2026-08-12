@@ -474,11 +474,20 @@ def dev_limpar_base():
             for tabela in reversed(db.metadata.sorted_tables):
                 if tabela.name in TABELAS_PRESERVADAS_LIMPAR_BASE:
                     continue
+                if tabela.name == "usuarios":
+                    # Preserva a(s) conta(s) do DONO da plataforma - sem
+                    # isso, a limpeza apagava a credencial do dono junto e
+                    # ninguém conseguia mais entrar no painel dele (o dono
+                    # não é recriado pelo cadastro público nem depende de
+                    # empresa/filial, então preservar a linha é seguro).
+                    db.session.execute(tabela.delete().where(tabela.c.tipo != "dono"))
+                    continue
                 db.session.execute(tabela.delete())
             db.session.commit()
             flash(
-                "Base de dados limpa com sucesso (exceto configuração da plataforma e histórico de "
-                "deploy). Use \"Criar minha clínica\" para começar de novo, ou rode o seed.py.",
+                "Base de dados limpa com sucesso (preservados: conta do dono da plataforma, "
+                "configuração da plataforma e histórico de deploy). Use \"Criar minha clínica\" "
+                "para começar de novo, ou rode o seed.py.",
                 "success",
             )
             return redirect(url_for("auth.login"))

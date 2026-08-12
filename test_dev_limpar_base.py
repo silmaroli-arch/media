@@ -56,7 +56,11 @@ checar("Frase certa responde 200", r4.status_code == 200)
 checar("Mensagem de sucesso aparece", "limpa com sucesso" in r4.get_data(as_text=True))
 
 with app.app_context():
-    checar("Todos os usuários foram apagados", Usuario.query.count() == 0)
+    # A conta do DONO da plataforma é preservada - senão ninguém
+    # conseguiria mais entrar no painel do dono depois da limpeza.
+    checar("Só a conta do dono sobrevive entre os usuários",
+           Usuario.query.count() == Usuario.query.filter_by(tipo="dono").count()
+           and Usuario.query.filter_by(tipo="dono").count() >= 1)
     checar("Todas as clínicas foram apagadas", Clinica.query.count() == 0)
     checar("Todas as empresas foram apagadas", Empresa.query.count() == 0)
     checar("Todos os pacientes foram apagados", Paciente.query.count() == 0)
@@ -66,5 +70,9 @@ with app.app_context():
 # A tela de login continua funcionando normalmente depois da limpeza.
 r5 = client.get("/login")
 checar("Login continua respondendo 200 depois de limpar a base", r5.status_code == 200)
+
+# O dono continua conseguindo logar com as credenciais de antes.
+r6 = client.post("/login", data={"email": "dono@plataforma.com", "senha": "123456"}, follow_redirects=True)
+checar("Dono da plataforma continua logando depois da limpeza", r6.status_code == 200 and "inválidos" not in r6.get_data(as_text=True))
 
 print("\nTodos os testes de 'Limpar dados de teste' passaram.")
