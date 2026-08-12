@@ -21,11 +21,40 @@
   {% endfor %}
 </datalist>
 
+{% if not modelo %}
+<div class="mb-3">
+  {# Importar preenche este formulário - por isso os botões moram aqui,
+     não na lista. Cada um abre um popup pra escolher o arquivo. #}
+  <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-importar-pdf">
+    <i class="bi bi-file-earmark-pdf"></i> Importar de um PDF
+  </button>
+  <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx">
+    <i class="bi bi-file-earmark-excel"></i> Importar de um Excel
+  </button>
+  <span class="form-text d-block mt-1">A importação lê o arquivo e preenche os campos abaixo pra você revisar — nada é salvo antes do Salvar.</span>
+</div>
+{% endif %}
+
 <div class="card p-4">
-  <form method="post">
+  <form method="post" id="form-preparo">
     <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
     {# Modelo de preparo é genérico - vale para qualquer local de atendimento
        da empresa, por isso não pede (nem mostra) filial aqui. #}
+
+    {# Abas: um tópico por aba, pra facilitar o preenchimento. Todas as
+       abas ficam no MESMO <form> - trocar de aba não perde nada, e o
+       Salvar envia tudo junto. #}
+    <ul class="nav nav-tabs mb-3" role="tablist">
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#aba-geral" type="button">Dados gerais</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#aba-cortes" type="button">Cortes de alimentação</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#aba-medicamentos" type="button">Medicamentos</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#aba-infos" type="button">Informações gerais</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#aba-alimentos" type="button">Alimentos</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#aba-exames-anteriores" type="button">Exames proibidos antes</button></li>
+    </ul>
+
+    <div class="tab-content">
+    <div class="tab-pane fade show active" id="aba-geral">
     <div class="mb-3">
       <label class="form-label">Nome do modelo</label>
       <input type="text" name="nome" class="form-control" required
@@ -36,10 +65,11 @@
     <div class="mb-3">
       <label class="form-label">Instruções gerais (visíveis ao paciente)</label>
       <textarea name="instrucoes" class="form-control" rows="10" required>{{ modelo.instrucoes if modelo else ((sugestao.instrucoes if sugestao else '') or '') }}</textarea>
-      <div class="form-text">Dieta por fase, receituário, modo de preparo, observações finais etc. — tudo que não tem campo próprio abaixo.</div>
+      <div class="form-text">Dieta por fase, receituário, modo de preparo, observações finais etc. — tudo que não tem campo próprio nas outras abas.</div>
+    </div>
     </div>
 
-    <hr>
+    <div class="tab-pane fade" id="aba-cortes">
     <h5>Cortes de alimentação/líquido</h5>
     <p class="text-muted small">
       Definidos em <strong>horas antes do horário marcado do exame</strong> — assim o paciente vê o
@@ -65,8 +95,9 @@
       {% endfor %}
     </div>
     <button type="button" class="btn btn-sm btn-outline-primary mb-4" onclick="adicionarCorte()">+ Adicionar corte</button>
+    </div>
 
-    <hr>
+    <div class="tab-pane fade" id="aba-medicamentos">
     <h5>Medicamentos a suspender</h5>
     <p class="text-muted small">
       Também em dias antes do exame — calculado a partir da data do agendamento. O medicamento é
@@ -137,8 +168,9 @@
       {% endfor %}
     </div>
     <button type="button" class="btn btn-sm btn-outline-primary mb-4" onclick="adicionarMantido()">+ Adicionar medicamento mantido</button>
+    </div>
 
-    <hr>
+    <div class="tab-pane fade" id="aba-infos">
     <h5>Informações gerais</h5>
     <p class="text-muted small">
       Regras avulsas que não são nem um corte de alimentação/líquido nem um medicamento a suspender
@@ -179,8 +211,9 @@
       {% endfor %}
     </div>
     <button type="button" class="btn btn-sm btn-outline-primary mb-4" onclick="adicionarInfoGeral()">+ Adicionar informação</button>
+    </div>
 
-    <hr>
+    <div class="tab-pane fade" id="aba-alimentos">
     <h5>Alimentos</h5>
     <p class="text-muted small">
       Alimentos específicos permitidos (sugestão de consumo) ou proibidos — além de aparecer para o
@@ -220,8 +253,9 @@
       {% endfor %}
     </div>
     <button type="button" class="btn btn-sm btn-outline-primary mb-4" onclick="adicionarAlimento()">+ Adicionar alimento</button>
+    </div>
 
-    <hr>
+    <div class="tab-pane fade" id="aba-exames-anteriores">
     <h5>Exames/procedimentos proibidos antes</h5>
     <p class="text-muted small">
       Exames ou procedimentos que o paciente <strong>não pode ter feito recentemente</strong>, senão o
@@ -249,13 +283,86 @@
       {% endfor %}
     </div>
     <button type="button" class="btn btn-sm btn-outline-primary mb-4" onclick="adicionarExameAnterior()">+ Adicionar exame/procedimento</button>
+    </div>
+    </div>
 
+    <hr>
     <button type="submit" class="btn btn-primary">Salvar</button>
     <a href="{{ url_for('medico.preparo_modelos_lista') }}" class="btn btn-link">Cancelar</a>
   </form>
 </div>
 
+{% if not modelo %}
+{# ---------- Popups de importação (fora do <form> principal - formulário
+   aninhado não existe em HTML) ---------- #}
+<div class="modal fade" id="modal-importar-pdf" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('medico.preparo_modelos_importar_pdf') }}" enctype="multipart/form-data">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-file-earmark-pdf"></i> Importar de um PDF</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">
+            Envie o PDF do preparo (com texto selecionável, não escaneado como imagem). O texto é
+            extraído e preenche os campos do formulário pra você revisar — nada é salvo antes do Salvar.
+          </p>
+          <input type="file" name="arquivo_pdf" class="form-control" accept=".pdf,application/pdf" required>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Extrair dados</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="modal-importar-xlsx" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('medico.preparo_modelos_importar_xlsx') }}" enctype="multipart/form-data">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-file-earmark-excel"></i> Importar de um Excel</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">
+            Envie a planilha (.xlsx) no formato com as colunas Tipo/Ação/Agrupador/Nome/Dias antes/
+            Horas antes/Hora exata. Os dados extraídos preenchem o formulário pra você revisar —
+            nada é salvo antes do Salvar.
+          </p>
+          <input type="file" name="arquivo_xlsx" class="form-control" accept=".xlsx" required>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Extrair dados</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <script>
+  // Campo obrigatório inválido escondido numa aba não focada impede o
+  // envio SEM mostrar nada pro usuário - antes de validar, troca pra aba
+  // do primeiro campo inválido.
+  document.getElementById('form-preparo').addEventListener('submit', function (ev) {
+    var form = this;
+    if (!form.checkValidity()) {
+      var invalido = form.querySelector(':invalid');
+      var pane = invalido && invalido.closest('.tab-pane');
+      if (pane) {
+        var botaoAba = document.querySelector('[data-bs-target="#' + pane.id + '"]');
+        if (botaoAba) new bootstrap.Tab(botaoAba).show();
+        setTimeout(function () { invalido.reportValidity(); }, 200);
+        ev.preventDefault();
+      }
+    }
+  });
+
   function adicionarCorte() {
     var div = document.createElement('div');
     div.className = 'row g-2 mb-2 linha-corte';
