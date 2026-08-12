@@ -5,7 +5,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico
+from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -51,22 +51,27 @@ def login_paciente():
         return redirect(url_for("index"))
 
     # Etapa 2: o paciente já viu a lista de clínicas (etapa 1 encontrou
-    # mais de uma conta válida) e está escolhendo qual delas acessar. Não
-    # confia no valor bruto vindo do form - só aceita um id que a própria
-    # etapa 1 já validou e guardou na sessão do servidor.
-    if request.method == "POST" and "usuario_id_escolhido" in request.form:
+    # mais de um CADASTRO válido - com a conta única, podem ser vários
+    # cadastros da mesma conta, um por empresa, e/ou contas legadas ainda
+    # não unificadas) e está escolhendo qual acessar. Não confia no valor
+    # bruto vindo do form - só aceita um id que a própria etapa 1 já
+    # validou e guardou na sessão do servidor.
+    if request.method == "POST" and "paciente_id_escolhido" in request.form:
         candidatos_ids = session.get("login_paciente_candidatos") or []
         try:
-            escolhido_id = int(request.form.get("usuario_id_escolhido", ""))
+            escolhido_id = int(request.form.get("paciente_id_escolhido", ""))
         except ValueError:
             escolhido_id = None
 
         session.pop("login_paciente_candidatos", None)
         if escolhido_id in candidatos_ids:
-            usuario = Usuario.query.get(escolhido_id)
-            if usuario and usuario.ativo:
+            paciente = Paciente.query.get(escolhido_id)
+            if paciente and paciente.usuario and paciente.usuario.ativo:
                 session.pop("clinica_id", None)
-                login_user(usuario)
+                login_user(paciente.usuario)
+                # Qual cadastro (empresa) da conta esta sessão vai usar -
+                # ver paciente_atual() em app/routes_paciente.py.
+                session["paciente_id"] = paciente.id
                 return redirect(url_for("index"))
 
         flash("Seleção inválida — faça login novamente.", "danger")
@@ -88,23 +93,26 @@ def login_paciente():
                 except ValueError:
                     continue
 
+        # Candidatos agora são CADASTROS (Paciente), não contas: com a
+        # conta única, o mesmo Usuario pode ter um cadastro por empresa -
+        # e contas legadas (pré-unificação) continuam funcionando igual.
         candidatos = []
         if telefone and data_nascimento:
             for usuario in Usuario.query.filter_by(telefone=telefone, tipo="paciente").all():
-                if (
-                    usuario.ativo
-                    and usuario.paciente
-                    and usuario.paciente.data_nascimento == data_nascimento
-                ):
-                    candidatos.append(usuario)
+                if not usuario.ativo:
+                    continue
+                for p in usuario.pacientes:
+                    if p.data_nascimento == data_nascimento:
+                        candidatos.append(p)
 
         if len(candidatos) == 1:
             session.pop("clinica_id", None)
-            login_user(candidatos[0])
+            login_user(candidatos[0].usuario)
+            session["paciente_id"] = candidatos[0].id
             return redirect(url_for("index"))
 
         if len(candidatos) > 1:
-            session["login_paciente_candidatos"] = [u.id for u in candidatos]
+            session["login_paciente_candidatos"] = [p.id for p in candidatos]
             return render_template("auth/login_paciente_escolher_clinica.html", candidatos=candidatos)
 
         flash("Telefone ou data de nascimento incorretos.", "danger")
@@ -116,6 +124,7 @@ def login_paciente():
 @login_required
 def logout():
     session.pop("clinica_id", None)
+    session.pop("paciente_id", None)
     logout_user()
     return redirect(url_for("auth.login"))
 
@@ -400,9 +409,15 @@ def cadastro_paciente(codigo):
             flash("Já existe um paciente com esse CPF cadastrado nesta clínica.", "danger")
             return render_template("auth/cadastro_paciente.html", empresa=empresa)
 
-        usuario = Usuario(nome=nome, email=email or None, telefone=telefone, tipo="paciente")
-        db.session.add(usuario)
-        db.session.flush()
+        # CONTA ÚNICA: se essa pessoa já usa o app por outra empresa
+        # (mesmo telefone + data de nascimento), reaproveita a conta dela -
+        # só o cadastro (Paciente) desta empresa é novo. Ver
+        # encontrar_conta_paciente em app/models.py.
+        usuario = encontrar_conta_paciente(telefone, data_nascimento)
+        if not usuario:
+            usuario = Usuario(nome=nome, email=email or None, telefone=telefone, tipo="paciente")
+            db.session.add(usuario)
+            db.session.flush()
 
         paciente = Paciente(
             empresa_id=empresa.id,

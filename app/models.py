@@ -356,7 +356,15 @@ class Usuario(db.Model, UserMixin):
     certificado_digital_titular = db.Column(db.String(200))
     certificado_digital_validade = db.Column(db.Date)
 
-    paciente = db.relationship("Paciente", back_populates="usuario", uselist=False)
+    # CONTA ÚNICA do paciente: uma pessoa (um Usuario) pode ter VÁRIOS
+    # cadastros de paciente - um por empresa que frequenta (ver
+    # encontrar_conta_paciente). O que é global é a PESSOA e o login dela;
+    # os dados clínicos continuam separados por empresa (cada clínica só
+    # vê o cadastro dela - LGPD). A propriedade `paciente` (abaixo) mantém
+    # a compatibilidade com o código que assume um cadastro só.
+    pacientes = db.relationship(
+        "Paciente", back_populates="usuario", order_by="Paciente.id"
+    )
     vinculos_clinica = db.relationship("ClinicaMembro", back_populates="usuario", cascade="all, delete-orphan")
     # Exames e agendamentos pelos quais este usuário é o médico responsável
     # (só se aplica quando tipo == 'medico').
@@ -370,6 +378,27 @@ class Usuario(db.Model, UserMixin):
         if not self.senha_hash:
             return False
         return check_password_hash(self.senha_hash, senha)
+
+    @property
+    def paciente(self):
+        """O cadastro de paciente EM USO nesta sessão. Com a conta única,
+        a mesma conta pode ter um cadastro por empresa: o login guarda na
+        sessão qual cadastro a pessoa escolheu (session["paciente_id"], ver
+        auth.login_paciente) e esta propriedade o devolve - toda a área do
+        paciente (rotas e templates) usa current_user.paciente, então a
+        escolha vale em tudo automaticamente. Fora de uma requisição (ou
+        sem escolha na sessão), cai no primeiro cadastro da conta."""
+        try:
+            from flask import has_request_context, session
+            if has_request_context():
+                paciente_id = session.get("paciente_id")
+                if paciente_id:
+                    for p in self.pacientes:
+                        if p.id == paciente_id:
+                            return p
+        except Exception:
+            pass
+        return self.pacientes[0] if self.pacientes else None
 
     @property
     def tem_senha(self):
@@ -412,6 +441,25 @@ class Usuario(db.Model, UserMixin):
             v.clinica for v in self.vinculos_clinica
             if v.ativo and not v.clinica.bloqueada
         ]
+
+
+def encontrar_conta_paciente(telefone, data_nascimento):
+    """CONTA ÚNICA do paciente: acha a conta (Usuario) existente desta
+    pessoa - identificada por telefone + data de nascimento, o mesmo par
+    usado no login do paciente. Telefone sozinho NÃO identifica (uma
+    família inteira pode dividir o mesmo telefone, cada um com sua data
+    de nascimento). Usada pelos cadastros de paciente (equipe e
+    auto-cadastro pelo link) para NÃO criar uma segunda conta quando a
+    pessoa já usa o app por outra empresa: cria-se só o cadastro
+    (Paciente) da nova empresa, apontando para a conta existente - assim
+    o paciente loga uma vez e vê tudo que é dele, enquanto cada clínica
+    continua vendo apenas o cadastro dela."""
+    if not telefone or not data_nascimento:
+        return None
+    for usuario in Usuario.query.filter_by(telefone=telefone, tipo="paciente", ativo=True).all():
+        if any(p.data_nascimento == data_nascimento for p in usuario.pacientes):
+            return usuario
+    return None
 
 
 def gerar_codigo_mestre_medico():
@@ -475,7 +523,12 @@ class Paciente(db.Model):
     # clinicas.empresa_id para empresa_id) - código novo não deve ler nem
     # gravar clinica_id em pacientes.
     clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
-    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), unique=True)
+    # NÃO é mais unique: com a CONTA ÚNICA do paciente, a mesma conta
+    # (Usuario) tem um cadastro (Paciente) por empresa que a pessoa
+    # frequenta - a unicidade que vale é (empresa_id, cpf), acima. Ver
+    # encontrar_conta_paciente e a migração que remove a constraint em
+    # bases antigas (migrar_banco.py).
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"))
     nome = db.Column(db.String(150), nullable=False)
     cpf = db.Column(db.String(20), nullable=False)
     data_nascimento = db.Column(db.Date, nullable=True)
@@ -515,7 +568,7 @@ class Paciente(db.Model):
         if self.empresa is not None:
             return self.empresa
         return self.clinica.empresa if self.clinica else None
-    usuario = db.relationship("Usuario", back_populates="paciente")
+    usuario = db.relationship("Usuario", back_populates="pacientes")
     agendamentos = db.relationship("Agendamento", back_populates="paciente", cascade="all, delete-orphan")
     perguntas_pendentes = db.relationship("PerguntaPendente", back_populates="paciente", cascade="all, delete-orphan")
     mensagens_chat = db.relationship("ChatMensagem", back_populates="paciente", cascade="all, delete-orphan")

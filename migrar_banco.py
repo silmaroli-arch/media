@@ -386,4 +386,42 @@ conn.execute(
     "ON usuarios (codigo_mestre)"
 )
 
+# CONTA ÚNICA do paciente: a mesma conta (Usuario) passa a poder ter um
+# cadastro (Paciente) por empresa - a unicidade antiga de
+# pacientes.usuario_id precisa cair (o nome da constraint varia por
+# ambiente, então é removida pelo helper que consulta o catálogo).
+_remover_constraint_unica(conn, "pacientes", "usuario_id")
+conn.execute("DROP INDEX IF EXISTS pacientes_usuario_id_key")
+
+# CONTA ÚNICA do paciente (ver encontrar_conta_paciente em app/models.py):
+# antes, a mesma pessoa que frequentava duas empresas tinha DUAS contas
+# (Usuario) de paciente - uma por empresa. Unifica: agrupa as contas de
+# paciente ativas por (telefone, data de nascimento) - o mesmo par usado
+# no login - e, quando há mais de uma, mantém a conta mais antiga como a
+# canônica, reapontando os cadastros (Paciente.usuario_id) das demais
+# para ela e desativando as contas duplicadas (ativo=FALSE, preservadas
+# como histórico - registros antigos que apontem para elas continuam
+# válidos). Os dados clínicos não se misturam: cada Paciente segue na
+# sua empresa - muda só a conta de LOGIN, que passa a ver os cadastros
+# todos. Idempotente: depois de unificar, o grupo deixa de existir.
+grupos_duplicados = conn.execute(
+    """
+    SELECT u.telefone, p.data_nascimento, array_agg(DISTINCT u.id ORDER BY u.id) AS ids
+    FROM usuarios u
+    JOIN pacientes p ON p.usuario_id = u.id
+    WHERE u.tipo = 'paciente' AND u.ativo AND u.telefone IS NOT NULL
+    GROUP BY u.telefone, p.data_nascimento
+    HAVING COUNT(DISTINCT u.id) > 1
+    """
+).fetchall()
+for _telefone, _nascimento, ids in grupos_duplicados:
+    canonico, duplicados = ids[0], ids[1:]
+    conn.execute(
+        "UPDATE pacientes SET usuario_id = %s WHERE usuario_id = ANY(%s)",
+        (canonico, duplicados),
+    )
+    conn.execute("UPDATE usuarios SET ativo = FALSE WHERE id = ANY(%s)", (duplicados,))
+if grupos_duplicados:
+    print(f"Contas de paciente unificadas: {len(grupos_duplicados)} pessoa(s) tinham conta duplicada.")
+
 print("Migração aplicada com sucesso!")

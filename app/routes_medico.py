@@ -21,7 +21,7 @@ from app.models import (
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, DescontoConfig, Pagamento, EvolucaoClinica,
-    ConviteVinculo, gerar_codigo_mestre_medico,
+    ConviteVinculo, gerar_codigo_mestre_medico, encontrar_conta_paciente,
 )
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
@@ -666,9 +666,15 @@ def pacientes_novo():
 
         # Paciente não usa e-mail/senha para entrar — o acesso é feito
         # informando telefone e data de nascimento (ver auth.login_paciente).
-        usuario = Usuario(nome=nome, email=email or None, telefone=telefone, tipo="paciente")
-        db.session.add(usuario)
-        db.session.flush()
+        # CONTA ÚNICA: se essa pessoa já usa o app por outra empresa
+        # (mesmo telefone + data de nascimento), reaproveita a conta dela
+        # em vez de criar uma segunda - só o cadastro (Paciente) desta
+        # empresa é novo. Ver encontrar_conta_paciente em app/models.py.
+        usuario = encontrar_conta_paciente(telefone, data_nascimento)
+        if not usuario:
+            usuario = Usuario(nome=nome, email=email or None, telefone=telefone, tipo="paciente")
+            db.session.add(usuario)
+            db.session.flush()
 
         paciente = Paciente(
             empresa_id=empresa.id,
