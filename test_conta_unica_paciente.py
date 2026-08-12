@@ -128,36 +128,32 @@ with app.app_context():
 
 # ---------- Login: uma conta, escolha do cadastro (empresa) ----------
 
-r = client.post("/login-paciente", data={"telefone": TEL, "data_nascimento": "15/04/1991"},
-                follow_redirects=True)
-html = r.get_data(as_text=True)
-checar("Login da Ana cai na escolha de clínica (3 cadastros)",
-       "mais de uma clínica" in html and 'name="paciente_id_escolhido"' in html)
-checar("As três empresas aparecem na escolha",
-       "Grupo Saúde Total" in html and "Clínica Vitória" in html and "Clínica São Paulo" in html)
-
 with app.app_context():
     conta = Usuario.query.get(conta_id)
     pac_grupo = next(p for p in conta.pacientes if p.empresa_id == grupo_id)
-    pac_vit = next(p for p in conta.pacientes if p.empresa_id == vitoria_emp_id)
     # Aprova o cadastro do Grupo pra área liberar o agendamento.
     pac_grupo.status_cadastro = "aprovado"
     db.session.commit()
-    pac_grupo_id, pac_vit_id = pac_grupo.id, pac_vit.id
+    pac_grupo_id = pac_grupo.id
 
-r = client.post("/login-paciente", data={"paciente_id_escolhido": str(pac_grupo_id)},
+# Área UNIFICADA: os 3 cadastros são da MESMA conta, então o login entra
+# DIRETO (sem tela de escolha) - a troca de clínica é feita lá dentro.
+r = client.post("/login-paciente", data={"telefone": TEL, "data_nascimento": "15/04/1991"},
                 follow_redirects=True)
-checar("Escolher o cadastro do Grupo loga", r.status_code == 200)
+html = r.get_data(as_text=True)
+checar("Login da Ana entra direto (sem tela de escolha)",
+       'name="paciente_id_escolhido"' not in html and "Olá, Ana Portatil" in html)
+checar("O painel mostra que ela é paciente em 3 clínicas",
+       "paciente em 3 clínicas" in html)
 r = client.get("/paciente/agendar")
-checar("A área usa o cadastro ESCOLHIDO (exames do Grupo aparecem)",
+checar("O cadastro ATIVO é o aprovado (exames do Grupo aparecem)",
        "Exame Conta Unica Grupo" in r.get_data(as_text=True))
-client.get("/logout")
 
-# Escolha inválida (id que não estava na lista) é rejeitada.
-client.post("/login-paciente", data={"telefone": TEL, "data_nascimento": "15/04/1991"})
-r = client.post("/login-paciente", data={"paciente_id_escolhido": "999999"}, follow_redirects=True)
-checar("Escolha de cadastro fora da lista é rejeitada",
-       "Seleção inválida" in r.get_data(as_text=True))
+# Trocar pra um cadastro que não é da conta é rejeitado.
+r = client.post("/paciente/trocar-clinica", data={"paciente_id": "999999"}, follow_redirects=True)
+checar("Trocar pra cadastro de outra conta é rejeitado",
+       "Escolha inválida" in r.get_data(as_text=True))
+client.get("/logout")
 
 # O filho (outra conta) loga direto, sem tela de escolha.
 r = client.post("/login-paciente", data={"telefone": TEL, "data_nascimento": "20/10/2015"},

@@ -105,10 +105,18 @@ def login_paciente():
                     if p.data_nascimento == data_nascimento:
                         candidatos.append(p)
 
-        if len(candidatos) == 1:
+        # Área do paciente UNIFICADA: se todos os cadastros encontrados
+        # são da MESMA conta (a mesma pessoa em várias clínicas), entra
+        # direto - o painel já mostra tudo junto, e a pessoa troca a
+        # clínica ativa lá dentro quando precisar (paciente.trocar_clinica).
+        # A tela de escolha só sobra pro caso raro de CONTAS diferentes
+        # baterem (ex.: contas legadas ainda não unificadas pela migração).
+        contas_distintas = {p.usuario_id for p in candidatos}
+        if candidatos and len(contas_distintas) == 1:
             session.pop("clinica_id", None)
             login_user(candidatos[0].usuario)
-            session["paciente_id"] = candidatos[0].id
+            preferido = next((p for p in candidatos if p.status_cadastro == "aprovado"), candidatos[0])
+            session["paciente_id"] = preferido.id
             return redirect(url_for("index"))
 
         if len(candidatos) > 1:

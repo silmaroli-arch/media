@@ -3,22 +3,50 @@
 {% block conteudo %}
 <h3 class="mb-4">Olá, {{ current_user.nome }}!</h3>
 
-{% if current_user.paciente.status_cadastro == 'pendente' %}
-<div class="alert alert-warning">
-  <strong>Seu cadastro está em análise.</strong> Assim que a clínica aceitar, você vai poder
-  solicitar agendamento de exames por aqui.
-</div>
-{% elif current_user.paciente.status_cadastro == 'rejeitado' %}
-<div class="alert alert-danger">
-  <strong>Seu cadastro não foi aceito pela clínica.</strong> Entre em contato com a clínica para
-  mais informações.
+{# Conta ÚNICA: avisos de cadastro por clínica (um cadastro por empresa). #}
+{% for c in cadastros %}
+  {% set nome_clinica = c.empresa_efetiva.nome if c.empresa_efetiva else (c.clinica.nome if c.clinica else 'clínica') %}
+  {% if c.status_cadastro == 'pendente' %}
+  <div class="alert alert-warning">
+    <strong>Seu cadastro em {{ nome_clinica }} está em análise.</strong> Assim que a clínica
+    aceitar, você vai poder solicitar agendamento de exames lá.
+  </div>
+  {% elif c.status_cadastro == 'rejeitado' %}
+  <div class="alert alert-danger">
+    <strong>Seu cadastro em {{ nome_clinica }} não foi aceito.</strong> Entre em contato com a
+    clínica para mais informações.
+  </div>
+  {% endif %}
+{% endfor %}
+
+{% if cadastros|length > 1 %}
+<div class="card p-3 mb-4">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <h6 class="mb-0">Você é paciente em {{ cadastros|length }} clínicas</h6>
+      <span class="text-muted small">
+        Seus exames de todas elas aparecem juntos aqui embaixo. Para <em>solicitar</em> um novo
+        agendamento ou tirar dúvidas, escolha com qual clínica quer falar agora.
+      </span>
+    </div>
+    <form method="post" action="{{ url_for('paciente.trocar_clinica') }}" class="d-flex gap-2 align-items-center">
+      <select name="paciente_id" class="form-select form-select-sm" style="width:auto;">
+        {% for c in cadastros %}
+        <option value="{{ c.id }}" {% if c.id == current_user.paciente.id %}selected{% endif %}>
+          {{ c.empresa_efetiva.nome if c.empresa_efetiva else (c.clinica.nome if c.clinica else '-') }}
+        </option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">Trocar</button>
+    </form>
+  </div>
 </div>
 {% endif %}
 
 <div class="card p-3 mb-4">
   <div class="d-flex justify-content-between align-items-center mb-2">
     <h5 class="mb-0">Próximos exames</h5>
-    {% if current_user.paciente.status_cadastro == 'aprovado' %}
+    {% if cadastros|selectattr('status_cadastro', 'equalto', 'aprovado')|list %}
     <a href="{{ url_for('paciente.solicitar_agendamento') }}" class="btn btn-sm btn-outline-primary">Solicitar novo agendamento</a>
     {% endif %}
   </div>
@@ -27,7 +55,7 @@
     <div class="d-flex justify-content-between align-items-center border-bottom py-2">
       <div>
         <strong>{{ a.exame.nome }}</strong><br>
-        <span class="text-muted small">{{ a.data_hora.strftime('%d/%m/%Y às %H:%M') }} · com {{ a.medico.nome }} · status: {{ a.status }}{% if a.status == 'solicitado' %} (aguardando confirmação da clínica){% endif %}</span>
+        <span class="text-muted small">{{ a.data_hora.strftime('%d/%m/%Y às %H:%M') }} · {{ a.clinica.nome }} · com {{ a.medico.nome }} · status: {{ a.status }}{% if a.status == 'solicitado' %} (aguardando confirmação da clínica){% endif %}</span>
       </div>
       <a href="{{ url_for('paciente.preparo_exame', agendamento_id=a.id) }}" class="btn btn-sm btn-primary">Ver preparo</a>
     </div>
@@ -44,7 +72,7 @@
     <div class="d-flex justify-content-between align-items-center border-bottom py-2">
       <div>
         <strong>{{ a.exame.nome }}</strong><br>
-        <span class="text-muted small">{{ a.data_hora.strftime('%d/%m/%Y às %H:%M') }} · com {{ a.medico.nome }} · status: {{ a.status }}</span>
+        <span class="text-muted small">{{ a.data_hora.strftime('%d/%m/%Y às %H:%M') }} · {{ a.clinica.nome }} · com {{ a.medico.nome }} · status: {{ a.status }}</span>
       </div>
       <div class="d-flex gap-2">
         {% if a.resultado %}

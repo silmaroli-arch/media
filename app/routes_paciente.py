@@ -4,13 +4,13 @@ from functools import wraps
 
 from flask import (
     Blueprint, render_template, redirect, url_for, request, flash, send_from_directory,
-    current_app, abort,
+    current_app, abort, session,
 )
 from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Agendamento, Exame, PerguntaPendente, FaqItem, ChatMensagem, Usuario, MedicoHorario
+from app.models import Agendamento, Exame, PerguntaPendente, FaqItem, ChatMensagem, Usuario, MedicoHorario, Paciente
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.ia_preparo import responder_com_ia
 from app.clinica_utils import verificar_vencimento_empresa
@@ -61,6 +61,17 @@ def _clinica_ancora(paciente, exame=None, agendamento=None):
     return paciente.clinica_id
 
 
+def _meus_cadastros_ids():
+    """Ids de TODOS os cadastros (Paciente) da conta logada - um por
+    empresa que a pessoa frequenta (conta única, ver
+    encontrar_conta_paciente em app/models.py). A área do paciente é
+    UNIFICADA: agendamentos/preparos/resultados de todas as clínicas
+    aparecem juntos pro paciente (é tudo dado DELE); só as ações
+    endereçadas a uma clínica específica (solicitar agendamento, tirar
+    dúvida) usam o cadastro ativo da sessão (current_user.paciente)."""
+    return [p.id for p in current_user.pacientes]
+
+
 def paciente_required(f):
     @wraps(f)
     def decorado(*args, **kwargs):
@@ -92,34 +103,61 @@ def paciente_required(f):
 @login_required
 @paciente_required
 def dashboard():
-    paciente = current_user.paciente
+    # Painel UNIFICADO: mostra os exames do paciente em TODAS as clínicas
+    # que ele frequenta (todos os cadastros da conta), com o local
+    # identificado em cada um - os dados são do próprio paciente, então
+    # ele vê tudo junto; cada clínica continua vendo só o que é dela.
+    meus_ids = _meus_cadastros_ids()
     agora = datetime.utcnow()
     # "Próximos exames" só mostra o que ainda está de pé e no futuro.
     # Cancelado ou realizado vai para o Histórico independente da data —
     # mesmo um agendamento cancelado que estava marcado para o futuro não
     # é mais um "próximo exame" de verdade.
     proximos = (
-        Agendamento.query.filter_by(paciente_id=paciente.id)
+        Agendamento.query.filter(Agendamento.paciente_id.in_(meus_ids))
         .filter(Agendamento.data_hora >= agora)
         .filter(Agendamento.status.in_(["solicitado", "agendado", "confirmado"]))
         .order_by(Agendamento.data_hora.asc())
         .all()
     )
     historico = (
-        Agendamento.query.filter_by(paciente_id=paciente.id)
+        Agendamento.query.filter(Agendamento.paciente_id.in_(meus_ids))
         .filter(or_(Agendamento.status.in_(["cancelado", "realizado", "nao_compareceu"]), Agendamento.data_hora < agora))
         .order_by(Agendamento.data_hora.desc())
         .all()
     )
-    return render_template("paciente/dashboard.html", proximos=proximos, historico=historico)
+    return render_template(
+        "paciente/dashboard.html", proximos=proximos, historico=historico,
+        cadastros=current_user.pacientes,
+    )
+
+
+@paciente_bp.route("/trocar-clinica", methods=["POST"])
+@login_required
+@paciente_required
+def trocar_clinica():
+    """Troca o cadastro (clínica) ATIVO da sessão - usado pelas ações que
+    são endereçadas a uma clínica específica (solicitar agendamento,
+    tirar dúvida). Só aceita um cadastro que pertença à própria conta."""
+    paciente_id = request.form.get("paciente_id", type=int)
+    if paciente_id in _meus_cadastros_ids():
+        session["paciente_id"] = paciente_id
+        p = Paciente.query.get(paciente_id)
+        empresa = p.empresa_efetiva
+        flash(f"Agora você está usando o app como paciente de '{empresa.nome if empresa else p.clinica.nome}'.", "success")
+    else:
+        flash("Escolha inválida.", "danger")
+    return redirect(request.form.get("proxima") or url_for("paciente.dashboard"))
 
 
 @paciente_bp.route("/exame/<int:agendamento_id>")
 @login_required
 @paciente_required
 def preparo_exame(agendamento_id):
-    paciente = current_user.paciente
-    agendamento = Agendamento.query.filter_by(id=agendamento_id, paciente_id=paciente.id).first_or_404()
+    # Qualquer agendamento da CONTA (todas as clínicas) - é dado do paciente.
+    agendamento = Agendamento.query.filter(
+        Agendamento.id == agendamento_id, Agendamento.paciente_id.in_(_meus_cadastros_ids())
+    ).first_or_404()
     return render_template("paciente/preparo.html", agendamento=agendamento)
 
 
@@ -304,12 +342,20 @@ def pergunta_remover(pergunta_id):
 def solicitar_agendamento():
     paciente = current_user.paciente
     if paciente.status_cadastro != "aprovado":
-        flash(
-            "Seu cadastro ainda está em análise pela clínica — assim que for aceito, "
-            "você poderá solicitar agendamento de exames.",
-            "warning",
-        )
-        return redirect(url_for("paciente.dashboard"))
+        # Conta única: se o cadastro ATIVO ainda não foi aprovado mas
+        # outro cadastro da conta já foi, troca pra ele automaticamente
+        # em vez de barrar a pessoa.
+        aprovado = next((p for p in current_user.pacientes if p.status_cadastro == "aprovado"), None)
+        if aprovado:
+            session["paciente_id"] = aprovado.id
+            paciente = aprovado
+        else:
+            flash(
+                "Seu cadastro ainda está em análise pela clínica — assim que for aceito, "
+                "você poderá solicitar agendamento de exames.",
+                "warning",
+            )
+            return redirect(url_for("paciente.dashboard"))
     # Fluxo em etapas: o paciente escolhe primeiro O EXAME (só o nome,
     # sem local concatenado), depois EM QUAL LOCAL quer fazê-lo (só os
     # locais que oferecem aquele exame aparecem), e aí vê o endereço do
@@ -411,8 +457,10 @@ def solicitar_agendamento():
 @login_required
 @paciente_required
 def resultado_baixar(agendamento_id):
-    paciente = current_user.paciente
-    agendamento = Agendamento.query.filter_by(id=agendamento_id, paciente_id=paciente.id).first_or_404()
+    # Qualquer resultado da CONTA (todas as clínicas) - é dado do paciente.
+    agendamento = Agendamento.query.filter(
+        Agendamento.id == agendamento_id, Agendamento.paciente_id.in_(_meus_cadastros_ids())
+    ).first_or_404()
     if not agendamento.resultado:
         abort(404)
     pasta = os.path.join(current_app.instance_path, "resultados_exame")

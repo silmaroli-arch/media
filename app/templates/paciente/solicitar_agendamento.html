@@ -3,6 +3,26 @@
 {% block conteudo %}
 <h3 class="mb-3">Solicitar agendamento de exame</h3>
 
+{% if current_user.pacientes|length > 1 %}
+<div class="alert alert-light border d-flex justify-content-between align-items-center flex-wrap gap-2 py-2">
+  <span class="small">
+    Solicitando na clínica:
+    <strong>{{ current_user.paciente.empresa_efetiva.nome if current_user.paciente.empresa_efetiva else current_user.paciente.clinica.nome }}</strong>
+  </span>
+  <form method="post" action="{{ url_for('paciente.trocar_clinica') }}" class="d-flex gap-2 align-items-center">
+    <input type="hidden" name="proxima" value="{{ url_for('paciente.solicitar_agendamento') }}">
+    <select name="paciente_id" class="form-select form-select-sm" style="width:auto;">
+      {% for c in current_user.pacientes %}
+      <option value="{{ c.id }}" {% if c.id == current_user.paciente.id %}selected{% endif %}>
+        {{ c.empresa_efetiva.nome if c.empresa_efetiva else (c.clinica.nome if c.clinica else '-') }}
+      </option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">Trocar de clínica</button>
+  </form>
+</div>
+{% endif %}
+
 <div class="card p-4">
   <form method="get" class="row g-3 mb-3">
     {# Fluxo em etapas: (1) qual EXAME (só o nome, sem local) ->
