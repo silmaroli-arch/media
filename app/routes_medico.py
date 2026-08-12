@@ -1029,14 +1029,76 @@ def exames_por_filial_associar():
 @login_required
 @staff_required
 def exames_por_filial_atualizar(exame_id):
-    """Atualiza o médico responsável e/ou o preço de uma associação já
-    existente (um exame já criado numa filial) - usada pelo "Editar" da
-    tela de associações (medico.exames_por_filial). Também aceita ajustar
-    os médicos extras quando o chamador manda atualizar_extras=1."""
+    """Atualiza uma associação já existente (um exame já criado numa
+    filial) - usada pelo "Editar" da tela de associações
+    (medico.exames_por_filial). TODOS os campos são editáveis: exame,
+    filial, médico e preço. Também aceita ajustar os médicos extras
+    quando o chamador manda atualizar_extras=1."""
     empresa = empresa_atual()
     exame = Exame.query.join(Clinica, Exame.clinica_id == Clinica.id).filter(
         Exame.id == exame_id, Clinica.empresa_id == empresa.id,
     ).first_or_404()
+
+    # Trocar o EXAME e/ou a FILIAL da associação: só quando esses campos
+    # vêm no formulário e mudaram de valor. Se a associação já tem
+    # agendamento marcado, exame/filial ficam travados (o agendamento
+    # aponta pra esta associação; mudar por baixo bagunçaria a agenda e o
+    # preparo dos pacientes) - médico e preço continuam editáveis.
+    nome_novo = request.form.get("nome", "").strip() if "nome" in request.form else None
+    filial_nova_id = request.form.get("clinica_destino_id", type=int)
+    mudou_exame = bool(nome_novo) and nome_novo != exame.nome
+    mudou_filial = bool(filial_nova_id) and filial_nova_id != exame.clinica_id
+    if mudou_exame or mudou_filial:
+        if exame.agendamentos:
+            flash(
+                "Esta associação já tem agendamentos - não dá pra trocar o exame ou a filial dela. "
+                "Troque só médico/preço, ou exclua a associação (após tratar os agendamentos) e crie outra.",
+                "danger",
+            )
+            return redirect(url_for("medico.exames_por_filial", editar=exame.id))
+
+        filial_destino = exame.clinica
+        if mudou_filial:
+            filial_destino = Clinica.query.filter_by(id=filial_nova_id, empresa_id=empresa.id).first()
+            if not filial_destino:
+                flash("Escolha uma filial válida.", "danger")
+                return redirect(url_for("medico.exames_por_filial", editar=exame.id))
+
+        nome_final = nome_novo if mudou_exame else exame.nome
+        ja_existe = Exame.query.filter(
+            Exame.clinica_id == filial_destino.id, Exame.nome == nome_final, Exame.id != exame.id
+        ).first()
+        if ja_existe:
+            flash(f"\"{nome_final}\" já está associado à filial {filial_destino.nome}.", "warning")
+            return redirect(url_for("medico.exames_por_filial", editar=exame.id))
+
+        if mudou_exame:
+            # Os dados do exame (descrição/duração/acompanhante) vêm do
+            # cadastro dele em outra filial da empresa - a associação passa
+            # a ser DESSE exame, não é só uma troca de rótulo.
+            origem = (
+                Exame.query.join(Clinica, Exame.clinica_id == Clinica.id)
+                .filter(Clinica.empresa_id == empresa.id, Exame.nome == nome_final, Exame.id != exame.id)
+                .first()
+            )
+            if not origem:
+                flash("Exame não encontrado.", "danger")
+                return redirect(url_for("medico.exames_por_filial", editar=exame.id))
+            exame.nome = origem.nome
+            exame.descricao = origem.descricao
+            exame.duracao_minutos = origem.duracao_minutos
+            exame.precisa_acompanhante = origem.precisa_acompanhante
+            # O modelo de preparo é por filial e por exame - com a
+            # associação apontando pra outro exame, o modelo antigo não
+            # vale mais; fica pra revisar na edição do exame.
+            exame.preparo_modelo_id = None
+
+        if mudou_filial:
+            exame.clinica_id = filial_destino.id
+            # Modelo de preparo e médicos extras eram da filial antiga.
+            exame.preparo_modelo_id = None
+            exame.medicos_extra = []
+
     # Só valida/atualiza o preço quando ele veio no formulário - chamadas
     # que só mexem em médico/extras não mandam o campo.
     if "preco" in request.form:
@@ -1053,10 +1115,17 @@ def exames_por_filial_atualizar(exame_id):
     # antes disso, pode ter sido só um valor técnico/provisório do
     # cadastro genérico do exame (ver exames_novo).
     medico_id = request.form.get("medico_id", type=int)
-    medicos_da_filial = medicos_da_clinica(exame.clinica)
+    filial_do_exame = Clinica.query.get(exame.clinica_id)
+    medicos_da_filial = medicos_da_clinica(filial_do_exame)
     if medico_id and any(m.id == medico_id for m in medicos_da_filial):
         exame.medico_id = medico_id
         exame.medico_confirmado = True
+    elif not any(m.id == exame.medico_id for m in medicos_da_filial) and medicos_da_filial:
+        # A filial mudou e o médico antigo não atua nela - sem um médico
+        # válido escolhido, não dá pra salvar (medico_id é obrigatório).
+        flash("Escolha um médico que atue na filial escolhida.", "danger")
+        db.session.rollback()
+        return redirect(url_for("medico.exames_por_filial", editar=exame.id))
 
     if request.form.get("atualizar_extras") == "1":
         # Quem manda esse campo explicitamente pode ajustar os médicos
@@ -1068,6 +1137,39 @@ def exames_por_filial_atualizar(exame_id):
 
     db.session.commit()
     flash(f"\"{exame.nome}\" atualizado na filial {exame.clinica.nome}.", "success")
+    return redirect(url_for("medico.exames_por_filial"))
+
+
+@medico_bp.route("/exames/por-filial/<int:exame_id>/excluir", methods=["POST"])
+@login_required
+@staff_required
+def exames_por_filial_excluir(exame_id):
+    """Exclui uma associação (o exame naquela filial) - botão "Excluir"
+    do Editar na tela de associações. Associação com agendamento marcado
+    não pode ser excluída (o agendamento aponta pra ela); trate os
+    agendamentos primeiro. Perguntas e mensagens de chat antigas que
+    citavam este exame são mantidas, só perdem o vínculo com ele."""
+    empresa = empresa_atual()
+    exame = Exame.query.join(Clinica, Exame.clinica_id == Clinica.id).filter(
+        Exame.id == exame_id, Clinica.empresa_id == empresa.id,
+    ).first_or_404()
+
+    if exame.agendamentos:
+        flash(
+            f"\"{exame.nome}\" tem agendamento(s) na filial {exame.clinica.nome} - "
+            "cancele/realize esses agendamentos antes de excluir a associação.",
+            "danger",
+        )
+        return redirect(url_for("medico.exames_por_filial", editar=exame.id))
+
+    # Referências opcionais (histórico) só perdem o vínculo - nada é apagado.
+    PerguntaPendente.query.filter_by(exame_id=exame.id).update({"exame_id": None})
+    ChatMensagem.query.filter_by(exame_id=exame.id).update({"exame_id": None})
+
+    nome, filial_nome = exame.nome, exame.clinica.nome
+    db.session.delete(exame)
+    db.session.commit()
+    flash(f"Associação de \"{nome}\" com a filial {filial_nome} excluída.", "success")
     return redirect(url_for("medico.exames_por_filial"))
 
 
