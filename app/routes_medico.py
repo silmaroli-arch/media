@@ -877,6 +877,10 @@ def exames_novo():
             # item de catálogo. A associação (exame + filial + médico +
             # preço) é criada de propósito na tela "Associar exames".
             associado=False,
+            # DONO do exame: quem criou. Se for um médico, só ele edita o
+            # cadastro e só ele pode ser associado a este exame (ver
+            # Exame.pode_ser_editado_por / _dono_medico_do_exame).
+            criado_por_id=current_user.id,
         )
         db.session.add(exame)
         db.session.commit()
@@ -902,6 +906,15 @@ def exames_editar(exame_id):
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
     exame = query.first_or_404()
+    # DONO do conteúdo clínico: exame criado por um médico só é editado
+    # POR ELE (nem secretária, nem outro médico). Exames sem dono
+    # registrado (antigos) seguem o comportamento antigo.
+    if not exame.pode_ser_editado_por(current_user):
+        flash(
+            f"Só {exame.dono_medico.nome}, que criou este exame, pode editá-lo.",
+            "danger",
+        )
+        return redirect(url_for("medico.exames_lista"))
     # Médico responsável é da filial DO EXAME, mas modelo de preparo é
     # genérico - vale qualquer modelo acessível ao usuário na empresa.
     medicos = medicos_da_clinica(exame.clinica)
@@ -926,6 +939,15 @@ def exames_editar(exame_id):
         # (só médicos) também precisam conseguir compartilhar um exame
         # entre colegas.
         medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != exame.medico_id}
+        if exame.dono_medico and medicos_extra_ids:
+            # Exame com dono médico é SÓ dele - outros médicos não podem
+            # ser associados (nem como extras).
+            flash(
+                f"Este exame pertence a {exame.dono_medico.nome} — outros médicos não podem ser "
+                "associados a ele.",
+                "danger",
+            )
+            return render_template("medico/exames_form.html", exame=exame, medicos=medicos, modelos=modelos)
         exame.medicos_extra = [m for m in medicos if m.id in medicos_extra_ids]
         preparo_modelo_id = request.form.get("preparo_modelo_id", type=int)
         if preparo_modelo_id:
@@ -999,6 +1021,20 @@ def exames_por_filial():
     )
 
 
+def _dono_medico_do_exame(nome, empresa):
+    """O médico DONO do exame com esse nome na empresa - quem criou o
+    cadastro (ver Exame.criado_por_id). Um médico não pode ser associado
+    a um exame do qual não é o dono. Retorna None quando o exame não tem
+    dono médico registrado (cadastro antigo ou criado pela secretária) -
+    nesse caso vale o comportamento antigo (qualquer médico da filial)."""
+    filial_ids = db.session.query(Clinica.id).filter(Clinica.empresa_id == empresa.id)
+    for e in Exame.query.filter(Exame.clinica_id.in_(filial_ids), Exame.nome == nome).all():
+        dono = e.dono_medico
+        if dono:
+            return dono
+    return None
+
+
 @medico_bp.route("/exames/por-filial/associar", methods=["POST"])
 @login_required
 @staff_required
@@ -1011,6 +1047,19 @@ def exames_por_filial_associar():
 
     if not nome or not clinica_destino:
         flash("Escolha um exame e uma filial válidos.", "danger")
+        return redirect(url_for("medico.exames_por_filial"))
+
+    # DONO do exame: se o exame foi criado por um médico, SÓ ELE pode ser
+    # associado a este exame - vale tanto pra associação nova quanto pra
+    # tentar adicionar outro médico a uma associação existente.
+    dono = _dono_medico_do_exame(nome, empresa)
+    medico_escolhido_id = request.form.get("medico_id", type=int)
+    if dono and medico_escolhido_id and medico_escolhido_id != dono.id:
+        flash(
+            f"O exame \"{nome}\" pertence a {dono.nome} (quem o criou) — só ele pode ser "
+            "associado a este exame.",
+            "danger",
+        )
         return redirect(url_for("medico.exames_por_filial"))
 
     existente = Exame.query.filter_by(clinica_id=clinica_destino.id, nome=nome).first()
@@ -1207,6 +1256,17 @@ def exames_por_filial_atualizar(exame_id):
     # antes disso, pode ter sido só um valor técnico/provisório do
     # cadastro genérico do exame (ver exames_novo).
     medico_id = request.form.get("medico_id", type=int)
+    # DONO do exame: se o exame foi criado por um médico, só ELE pode ser
+    # o médico da associação - mesma regra do associar.
+    dono = _dono_medico_do_exame(exame.nome, empresa)
+    if dono and medico_id and medico_id != dono.id:
+        flash(
+            f"O exame \"{exame.nome}\" pertence a {dono.nome} (quem o criou) — só ele pode ser "
+            "associado a este exame.",
+            "danger",
+        )
+        db.session.rollback()
+        return redirect(url_for("medico.exames_por_filial", editar=exame.id))
     filial_do_exame = Clinica.query.get(exame.clinica_id)
     medicos_da_filial = medicos_da_clinica(filial_do_exame)
     if medico_id and any(m.id == medico_id for m in medicos_da_filial):
@@ -1225,6 +1285,15 @@ def exames_por_filial_atualizar(exame_id):
         # mandam, pra não mexer nos extras sem querer.
         medicos_da_filial = medicos_da_clinica(exame.clinica)
         medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != exame.medico_id}
+        if dono and medicos_extra_ids:
+            # Exame com dono médico não aceita outros médicos associados.
+            flash(
+                f"O exame \"{exame.nome}\" pertence a {dono.nome} — outros médicos não podem "
+                "ser associados a ele.",
+                "danger",
+            )
+            db.session.rollback()
+            return redirect(url_for("medico.exames_por_filial", editar=exame.id))
         exame.medicos_extra = [m for m in medicos_da_filial if m.id in medicos_extra_ids]
 
     db.session.commit()
@@ -1480,6 +1549,9 @@ def preparo_modelos_novo():
         modelo = PreparoModelo(
             clinica_id=filial.id, nome=nome, instrucoes=instrucoes,
             observacoes_medicamentos=observacoes_medicamentos or None,
+            # DONO do modelo: quem criou. Se for um médico, só ele
+            # edita/remove (ver PreparoModelo.pode_ser_editado_por).
+            criado_por_id=current_user.id,
         )
         db.session.add(modelo)
         db.session.flush()
@@ -1499,6 +1571,14 @@ def preparo_modelos_editar(modelo_id):
     modelo = PreparoModelo.query.filter(
         PreparoModelo.id == modelo_id, PreparoModelo.clinica_id.in_(_filiais_da_empresa_ids())
     ).first_or_404()
+    # DONO do conteúdo clínico: modelo criado por um médico só é editado
+    # POR ELE. Modelos sem dono registrado (antigos) seguem como antes.
+    if not modelo.pode_ser_editado_por(current_user):
+        flash(
+            f"Só {modelo.dono_medico.nome}, que criou este modelo de preparo, pode editá-lo.",
+            "danger",
+        )
+        return redirect(url_for("medico.preparo_modelos_lista"))
 
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
@@ -1525,6 +1605,13 @@ def preparo_modelos_remover(modelo_id):
     modelo = PreparoModelo.query.filter(
         PreparoModelo.id == modelo_id, PreparoModelo.clinica_id.in_(_filiais_da_empresa_ids())
     ).first_or_404()
+    # Mesma regra da edição: só o médico dono remove.
+    if not modelo.pode_ser_editado_por(current_user):
+        flash(
+            f"Só {modelo.dono_medico.nome}, que criou este modelo de preparo, pode removê-lo.",
+            "danger",
+        )
+        return redirect(url_for("medico.preparo_modelos_lista"))
     if modelo.exames:
         flash(
             f"Esse modelo está em uso por {len(modelo.exames)} exame(s) — troque o modelo desses "

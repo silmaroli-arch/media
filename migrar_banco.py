@@ -240,6 +240,14 @@ UPDATE usuarios SET tipo = 'secretaria' WHERE tipo = 'configurador';
 ALTER TABLE empresas ADD COLUMN IF NOT EXISTS codigo_cadastro_paciente VARCHAR(20);
 UPDATE empresas SET codigo_cadastro_paciente = (SELECT c.codigo_cadastro_paciente FROM clinicas c WHERE c.empresa_id = empresas.id AND c.codigo_cadastro_paciente IS NOT NULL ORDER BY c.id LIMIT 1) WHERE codigo_cadastro_paciente IS NULL;
 
+-- DONO do conteúdo clínico: exame e modelo de preparo registram quem os
+-- criou (criado_por_id). Se o criador é um MÉDICO, só ele edita - e só
+-- ele pode ser associado ao exame. Registros antigos ficam NULL (sem
+-- dono) e seguem o comportamento antigo - ver pode_ser_editado_por em
+-- app/models.py.
+ALTER TABLE exames ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
+ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
+
 -- Código mestre do médico (identidade portátil dele na plataforma) e os
 -- convites de vínculo por código - ver Usuario.codigo_mestre e
 -- ConviteVinculo em app/models.py. A coluna nasce vazia e o preenchimento

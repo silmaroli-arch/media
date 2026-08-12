@@ -590,6 +590,13 @@ class Exame(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
+    # DONO do exame: quem criou o cadastro. Se foi um MÉDICO, o exame é
+    # dele - só ele pode editar o cadastro, e só ele pode ser associado a
+    # este exame nas filiais (ver pode_ser_editado_por / a validação de
+    # dono em medico.exames_por_filial_associar). NULL em cadastros
+    # antigos (antes da coluna existir) - esses seguem o comportamento
+    # antigo, editáveis pela equipe.
+    criado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
     # Médico principal do exame. Além dele, outros médicos podem ser
     # associados ao mesmo exame (ver `medicos_extra` abaixo e a
     # propriedade `medicos`) — nesse caso, ao agendar, a secretária
@@ -676,6 +683,24 @@ class Exame(db.Model):
     def medico_pode_atender(self, medico_id):
         return medico_id == self.medico_id or any(m.id == medico_id for m in self.medicos_extra)
 
+    @property
+    def criado_por(self):
+        return Usuario.query.get(self.criado_por_id) if self.criado_por_id else None
+
+    @property
+    def dono_medico(self):
+        """O médico DONO do exame (quem o criou), ou None se o exame não
+        tem dono médico registrado (cadastro antigo, ou criado por uma
+        secretária) - nesse caso vale o comportamento antigo."""
+        criador = self.criado_por
+        return criador if criador and criador.tipo == "medico" else None
+
+    def pode_ser_editado_por(self, usuario):
+        """Exame com dono médico só é editado POR ELE. Sem dono médico
+        (legado/criado pela secretária), a equipe segue editando."""
+        dono = self.dono_medico
+        return dono is None or usuario.id == dono.id
+
 
 class Medicamento(db.Model):
     """Catálogo de medicamentos/classes que costumam precisar ser
@@ -710,6 +735,10 @@ class PreparoModelo(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
+    # DONO do modelo: quem o criou. Se foi um MÉDICO, só ele edita/remove
+    # (conteúdo clínico é do médico). NULL em modelos antigos - esses
+    # seguem editáveis pela equipe (comportamento antigo).
+    criado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
     nome = db.Column(db.String(150), nullable=False)
     # Instruções gerais em texto livre (dieta por fase, receituário, modo
     # de preparo, observações finais etc.) — continua sendo o "guarda-tudo"
@@ -1109,6 +1138,10 @@ class DescontoConfig(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
+    # DONO do modelo: quem o criou. Se foi um MÉDICO, só ele edita/remove
+    # (conteúdo clínico é do médico). NULL em modelos antigos - esses
+    # seguem editáveis pela equipe (comportamento antigo).
+    criado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
     nome = db.Column(db.String(150), nullable=False)
     percentual = db.Column(db.Numeric(5, 2), nullable=False)
     ativo = db.Column(db.Boolean, nullable=False, default=True)
@@ -1226,3 +1259,21 @@ class HistoricoDeploy(db.Model):
     mensagem = db.Column(db.Text)
     deploy_em = db.Column(db.DateTime)
     registrado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+def _preparo_pode_ser_editado_por(self, usuario):
+    """Modelo com dono médico só é editado POR ELE (ver criado_por_id).
+    Sem dono médico (legado/criado pela secretária), a equipe edita."""
+    criador = Usuario.query.get(self.criado_por_id) if self.criado_por_id else None
+    if criador and criador.tipo == "medico":
+        return usuario.id == criador.id
+    return True
+
+
+def _preparo_dono_medico(self):
+    criador = Usuario.query.get(self.criado_por_id) if self.criado_por_id else None
+    return criador if criador and criador.tipo == "medico" else None
+
+
+PreparoModelo.pode_ser_editado_por = _preparo_pode_ser_editado_por
+PreparoModelo.dono_medico = property(_preparo_dono_medico)

@@ -48,10 +48,14 @@
           {% endif %}
         </td>
         <td class="text-nowrap">
+          {% if m.pode_ser_editado_por(current_user) %}
           <a href="{{ url_for('medico.preparo_modelos_editar', modelo_id=m.id) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
           <form method="post" action="{{ url_for('medico.preparo_modelos_remover', modelo_id=m.id) }}" class="d-inline" onsubmit="return confirm('Remover este modelo de preparo?');">
             <button type="submit" class="btn btn-sm btn-outline-danger" {% if m.exames %}disabled title="Em uso por algum exame"{% endif %}>Remover</button>
           </form>
+          {% else %}
+          <span class="text-muted small" title="Conteúdo clínico do médico que criou o modelo">Só {{ m.dono_medico.nome }} pode editar</span>
+          {% endif %}
         </td>
       </tr>
       {% else %}

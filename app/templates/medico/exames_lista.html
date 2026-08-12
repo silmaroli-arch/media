@@ -28,7 +28,11 @@
       {% else %}
         <p class="text-muted small">Sem modelo de preparo — não exige preparo prévio.</p>
       {% endif %}
+      {% if e.pode_ser_editado_por(current_user) %}
       <a href="{{ url_for('medico.exames_editar', exame_id=e.id) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
+      {% else %}
+      <span class="text-muted small" title="Conteúdo clínico do médico que criou o exame">Só {{ e.dono_medico.nome }} pode editar</span>
+      {% endif %}
     </div>
   </div>
   {% else %}
