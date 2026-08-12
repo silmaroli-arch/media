@@ -1,32 +1,39 @@
 {% extends "base.html" %}
-{% block titulo %}Adicionar à equipe{% endblock %}
+{% block titulo %}Adicionar secretária{% endblock %}
 {% block conteudo %}
-<h3 class="mb-3">Adicionar médico ou secretária</h3>
+<h3 class="mb-3">Adicionar secretária</h3>
+<div class="alert alert-info">
+  <strong>Médico não é cadastrado por aqui.</strong> O médico é uma conta própria na plataforma:
+  ele se cadastra sozinho, recebe um <em>código de médico</em> e você o traz pra equipe em
+  <a href="{{ url_for('medico.equipe_lista') }}">"Vincular médico por código"</a> — o vínculo passa
+  a valer quando ele aceita o convite no painel dele.
+</div>
 <div class="card p-4">
+  {# Quando o POST falha numa validação (ex.: nenhuma filial marcada), a
+     tela é re-renderizada — os valores digitados são REAPROVEITADOS de
+     request.form, pra pessoa não perder tudo e só corrigir o que faltou. #}
+  {% set repost = request.method == 'POST' %}
   <form method="post">
     <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
     <div class="mb-3">
       <label class="form-label">Nome</label>
-      <input type="text" name="nome" class="form-control">
+      <input type="text" name="nome" class="form-control" value="{{ request.form.get('nome', '') }}">
       <div class="form-text">Se o e-mail já tiver uma conta na plataforma (outra clínica), o nome não é necessário — vamos só vincular a conta existente.</div>
     </div>
     <div class="mb-3">
       <label class="form-label">E-mail</label>
-      <input type="email" name="email" class="form-control" required>
+      <input type="email" name="email" class="form-control" value="{{ request.form.get('email', '') }}" required>
     </div>
-    <div class="mb-3">
-      <label class="form-label">Papel</label>
-      <select name="papel" id="sel_papel" class="form-select" onchange="ajustarPermissoesPadrao()">
-        <option value="secretaria">Secretária</option>
-        <option value="medico">Médico</option>
-      </select>
-    </div>
+    {# Papel fixo: este formulário só cadastra SECRETÁRIA - médico entra
+       pela vinculação por código (ver aviso acima). #}
+    <input type="hidden" name="papel" value="secretaria">
     <div class="mb-3">
       <label class="form-label">Filial(is) em que essa pessoa vai atuar</label>
+      {% set filiais_marcadas = request.form.getlist('filial_ids') %}
       {% for f in filiais %}
       <div class="form-check">
-        <input class="form-check-input" type="checkbox" name="filial_ids" value="{{ f.id }}" id="filial_{{ f.id }}"
-          {% if clinica_atual_navbar and f.id == clinica_atual_navbar.id %}checked{% endif %}>
+        <input class="form-check-input filial-checkbox" type="checkbox" name="filial_ids" value="{{ f.id }}" id="filial_{{ f.id }}"
+          {% if repost %}{% if f.id|string in filiais_marcadas %}checked{% endif %}{% elif clinica_atual_navbar and f.id == clinica_atual_navbar.id %}checked{% endif %}>
         <label class="form-check-label" for="filial_{{ f.id }}">{{ f.nome }}</label>
       </div>
       {% endfor %}
@@ -34,7 +41,7 @@
     </div>
     <div class="mb-3">
       <label class="form-label">Senha inicial (só se for uma conta nova)</label>
-      <input type="text" name="senha" class="form-control" placeholder="Padrão: 123456">
+      <input type="text" name="senha" class="form-control" placeholder="Padrão: 123456" value="{{ request.form.get('senha', '') }}">
     </div>
     <div class="mb-3">
       <label class="form-label">Permissões administrativas (só valem para uma conta nova)</label>
@@ -44,19 +51,23 @@
         ignoradas aqui; ajuste-as depois pela lista de equipe.
       </div>
       <div class="form-check">
-        <input class="form-check-input perm-checkbox" type="checkbox" name="perm_pacientes" id="perm_pacientes" checked>
+        <input class="form-check-input perm-checkbox" type="checkbox" name="perm_pacientes" id="perm_pacientes"
+          {% if (repost and request.form.get('perm_pacientes') == 'on') or not repost %}checked{% endif %}>
         <label class="form-check-label" for="perm_pacientes">Cadastrar pacientes</label>
       </div>
       <div class="form-check">
-        <input class="form-check-input perm-checkbox" type="checkbox" name="perm_equipe" id="perm_equipe" checked>
+        <input class="form-check-input perm-checkbox" type="checkbox" name="perm_equipe" id="perm_equipe"
+          {% if (repost and request.form.get('perm_equipe') == 'on') or not repost %}checked{% endif %}>
         <label class="form-check-label" for="perm_equipe">Gerenciar equipe</label>
       </div>
       <div class="form-check">
-        <input class="form-check-input perm-checkbox" type="checkbox" name="perm_filiais" id="perm_filiais" checked>
+        <input class="form-check-input perm-checkbox" type="checkbox" name="perm_filiais" id="perm_filiais"
+          {% if (repost and request.form.get('perm_filiais') == 'on') or not repost %}checked{% endif %}>
         <label class="form-check-label" for="perm_filiais">Gerenciar filiais</label>
       </div>
       <div class="form-check">
-        <input class="form-check-input perm-checkbox" type="checkbox" name="perm_dados_clinica" id="perm_dados_clinica" checked>
+        <input class="form-check-input perm-checkbox" type="checkbox" name="perm_dados_clinica" id="perm_dados_clinica"
+          {% if (repost and request.form.get('perm_dados_clinica') == 'on') or not repost %}checked{% endif %}>
         <label class="form-check-label" for="perm_dados_clinica">Editar dados da clínica</label>
       </div>
     </div>
@@ -65,13 +76,27 @@
   </form>
 </div>
 <script>
-  // Só um ponto de partida sugerido — todas as permissões continuam
-  // editáveis manualmente antes de salvar.
-  function ajustarPermissoesPadrao() {
-    var ehSecretaria = document.getElementById('sel_papel').value === 'secretaria';
-    document.querySelectorAll('.perm-checkbox').forEach(function (cb) {
-      cb.checked = ehSecretaria;
-    });
-  }
+  // Barra o envio já no navegador quando nenhuma filial está marcada —
+  // além de evitar a ida ao servidor, destaca o campo que faltou. O
+  // servidor continua validando de qualquer forma (e, se validar, a tela
+  // volta preenchida com o que foi digitado).
+  document.querySelector('form').addEventListener('submit', function (ev) {
+    var algumaFilial = document.querySelectorAll('.filial-checkbox:checked').length > 0;
+    var aviso = document.getElementById('aviso-filial');
+    if (!algumaFilial) {
+      ev.preventDefault();
+      if (!aviso) {
+        aviso = document.createElement('div');
+        aviso.id = 'aviso-filial';
+        aviso.className = 'alert alert-danger py-2 mt-2';
+        aviso.textContent = 'Marque pelo menos uma filial em que essa pessoa vai atuar.';
+        var blocoFiliais = document.querySelector('.filial-checkbox').closest('.mb-3');
+        blocoFiliais.appendChild(aviso);
+        blocoFiliais.scrollIntoView({behavior: 'smooth', block: 'center'});
+      }
+    } else if (aviso) {
+      aviso.remove();
+    }
+  });
 </script>
 {% endblock %}

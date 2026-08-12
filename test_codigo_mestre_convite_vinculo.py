@@ -65,15 +65,28 @@ with app.app_context():
     checar("Secretária não ganha código",
            Usuario.query.filter_by(email="secretaria@gruposaude.com").first().codigo_mestre is None)
 
-# Médico criado pela equipe já NASCE com código.
+# A clínica NÃO cria médico: o formulário de equipe barra e orienta o código.
 r = client.post("/equipe/equipe-membros/novo", data={
     "nome": "Dra. Nova Com Codigo", "email": "novamedica@gruposaude.com",
     "papel": "medico", "senha": "123456", "filial_ids": [str(centro_id)],
 }, follow_redirects=True)
+checar("Equipe não cadastra médico (orienta o código)",
+       "Vincular médico por código" in r.get_data(as_text=True))
+with app.app_context():
+    checar("Nenhuma conta de médico foi criada pela equipe",
+           Usuario.query.filter_by(email="novamedica@gruposaude.com").first() is None)
+client.get("/logout")
+
+# Médico nasce com código quando cria a PRÓPRIA conta (cadastro público).
+r = client.post("/cadastro", data={
+    "modo": "independente", "nome": "Dra. Nova Com Codigo",
+    "email": "novamedica@gruposaude.com", "senha": "123456",
+}, follow_redirects=True)
 with app.app_context():
     nova = Usuario.query.filter_by(email="novamedica@gruposaude.com").first()
-    checar("Médico novo já nasce com código mestre",
-           nova is not None and nova.codigo_mestre and nova.codigo_mestre.startswith("MED-"))
+    checar("Médico que cria a própria conta já nasce com código mestre",
+           nova is not None and nova.tipo == "medico"
+           and nova.codigo_mestre and nova.codigo_mestre.startswith("MED-"))
 client.get("/logout")
 
 # ---------- A Clínica Vitória convida o Eduardo pelo código ----------

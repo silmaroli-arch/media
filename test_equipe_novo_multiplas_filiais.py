@@ -74,13 +74,16 @@ with app.app_context():
 
 # Vincular um e-mail JÁ EXISTENTE (o médico do seed) a filiais marcadas onde ele já
 # está em ambas -> deve avisar "já faz parte de todas" e não duplicar vínculos.
+# E-mail de MÉDICO não passa mais por aqui: médico entra na equipe só
+# pelo código dele (ver equipe_vincular_por_codigo).
 r3 = client.post("/equipe/equipe-membros/novo", data={
-    "email": "medico@gruposaude.com", "papel": "medico",
+    "email": "medico@gruposaude.com", "papel": "secretaria",
     "filial_ids": [str(centro_id), str(praia_id)],
 }, follow_redirects=True)
 checar(
-    "Marcar filiais onde a pessoa já está em todas mostra aviso específico",
-    "já faz parte de todas as filiais marcadas" in r3.get_data(as_text=True),
+    "E-mail de conta de médico é barrado com orientação do código",
+    "conta de MÉDICO" in r3.get_data(as_text=True)
+    and "Vincular médico por código" in r3.get_data(as_text=True),
 )
 with app.app_context():
     checar(

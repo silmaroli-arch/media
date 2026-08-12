@@ -3,7 +3,7 @@
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h3>Equipe da empresa</h3>
-  <a href="{{ url_for('medico.equipe_novo') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Adicionar médico/secretária</a>
+  <a href="{{ url_for('medico.equipe_novo') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Adicionar secretária</a>
 </div>
 
 {% if current_user.perm_equipe %}
@@ -118,11 +118,12 @@
 </div>
 <p class="text-muted small mt-3">
   Cada pessoa aparece uma única vez aqui, mesmo atuando em mais de uma filial da sua empresa — é uma
-  única conta (um único cadastro), só vinculada a mais de um local. Se a pessoa já tiver conta na
-  plataforma (ex.: um médico que atende em mais de uma filial ou empresa), basta cadastrar o mesmo
-  e-mail dela em "Adicionar médico/secretária", escolhendo a filial — ela será vinculada sem criar
-  uma nova conta; ou use "+ Associar a outra filial" na linha dela, aqui embaixo. As permissões
-  administrativas valem para a conta como um todo, em todas as filiais em que a pessoa atua — não
-  são exclusivas do papel médico/secretária, já que nem toda clínica tem secretária.
+  única conta (um único cadastro), só vinculada a mais de um local. <strong>Médico entra na equipe
+  só pelo código dele</strong> (em "Vincular médico por código", acima) — a clínica não cria conta
+  de médico; ele cria a própria conta na plataforma e aceita o convite no painel dele. Secretárias
+  são cadastradas em "Adicionar secretária"; se o e-mail já tiver conta, ela é vinculada sem criar
+  outra. As permissões administrativas valem para a conta como um todo, em todas as filiais em que
+  a pessoa atua — não são exclusivas do papel médico/secretária, já que nem toda clínica tem
+  secretária.
 </p>
 {% endblock %}

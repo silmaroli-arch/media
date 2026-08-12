@@ -369,23 +369,54 @@ with app.app_context():
     checar("Os dados da filial Praia foram salvos mesmo sem ela estar selecionada",
            filial_praia.telefone == "(27) 3222-1111")
 
-# ---------- Cadastrar médico/secretária informando a filial ----------
+# ---------- Médico não é criado pela equipe: entra pelo CÓDIGO dele ----------
 
+# Tentar cadastrar um médico pelo formulário de equipe é barrado.
 r = client.post("/equipe/equipe-membros/novo", data={
     "nome": "Dra. Beatriz Costa", "email": "beatriz@gruposaude.com", "papel": "medico",
     "senha": "", "filial_ids": str(filial_praia_id),
 }, follow_redirects=True)
-checar("Cadastro de médico exige e usa a filial escolhida", "cadastrado" in r.get_data(as_text=True).lower())
+checar("Equipe não cadastra médico (orienta usar o código)",
+       "Vincular médico por código" in r.get_data(as_text=True))
+
+# A Beatriz cria a PRÓPRIA conta (é assim que médico nasce na plataforma)
+# e a clínica a convida pelo código dela; ela aceita no painel.
+with app.app_context():
+    from app.models import ClinicaMembro as _CM, Usuario as _Usuario, ConviteVinculo as _CV
+    from app.models import gerar_codigo_mestre_medico as _gerar_codigo
+    nova_medica = _Usuario(nome="Dra. Beatriz Costa", email="beatriz@gruposaude.com", tipo="medico")
+    nova_medica.set_senha("123456")
+    nova_medica.definir_permissoes_padrao()
+    nova_medica.codigo_mestre = _gerar_codigo()
+    db.session.add(nova_medica)
+    db.session.commit()
+    codigo_beatriz = nova_medica.codigo_mestre
+    beatriz_id = nova_medica.id
+
+r = client.post("/equipe/equipe-membros/vincular-por-codigo", data={
+    "codigo_mestre": codigo_beatriz, "filial_ids": str(filial_praia_id),
+}, follow_redirects=True)
+checar("Convite pelo código é enviado", "Convite enviado" in r.get_data(as_text=True))
+
+# O aceite pelo painel do médico é coberto em detalhe por
+# test_codigo_mestre_convite_vinculo.py - aqui, marca o aceite direto no
+# banco pra seguir o fluxo do smoke (a Beatriz deste cenário ainda não
+# tem empresa própria pra logar antes do vínculo).
+with app.app_context():
+    from datetime import datetime as _dt
+    convite_beatriz = _CV.query.filter_by(medico_id=beatriz_id, status="pendente").first()
+    convite_beatriz.status = "aceito"
+    convite_beatriz.decidido_em = _dt.utcnow()
+    db.session.add(_CM(clinica_id=convite_beatriz.clinica_id, usuario_id=beatriz_id, ativo=True))
+    db.session.commit()
 
 with app.app_context():
-    from app.models import ClinicaMembro as _CM, Usuario as _Usuario
-    nova_medica = _Usuario.query.filter_by(email="beatriz@gruposaude.com").first()
-    vinculo = _CM.query.filter_by(usuario_id=nova_medica.id).first()
+    vinculo = _CM.query.filter_by(usuario_id=beatriz_id).first()
+    nova_medica = Usuario.query.get(beatriz_id)
     checar("A médica nova ficou vinculada à filial Praia (não à Centro, que era a atual)",
-           vinculo.clinica_id == filial_praia_id)
-    checar("Como nenhuma permissão foi marcada no formulário, a médica nova começa sem nenhuma",
+           vinculo is not None and vinculo.clinica_id == filial_praia_id)
+    checar("Médico entra sem nenhuma permissão administrativa (padrão do papel)",
            not (nova_medica.perm_pacientes or nova_medica.perm_equipe or nova_medica.perm_filiais or nova_medica.perm_dados_clinica))
-    beatriz_id = nova_medica.id
 
 # Cadastrando outra pessoa marcando as permissões pelos checkboxes
 r = client.post("/equipe/equipe-membros/novo", data={

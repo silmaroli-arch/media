@@ -3512,7 +3512,20 @@ def equipe_novo():
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
         email = request.form.get("email", "").strip().lower()
-        papel = request.form.get("papel", "secretaria")
+        # A clínica NÃO cria médico: médico é uma entidade própria da
+        # plataforma - ele cria a própria conta (cadastro público) e a
+        # clínica o traz pra equipe SÓ pelo código mestre dele, com o
+        # aceite dele (ver equipe_vincular_por_codigo/convite_decidir).
+        # Este formulário cadastra apenas secretárias.
+        papel = "secretaria"
+        if request.form.get("papel") == "medico":
+            flash(
+                "Médico não é cadastrado pela clínica: ele cria a própria conta na plataforma e "
+                "você o traz pra equipe pelo código dele, em \"Vincular médico por código\" - o "
+                "vínculo vale depois que ele aceitar o convite.",
+                "danger",
+            )
+            return redirect(url_for("medico.equipe_lista"))
         senha = request.form.get("senha", "").strip()
         # Uma pessoa pode atuar em mais de uma filial da empresa desde já,
         # marcando todas de uma vez aqui — antes só dava pra escolher uma,
@@ -3525,11 +3538,21 @@ def equipe_novo():
             flash("Escolha em qual(is) filial(is) essa pessoa vai atuar.", "danger")
             return render_template("medico/equipe_form.html", filiais=filiais)
 
-        if not email or papel not in ("medico", "secretaria"):
-            flash("Preencha o e-mail e escolha o tipo (médico ou secretária).", "danger")
+        if not email:
+            flash("Preencha o e-mail da secretária.", "danger")
             return render_template("medico/equipe_form.html", filiais=filiais)
 
         usuario_existente = Usuario.query.filter_by(email=email).first()
+
+        if usuario_existente and usuario_existente.tipo == "medico":
+            # Vincular um médico existente também passa pelo código dele
+            # (e pelo aceite) - não por e-mail digitado pela clínica.
+            flash(
+                "Esse e-mail é de uma conta de MÉDICO. Peça o código de médico a ele e use "
+                "\"Vincular médico por código\" - o vínculo vale depois que ele aceitar o convite.",
+                "danger",
+            )
+            return redirect(url_for("medico.equipe_lista"))
 
         if usuario_existente:
             # A conta já existe na plataforma (pode ser de outra clínica) —
