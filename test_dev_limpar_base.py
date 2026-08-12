@@ -75,4 +75,22 @@ checar("Login continua respondendo 200 depois de limpar a base", r5.status_code 
 r6 = client.post("/login", data={"email": "dono@plataforma.com", "senha": "123456"}, follow_redirects=True)
 checar("Dono da plataforma continua logando depois da limpeza", r6.status_code == 200 and "inválidos" not in r6.get_data(as_text=True))
 
+# ---------- Base que ficou SEM dono (limpeza por versão antiga) ----------
+# Versões antigas do limpar-base apagavam o dono junto. Se isso já
+# aconteceu, a PRÓXIMA limpeza recria a conta padrão do dono - e a
+# migração de deploy (migrar_banco.py) faz o mesmo no banco publicado.
+client.get("/logout")
+with app.app_context():
+    Usuario.query.filter_by(tipo="dono").delete()
+    db.session.commit()
+    checar("Cenário: base sem NENHUM dono", Usuario.query.filter_by(tipo="dono").count() == 0)
+
+r7 = client.post("/dev/limpar-base", data={"confirmacao": "APAGAR TUDO"}, follow_redirects=True)
+checar("Limpar de novo responde 200", r7.status_code == 200)
+with app.app_context():
+    checar("A conta do dono foi RECRIADA", Usuario.query.filter_by(tipo="dono").count() == 1)
+r8 = client.post("/login", data={"email": "dono@plataforma.com", "senha": "123456"}, follow_redirects=True)
+checar("Dono recriado consegue logar (dono@plataforma.com / 123456)",
+       r8.status_code == 200 and "inválidos" not in r8.get_data(as_text=True))
+
 print("\nTodos os testes de 'Limpar dados de teste' passaram.")

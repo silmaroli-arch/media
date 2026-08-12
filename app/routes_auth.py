@@ -510,6 +510,16 @@ def dev_limpar_base():
                     db.session.execute(tabela.delete().where(tabela.c.tipo != "dono"))
                     continue
                 db.session.execute(tabela.delete())
+
+            # Garantia extra: se por qualquer motivo a base ficou SEM a
+            # conta do dono (ex.: uma limpeza feita por versões antigas,
+            # que apagavam o dono junto), recria a conta padrão - senão
+            # ninguém consegue mais entrar no painel da plataforma.
+            if not Usuario.query.filter_by(tipo="dono").first():
+                dono = Usuario(nome="Dono da Plataforma", email="dono@plataforma.com", tipo="dono")
+                dono.set_senha("123456")
+                db.session.add(dono)
+
             db.session.commit()
             flash(
                 "Base de dados limpa com sucesso (preservados: conta do dono da plataforma, "

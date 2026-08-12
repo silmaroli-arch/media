@@ -424,4 +424,23 @@ for _telefone, _nascimento, ids in grupos_duplicados:
 if grupos_duplicados:
     print(f"Contas de paciente unificadas: {len(grupos_duplicados)} pessoa(s) tinham conta duplicada.")
 
+# Garantia da conta do DONO da plataforma: versões antigas do
+# "/dev/limpar-base" apagavam a conta do dono junto com o resto - se a
+# base ficou sem nenhum dono, ninguém consegue mais entrar no painel da
+# plataforma (o dono não é recriado pelo cadastro público). Recria a
+# conta padrão (dono@plataforma.com / 123456). Idempotente: só age se não
+# existir NENHUM usuário tipo 'dono'.
+tem_dono = conn.execute("SELECT 1 FROM usuarios WHERE tipo = 'dono' LIMIT 1").fetchone()
+if not tem_dono:
+    from werkzeug.security import generate_password_hash as _gerar_hash_senha
+
+    conn.execute(
+        "INSERT INTO usuarios (nome, email, senha_hash, tipo, ativo, "
+        "perm_pacientes, perm_equipe, perm_filiais, perm_dados_clinica) "
+        "VALUES ('Dono da Plataforma', 'dono@plataforma.com', %s, 'dono', TRUE, "
+        "FALSE, FALSE, FALSE, FALSE)",
+        (_gerar_hash_senha("123456"),),
+    )
+    print("Conta do dono recriada (dono@plataforma.com / 123456) - a base estava sem nenhum dono.")
+
 print("Migração aplicada com sucesso!")
