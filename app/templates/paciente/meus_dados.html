@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block titulo %}Meus dados{% endblock %}
+{% block conteudo %}
+<h3 class="mb-1">Meus dados</h3>
+<p class="text-muted mb-4">
+  Estes dados são seus e valem em <strong>todas as clínicas</strong> que você frequenta —
+  atualizou aqui, atualizou em todas.
+</p>
+
+<div class="card p-4" style="max-width: 720px;">
+  <div class="mb-3">
+    <span class="text-muted small d-block">Nome</span>
+    <strong>{{ paciente.nome }}</strong>
+    <span class="text-muted small d-block mt-1">
+      Nome, CPF e data de nascimento são confirmados pela clínica — para corrigi-los, fale com a
+      equipe de uma clínica em que você é paciente.
+    </span>
+  </div>
+
+  <form method="post" class="row g-3">
+    <input type="hidden" name="telefone_original" value="{{ current_user.telefone }}">
+    <div class="col-md-6">
+      <label class="form-label">Telefone <span class="text-danger">*</span></label>
+      <input type="text" name="telefone" class="form-control" value="{{ current_user.telefone }}" required>
+      <div class="form-text">É com o telefone (+ data de nascimento) que você entra no app.</div>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">E-mail</label>
+      <input type="email" name="email" class="form-control" value="{{ current_user.email or '' }}">
+    </div>
+
+    <div class="col-12"><h6 class="mb-0 mt-2">Endereço</h6></div>
+    <div class="col-md-3">
+      <label class="form-label">CEP</label>
+      <input type="text" name="cep" class="form-control" value="{{ paciente.cep or '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Rua</label>
+      <input type="text" name="rua" class="form-control" value="{{ paciente.rua or '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Número</label>
+      <input type="text" name="numero" class="form-control" value="{{ paciente.numero or '' }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Complemento</label>
+      <input type="text" name="complemento" class="form-control" value="{{ paciente.complemento or '' }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Bairro</label>
+      <input type="text" name="bairro" class="form-control" value="{{ paciente.bairro or '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Cidade</label>
+      <input type="text" name="cidade" class="form-control" value="{{ paciente.cidade or '' }}">
+    </div>
+    <div class="col-md-1">
+      <label class="form-label">UF</label>
+      <input type="text" name="uf" class="form-control" maxlength="2" value="{{ paciente.uf or '' }}">
+    </div>
+
+    <div class="col-12"><h6 class="mb-0 mt-2">Contato de emergência</h6></div>
+    <div class="col-md-6">
+      <label class="form-label">Nome</label>
+      <input type="text" name="contato_emergencia_nome" class="form-control" value="{{ paciente.contato_emergencia_nome or '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Telefone</label>
+      <input type="text" name="contato_emergencia_telefone" class="form-control" value="{{ paciente.contato_emergencia_telefone or '' }}">
+    </div>
+
+    <div class="col-12">
+      <button type="submit" class="btn btn-primary">Salvar meus dados</button>
+      <a href="{{ url_for('paciente.dashboard') }}" class="btn btn-outline-secondary">Voltar</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

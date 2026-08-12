@@ -238,7 +238,8 @@
             {% if current_user.paciente and current_user.paciente.status_cadastro == 'aprovado' %}
             <a href="{{ url_for('paciente.solicitar_agendamento') }}" class="text-decoration-none me-3">Solicitar agendamento</a>
             {% endif %}
-            <a href="{{ url_for('paciente.chat') }}" class="text-decoration-none">Tirar dúvidas</a>
+            <a href="{{ url_for('paciente.chat') }}" class="text-decoration-none me-3">Tirar dúvidas</a>
+            <a href="{{ url_for('paciente.meus_dados') }}" class="text-decoration-none">Meus dados</a>
           </span>
         {% endif %}
       </div>
@@ -275,6 +276,7 @@
         <a href="{{ url_for('paciente.solicitar_agendamento') }}" class="nav-link p-2 rounded"><i class="bi bi-calendar-plus me-2"></i>Solicitar agendamento</a>
         {% endif %}
         <a href="{{ url_for('paciente.chat') }}" class="nav-link p-2 rounded"><i class="bi bi-chat-dots me-2"></i>Tirar dúvidas</a>
+        <a href="{{ url_for('paciente.meus_dados') }}" class="nav-link p-2 rounded"><i class="bi bi-person-vcard me-2"></i>Meus dados</a>
         {% if current_user.tem_senha %}
         <a href="{{ url_for('auth.trocar_senha') }}" class="nav-link p-2 rounded"><i class="bi bi-key me-2"></i>Trocar senha</a>
         {% endif %}
