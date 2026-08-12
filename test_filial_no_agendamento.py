@@ -2,8 +2,7 @@
 mostra a filial/local de atendimento do exame escolhido ANTES da lista de
 horários disponíveis - antes só aparecia o nome do médico, sem indicar em
 qual unidade/filial os horários seriam, o que ficou ambíguo desde que um
-mesmo médico passou a poder atender mais de uma filial. Também mostra o
-endereço da filial (rua, cidade etc.), não só o nome."""
+mesmo médico passou a poder atender mais de uma filial."""
 from app import create_app
 from app.extensions import db
 from app.models import Exame
@@ -18,10 +17,10 @@ def checar(nome, condicao):
     assert condicao, nome
 
 
-def login_paciente(telefone, data_nascimento):
+def login_paciente(cpf, data_nascimento):
     return client.post(
         "/login-paciente",
-        data={"telefone": telefone, "data_nascimento": data_nascimento},
+        data={"cpf": cpf, "data_nascimento": data_nascimento},
         follow_redirects=True,
     )
 
@@ -34,7 +33,7 @@ with app.app_context():
     exame_id = exame.id
 
 # João Pereira (paciente da Clínica Vitória, cadastrado no seed.py).
-login_paciente("(27) 99999-0000", "12/04/1985")
+login_paciente("123.456.789-00", "12/04/1985")
 
 r = client.get(f"/paciente/agendar?exame_id={exame_id}")
 html = r.get_data(as_text=True)

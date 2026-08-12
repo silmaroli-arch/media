@@ -21,7 +21,7 @@ from app.models import (
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, DescontoConfig, Pagamento, EvolucaoClinica,
-    ConviteVinculo, gerar_codigo_mestre_medico, encontrar_conta_paciente,
+    ConviteVinculo, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf,
 )
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
@@ -706,7 +706,7 @@ def pacientes_novo():
         # (mesmo telefone + data de nascimento), reaproveita a conta dela
         # em vez de criar uma segunda - só o cadastro (Paciente) desta
         # empresa é novo. Ver encontrar_conta_paciente em app/models.py.
-        usuario = encontrar_conta_paciente(telefone, data_nascimento)
+        usuario = encontrar_conta_paciente_por_cpf(cpf) or encontrar_conta_paciente(telefone, data_nascimento)
         if not usuario:
             usuario = Usuario(nome=nome, email=email or None, telefone=telefone, tipo="paciente")
             db.session.add(usuario)
@@ -726,8 +726,8 @@ def pacientes_novo():
         db.session.commit()
 
         flash(
-            "Paciente cadastrado. Ele(a) pode acessar o sistema informando o telefone "
-            f"({telefone_digitado}) e a data de nascimento — não é necessário criar senha.",
+            "Paciente cadastrado. Ele(a) pode acessar o sistema informando o CPF e a data de "
+            "nascimento — não é necessário criar senha.",
             "success",
         )
         return redirect(url_for("medico.pacientes_lista"))

@@ -137,7 +137,7 @@ with app.app_context():
 
 # Área UNIFICADA: os 3 cadastros são da MESMA conta, então o login entra
 # DIRETO (sem tela de escolha) - a troca de clínica é feita lá dentro.
-r = client.post("/login-paciente", data={"telefone": TEL, "data_nascimento": "15/04/1991"},
+r = client.post("/login-paciente", data={"cpf": "710.820.930-04", "data_nascimento": "15/04/1991"},
                 follow_redirects=True)
 html = r.get_data(as_text=True)
 checar("Login da Ana entra direto (sem tela de escolha)",
@@ -155,7 +155,7 @@ checar("Trocar pra cadastro de outra conta é rejeitado",
 client.get("/logout")
 
 # O filho (outra conta) loga direto, sem tela de escolha.
-r = client.post("/login-paciente", data={"telefone": TEL, "data_nascimento": "20/10/2015"},
+r = client.post("/login-paciente", data={"cpf": "710.820.930-15", "data_nascimento": "20/10/2015"},
                 follow_redirects=True)
 checar("O filho loga direto (uma conta, um cadastro)",
        "mais de uma clínica" not in r.get_data(as_text=True) and r.status_code == 200)

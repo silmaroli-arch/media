@@ -45,12 +45,12 @@
       </div>
       {% if not paciente %}
       <div class="col-md-6">
-        <label class="form-label">CPF</label>
+        <label class="form-label">CPF (login de acesso do paciente)</label>
         <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00"
                value="{{ cpf_busca if (busca_feita and not encontrado) else '' }}" required>
       </div>
       <div class="col-md-6">
-        <label class="form-label">Telefone (login de acesso)</label>
+        <label class="form-label">Telefone</label>
         <input type="text" inputmode="numeric" name="telefone" id="telefone"
                class="form-control" placeholder="(27) 99999-9999" required>
       </div>
@@ -58,7 +58,7 @@
         <label class="form-label">Data de nascimento</label>
         <input type="text" inputmode="numeric" name="data_nascimento" id="data_nascimento"
                class="form-control" placeholder="DD/MM/AAAA" autocomplete="bday" required>
-        <div class="form-text">O paciente usa o telefone e a data de nascimento para acessar o sistema — não é preciso criar senha.</div>
+        <div class="form-text">O paciente usa o CPF e a data de nascimento para acessar o sistema — não é preciso criar senha.</div>
       </div>
       {% else %}
       <div class="col-md-6">
@@ -66,7 +66,7 @@
         <input type="text" class="form-control" value="{{ paciente.cpf }}" disabled>
       </div>
       <div class="col-md-6">
-        <label class="form-label">Telefone (login de acesso)</label>
+        <label class="form-label">Telefone</label>
         <input type="text" class="form-control" value="{{ paciente.telefone or '' }}" disabled>
       </div>
       {% endif %}

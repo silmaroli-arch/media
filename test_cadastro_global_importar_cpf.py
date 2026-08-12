@@ -42,6 +42,9 @@ checar("Tem os campos de endereço (faltavam no cadastro antigo)",
        'name="cep"' in html and 'name="rua"' in html and 'name="cidade"' in html)
 checar("Tem os campos de contato de emergência",
        'name="contato_emergencia_nome"' in html and 'name="contato_emergencia_telefone"' in html)
+checar("O CEP busca o endereço automaticamente (ViaCEP), com rua/bairro/cidade/UF travados",
+       "viacep.com.br" in html and 'id="cep_status"' in html
+       and 'name="rua" id="rua"' in html and 'readonly' in html)
 
 r = client.post("/cadastro-paciente", data={
     "nome": "Diego Plataforma", "cpf": CPF, "telefone": "(27) 93030-0001",
@@ -131,7 +134,7 @@ client.get("/logout")
 
 # ---------- O paciente vê a clínica no app dele depois da importação ----------
 
-r = client.post("/login-paciente", data={"telefone": "(27) 93030-0001", "data_nascimento": "12/12/1990"},
+r = client.post("/login-paciente", data={"cpf": CPF, "data_nascimento": "12/12/1990"},
                 follow_redirects=True)
 html = r.get_data(as_text=True)
 checar("O Diego loga direto (conta única)", "Diego Plataforma" in html)

@@ -122,8 +122,8 @@ client.get("/logout")
 
 # ---------- Área do paciente: exames de todas as filiais, filial pelo exame ----------
 
-r = client.post("/login-paciente", data={"telefone": "(27) 97777-0001", "data_nascimento": "10/05/1992"}, follow_redirects=True)
-checar("Paciente da empresa loga normalmente (telefone + nascimento)", r.status_code == 200)
+r = client.post("/login-paciente", data={"cpf": "321.654.987-00", "data_nascimento": "10/05/1992"}, follow_redirects=True)
+checar("Paciente da empresa loga normalmente (CPF + nascimento)", r.status_code == 200)
 
 r = client.get("/paciente/agendar")
 html_agendar = r.get_data(as_text=True)
@@ -156,7 +156,7 @@ r = client.get("/equipe/pacientes")
 checar("Paciente legado (só filial, sem empresa_id) continua aparecendo na lista", "Paciente Legado" in r.get_data(as_text=True))
 client.get("/logout")
 
-r = client.post("/login-paciente", data={"telefone": "(27) 96666-0009", "data_nascimento": "02/01/1980"}, follow_redirects=True)
+r = client.post("/login-paciente", data={"cpf": "444.555.666-77", "data_nascimento": "02/01/1980"}, follow_redirects=True)
 checar("Paciente legado loga normalmente", r.status_code == 200)
 r = client.get("/paciente/agendar")
 checar("Paciente legado também vê exames de todas as filiais da empresa",

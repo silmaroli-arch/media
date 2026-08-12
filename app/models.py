@@ -443,6 +443,22 @@ class Usuario(db.Model, UserMixin):
         ]
 
 
+def encontrar_conta_paciente_por_cpf(cpf):
+    """Conta única por CPF: acha a conta (Usuario) do paciente dono deste
+    CPF - agora que o CPF é o login (é a identidade que não muda), ele é
+    o jeito mais forte de reconhecer a pessoa nos cadastros. O CPF é
+    comparado só nos dígitos (é guardado como digitado)."""
+    digitos = re.sub(r"\D", "", cpf or "")
+    if len(digitos) != 11:
+        return None
+    for p in Paciente.query.filter(Paciente.cpf.isnot(None)).all():
+        if re.sub(r"\D", "", p.cpf or "") == digitos:
+            usuario = p.usuario
+            if usuario and usuario.ativo and usuario.tipo == "paciente":
+                return usuario
+    return None
+
+
 def encontrar_conta_paciente(telefone, data_nascimento):
     """CONTA ÚNICA do paciente: acha a conta (Usuario) existente desta
     pessoa - identificada por telefone + data de nascimento, o mesmo par

@@ -6,7 +6,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente
+from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -37,17 +37,13 @@ def login():
 
 @auth_bp.route("/login-paciente", methods=["GET", "POST"])
 def login_paciente():
-    """Login do paciente: sem senha, feito só com telefone + data de
-    nascimento (a secretária/médico cadastra o telefone e a data de
-    nascimento na hora de criar o paciente — ver medico.pacientes_novo).
-
-    Telefone não é mais único globalmente (ver app/models.py, classe
-    Usuario): a mesma pessoa pode ser paciente em clínicas diferentes com
-    o mesmo telefone, cada uma com sua própria conta (Usuario). Por isso
-    esse login tem duas etapas quando telefone+data de nascimento batem em
-    mais de uma clínica ao mesmo tempo - a segunda etapa deixa o paciente
-    escolher qual clínica quer acessar (ver
-    auth/login_paciente_escolher_clinica.html)."""
+    """Login do paciente: sem senha, feito com CPF + data de nascimento.
+    O CPF é a identidade da pessoa e não muda (o telefone muda - por isso
+    deixou de ser a credencial e virou só um dado de contato). Com a conta
+    única, os cadastros da pessoa em todas as clínicas apontam pra mesma
+    conta, então o login por CPF entra direto; a tela de escolha só sobra
+    pro caso raro de CONTAS distintas baterem (dados legados ainda não
+    unificados)."""
     if current_user.is_authenticated:
         return redirect(url_for("index"))
 
@@ -79,7 +75,9 @@ def login_paciente():
         return redirect(url_for("auth.login_paciente"))
 
     if request.method == "POST":
-        telefone = normalizar_telefone(request.form.get("telefone", ""))
+        # Login por CPF + data de nascimento: o CPF é a identidade que
+        # não muda (telefone muda, e por isso deixou de ser a credencial).
+        cpf_alvo = _cpf_digitos(request.form.get("cpf", ""))
         data_nascimento_str = request.form.get("data_nascimento", "").strip()
 
         data_nascimento = None
@@ -94,17 +92,22 @@ def login_paciente():
                 except ValueError:
                     continue
 
-        # Candidatos agora são CADASTROS (Paciente), não contas: com a
-        # conta única, o mesmo Usuario pode ter um cadastro por empresa -
-        # e contas legadas (pré-unificação) continuam funcionando igual.
+        # Candidatos são CADASTROS (Paciente) cujo CPF e data de
+        # nascimento batem: com a conta única, o mesmo Usuario pode ter um
+        # cadastro por empresa - e contas legadas (pré-unificação)
+        # continuam funcionando igual. O CPF é comparado só nos dígitos
+        # (é guardado como digitado, com ou sem pontuação).
         candidatos = []
-        if telefone and data_nascimento:
-            for usuario in Usuario.query.filter_by(telefone=telefone, tipo="paciente").all():
-                if not usuario.ativo:
-                    continue
-                for p in usuario.pacientes:
-                    if p.data_nascimento == data_nascimento:
-                        candidatos.append(p)
+        if cpf_alvo and len(cpf_alvo) == 11 and data_nascimento:
+            for p in Paciente.query.filter(Paciente.cpf.isnot(None)).all():
+                if (
+                    _cpf_digitos(p.cpf) == cpf_alvo
+                    and p.data_nascimento == data_nascimento
+                    and p.usuario
+                    and p.usuario.ativo
+                    and p.usuario.tipo == "paciente"
+                ):
+                    candidatos.append(p)
 
         # Área do paciente UNIFICADA: se todos os cadastros encontrados
         # são da MESMA conta (a mesma pessoa em várias clínicas), entra
@@ -124,7 +127,17 @@ def login_paciente():
             session["login_paciente_candidatos"] = [p.id for p in candidatos]
             return render_template("auth/login_paciente_escolher_clinica.html", candidatos=candidatos)
 
-        flash("Telefone ou data de nascimento incorretos.", "danger")
+        # CPF não existe na plataforma? Em vez de só dizer "incorreto",
+        # oferece criar a conta (leva pro cadastro global). Se o CPF
+        # existe mas a data não bate, aí sim é credencial errada.
+        cpf_existe = cpf_alvo and any(
+            _cpf_digitos(p.cpf) == cpf_alvo
+            for p in Paciente.query.filter(Paciente.cpf.isnot(None)).all()
+        )
+        if not cpf_existe and cpf_alvo and len(cpf_alvo) == 11:
+            return render_template("auth/login_paciente.html", cpf_nao_encontrado=True)
+
+        flash("CPF ou data de nascimento incorretos.", "danger")
 
     return render_template("auth/login_paciente.html")
 
@@ -369,7 +382,7 @@ def cadastro_paciente_global():
         # A pessoa já tem conta (telefone + nascimento)? Então já está
         # cadastrada na plataforma - é só entrar.
         if encontrar_conta_paciente(telefone, data_nascimento):
-            flash("Você já tem cadastro na plataforma — entre pelo login (telefone + data de nascimento).", "warning")
+            flash("Você já tem cadastro na plataforma — entre pelo login (CPF + data de nascimento).", "warning")
             return redirect(url_for("auth.login_paciente"))
 
         # CPF já cadastrado por alguém (em qualquer clínica ou global)?

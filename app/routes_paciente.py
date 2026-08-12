@@ -463,8 +463,8 @@ def meus_dados():
     da pessoa, não da relação com uma clínica. Nome, CPF e data de
     nascimento NÃO são editáveis aqui - são a identidade verificada pela
     clínica (e nascimento é credencial de login); mudança neles é feita
-    pela equipe da clínica. O telefone é a outra credencial de login,
-    então a troca é validada para não colidir com outra conta."""
+    pela equipe da clínica. O login é por CPF + data de
+    nascimento, então trocar telefone/e-mail não afeta o acesso."""
     paciente = current_user.paciente
 
     if request.method == "POST":
@@ -473,23 +473,8 @@ def meus_dados():
         email = request.form.get("email", "").strip().lower()
 
         if not telefone:
-            flash("O telefone é obrigatório — é com ele que você entra no app.", "danger")
+            flash("O telefone é obrigatório — é o contato que as clínicas usam com você.", "danger")
             return redirect(url_for("paciente.meus_dados"))
-
-        # O telefone é credencial de login (telefone + nascimento): não
-        # pode passar a colidir com OUTRA conta que tenha o novo telefone
-        # e alguma das minhas datas de nascimento.
-        if telefone != current_user.telefone:
-            minhas_datas = {p.data_nascimento for p in current_user.pacientes if p.data_nascimento}
-            for data in minhas_datas:
-                outra_conta = encontrar_conta_paciente(telefone, data)
-                if outra_conta and outra_conta.id != current_user.id:
-                    flash(
-                        "Esse telefone já está em uso por outra conta com a mesma data de "
-                        "nascimento — se for você, fale com a clínica para unificar os cadastros.",
-                        "danger",
-                    )
-                    return redirect(url_for("paciente.meus_dados"))
 
         # Aplica na CONTA (login) e em TODOS os cadastros (todas as clínicas).
         current_user.telefone = telefone
@@ -508,10 +493,9 @@ def meus_dados():
             p.contato_emergencia_telefone = request.form.get("contato_emergencia_telefone", "").strip()
         db.session.commit()
 
-        mensagem = "Seus dados foram atualizados em todas as clínicas que você frequenta."
-        if telefone != normalizar_telefone(request.form.get("telefone_original", "")):
-            mensagem += " Lembre-se: o login agora usa o telefone novo."
-        flash(mensagem, "success")
+        # O telefone deixou de ser credencial (o login é CPF + data de
+        # nascimento) - trocar o telefone não afeta o acesso.
+        flash("Seus dados foram atualizados em todas as clínicas que você frequenta.", "success")
         return redirect(url_for("paciente.meus_dados"))
 
     return render_template("paciente/meus_dados.html", paciente=paciente)

@@ -22,8 +22,8 @@ def login(email, senha):
     return client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
 
 
-def login_paciente(tel, dn):
-    return client.post("/login-paciente", data={"telefone": tel, "data_nascimento": dn}, follow_redirects=True)
+def login_paciente(cpf, dn):
+    return client.post("/login-paciente", data={"cpf": cpf, "data_nascimento": dn}, follow_redirects=True)
 
 
 from app.models import Clinica
@@ -39,7 +39,7 @@ with app.app_context():
     clinica_vitoria_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
 
 # Paciente faz uma pergunta geral (sem selecionar nenhum exame/agendamento).
-login_paciente("(27) 99999-0000", "12/04/1985")
+login_paciente("123.456.789-00", "12/04/1985")
 client.post("/paciente/chat", data={"agendamento_id": "", "pergunta": "Quando posso marcar uma consulta?"}, follow_redirects=True)
 client.get("/logout")
 
@@ -72,7 +72,7 @@ with app.app_context():
     Usuario.query.filter_by(email="medico@clinicavitoria.com").first().perm_pacientes = False
     db.session.commit()
 
-login_paciente("(27) 99999-0000", "12/04/1985")
+login_paciente("123.456.789-00", "12/04/1985")
 client.post("/paciente/chat", data={"agendamento_id": "", "pergunta": "Outra pergunta geral qualquer?"}, follow_redirects=True)
 client.get("/logout")
 

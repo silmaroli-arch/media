@@ -5,9 +5,8 @@
   todos os cadastros da conta de uma vez (são dados da pessoa).
 - Nome/CPF/data de nascimento não são editáveis pela tela (identidade
   verificada pela clínica).
-- O telefone é credencial de login: depois da troca, o login funciona com
-  o telefone NOVO (e não com o antigo); a troca é bloqueada se colidir
-  com outra conta (mesmo telefone novo + mesma data de nascimento).
+- O login é por CPF + data de nascimento (o CPF não muda): trocar o
+  telefone é livre e NÃO afeta o acesso.
 """
 from datetime import date
 
@@ -54,7 +53,7 @@ with app.app_context():
     db.session.commit()
     conta_id, p1_id, p2_id = conta.id, p1.id, p2.id
 
-client.post("/login-paciente", data={"telefone": "(27) 96060-0001", "data_nascimento": "02/02/1992"},
+client.post("/login-paciente", data={"cpf": "930.140.250-06", "data_nascimento": "02/02/1992"},
             follow_redirects=True)
 
 # ---------- A tela existe e não deixa editar a identidade ----------
@@ -80,7 +79,6 @@ r = client.post("/paciente/meus-dados", data={
 html = r.get_data(as_text=True)
 checar("Salvar confirma a atualização em todas as clínicas",
        "atualizados em todas as clínicas" in html)
-checar("Avisa que o login usa o telefone novo", "telefone novo" in html)
 
 with app.app_context():
     conta = Usuario.query.get(conta_id)
@@ -96,29 +94,15 @@ with app.app_context():
     checar("Contato de emergência salvo nos dois",
            p1.contato_emergencia_nome == "Mario Dados" and p2.contato_emergencia_nome == "Mario Dados")
 
-# ---------- Login: telefone novo entra, antigo não ----------
+# ---------- O login é por CPF: trocar telefone não afeta o acesso ----------
 
 client.get("/logout")
-r = client.post("/login-paciente", data={"telefone": "(27) 96060-0001", "data_nascimento": "02/02/1992"},
+r = client.post("/login-paciente", data={"cpf": "930.140.250-06", "data_nascimento": "02/02/1992"},
                 follow_redirects=True)
-checar("O telefone ANTIGO não loga mais", "incorretos" in r.get_data(as_text=True))
-r = client.post("/login-paciente", data={"telefone": "(27) 96060-0002", "data_nascimento": "02/02/1992"},
-                follow_redirects=True)
-checar("O telefone NOVO loga", "Olá, Carla Dados" in r.get_data(as_text=True))
-
-# ---------- Colisão de credencial é bloqueada ----------
-
-r = client.post("/paciente/meus-dados", data={
-    "telefone_original": normalizar_telefone("(27) 96060-0002"),
-    "telefone": "(27) 96060-0999",  # telefone do Rival, que tem a MESMA data de nascimento
-    "email": "carla@exemplo.com",
-    "cep": "", "rua": "", "numero": "", "complemento": "", "bairro": "", "cidade": "", "uf": "",
-    "contato_emergencia_nome": "", "contato_emergencia_telefone": "",
-}, follow_redirects=True)
-checar("Trocar pro telefone de OUTRA conta com a mesma data é bloqueado",
-       "já está em uso por outra conta" in r.get_data(as_text=True))
+checar("Depois de trocar o telefone, o login por CPF continua funcionando",
+       "Olá, Carla Dados" in r.get_data(as_text=True))
 with app.app_context():
-    checar("O telefone da conta não mudou",
+    checar("O telefone novo ficou salvo na conta",
            Usuario.query.get(conta_id).telefone == normalizar_telefone("(27) 96060-0002"))
 
 # Telefone vazio também é bloqueado (é a credencial).

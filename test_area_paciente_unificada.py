@@ -81,7 +81,7 @@ with app.app_context():
 
 # ---------- Painel unificado ----------
 
-r = client.post("/login-paciente", data={"telefone": "(27) 97070-0001", "data_nascimento": "08/08/1988"},
+r = client.post("/login-paciente", data={"cpf": "820.930.140-05", "data_nascimento": "08/08/1988"},
                 follow_redirects=True)
 html = r.get_data(as_text=True)
 checar("Login entra direto no painel unificado", "Olá, Bia Unificada" in html)
@@ -123,7 +123,7 @@ client.get("/logout")
 
 # ---------- Segurança entre contas ----------
 
-r = client.post("/login-paciente", data={"telefone": "(27) 97070-0002", "data_nascimento": "01/01/1970"},
+r = client.post("/login-paciente", data={"cpf": "820.930.140-16", "data_nascimento": "01/01/1970"},
                 follow_redirects=True)
 checar("Outro paciente loga", "Outro Paciente" in r.get_data(as_text=True))
 r = client.get(f"/paciente/exame/{ag_vit_id}")

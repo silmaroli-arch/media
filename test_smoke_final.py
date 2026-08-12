@@ -37,10 +37,10 @@ def login(email, senha):
     return client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
 
 
-def login_paciente(telefone, data_nascimento):
+def login_paciente(cpf, data_nascimento):
     return client.post(
         "/login-paciente",
-        data={"telefone": telefone, "data_nascimento": data_nascimento},
+        data={"cpf": cpf, "data_nascimento": data_nascimento},
         follow_redirects=True,
     )
 
@@ -292,19 +292,19 @@ checar("Cadastro com o MESMO telefone E a MESMA data de nascimento continua bloq
 
 client.get("/logout")
 
-r = login_paciente("(28) 98765-4321", "1980-01-01")
+r = login_paciente("999.888.777-00", "1980-01-01")
 texto = r.get_data(as_text=True)
-checar("Login da 'Outra Pessoa' funciona (telefone compartilhado, nascimento próprio identifica a conta certa)",
+checar("Login da 'Outra Pessoa' funciona (agora por CPF + data de nascimento)",
        "Meus exames" in texto or "Tirar dúvidas" in texto)
 client.get("/logout")
 
-r = login_paciente("(28) 98765-4321", "1970-12-31")
-checar("Login com telefone existente mas data de nascimento que não bate com NINGUÉM é rejeitado",
+r = login_paciente("555.666.777-00", "1970-12-31")
+checar("Login com CPF existente mas data de nascimento errada é rejeitado",
        "incorretos" in r.get_data(as_text=True).lower())
 
-r = login_paciente("(28) 98765-4321", "1995-06-20")
+r = login_paciente("555.666.777-00", "1995-06-20")
 texto = r.get_data(as_text=True)
-checar("Paciente cadastrado sem senha consegue entrar só com telefone e data de nascimento",
+checar("Paciente cadastrado sem senha consegue entrar só com CPF e data de nascimento",
        "Meus exames" in texto or "Tirar dúvidas" in texto)
 checar("Paciente sem senha não vê o link de 'Trocar senha' na barra superior", "Trocar senha" not in texto)
 
@@ -524,7 +524,7 @@ with app.app_context():
     db.session.commit()
     ag_teste_id = ag_teste.id
 
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 r = client.get(f"/paciente/exame/{ag_teste_id}")
 texto = r.get_data(as_text=True)
 checar("Alerta de jejum mostra o horário calculado a partir do agendamento (12h antes de 10/08 08:00 = 09/08 20:00)",
@@ -609,7 +609,7 @@ r = client.post(f"/equipe/preparo-modelos/{modelo_hidrogenio_id}/editar", data={
 checar("Secretária consegue salvar informações gerais no modelo de preparo", "atualizado" in r.get_data(as_text=True).lower())
 client.get("/logout")
 
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 r = client.get(f"/paciente/exame/{ag_teste_id}")
 texto = r.get_data(as_text=True)
 checar("Paciente vê as informações gerais cadastradas no preparo", "Não utilizar enxaguante bucal" in texto and "Não fumar antes do exame" in texto)
@@ -635,7 +635,7 @@ with app.app_context():
     ag_colono_id = ag_colono.id
     colonoscopia_vitoria_id = colonoscopia_vitoria.id
 
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 r = client.get(f"/paciente/exame/{ag_colono_id}")
 texto = r.get_data(as_text=True)
 checar("Paciente vê a lista de alimentos proibidos com o horário calculado a partir do agendamento (12h antes de 10/08 08:00 = 09/08 20:00)",
@@ -718,7 +718,7 @@ with app.app_context():
 
 # O paciente vê o alerta de "carne vermelha" com prazo em dias (não horas),
 # e a lista de medicamentos que pode manter, na tela de preparo do exame.
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 r = client.get(f"/paciente/exame/{ag_colono_id}")
 texto = r.get_data(as_text=True)
 checar("Paciente vê o alimento proibido com prazo calculado em DIAS antes (não horas)",
@@ -743,7 +743,7 @@ client.get("/logout")
 # o chat precisa reconhecer que uma fruta específica (ex.: laranja, banana)
 # está coberta por essa categoria, sem precisar que a clínica cadastre cada
 # fruta separadamente.
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 r = client.post("/paciente/chat", data={"pergunta": "Posso chupar laranja?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
 checar("Chat reconhece que 'laranja' está coberta pela categoria genérica 'Frutas' cadastrada no preparo",
@@ -771,7 +771,7 @@ client.post(f"/equipe/preparo-modelos/{modelo_colono_id}/editar", data={
 }, follow_redirects=True)
 client.get("/logout")
 
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 r = client.post("/paciente/chat", data={"pergunta": "Posso beber gatorade de uva?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
 checar("Chat NÃO confunde 'gatorade de uva' (sabor) com a categoria 'Frutas' proibida",
@@ -795,7 +795,7 @@ with app.app_context():
 
 import app.routes_paciente as routes_paciente_mod
 
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 with patch.object(routes_paciente_mod, "responder_com_ia", return_value={
     "final": "Sim! Gatorade de cor clara está entre os alimentos permitidos deste preparo.",
     "claude": "Sim! Gatorade de cor clara está entre os alimentos permitidos deste preparo.",
@@ -856,7 +856,7 @@ with app.app_context():
            aprendida is not None and aprendida.resposta == resposta_editada_pelo_medico)
 client.get("/logout")
 
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 r = client.get("/paciente/chat")
 texto = r.get_data(as_text=True)
 checar("Depois da aprovação, o paciente vê a resposta final (já editada pelo médico) no histórico",
@@ -869,7 +869,7 @@ client.get("/logout")
 # respondendo de novo, de forma DIFERENTE da FAQ já aprendida acima para a
 # mesmíssima pergunta, o rascunho novo da IA deve prevalecer — prova de que
 # a base de conhecimento não é consultada primeiro.
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 with patch.object(routes_paciente_mod, "responder_com_ia", return_value={
     "final": "Atualização: esse gatorade específico teve a fórmula alterada e não é mais recomendado.",
     "claude": "Atualização: esse gatorade específico teve a fórmula alterada e não é mais recomendado.",
@@ -1186,7 +1186,7 @@ client.get("/logout")
 
 # ---------- Chat do paciente e aprendizado da IA (regressão) ----------
 
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 r = client.post("/paciente/chat", data={"pergunta": "Posso comer batata antes do exame?", "exame_id": "1"}, follow_redirects=True)
 checar("IA responde pergunta conhecida sobre batata", "fibra" in r.get_data(as_text=True).lower())
 
@@ -1210,7 +1210,7 @@ client.get("/logout")
 
 # ---------- Paciente pode remover a própria pergunta pendente ----------
 
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 with app.app_context():
     pergunta_exercicio = PerguntaPendente.query.filter(
         PerguntaPendente.pergunta.like("%exercício físico pesado%")
@@ -1225,14 +1225,14 @@ texto = r.get_data(as_text=True)
 checar("Paciente consegue remover a própria pergunta da lista", "exercício físico pesado" not in texto and "removida" in texto.lower())
 client.get("/logout")
 
-login_paciente("(11) 98888-0000", "1990-09-03")
+login_paciente("987.654.321-00", "1990-09-03")
 r = client.post("/paciente/chat", data={"pergunta": "Posso comer chocolate?", "exame_id": ""}, follow_redirects=True)
 with app.app_context():
     pergunta_maria = PerguntaPendente.query.filter(PerguntaPendente.pergunta.like("%chocolate%")).first()
     pergunta_maria_id = pergunta_maria.id
 client.get("/logout")
 
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 r = client.post(f"/paciente/perguntas/{pergunta_maria_id}/remover")
 checar("Um paciente não consegue remover a pergunta de outro paciente forjando o id na URL", r.status_code == 404)
 client.get("/logout")
@@ -1259,7 +1259,7 @@ checar("Dono consegue bloquear uma empresa (todas as suas filiais)", "bloqueado"
 client.get("/logout")
 
 # Paciente da empresa bloqueada não consegue mais acessar
-r = login_paciente("(11) 98888-0000", "1990-09-03")
+r = login_paciente("987.654.321-00", "1990-09-03")
 checar("Paciente de empresa bloqueada não acessa mais o sistema",
        "indisponível" in r.get_data(as_text=True).lower() or "Meus exames" not in r.get_data(as_text=True))
 client.get("/logout")
@@ -1374,7 +1374,7 @@ with app.app_context():
 client.get("/logout")
 
 # --- Solicitação de agendamento pelo paciente ---
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 r = client.get(f"/paciente/agendar?exame_id={colonoscopia_id}")
 checar("Tela de solicitar agendamento mostra horários sugeridos", "Escolha um dos próximos horários" in r.get_data(as_text=True))
 
@@ -1444,7 +1444,7 @@ r = client.post(
 checar("Resultado do exame enviado com sucesso", "sucesso" in r.get_data(as_text=True).lower())
 client.get("/logout")
 
-login_paciente("(27) 99999-0000", "1985-04-12")
+login_paciente("123.456.789-00", "1985-04-12")
 r = client.get(f"/paciente/exame/{agendamento_colono_id}/resultado")
 checar("Paciente consegue baixar o resultado do exame anexado", r.status_code == 200 and r.mimetype == "application/pdf")
 client.get("/logout")

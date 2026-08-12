@@ -51,7 +51,7 @@ with app.app_context():
     db.session.commit()
     e2_id, e3_id = e2.id, e3.id
 
-client.post("/login-paciente", data={"telefone": "(27) 93333-0001", "data_nascimento": "03/03/1990"}, follow_redirects=True)
+client.post("/login-paciente", data={"cpf": "505.606.707-08", "data_nascimento": "03/03/1990"}, follow_redirects=True)
 
 # ---------- (1) Dropdown de exames: só nomes, sem local, sem repetição ----------
 
