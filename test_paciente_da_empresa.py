@@ -128,8 +128,12 @@ checar("Paciente da empresa loga normalmente (telefone + nascimento)", r.status_
 r = client.get("/paciente/agendar")
 html_agendar = r.get_data(as_text=True)
 checar("Pedido de agendamento lista exames das DUAS filiais", "Consulta no Centro" in html_agendar and "Consulta na Praia" in html_agendar)
-checar("As opções mostram o nome da filial junto (escolha da filial de destino)",
-       "Grupo Saúde Total - Centro" in html_agendar or "Grupo Saúde Total - Praia" in html_agendar)
+# O fluxo agora é em etapas: escolhe o EXAME (só nome) e depois o LOCAL -
+# a filial aparece no dropdown de local depois da escolha do exame (ver
+# test_agendamento_paciente_exame_local.py para o fluxo completo).
+r = client.get("/paciente/agendar?exame_nome=Consulta na Praia")
+checar("Escolhido o exame, o local em que ele é feito aparece",
+       "Grupo Saúde Total - Praia" in r.get_data(as_text=True))
 
 # Compatibilidade: paciente antigo (só com a filial legada) continua funcionando.
 client.get("/logout")

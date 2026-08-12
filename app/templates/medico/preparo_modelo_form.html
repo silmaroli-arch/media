@@ -41,11 +41,20 @@
     {# Modelo de preparo é genérico - vale para qualquer local de atendimento
        da empresa, por isso não pede (nem mostra) filial aqui. #}
 
+    {# O NOME fica acima das abas - é a identidade do modelo, visível o
+       tempo todo, independente da aba aberta. #}
+    <div class="mb-3">
+      <label class="form-label">Nome do modelo</label>
+      <input type="text" name="nome" class="form-control" required
+             value="{{ modelo.nome if modelo else ((sugestao.nome_sugerido if sugestao else '') or '') }}">
+      <div class="form-text">Ex.: "Colonoscopia com Picoprep e Manitol (Manhã)", "Teste de Hidrogênio Expirado".</div>
+    </div>
+
     {# Abas: um tópico por aba, pra facilitar o preenchimento. Todas as
        abas ficam no MESMO <form> - trocar de aba não perde nada, e o
        Salvar envia tudo junto. #}
     <ul class="nav nav-tabs mb-3" role="tablist">
-      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#aba-geral" type="button">Dados gerais</button></li>
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#aba-geral" type="button">Instruções gerais</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#aba-cortes" type="button">Cortes de alimentação</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#aba-medicamentos" type="button">Medicamentos</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#aba-infos" type="button">Informações gerais</button></li>
@@ -55,13 +64,6 @@
 
     <div class="tab-content">
     <div class="tab-pane fade show active" id="aba-geral">
-    <div class="mb-3">
-      <label class="form-label">Nome do modelo</label>
-      <input type="text" name="nome" class="form-control" required
-             value="{{ modelo.nome if modelo else ((sugestao.nome_sugerido if sugestao else '') or '') }}">
-      <div class="form-text">Ex.: "Colonoscopia com Picoprep e Manitol (Manhã)", "Teste de Hidrogênio Expirado".</div>
-    </div>
-
     <div class="mb-3">
       <label class="form-label">Instruções gerais (visíveis ao paciente)</label>
       <textarea name="instrucoes" class="form-control" rows="10" required>{{ modelo.instrucoes if modelo else ((sugestao.instrucoes if sugestao else '') or '') }}</textarea>

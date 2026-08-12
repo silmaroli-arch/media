@@ -310,13 +310,34 @@ def solicitar_agendamento():
             "warning",
         )
         return redirect(url_for("paciente.dashboard"))
-    # Exames de TODAS as filiais da empresa - é escolhendo o exame que o
-    # paciente escolhe também a filial de destino da consulta (cada exame
-    # pertence a uma filial; o template mostra o nome da filial junto).
+    # Fluxo em etapas: o paciente escolhe primeiro O EXAME (só o nome,
+    # sem local concatenado), depois EM QUAL LOCAL quer fazê-lo (só os
+    # locais que oferecem aquele exame aparecem), e aí vê o endereço do
+    # local, os médicos e os horários. Se o exame só é feito num local, o
+    # local é selecionado direto.
     exames = _exames_da_empresa(paciente)
+    nomes_exames = sorted({e.nome for e in exames}, key=str.lower)
 
     exame_id = request.form.get("exame_id", type=int) or request.args.get("exame_id", type=int)
     exame_selecionado = next((e for e in exames if e.id == exame_id), None) if exame_id else None
+
+    exame_nome = (
+        (request.form.get("exame_nome") or request.args.get("exame_nome") or "").strip()
+        or (exame_selecionado.nome if exame_selecionado else "")
+    )
+    if exame_nome not in nomes_exames:
+        exame_nome = ""
+
+    # Locais em que ESTE exame é oferecido (uma associação por local).
+    opcoes_locais = [e for e in exames if e.nome == exame_nome] if exame_nome else []
+
+    # Trocou o exame no primeiro dropdown? A escolha antiga de local não
+    # vale mais.
+    if exame_selecionado and exame_selecionado.nome != exame_nome:
+        exame_selecionado = None
+    # Um local só oferece o exame -> seleciona direto, sem pedir mais um clique.
+    if not exame_selecionado and len(opcoes_locais) == 1:
+        exame_selecionado = opcoes_locais[0]
 
     medicos_disponiveis = []
     medico_selecionado = None
@@ -374,6 +395,9 @@ def solicitar_agendamento():
     return render_template(
         "paciente/solicitar_agendamento.html",
         exames=exames,
+        nomes_exames=nomes_exames,
+        exame_nome=exame_nome,
+        opcoes_locais=opcoes_locais,
         medicos_disponiveis=medicos_disponiveis,
         medico_selecionado=medico_selecionado,
         exame_selecionado=exame_selecionado,

@@ -5,21 +5,33 @@
 
 <div class="card p-4">
   <form method="get" class="row g-3 mb-3">
-    <div class="col-md-8">
+    {# Fluxo em etapas: (1) qual EXAME (só o nome, sem local) ->
+       (2) em qual LOCAL ele é feito (só os locais que oferecem o exame) ->
+       endereço do local + médico + horários. #}
+    <div class="col-md-5">
       <label class="form-label">Exame</label>
-      {# Cada exame pertence a uma filial — escolhendo o exame, o paciente
-         escolhe também a filial de destino da consulta. Quando a empresa
-         tem mais de uma filial, o nome dela aparece junto na opção. #}
-      {% set varias_filiais = exames|map(attribute='clinica_id')|unique|list|length > 1 %}
-      <select name="exame_id" class="form-select" onchange="this.form.submit()">
+      <select name="exame_nome" class="form-select" onchange="this.form.submit()">
         <option value="">Selecione um exame...</option>
-        {% for e in exames %}
-        <option value="{{ e.id }}" {% if exame_selecionado and exame_selecionado.id == e.id %}selected{% endif %}>{{ e.nome }}{% if varias_filiais %} — {{ e.clinica.nome }}{% endif %}</option>
+        {% for nome in nomes_exames %}
+        <option value="{{ nome }}" {% if nome == exame_nome %}selected{% endif %}>{{ nome }}</option>
         {% endfor %}
       </select>
     </div>
-    {% if exame_selecionado and medicos_disponiveis|length > 1 %}
+    {% if exame_nome %}
     <div class="col-md-4">
+      <label class="form-label">Local</label>
+      <select name="exame_id" class="form-select" onchange="this.form.submit()">
+        {% if opcoes_locais|length > 1 and not exame_selecionado %}
+        <option value="" selected>Onde você quer fazer?</option>
+        {% endif %}
+        {% for e in opcoes_locais %}
+        <option value="{{ e.id }}" {% if exame_selecionado and exame_selecionado.id == e.id %}selected{% endif %}>{{ e.clinica.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    {% if exame_selecionado and medicos_disponiveis|length > 1 %}
+    <div class="col-md-3">
       <label class="form-label">Médico</label>
       <select name="medico_id" class="form-select" onchange="this.form.submit()">
         {% for m in medicos_disponiveis %}
@@ -70,8 +82,10 @@
       médico pode não estar cadastrado ainda. Entre em contato diretamente com a clínica para agendar.
     </div>
     {% endif %}
+  {% elif exame_nome %}
+  <p class="text-muted">Agora escolha em qual local você quer fazer o exame.</p>
   {% else %}
-  <p class="text-muted">Escolha um exame acima para ver os horários disponíveis.</p>
+  <p class="text-muted">Escolha um exame acima para ver os locais e horários disponíveis.</p>
   {% endif %}
 </div>
 
