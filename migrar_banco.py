@@ -239,6 +239,22 @@ UPDATE usuarios SET tipo = 'secretaria' WHERE tipo = 'configurador';
 -- válidos como fallback em links antigos.
 ALTER TABLE empresas ADD COLUMN IF NOT EXISTS codigo_cadastro_paciente VARCHAR(20);
 UPDATE empresas SET codigo_cadastro_paciente = (SELECT c.codigo_cadastro_paciente FROM clinicas c WHERE c.empresa_id = empresas.id AND c.codigo_cadastro_paciente IS NOT NULL ORDER BY c.id LIMIT 1) WHERE codigo_cadastro_paciente IS NULL;
+
+-- Código mestre do médico (identidade portátil dele na plataforma) e os
+-- convites de vínculo por código - ver Usuario.codigo_mestre e
+-- ConviteVinculo em app/models.py. A coluna nasce vazia e o preenchimento
+-- para médicos existentes é feito mais abaixo (na parte em Python) porque
+-- a geração do código usa aleatoriedade e checagem de unicidade.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_mestre VARCHAR(20);
+CREATE TABLE IF NOT EXISTS convites_vinculo (
+    id SERIAL PRIMARY KEY,
+    clinica_id INTEGER NOT NULL REFERENCES clinicas(id),
+    medico_id INTEGER NOT NULL REFERENCES usuarios(id),
+    criado_por_id INTEGER REFERENCES usuarios(id),
+    status VARCHAR(20) NOT NULL DEFAULT 'pendente',
+    criado_em TIMESTAMP,
+    decidido_em TIMESTAMP
+);
 """
 
 # Trilha de auditoria de acesso ao prontuario (ver LogAcessoProntuario em
@@ -333,6 +349,37 @@ else:
 conn.execute(
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_empresas_codigo_cadastro "
     "ON empresas (codigo_cadastro_paciente)"
+)
+
+# Código mestre para os médicos que já existiam antes da coluna (ver
+# Usuario.codigo_mestre em app/models.py): gera um código único por médico,
+# no mesmo formato usado pela aplicação (MED- + 5 caracteres de um alfabeto
+# sem ambiguidade 0/O, 1/I/L). Idempotente: só preenche quem está sem.
+import secrets as _secrets
+
+_ALFABETO_CODIGO = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+medicos_sem_codigo = conn.execute(
+    "SELECT id FROM usuarios WHERE tipo = 'medico' AND codigo_mestre IS NULL"
+).fetchall()
+for (medico_id,) in medicos_sem_codigo:
+    for _ in range(20):
+        codigo = "MED-" + "".join(_secrets.choice(_ALFABETO_CODIGO) for _ in range(5))
+        existe = conn.execute(
+            "SELECT 1 FROM usuarios WHERE codigo_mestre = %s", (codigo,)
+        ).fetchone()
+        if not existe:
+            conn.execute(
+                "UPDATE usuarios SET codigo_mestre = %s WHERE id = %s", (codigo, medico_id)
+            )
+            break
+if medicos_sem_codigo:
+    print(f"Código mestre gerado para {len(medicos_sem_codigo)} médico(s) existente(s).")
+
+# Unicidade do código mestre (bases novas ganham pelo unique=True do
+# modelo - aqui é para as bases que só ganharam a coluna via ALTER acima).
+conn.execute(
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_codigo_mestre "
+    "ON usuarios (codigo_mestre)"
 )
 
 print("Migração aplicada com sucesso!")

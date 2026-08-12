@@ -56,6 +56,71 @@
   </div>
 </div>
 
+{% if current_user.tipo == "medico" and convites_pendentes %}
+<div class="card p-3 mb-4 border-warning">
+  <h6 class="mb-1"><i class="bi bi-envelope-exclamation me-1"></i>Convites para atender em novas clínicas</h6>
+  <p class="text-muted small mb-2">
+    Estas clínicas usaram o seu código de médico para te convidar. O vínculo (e a gestão da sua
+    agenda pela equipe delas) só começa se você aceitar.
+  </p>
+  {% for convite in convites_pendentes %}
+  <div class="d-flex justify-content-between align-items-center border rounded p-2 mb-2">
+    <div>
+      <strong>{{ convite.clinica.nome }}</strong>
+      <span class="text-muted small">— convite de {{ convite.criado_em.strftime('%d/%m/%Y') }}</span>
+    </div>
+    <div class="d-flex gap-2">
+      <form method="post" action="{{ url_for('medico.convite_decidir', convite_id=convite.id) }}">
+        <input type="hidden" name="acao" value="aceitar">
+        <button type="submit" class="btn btn-sm btn-success">Aceitar</button>
+      </form>
+      <form method="post" action="{{ url_for('medico.convite_decidir', convite_id=convite.id) }}"
+            onsubmit="return confirm('Recusar o convite de {{ convite.clinica.nome }}?');">
+        <input type="hidden" name="acao" value="recusar">
+        <button type="submit" class="btn btn-sm btn-outline-danger">Recusar</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if current_user.tipo == "medico" and current_user.codigo_mestre %}
+<div class="card p-3 mb-4">
+  <h6 class="mb-1">Meu código de médico</h6>
+  <p class="text-muted small mb-2">
+    Este código é a sua identidade na plataforma. Informe-o a uma clínica para que ela te convide
+    a atender lá — o vínculo só acontece depois que você aceitar o convite aqui no painel, e se
+    você deixar de atender em algum local, seu histórico e sua conta continuam sendo seus.
+    O código não é senha: sozinho, ele não dá acesso a nada.
+  </p>
+  <div class="input-group mb-2" style="max-width: 320px;">
+    <input type="text" class="form-control fw-bold" id="codigo-mestre-medico" readonly
+           value="{{ current_user.codigo_mestre }}">
+    <button class="btn btn-outline-secondary" type="button" onclick="copiarCodigoMestre(this)">Copiar</button>
+  </div>
+  <form method="post" action="{{ url_for('medico.medico_codigo_regenerar') }}"
+        onsubmit="return confirm('Gerar um novo código? O código atual deixa de valer para novos convites.');">
+    <button type="submit" class="btn btn-sm btn-outline-danger">Gerar novo código</button>
+  </form>
+</div>
+<script>
+  function copiarCodigoMestre(botao) {
+    var campo = document.getElementById('codigo-mestre-medico');
+    campo.select();
+    campo.setSelectionRange(0, 99999);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    if (!ok && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(campo.value);
+      ok = true;
+    }
+    botao.innerHTML = ok ? 'Copiado!' : 'Selecionado — use Ctrl+C';
+    setTimeout(function () { botao.innerHTML = 'Copiar'; }, 2000);
+  }
+</script>
+{% endif %}
+
 <div class="card p-3 mb-4">
   <h6 class="mb-1">Cadastro de pacientes pelo app</h6>
   <p class="text-muted small mb-2">

@@ -5,7 +5,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone
+from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -243,6 +243,10 @@ def cadastro():
 
         usuario = Usuario(nome=nome, email=email, tipo=papel)
         usuario.set_senha(senha)
+        if papel == "medico":
+            # Todo médico nasce com seu código mestre (ver
+            # Usuario.codigo_mestre em app/models.py).
+            usuario.codigo_mestre = gerar_codigo_mestre_medico()
         # Quem cria a empresa é a administradora inicial — recebe todas as
         # permissões administrativas independentemente de ser médico(a) ou
         # secretário(a), já que a clínica pode não ter uma secretária. Isso

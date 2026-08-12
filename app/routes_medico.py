@@ -21,6 +21,7 @@ from app.models import (
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, DescontoConfig, Pagamento, EvolucaoClinica,
+    ConviteVinculo, gerar_codigo_mestre_medico,
 )
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
@@ -424,6 +425,21 @@ def dashboard():
         empresa.codigo_cadastro_paciente = _gerar_codigo_cadastro_paciente()
         db.session.commit()
 
+    # Código mestre do médico (ver Usuario.codigo_mestre): contas de médico
+    # criadas antes do código ganham um na primeira visita ao painel.
+    convites_pendentes = []
+    if eh_medico():
+        if not current_user.codigo_mestre:
+            current_user.codigo_mestre = gerar_codigo_mestre_medico()
+            db.session.commit()
+        # Convites de clínicas querendo vincular este médico - ele decide
+        # aqui no painel (aceitar cria o vínculo, ver convite_decidir).
+        convites_pendentes = (
+            ConviteVinculo.query.filter_by(medico_id=current_user.id, status="pendente")
+            .order_by(ConviteVinculo.criado_em.asc())
+            .all()
+        )
+
     proximos = (
         agendamentos_q.filter(Agendamento.data_hora >= datetime.utcnow())
         .order_by(Agendamento.data_hora.asc())
@@ -445,6 +461,7 @@ def dashboard():
         pendentes=pendentes,
         solicitacoes_pendentes=solicitacoes_pendentes,
         cadastros_pendentes=cadastros_pendentes_count,
+        convites_pendentes=convites_pendentes,
         agendamentos=agendamentos,
         etapas_configuracao_inicial=[e for e in status_configuracao_inicial(_filiais_da_empresa()) if not e["concluida"] and not e.get("opcional")],
     )
@@ -3271,7 +3288,21 @@ def equipe_lista():
         ja_vinculadas_ids = {v.clinica_id for v in pessoa["vinculos"]}
         pessoa["filiais_disponiveis"] = [f for f in filiais if f.id not in ja_vinculadas_ids]
 
-    return render_template("medico/equipe_lista.html", pessoas=pessoas)
+    # Convites de vínculo por código mestre ainda aguardando o médico
+    # decidir (ver equipe_vincular_por_codigo) - mostrados na tela pra
+    # equipe acompanhar (e poder cancelar).
+    convites_enviados = (
+        ConviteVinculo.query.filter(
+            ConviteVinculo.clinica_id.in_(filial_ids), ConviteVinculo.status == "pendente"
+        )
+        .order_by(ConviteVinculo.criado_em.asc())
+        .all()
+    )
+
+    return render_template(
+        "medico/equipe_lista.html", pessoas=pessoas, filiais=filiais,
+        convites_enviados=convites_enviados,
+    )
 
 
 @medico_bp.route("/equipe-membros/novo", methods=["GET", "POST"])
@@ -3351,6 +3382,11 @@ def equipe_novo():
         usuario.perm_equipe = request.form.get("perm_equipe") == "on"
         usuario.perm_filiais = request.form.get("perm_filiais") == "on"
         usuario.perm_dados_clinica = request.form.get("perm_dados_clinica") == "on"
+        if papel == "medico":
+            # Todo médico nasce com seu código mestre (ver
+            # Usuario.codigo_mestre) - identidade portátil dele na
+            # plataforma, usada por outras clínicas pra convidá-lo.
+            usuario.codigo_mestre = gerar_codigo_mestre_medico()
         db.session.add(usuario)
         db.session.flush()
 
@@ -3404,6 +3440,133 @@ def equipe_associar_filial(usuario_id):
     db.session.commit()
     flash(f"{usuario_alvo.nome} foi vinculado(a) à filial '{filial_destino.nome}'.", "success")
     return redirect(url_for("medico.equipe_lista"))
+
+
+# ---------- Vincular médico por código mestre (convite + aceite) ----------
+
+@medico_bp.route("/equipe-membros/vincular-por-codigo", methods=["POST"])
+@login_required
+@staff_required
+@permissao_required("perm_equipe")
+def equipe_vincular_por_codigo():
+    """A clínica digita o código mestre de um médico (ver
+    Usuario.codigo_mestre) para convidá-lo a atender nas filiais marcadas.
+    NÃO vincula na hora: cria um ConviteVinculo pendente por filial, que o
+    médico aceita ou recusa no painel dele (ver convite_decidir) -
+    consentimento nas duas pontas."""
+    empresa = empresa_atual()
+    filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
+
+    codigo = request.form.get("codigo_mestre", "").strip().upper()
+    filial_ids_selecionadas = request.form.getlist("filial_ids", type=int)
+    filiais_selecionadas = [f for f in filiais if f.id in filial_ids_selecionadas]
+
+    if not codigo:
+        flash("Digite o código do médico (ex.: MED-7K2F9).", "danger")
+        return redirect(url_for("medico.equipe_lista"))
+    if not filiais_selecionadas:
+        flash("Marque em qual(is) filial(is) o médico vai atender.", "danger")
+        return redirect(url_for("medico.equipe_lista"))
+
+    medico = Usuario.query.filter_by(codigo_mestre=codigo, tipo="medico").first()
+    if not medico or not medico.ativo:
+        flash("Nenhum médico encontrado com esse código. Confira com ele o código atual (ele pode ter regenerado).", "danger")
+        return redirect(url_for("medico.equipe_lista"))
+
+    convidadas, ja_vinculadas, ja_convidadas = [], [], []
+    for f in filiais_selecionadas:
+        vinculo = ClinicaMembro.query.filter_by(clinica_id=f.id, usuario_id=medico.id).first()
+        if vinculo and vinculo.ativo:
+            ja_vinculadas.append(f.nome)
+            continue
+        if ConviteVinculo.query.filter_by(clinica_id=f.id, medico_id=medico.id, status="pendente").first():
+            ja_convidadas.append(f.nome)
+            continue
+        db.session.add(ConviteVinculo(
+            clinica_id=f.id, medico_id=medico.id, criado_por_id=current_user.id,
+        ))
+        convidadas.append(f.nome)
+    db.session.commit()
+
+    if convidadas:
+        flash(
+            f"Convite enviado para {medico.nome} atender em: {', '.join(convidadas)}. "
+            "O vínculo só vale depois que o médico aceitar no painel dele.",
+            "success",
+        )
+    if ja_vinculadas:
+        flash(f"{medico.nome} já atende em: {', '.join(ja_vinculadas)}.", "warning")
+    if ja_convidadas:
+        flash(f"Já existe convite pendente para: {', '.join(ja_convidadas)}.", "warning")
+    return redirect(url_for("medico.equipe_lista"))
+
+
+@medico_bp.route("/equipe-membros/convites/<int:convite_id>/cancelar", methods=["POST"])
+@login_required
+@staff_required
+@permissao_required("perm_equipe")
+def equipe_convite_cancelar(convite_id):
+    """A clínica desiste de um convite que o médico ainda não decidiu. O
+    convite não é apagado (fica como histórico), só marcado 'cancelado'."""
+    convite = ConviteVinculo.query.filter(
+        ConviteVinculo.id == convite_id,
+        ConviteVinculo.clinica_id.in_([f.id for f in _filiais_da_empresa()]),
+        ConviteVinculo.status == "pendente",
+    ).first_or_404()
+    convite.status = "cancelado"
+    convite.decidido_em = datetime.utcnow()
+    db.session.commit()
+    flash(f"Convite para {convite.medico.nome} cancelado.", "success")
+    return redirect(url_for("medico.equipe_lista"))
+
+
+@medico_bp.route("/convites/<int:convite_id>/decidir", methods=["POST"])
+@login_required
+@staff_required
+def convite_decidir(convite_id):
+    """O MÉDICO aceita ou recusa um convite de vínculo endereçado a ele
+    (mostrado no painel). Aceitar cria o ClinicaMembro (ou reativa um
+    vínculo antigo encerrado) - é aqui, e só aqui, que o vínculo nasce."""
+    convite = ConviteVinculo.query.filter_by(
+        id=convite_id, medico_id=current_user.id, status="pendente"
+    ).first_or_404()
+    acao = request.form.get("acao")
+    convite.decidido_em = datetime.utcnow()
+    if acao == "recusar":
+        convite.status = "recusado"
+        db.session.commit()
+        flash(f"Convite de '{convite.clinica.nome}' recusado.", "success")
+        return redirect(url_for("medico.dashboard"))
+
+    convite.status = "aceito"
+    vinculo = ClinicaMembro.query.filter_by(
+        clinica_id=convite.clinica_id, usuario_id=current_user.id
+    ).first()
+    if vinculo:
+        vinculo.ativo = True  # revinculação: reativa o histórico, não duplica
+    else:
+        db.session.add(ClinicaMembro(
+            clinica_id=convite.clinica_id, usuario_id=current_user.id, ativo=True,
+        ))
+    db.session.commit()
+    flash(f"Você agora atende em '{convite.clinica.nome}'.", "success")
+    return redirect(url_for("medico.dashboard"))
+
+
+@medico_bp.route("/meu-codigo/regenerar", methods=["POST"])
+@login_required
+@staff_required
+def medico_codigo_regenerar():
+    """O médico troca o próprio código mestre (ex.: se vazou). Convites já
+    criados não mudam - só os usos futuros do código antigo param de
+    funcionar."""
+    if not eh_medico():
+        flash("Só contas de médico têm código mestre.", "danger")
+        return redirect(url_for("medico.dashboard"))
+    current_user.codigo_mestre = gerar_codigo_mestre_medico()
+    db.session.commit()
+    flash(f"Novo código gerado: {current_user.codigo_mestre}. O código antigo deixou de valer.", "success")
+    return redirect(url_for("medico.dashboard"))
 
 
 @medico_bp.route("/equipe-membros/<int:usuario_id>/editar", methods=["GET", "POST"])

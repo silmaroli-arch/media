@@ -1,4 +1,5 @@
 import re
+import secrets
 from datetime import datetime, date, timedelta
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -289,6 +290,18 @@ class Usuario(db.Model, UserMixin):
     ativo = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Código mestre do MÉDICO (ex.: "MED-7K2F9") - identidade portátil do
+    # médico na plataforma: a clínica que quiser contar com ele digita
+    # este código em "Vincular médico por código" (tela Equipe), o que cria
+    # um CONVITE (ver ConviteVinculo) que o médico aceita ou recusa no
+    # próprio painel. O código NÃO é senha: sozinho ele não dá acesso a
+    # nada - todo vínculo passa pelo aceite do médico. Só faz sentido para
+    # tipo == 'medico'; gerado na criação da conta (e, para contas antigas,
+    # na primeira visita ao painel ou pela migração). O médico pode
+    # regenerar o código quando quiser (ex.: se vazou) - convites já
+    # criados não são afetados, só os futuros usos do código antigo.
+    codigo_mestre = db.Column(db.String(20), unique=True, nullable=True)
+
     # Empresa que esta pessoa CRIOU no cadastro público (auth.cadastro,
     # modo "empresa"), usado só como âncora ANTES de ela ter qualquer
     # filial/ClinicaMembro - o cadastro público não cria mais a primeira
@@ -382,6 +395,50 @@ class Usuario(db.Model, UserMixin):
             v.clinica for v in self.vinculos_clinica
             if v.ativo and not v.clinica.bloqueada
         ]
+
+
+def gerar_codigo_mestre_medico():
+    """Gera um código mestre único para um médico (ver
+    Usuario.codigo_mestre). Formato "MED-XXXXX" com um alfabeto sem
+    caracteres ambíguos (sem 0/O, 1/I/L) - é um código pra ser DITADO por
+    telefone ou digitado da recepção, então precisa ser curto e à prova de
+    confusão visual."""
+    alfabeto = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+    for _ in range(20):
+        codigo = "MED-" + "".join(secrets.choice(alfabeto) for _ in range(5))
+        if not Usuario.query.filter_by(codigo_mestre=codigo).first():
+            return codigo
+    # Espaço de ~28 milhões de códigos - na prática nunca chega aqui; o
+    # fallback só garante que a função sempre devolve algo único.
+    return "MED-" + secrets.token_hex(5).upper()
+
+
+class ConviteVinculo(db.Model):
+    """Convite de uma CLÍNICA (filial) para um MÉDICO passar a atender lá,
+    criado quando a equipe digita o código mestre do médico (ver
+    Usuario.codigo_mestre) em "Vincular médico por código". O vínculo
+    (ClinicaMembro) só nasce quando o MÉDICO aceita o convite no painel
+    dele - consentimento nas duas pontas: saber o código de alguém não
+    basta pra vinculá-lo (e pra clínica ter a agenda dele gerida pelas
+    secretárias) sem que ele concorde."""
+    __tablename__ = "convites_vinculo"
+
+    id = db.Column(db.Integer, primary_key=True)
+    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
+    medico_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    # Quem criou o convite (alguém da equipe com perm_equipe) - fica no
+    # histórico pra auditoria ("quem convidou o Dr. Bruno?").
+    criado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
+    # status: 'pendente' (aguardando o médico), 'aceito', 'recusado',
+    # 'cancelado' (a clínica desistiu antes do médico decidir). Convites
+    # nunca são apagados - são o histórico de como cada vínculo nasceu.
+    status = db.Column(db.String(20), nullable=False, default="pendente")
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    decidido_em = db.Column(db.DateTime, nullable=True)
+
+    clinica = db.relationship("Clinica", foreign_keys=[clinica_id])
+    medico = db.relationship("Usuario", foreign_keys=[medico_id])
+    criado_por = db.relationship("Usuario", foreign_keys=[criado_por_id])
 
 
 class Paciente(db.Model):
