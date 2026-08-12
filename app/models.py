@@ -484,6 +484,16 @@ class Exame(db.Model):
     # próprio formulário - só o cadastro genérico atual (exames_novo)
     # passa medico_confirmado=False explicitamente, de propósito.
     medico_confirmado = db.Column(db.Boolean, nullable=False, default=True)
+
+    # CADASTRAR um exame não cria associação nenhuma - o cadastro genérico
+    # (medico.exames_novo) cria o exame como item de CATÁLOGO
+    # (associado=False): ele não aparece na tela de associações, não entra
+    # na agenda nem no pedido de agendamento do paciente. A associação de
+    # verdade (exame + filial + médico + preço) só nasce na tela "Associar
+    # exames" (medico.exames_por_filial_associar), que vira este flag pra
+    # True. O default é True porque os registros já existentes (e os
+    # criados pela própria tela de associação) SÃO associações reais.
+    associado = db.Column(db.Boolean, nullable=False, default=True)
     nome = db.Column(db.String(150), nullable=False)
     descricao = db.Column(db.Text)
 

@@ -1,21 +1,16 @@
-"""Testa a correção do bug relatado: exames cadastrados pelo formulário
-genérico (medico.exames_novo) mostravam, na tela "Exames por filial", o
-médico técnico/provisório (quem cadastrou, ou o primeiro médico da
-empresa) como se já fosse o responsável CONFIRMADO - com o mesmo selo
-verde de "associação já feita" usado para associações de verdade. O
-usuário reportou: "Cadastrei 3 exames e o médico que cadastrou na
-plataforma ainda é dado como se fizesse o exame".
+"""Testa a evolução do caso "Cadastrei 3 exames e o médico que cadastrou
+na plataforma ainda é dado como se fizesse o exame":
 
-Agora um exame recém-criado pelo cadastro genérico nasce com
-medico_confirmado=False, e a tela mostra um aviso amarelo em vez do selo
-verde, deixando claro que é só um valor provisório - até alguém escolher
-(ou confirmar) o médico de propósito em "Exames por filial", que marca
-medico_confirmado=True.
+1) Hoje, cadastrar um exame NÃO cria associação nenhuma (nasce só como
+   item de catálogo, associado=False) - então o exame recém-cadastrado nem
+   aparece na tela "Associar exames", e nenhum médico é mostrado como
+   responsável por ele em lugar nenhum.
 
-Usa a Clínica Vitória (uma filial só - a grade "Exame × Médico" é a única
-disponível/relevante nesse caso, exatamente o cenário do usuário) para o
-aviso na grade de médico, e o Grupo Saúde Total (duas filiais) pra também
-confirmar o mesmo aviso (em vez do selo verde) na grade "Exame × Filial"."""
+2) Para dados LEGADOS (associações criadas antes dessa mudança, quando o
+   cadastro genérico preenchia um médico técnico/provisório), o aviso
+   amarelo de "não confirmado" continua aparecendo na linha da associação
+   até alguém escolher e salvar o médico pelo Editar - que é o que marca
+   medico_confirmado=True."""
 from app import create_app
 from app.extensions import db
 from app.models import Usuario, Clinica, Exame, PreparoModelo
@@ -34,8 +29,6 @@ def login(email, senha):
     return client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
 
 
-# ---------- Lista de associações (Clínica Vitória, uma filial só) ----------
-
 login("secretaria@clinicavitoria.com", "123456")
 
 with app.app_context():
@@ -43,7 +36,8 @@ with app.app_context():
     modelo_id = PreparoModelo.query.filter_by(clinica_id=clinica_vitoria_id).first().id
     dr_carlos = Usuario.query.filter_by(email="medico@clinicavitoria.com").first()
     dr_carlos_id = dr_carlos.id
-    dr_carlos_nome = dr_carlos.nome
+
+# ---------- (1) Cadastro genérico: nenhum médico "assumido" em lugar nenhum ----------
 
 r = client.post("/equipe/exames/novo", data={
     "nome": "Endoscopia Digestiva Alta", "descricao": "Endoscopia", "duracao_minutos": "30",
@@ -55,55 +49,44 @@ with app.app_context():
     exame = Exame.query.filter_by(nome="Endoscopia Digestiva Alta").first()
     exame_id = exame.id
     checar("Exame nasce com medico_confirmado=False (valor só provisório)", exame.medico_confirmado is False)
+    checar("Exame nasce como catálogo, SEM associação (associado=False)", exame.associado is False)
 
 r2 = client.get("/equipe/exames/por-filial")
 html2 = r2.get_data(as_text=True)
-checar("Mostra o exame recém-criado", "Endoscopia Digestiva Alta" in html2)
-# A tela virou um cadastro básico (lista) - o aviso aparece na linha do exame.
-checar("A linha do exame mostra aviso de não confirmado (não trata como já resolvido)",
-       "não confirmado" in html2.rsplit("Endoscopia Digestiva Alta", 1)[1].split("</tr>")[0])
+checar("O exame recém-cadastrado NÃO aparece como associação (nenhum médico é mostrado como responsável)",
+       "<td>Endoscopia Digestiva Alta</td>" not in html2)
+checar("Ele aparece só como opção pra associar no formulário Adicionar",
+       'value="Endoscopia Digestiva Alta"' in html2)
 
-# Confirmando o médico responsável em "Exames por filial" marca medico_confirmado=True.
-r3 = client.post(f"/equipe/exames/por-filial/{exame_id}/atualizar", data={
-    "atualizar_extras": "1", "medico_id": str(dr_carlos_id),
-}, follow_redirects=True)
-checar("Confirmar médico responde 200", r3.status_code == 200)
+# ---------- (2) Associação LEGADA não confirmada: aviso até confirmar ----------
+
 with app.app_context():
-    exame_confirmado = Exame.query.get(exame_id)
-    checar("medico_confirmado agora é True", exame_confirmado.medico_confirmado is True)
+    # Simula um dado legado: associação criada antes da separação
+    # catálogo/associação, com o médico técnico/provisório.
+    exame_legado = Exame.query.get(exame_id)
+    exame_legado.associado = True  # legado: era associação desde o cadastro
+    db.session.commit()
 
-r4 = client.get("/equipe/exames/por-filial")
-html4 = r4.get_data(as_text=True)
+r3 = client.get("/equipe/exames/por-filial")
+html3 = r3.get_data(as_text=True)
+checar("Associação legada aparece na lista", "<td>Endoscopia Digestiva Alta</td>" in html3)
+checar("A linha mostra o aviso de 'não confirmado' (não trata como já resolvido)",
+       "não confirmado" in html3.rsplit("Endoscopia Digestiva Alta", 1)[1].split("</tr>")[0])
+
+# Confirmando o médico pelo Editar marca medico_confirmado=True.
+r4 = client.post(f"/equipe/exames/por-filial/{exame_id}/atualizar", data={
+    "medico_id": str(dr_carlos_id), "preco": "200,00",
+}, follow_redirects=True)
+checar("Confirmar médico responde 200", r4.status_code == 200)
+with app.app_context():
+    checar("medico_confirmado agora é True", Exame.query.get(exame_id).medico_confirmado is True)
+
+r5 = client.get("/equipe/exames/por-filial")
+html5 = r5.get_data(as_text=True)
 checar(
     "Depois de confirmado, NÃO mostra mais o aviso pra este exame",
-    "não confirmado" not in html4.rsplit("Endoscopia Digestiva Alta", 1)[1].split("</tr>")[0],
+    "não confirmado" not in html5.rsplit("Endoscopia Digestiva Alta", 1)[1].split("</tr>")[0],
 )
 
 client.get("/logout")
-
-# ---------- Empresa com duas filiais (Grupo Saúde Total) ----------
-
-login("secretaria@gruposaude.com", "123456")
-with app.app_context():
-    centro_id = Clinica.query.filter_by(nome="Grupo Saúde Total - Centro").first().id
-    modelo_grupo = PreparoModelo(clinica_id=centro_id, nome="Preparo Não Confirmado", instrucoes="Jejum de 8 horas.")
-    db.session.add(modelo_grupo)
-    db.session.commit()
-    modelo_grupo_id = modelo_grupo.id
-
-r5 = client.post("/equipe/exames/novo", data={
-    "nome": "Exame Nao Confirmado Teste", "descricao": "Exame", "duracao_minutos": "20",
-    "preparo_modelo_id": str(modelo_grupo_id),
-}, follow_redirects=True)
-checar("Cadastro genérico no Grupo Saúde Total responde 200", r5.status_code == 200)
-
-r6 = client.get("/equipe/exames/por-filial")
-html6 = r6.get_data(as_text=True)
-checar("Mostra o exame na lista", "Exame Nao Confirmado Teste" in html6)
-checar(
-    "A linha mostra o AVISO de não confirmado pra um exame recém-criado",
-    "não confirmado" in html6.rsplit("Exame Nao Confirmado Teste", 1)[1].split("</tr>")[0],
-)
-
-client.get("/logout")
-print("\nTodos os testes de médico não confirmado em exame recém-criado passaram.")
+print("\nTodos os testes de médico não confirmado passaram.")

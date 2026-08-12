@@ -836,6 +836,10 @@ def exames_novo():
             # "Exames por filial" (ver exames_por_filial_associar /
             # exames_por_filial_atualizar).
             medico_confirmado=False,
+            # Cadastrar exame NÃO cria associação nenhuma: nasce só como
+            # item de catálogo. A associação (exame + filial + médico +
+            # preço) é criada de propósito na tela "Associar exames".
+            associado=False,
         )
         db.session.add(exame)
         db.session.commit()
@@ -924,14 +928,22 @@ def exames_por_filial():
     empresa = empresa_atual()
     filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
 
-    associacoes = (
+    # A lista mostra só ASSOCIAÇÕES de verdade (associado=True) - o
+    # cadastro genérico de exame cria só um item de catálogo
+    # (associado=False), que não aparece aqui até alguém associar.
+    exames_da_empresa = (
         Exame.query.join(Clinica, Exame.clinica_id == Clinica.id)
         .filter(Clinica.empresa_id == empresa.id)
         .all()
     )
-    associacoes = sorted(associacoes, key=lambda e: (e.nome.lower(), (e.clinica.nome or "").lower()))
+    associacoes = sorted(
+        (e for e in exames_da_empresa if e.associado),
+        key=lambda e: (e.nome.lower(), (e.clinica.nome or "").lower()),
+    )
 
-    nomes = sorted({e.nome for e in associacoes})
+    # O dropdown "Exame" do formulário lista TODOS os exames cadastrados
+    # (inclusive os que ainda são só catálogo, sem nenhuma associação).
+    nomes = sorted({e.nome for e in exames_da_empresa})
     medicos_por_filial = {f.id: medicos_da_clinica(f) for f in filiais}
 
     # "Editar" de uma linha reaproveita o mesmo formulário, pré-preenchido
@@ -964,7 +976,8 @@ def exames_por_filial_associar():
         flash("Escolha um exame e uma filial válidos.", "danger")
         return redirect(url_for("medico.exames_por_filial"))
 
-    if Exame.query.filter_by(clinica_id=clinica_destino.id, nome=nome).first():
+    existente = Exame.query.filter_by(clinica_id=clinica_destino.id, nome=nome).first()
+    if existente and existente.associado:
         flash(f"\"{nome}\" já está associado à filial {clinica_destino.nome}.", "warning")
         return redirect(url_for("medico.exames_por_filial"))
 
@@ -996,6 +1009,21 @@ def exames_por_filial_associar():
         flash("Informe o preço deste exame nessa filial.", "danger")
         return redirect(url_for("medico.exames_por_filial"))
 
+    if existente:
+        # O exame já existia nessa filial como item de CATÁLOGO (cadastro
+        # genérico, sem associação) - a associação promove esse mesmo
+        # registro em vez de criar outro.
+        existente.medico_id = medico_id
+        existente.preco = preco
+        existente.medico_confirmado = True
+        existente.associado = True
+        db.session.commit()
+        flash(
+            f"\"{nome}\" associado à filial {clinica_destino.nome} com {existente.medico.nome} como responsável.",
+            "success",
+        )
+        return redirect(url_for("medico.exames_por_filial"))
+
     novo_exame = Exame(
         clinica_id=clinica_destino.id,
         medico_id=medico_id,
@@ -1013,6 +1041,7 @@ def exames_por_filial_associar():
         # como confirmado (diferente do valor técnico/provisório do
         # cadastro genérico do exame, ver exames_novo).
         medico_confirmado=True,
+        associado=True,
     )
     db.session.add(novo_exame)
     db.session.commit()
@@ -1066,7 +1095,8 @@ def exames_por_filial_atualizar(exame_id):
 
         nome_final = nome_novo if mudou_exame else exame.nome
         ja_existe = Exame.query.filter(
-            Exame.clinica_id == filial_destino.id, Exame.nome == nome_final, Exame.id != exame.id
+            Exame.clinica_id == filial_destino.id, Exame.nome == nome_final,
+            Exame.id != exame.id, Exame.associado.is_(True),
         ).first()
         if ja_existe:
             flash(f"\"{nome_final}\" já está associado à filial {filial_destino.nome}.", "warning")
@@ -1640,7 +1670,9 @@ def agenda_novo():
         # EMPRESA (qualquer paciente da empresa pode ser agendado em
         # qualquer filial - a filial do atendimento é a deste agendamento).
         paciente = Paciente.query.filter(Paciente.id == paciente_id, _filtro_pacientes_da_empresa()).first()
-        exame_query = Exame.query.filter_by(id=exame_id, clinica_id=filial.id)
+        # Só exame ASSOCIADO à filial pode ser agendado (item de catálogo
+        # sem associação não é ofertado em lugar nenhum).
+        exame_query = Exame.query.filter_by(id=exame_id, clinica_id=filial.id, associado=True)
         if eh_medico():
             exame_query = exame_query.filter(
                 or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -1720,7 +1752,7 @@ def agenda_novo():
     # (a filial vale só para o exame e para onde o atendimento acontece).
     pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).order_by(Paciente.nome).all()
 
-    exames_query = Exame.query.filter_by(clinica_id=filial_selecionada.id)
+    exames_query = Exame.query.filter_by(clinica_id=filial_selecionada.id, associado=True)
     if eh_medico():
         exames_query = exames_query.filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))

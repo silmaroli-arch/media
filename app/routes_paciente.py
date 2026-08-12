@@ -29,7 +29,10 @@ def _exames_da_empresa(paciente):
         return []
     filial_ids = [c.id for c in empresa.filiais]
     return (
-        Exame.query.filter(Exame.clinica_id.in_(filial_ids))
+        # Só exames ASSOCIADOS (exame + filial + médico + preço definidos
+        # na tela "Associar exames") são ofertados ao paciente - item de
+        # catálogo sem associação não aparece.
+        Exame.query.filter(Exame.clinica_id.in_(filial_ids), Exame.associado.is_(True))
         .order_by(Exame.nome)
         .all()
     )

@@ -52,14 +52,19 @@ with app.app_context():
     nome_origem = "Centro" if origem_id == centro_id else "Praia"
     nome_destino = "Praia" if origem_id == centro_id else "Centro"
 
-# Define médico responsável e preço do local de origem pela tela de matriz
-# (mesmo mecanismo usado para atualizar qualquer local já associado).
+# O cadastro genérico criou o exame só como CATÁLOGO (sem associação) -
+# a primeira associação (no local de origem) é feita pela própria tela
+# "Associar exames", que promove esse mesmo registro com médico e preço.
 with app.app_context():
     exame_origem_id = Exame.query.filter_by(nome="Ultrassom Abdominal").first().id
-r0 = client.post(f"/equipe/exames/por-filial/{exame_origem_id}/atualizar", data={
+r0 = client.post("/equipe/exames/por-filial/associar", data={
+    "nome": "Ultrassom Abdominal", "clinica_destino_id": str(origem_id),
     "medico_id": str(medico_id), "preco": "150,00",
 }, follow_redirects=True)
-checar("Definir médico/preço do local de origem responde 200", r0.status_code == 200)
+checar("Associar o exame ao local de origem responde 200", r0.status_code == 200)
+with app.app_context():
+    checar("A associação de origem promoveu o registro do catálogo (sem duplicar)",
+           Exame.query.filter_by(clinica_id=origem_id, nome="Ultrassom Abdominal").count() == 1)
 
 # A tela "Associar exames" (cadastro básico) mostra a lista das
 # associações e o formulário Adicionar com os 4 campos.

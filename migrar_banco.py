@@ -202,6 +202,13 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS empresa_fundadora_id INTEGER REFER
 -- feito explicitamente no código, em exames_novo, não por este default).
 ALTER TABLE exames ADD COLUMN IF NOT EXISTS medico_confirmado BOOLEAN NOT NULL DEFAULT TRUE;
 
+-- Cadastrar exame deixou de criar associação: o cadastro genérico vira só
+-- um item de CATÁLOGO (associado=FALSE, feito no código em exames_novo) e
+-- a associação real nasce na tela "Associar exames". Registros existentes
+-- viram TRUE (eram associações de verdade) - ver Exame.associado em
+-- app/models.py.
+ALTER TABLE exames ADD COLUMN IF NOT EXISTS associado BOOLEAN NOT NULL DEFAULT TRUE;
+
 -- O paciente passou a pertencer à EMPRESA, não a uma filial ("o cliente é
 -- só cliente" - ver Paciente.empresa_id em app/models.py): a filial só é
 -- escolhida na hora de marcar cada consulta (Agendamento.clinica_id).

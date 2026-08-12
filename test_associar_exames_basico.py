@@ -97,7 +97,7 @@ checar("Salvar a edição atualiza a associação", "atualizado na filial" in r.
 with app.app_context():
     checar("Novo preço foi salvo", float(Exame.query.get(exame_praia_id).preco) == 350.0)
 
-# ---------- Aviso de médico não confirmado continua funcionando ----------
+# ---------- Cadastrar exame NÃO cria associação (só catálogo) ----------
 
 r = client.post("/equipe/exames/novo", data={
     "nome": "Exame Generico Basico", "descricao": "", "duracao_minutos": "20",
@@ -105,20 +105,32 @@ r = client.post("/equipe/exames/novo", data={
 }, follow_redirects=True)
 r = client.get("/equipe/exames/por-filial")
 html4 = r.get_data(as_text=True)
-# O nome também aparece no <select> do formulário Adicionar - usa a
-# ÚLTIMA ocorrência (a linha da tabela) pra checar o aviso.
-checar("Exame do cadastro genérico aparece com aviso de 'não confirmado'",
-       "não confirmado" in html4.rsplit("Exame Generico Basico", 1)[1].split("</tr>")[0])
-
 with app.app_context():
     exame_gen = Exame.query.filter_by(nome="Exame Generico Basico").first()
     exame_gen_id = exame_gen.id
-r = client.post(f"/equipe/exames/por-filial/{exame_gen_id}/atualizar", data={
+    checar("Exame genérico nasce como catálogo (associado=False)", exame_gen.associado is False)
+# O nome aparece SÓ no <select> do formulário Adicionar - não como linha
+# da tabela de associações (não há <td> com o nome).
+checar("Exame do cadastro genérico NÃO aparece como associação na lista",
+       "<td>Exame Generico Basico</td>" not in html4)
+checar("Mas o exame aparece como opção no formulário Adicionar",
+       'value="Exame Generico Basico"' in html4)
+
+# Associar o exame genérico a uma filial PROMOVE o mesmo registro (não duplica).
+r = client.post("/equipe/exames/por-filial/associar", data={
+    "nome": "Exame Generico Basico", "clinica_destino_id": str(centro_id),
     "medico_id": str(medico_grupo_id), "preco": "100,00",
 }, follow_redirects=True)
+checar("Associar o exame de catálogo funciona", "associado à filial" in r.get_data(as_text=True))
 with app.app_context():
-    checar("Escolher e salvar o médico pelo Editar confirma a associação",
-           Exame.query.get(exame_gen_id).medico_confirmado is True)
+    checar("O MESMO registro foi promovido a associação (sem duplicar)",
+           Exame.query.filter_by(nome="Exame Generico Basico").count() == 1)
+    exame_gen2 = Exame.query.get(exame_gen_id)
+    checar("Registro promovido: associado=True e médico confirmado",
+           exame_gen2.associado is True and exame_gen2.medico_confirmado is True)
+r = client.get("/equipe/exames/por-filial")
+checar("Agora SIM o exame aparece na lista de associações",
+       "<td>Exame Generico Basico</td>" in r.get_data(as_text=True))
 
 # ---------- Editar TODOS os campos: trocar a filial da associação ----------
 
