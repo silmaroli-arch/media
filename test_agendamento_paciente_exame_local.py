@@ -78,6 +78,9 @@ r = client.get(f"/paciente/agendar?exame_nome=Consulta Geral&exame_id={e2_id}")
 html3 = r.get_data(as_text=True)
 checar("Local escolhido mostra o endereço", "Av. Beira Mar" in html3 and "Praia do Canto" in html3)
 checar("O nome do local aparece no bloco de endereço", "Grupo Saúde Total - Praia" in html3)
+checar("O dropdown de MÉDICO aparece depois de exame+local (mesmo com um médico só)",
+       'name="medico_id"' in html3)
+checar("O médico responsável já vem selecionado no dropdown", "selected" in html3.split('name="medico_id"')[1][:600])
 
 # Exame de UM local só: seleciona o local direto, já mostrando o endereço.
 r = client.get("/paciente/agendar?exame_nome=Ultrassom Exclusivo")
