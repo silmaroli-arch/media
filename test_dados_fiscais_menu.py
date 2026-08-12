@@ -60,8 +60,11 @@ r3 = client.post("/equipe/clinica/dados-fiscais", data={
 }, follow_redirects=True)
 checar("Salvar Dados Fiscais responde 200", r3.status_code == 200)
 html3 = r3.get_data(as_text=True)
-checar("Mensagem de sucesso de Dados Fiscais", "Dados Fiscais atualizados" in html3)
-checar("Inscrição estadual salva aparece na tela", "111.222.333" in html3)
+checar("Mensagem de sucesso de Dados Fiscais", "Dados Fiscais de" in html3 and "atualizados com sucesso" in html3)
+# Salvar agora FECHA a tela (volta pra "Meus locais de atendimento") - pra
+# conferir o valor salvo, reabre a tela de Dados Fiscais.
+html3b = client.get("/equipe/clinica/dados-fiscais").get_data(as_text=True)
+checar("Inscrição estadual salva aparece ao reabrir a tela", "111.222.333" in html3b)
 
 with app.app_context():
     clinica = Clinica.query.filter_by(nome="Clínica Vitória").first()

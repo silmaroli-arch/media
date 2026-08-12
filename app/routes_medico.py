@@ -2743,8 +2743,10 @@ def clinica_configuracoes(filial_id=None):
         clinica.codigo_ibge_municipio = request.form.get("codigo_ibge_municipio", "").strip()
 
         db.session.commit()
-        flash("Dados Cadastrais atualizados com sucesso.", "success")
-        return _destino_pos_onboarding("medico.clinica_configuracoes", filial_id=clinica.id)
+        flash(f"Dados Cadastrais de '{clinica.nome}' atualizados com sucesso.", "success")
+        # Salvou -> FECHA a tela, voltando pra lista de locais (ou pro
+        # assistente, se veio de lá) - em vez de continuar no formulário.
+        return _destino_pos_onboarding("medico.filiais_lista")
 
     return render_template(
         "medico/clinica_configuracoes.html",
@@ -2781,8 +2783,10 @@ def clinica_dados_fiscais(filial_id=None):
         clinica.cnae = request.form.get("cnae", "").strip()
 
         db.session.commit()
-        flash("Dados Fiscais atualizados com sucesso.", "success")
-        return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
+        flash(f"Dados Fiscais de '{clinica.nome}' atualizados com sucesso.", "success")
+        # Mesmo comportamento dos Dados Cadastrais: salvou -> fecha a
+        # tela, voltando pra lista de locais.
+        return _destino_pos_onboarding("medico.filiais_lista")
 
     return render_template(
         "medico/clinica_dados_fiscais.html",

@@ -42,7 +42,7 @@ r1 = client.post("/equipe/clinica/configuracoes", data={
     "cidade": "Vitória", "uf": "ES",
 }, follow_redirects=True)
 checar("Salvar com endereço digitado manualmente responde 200", r1.status_code == 200)
-checar("Mensagem de sucesso aparece", "Dados Cadastrais atualizados com sucesso" in r1.get_data(as_text=True))
+checar("Mensagem de sucesso aparece", "atualizados com sucesso" in r1.get_data(as_text=True))
 with app.app_context():
     clinica = Clinica.query.filter_by(nome="Clínica Vitória").first()
     checar("Rua digitada manualmente foi salva", clinica.rua == "Rua Digitada à Mão")
