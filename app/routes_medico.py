@@ -1918,7 +1918,13 @@ def medico_horarios(medico_id=None):
 
         db.session.commit()
         flash(f"Horário de atendimento de {medico_alvo.nome} em {clinica_alvo.nome} atualizado.", "success")
-        return _destino_pos_onboarding("medico.medico_horarios", medico_id=medico_alvo.id, clinica_id=clinica_alvo.id)
+        # Salvar CONTINUA na tela de horário (mesmo médico/local) - mesmo
+        # quando a pessoa chegou aqui pelo assistente de configuração
+        # inicial. É comum salvar e continuar ajustando (outro local do
+        # mesmo médico, outro médico); o assistente marca a etapa como
+        # concluída sozinho (o status é calculado dos dados reais) e segue
+        # acessível pelo aviso no Painel.
+        return redirect(url_for("medico.medico_horarios", medico_id=medico_alvo.id, clinica_id=clinica_alvo.id))
 
     horarios_por_dia = {
         h.dia_semana: h
