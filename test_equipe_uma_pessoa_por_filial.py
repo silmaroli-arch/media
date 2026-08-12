@@ -92,10 +92,12 @@ with app.app_context():
 r4 = client.post(f"/equipe/equipe-membros/{vinculo_novo_id}/remover", follow_redirects=True)
 checar("Remover o vínculo extra responde 200", r4.status_code == 200)
 with app.app_context():
+    # Remover agora ENCERRA o vínculo (não apaga) - ativo sobra só o
+    # original, e a conta continua intacta.
     checar(
-        "Sobrou só o vínculo original (não removeu a conta nem o outro vínculo)",
-        ClinicaMembro.query.filter_by(usuario_id=medico_id).count() == 1
-        and ClinicaMembro.query.filter_by(usuario_id=medico_id, clinica_id=clinica_vitoria_id).first() is not None,
+        "Sobrou só o vínculo original ativo (não removeu a conta nem o outro vínculo)",
+        ClinicaMembro.query.filter_by(usuario_id=medico_id, ativo=True).count() == 1
+        and ClinicaMembro.query.filter_by(usuario_id=medico_id, clinica_id=clinica_vitoria_id, ativo=True).first() is not None,
     )
     checar("A conta do médico continua existindo normalmente", Usuario.query.get(medico_id) is not None)
 

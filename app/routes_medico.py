@@ -30,7 +30,7 @@ from app.clinica_utils import (
 )
 from app.pdf_preparo import extrair_sugestao_de_pdf
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
-from app.agendamento_otimizador import sugerir_horarios, medico_tem_bloqueio
+from app.agendamento_otimizador import sugerir_horarios, medico_tem_bloqueio, conflito_de_agenda
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
 from app.cripto_clinico import criptografar_bytes as criptografar_bytes_clinico, criptografar_texto as criptografar_texto_clinico
 from app.nfse_nacional import emitir_nfse, reenviar_nfse_pendente, gerar_pdf_contingencia, ErroEmissaoNfse
@@ -101,11 +101,25 @@ def _pessoa_da_empresa(usuario_id, empresa, filial_ids):
     o cadastro público, mesmo antes de (ou sem nunca) se vincular a um
     local de atendimento."""
     if ClinicaMembro.query.filter(
-        ClinicaMembro.usuario_id == usuario_id, ClinicaMembro.clinica_id.in_(filial_ids)
+        ClinicaMembro.usuario_id == usuario_id, ClinicaMembro.clinica_id.in_(filial_ids),
+        ClinicaMembro.ativo.is_(True),
     ).first():
         return True
     u = Usuario.query.get(usuario_id)
     return bool(u and u.empresa_fundadora_id == empresa.id)
+
+
+def _agendamentos_futuros_do_vinculo(clinica_id, usuario_id):
+    """Agendamentos ainda por acontecer deste médico nesta filial - usados
+    como TRAVA antes de encerrar um vínculo: encerrar com consultas
+    marcadas deixaria pacientes com hora marcada e médico que "não existe
+    mais" ali. A equipe cancela/transfere primeiro, depois encerra."""
+    return Agendamento.query.filter(
+        Agendamento.clinica_id == clinica_id,
+        Agendamento.medico_id == usuario_id,
+        Agendamento.data_hora >= datetime.utcnow(),
+        Agendamento.status.in_(("solicitado", "agendado", "confirmado")),
+    ).count()
 
 
 def _filiais_da_empresa():
@@ -1756,6 +1770,23 @@ def agenda_novo():
             )
             return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
 
+        # Choque de horário do médico multi-clínica: se ele já tem um
+        # agendamento nesse intervalo em OUTRO local (mesmo de outra
+        # empresa), não deixa marcar - a agenda do médico é uma só. A
+        # mensagem não expõe dados da outra empresa: só diz que o horário
+        # está tomado em outro local de atuação do médico.
+        conflito = conflito_de_agenda(medico_atende_id, data_hora, exame.duracao_minutos)
+        if conflito and conflito.clinica_id != filial.id:
+            if conflito.clinica.empresa_id == filial.empresa_id:
+                onde = f"na filial '{conflito.clinica.nome}'"
+            else:
+                onde = "em outro local em que ele atende (fora desta empresa)"
+            flash(
+                f"Esse médico já tem um agendamento nesse horário {onde} — escolha outro horário.",
+                "danger",
+            )
+            return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
+
         agendamento = Agendamento(
             clinica_id=filial.id,
             paciente_id=paciente.id,
@@ -1898,6 +1929,28 @@ def agenda_confirmar_solicitacao(agendamento_id):
         agendamento.status = "cancelado"
         flash("Solicitação de agendamento recusada.", "success")
     else:
+        # Antes de confirmar, checa o choque de horário do médico em
+        # QUALQUER local em que ele atenda (a agenda dele é uma só) - a
+        # solicitação pode ter sido feita antes de outro agendamento
+        # ocupar o horário.
+        conflito = conflito_de_agenda(
+            agendamento.medico_id, agendamento.data_hora,
+            agendamento.exame.duracao_minutos if agendamento.exame else None,
+            ignorar_agendamento_id=agendamento.id,
+        )
+        if conflito:
+            if conflito.clinica_id == agendamento.clinica_id:
+                onde = "nesta filial"
+            elif conflito.clinica.empresa_id == agendamento.clinica.empresa_id:
+                onde = f"na filial '{conflito.clinica.nome}'"
+            else:
+                onde = "em outro local em que ele atende (fora desta empresa)"
+            flash(
+                f"O médico já tem um agendamento nesse horário {onde} — combine outro horário "
+                "com o paciente (recuse esta solicitação e crie um novo agendamento).",
+                "danger",
+            )
+            return redirect(url_for("medico.agenda_solicitacoes"))
         agendamento.status = "agendado"
         flash("Agendamento confirmado.", "success")
     db.session.commit()
@@ -1929,7 +1982,10 @@ def medico_horarios(medico_id=None):
     # seu próprio horário independente (ver MedicoHorario.clinica_id).
     locais_do_medico = (
         Clinica.query.join(ClinicaMembro, ClinicaMembro.clinica_id == Clinica.id)
-        .filter(ClinicaMembro.usuario_id == medico_alvo.id, Clinica.empresa_id == empresa.id)
+        .filter(
+            ClinicaMembro.usuario_id == medico_alvo.id, Clinica.empresa_id == empresa.id,
+            ClinicaMembro.ativo.is_(True),
+        )
         .order_by(Clinica.nome)
         .all()
     )
@@ -2043,6 +2099,33 @@ def medico_agenda_pessoal(medico_id=None):
         medicos=(medicos_das_filiais(filiais) if pode_escolher_medico else []),
         proximos=proximos,
     )
+
+
+@medico_bp.route("/minha-agenda-completa")
+@login_required
+@staff_required
+def minha_agenda_completa():
+    """Agenda CONSOLIDADA do médico logado: os agendamentos dele em TODOS
+    os locais em que atende - inclusive filiais de outras empresas. As
+    empresas não se enxergam entre si, mas a agenda do médico é uma só
+    (ver conflito_de_agenda em app/agendamento_otimizador.py): esta tela
+    é a visão dessa agenda única, um dos ganhos do médico multi-clínica
+    por código mestre. Só a própria pessoa logada vê a consolidação - a
+    secretária de cada clínica continua vendo apenas a agenda da clínica
+    dela."""
+    if not eh_medico():
+        flash("Esta tela é a agenda pessoal consolidada de contas de médico.", "danger")
+        return redirect(url_for("medico.dashboard"))
+    agendamentos = (
+        Agendamento.query.filter(
+            Agendamento.medico_id == current_user.id,
+            Agendamento.status.in_(("solicitado", "agendado", "confirmado")),
+            Agendamento.data_hora >= datetime.utcnow() - timedelta(days=1),
+        )
+        .order_by(Agendamento.data_hora.asc())
+        .all()
+    )
+    return render_template("medico/minha_agenda_completa.html", agendamentos=agendamentos)
 
 
 # ---------- Bloqueio de agenda (compromisso próprio do médico) ----------
@@ -3154,11 +3237,15 @@ def filiais_vincular_me(filial_id):
     empresa = empresa_atual()
     filial = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
 
-    if ClinicaMembro.query.filter_by(clinica_id=filial.id, usuario_id=current_user.id).first():
+    vinculo = ClinicaMembro.query.filter_by(clinica_id=filial.id, usuario_id=current_user.id).first()
+    if vinculo and vinculo.ativo:
         flash("Você já está vinculado(a) a este local.", "warning")
         return redirect(url_for("medico.filiais_lista"))
 
-    db.session.add(ClinicaMembro(clinica_id=filial.id, usuario_id=current_user.id, ativo=True))
+    if vinculo:
+        vinculo.reativar()  # já atuou aqui antes: reativa o histórico
+    else:
+        db.session.add(ClinicaMembro(clinica_id=filial.id, usuario_id=current_user.id, ativo=True))
     db.session.commit()
     flash(f"Você agora está vinculado(a) ao local '{filial.nome}'.", "success")
     return redirect(url_for("medico.filiais_lista"))
@@ -3183,12 +3270,14 @@ def filiais_desvincular_me(filial_id):
     empresa = empresa_atual()
     filial = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
 
-    vinculo = ClinicaMembro.query.filter_by(clinica_id=filial.id, usuario_id=current_user.id).first()
+    vinculo = ClinicaMembro.query.filter_by(
+        clinica_id=filial.id, usuario_id=current_user.id, ativo=True
+    ).first()
     if not vinculo:
         flash("Você já não está vinculado(a) a este local.", "warning")
         return redirect(url_for("medico.filiais_lista"))
 
-    total_vinculos = ClinicaMembro.query.filter_by(usuario_id=current_user.id).count()
+    total_vinculos = ClinicaMembro.query.filter_by(usuario_id=current_user.id, ativo=True).count()
     if total_vinculos <= 1 and not getattr(current_user, "empresa_fundadora_id", None):
         flash(
             "Este é seu único vínculo de local — removê-lo deixaria sua conta sem acesso a nenhuma "
@@ -3197,7 +3286,19 @@ def filiais_desvincular_me(filial_id):
         )
         return redirect(url_for("medico.filiais_lista"))
 
-    db.session.delete(vinculo)
+    futuros = _agendamentos_futuros_do_vinculo(filial.id, current_user.id)
+    if futuros:
+        flash(
+            f"Você ainda tem {futuros} agendamento(s) futuro(s) neste local. "
+            "Cancele ou transfira esses agendamentos antes de se desvincular.",
+            "danger",
+        )
+        return redirect(url_for("medico.filiais_lista"))
+
+    # ENCERRA o vínculo (não apaga): o histórico de atuação e os
+    # agendamentos já realizados ali continuam intactos - ver
+    # ClinicaMembro.encerrado_em em app/models.py.
+    vinculo.encerrar()
     db.session.commit()
     flash(f"Pronto — você não está mais marcado(a) como atuando no local '{filial.nome}'.", "success")
     return redirect(url_for("medico.filiais_lista"))
@@ -3260,7 +3361,9 @@ def equipe_lista():
     filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
     filial_ids = [f.id for f in filiais]
     membros = (
-        ClinicaMembro.query.filter(ClinicaMembro.clinica_id.in_(filial_ids))
+        ClinicaMembro.query.filter(
+            ClinicaMembro.clinica_id.in_(filial_ids), ClinicaMembro.ativo.is_(True)
+        )
         .order_by(ClinicaMembro.clinica_id)
         .all()
     )
@@ -3351,16 +3454,24 @@ def equipe_novo():
                 )
                 return render_template("medico/equipe_form.html", filiais=filiais)
 
-            ja_vinculadas_ids = {
-                m.clinica_id for m in ClinicaMembro.query.filter_by(usuario_id=usuario_existente.id).all()
+            vinculos_existentes = {
+                m.clinica_id: m
+                for m in ClinicaMembro.query.filter_by(usuario_id=usuario_existente.id).all()
             }
-            filiais_novas = [f for f in filiais_selecionadas if f.id not in ja_vinculadas_ids]
+            filiais_novas = [
+                f for f in filiais_selecionadas
+                if f.id not in vinculos_existentes or not vinculos_existentes[f.id].ativo
+            ]
             if not filiais_novas:
                 flash("Esse usuário já faz parte de todas as filiais marcadas.", "warning")
                 return _destino_pos_onboarding("medico.equipe_lista")
 
             for f in filiais_novas:
-                db.session.add(ClinicaMembro(clinica_id=f.id, usuario_id=usuario_existente.id, ativo=True))
+                vinculo_antigo = vinculos_existentes.get(f.id)
+                if vinculo_antigo:
+                    vinculo_antigo.reativar()  # já atuou aqui: reativa o histórico
+                else:
+                    db.session.add(ClinicaMembro(clinica_id=f.id, usuario_id=usuario_existente.id, ativo=True))
             db.session.commit()
             nomes_filiais = ", ".join(f.nome for f in filiais_novas)
             flash(f"{usuario_existente.nome} foi vinculado(a) à(s) filial(is) '{nomes_filiais}'.", "success")
@@ -3432,11 +3543,17 @@ def equipe_associar_filial(usuario_id):
         flash("Escolha uma filial válida.", "danger")
         return redirect(url_for("medico.equipe_lista"))
 
-    if ClinicaMembro.query.filter_by(clinica_id=filial_destino.id, usuario_id=usuario_id).first():
+    vinculo_existente = ClinicaMembro.query.filter_by(
+        clinica_id=filial_destino.id, usuario_id=usuario_id
+    ).first()
+    if vinculo_existente and vinculo_existente.ativo:
         flash("Essa pessoa já faz parte dessa filial.", "warning")
         return redirect(url_for("medico.equipe_lista"))
 
-    db.session.add(ClinicaMembro(clinica_id=filial_destino.id, usuario_id=usuario_id, ativo=True))
+    if vinculo_existente:
+        vinculo_existente.reativar()  # já atuou aqui: reativa o histórico
+    else:
+        db.session.add(ClinicaMembro(clinica_id=filial_destino.id, usuario_id=usuario_id, ativo=True))
     db.session.commit()
     flash(f"{usuario_alvo.nome} foi vinculado(a) à filial '{filial_destino.nome}'.", "success")
     return redirect(url_for("medico.equipe_lista"))
@@ -3589,15 +3706,19 @@ def equipe_editar(usuario_id):
     filial_ids = {f.id for f in filiais}
 
     usuario = Usuario.query.filter_by(id=usuario_id).first_or_404()
+    # Traz TODOS os vínculos desta empresa, inclusive os encerrados
+    # (ativo=False) - re-marcar uma filial de onde a pessoa já saiu REATIVA
+    # o vínculo antigo (histórico preservado) em vez de criar outro.
     vinculos_desta_empresa = ClinicaMembro.query.filter(
         ClinicaMembro.usuario_id == usuario_id, ClinicaMembro.clinica_id.in_(filial_ids)
     ).all()
+    vinculos_ativos = [v for v in vinculos_desta_empresa if v.ativo]
     eh_fundador_desta_empresa = usuario.empresa_fundadora_id == empresa.id
-    if not vinculos_desta_empresa and not eh_fundador_desta_empresa:
+    if not vinculos_ativos and not eh_fundador_desta_empresa:
         flash("Pessoa não encontrada na equipe desta empresa.", "danger")
         return redirect(url_for("medico.equipe_lista"))
 
-    filial_ids_atuais = {v.clinica_id for v in vinculos_desta_empresa}
+    filial_ids_atuais = {v.clinica_id for v in vinculos_ativos}
 
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
@@ -3619,14 +3740,38 @@ def equipe_editar(usuario_id):
                 filial_ids_atuais=filial_ids_atuais,
             )
 
+        # Desmarcar uma filial ENCERRA o vínculo (não apaga - ver
+        # ClinicaMembro.encerrado_em); com agendamentos futuros do médico
+        # naquela filial, o encerramento é bloqueado até a equipe
+        # cancelar/transferir as consultas marcadas.
+        for v in vinculos_ativos:
+            if v.clinica_id not in filial_ids_selecionadas:
+                futuros = _agendamentos_futuros_do_vinculo(v.clinica_id, usuario.id)
+                if futuros:
+                    flash(
+                        f"{usuario.nome} ainda tem {futuros} agendamento(s) futuro(s) na filial "
+                        f"'{v.clinica.nome}'. Cancele ou transfira esses agendamentos antes de "
+                        "encerrar a atuação ali.",
+                        "danger",
+                    )
+                    return render_template(
+                        "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
+                        filial_ids_atuais=filial_ids_atuais,
+                    )
+
         usuario.nome = nome
 
+        vinculos_por_filial = {v.clinica_id: v for v in vinculos_desta_empresa}
         for f in filiais:
             if f.id in filial_ids_selecionadas and f.id not in filial_ids_atuais:
-                db.session.add(ClinicaMembro(clinica_id=f.id, usuario_id=usuario.id, ativo=True))
-        for v in vinculos_desta_empresa:
+                vinculo_antigo = vinculos_por_filial.get(f.id)
+                if vinculo_antigo:
+                    vinculo_antigo.reativar()
+                else:
+                    db.session.add(ClinicaMembro(clinica_id=f.id, usuario_id=usuario.id, ativo=True))
+        for v in vinculos_ativos:
             if v.clinica_id not in filial_ids_selecionadas:
-                db.session.delete(v)
+                v.encerrar()
 
         db.session.commit()
         flash(f"Dados de {usuario.nome} atualizados.", "success")
@@ -3673,14 +3818,27 @@ def equipe_remover(membro_id):
     empresa = empresa_atual()
     filial_ids = [f.id for f in Clinica.query.filter_by(empresa_id=empresa.id).all()]
     membro = ClinicaMembro.query.filter(
-        ClinicaMembro.id == membro_id, ClinicaMembro.clinica_id.in_(filial_ids)
+        ClinicaMembro.id == membro_id, ClinicaMembro.clinica_id.in_(filial_ids),
+        ClinicaMembro.ativo.is_(True),
     ).first_or_404()
 
     if membro.usuario_id == current_user.id:
         flash("Você não pode remover a si mesmo da clínica.", "danger")
         return redirect(url_for("medico.equipe_lista"))
 
-    db.session.delete(membro)
+    futuros = _agendamentos_futuros_do_vinculo(membro.clinica_id, membro.usuario_id)
+    if futuros:
+        flash(
+            f"{membro.usuario.nome} ainda tem {futuros} agendamento(s) futuro(s) nesta filial. "
+            "Cancele ou transfira esses agendamentos antes de encerrar a atuação.",
+            "danger",
+        )
+        return redirect(url_for("medico.equipe_lista"))
+
+    # ENCERRA o vínculo em vez de apagar (ver ClinicaMembro.encerrado_em):
+    # o histórico de atuação e os atendimentos já feitos continuam - e se a
+    # pessoa voltar um dia, o mesmo vínculo é reativado.
+    membro.encerrar()
     db.session.commit()
-    flash("Membro removido da clínica.", "success")
+    flash(f"{membro.usuario.nome} não atua mais na filial '{membro.clinica.nome}'. O histórico foi preservado.", "success")
     return redirect(url_for("medico.equipe_lista"))

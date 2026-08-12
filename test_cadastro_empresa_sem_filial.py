@@ -151,9 +151,13 @@ checar("NÃO mostra mais o aviso de 'cadastre seu primeiro local'", "Cadastre se
 r_desvincular = client.post(f"/equipe/filiais/{filial_id}/desvincular-me", follow_redirects=True)
 checar("Desmarcar o vínculo responde 200", r_desvincular.status_code == 200)
 with app.app_context():
+    # A desvinculação agora ENCERRA o vínculo em vez de apagar (histórico
+    # preservado - ver ClinicaMembro.encerrado_em).
+    vinculo_encerrado = ClinicaMembro.query.filter_by(clinica_id=filial_id, usuario_id=usuario.id).first()
     checar(
-        "O ClinicaMembro foi removido",
-        ClinicaMembro.query.filter_by(clinica_id=filial_id, usuario_id=usuario.id).count() == 0,
+        "O ClinicaMembro foi encerrado (ativo=False, registro preservado)",
+        vinculo_encerrado is not None and vinculo_encerrado.ativo is False
+        and vinculo_encerrado.encerrado_em is not None,
     )
 r_locais3 = client.get("/equipe/filiais")
 checar(

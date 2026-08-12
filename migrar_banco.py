@@ -246,6 +246,10 @@ UPDATE empresas SET codigo_cadastro_paciente = (SELECT c.codigo_cadastro_pacient
 -- para médicos existentes é feito mais abaixo (na parte em Python) porque
 -- a geração do código usa aleatoriedade e checagem de unicidade.
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_mestre VARCHAR(20);
+-- Vínculo equipe x filial deixou de ser apagado na remoção - agora é
+-- ENCERRADO (ativo=FALSE + encerrado_em), preservando o histórico de quem
+-- atendeu onde - ver ClinicaMembro.encerrado_em em app/models.py.
+ALTER TABLE clinica_membros ADD COLUMN IF NOT EXISTS encerrado_em TIMESTAMP;
 CREATE TABLE IF NOT EXISTS convites_vinculo (
     id SERIAL PRIMARY KEY,
     clinica_id INTEGER NOT NULL REFERENCES clinicas(id),

@@ -244,9 +244,26 @@ class ClinicaMembro(db.Model):
     usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
     ativo = db.Column(db.Boolean, default=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    # Vínculo nunca é APAGADO - é ENCERRADO (ativo=False + encerrado_em):
+    # o histórico de "quem atendeu onde, de quando a quando" é permanente,
+    # e uma revinculação futura REATIVA este mesmo registro (ver
+    # medico.convite_decidir/equipe_associar_filial), sem duplicar. Uma
+    # pessoa com o vínculo encerrado perde o acesso àquela clínica
+    # normalmente (todo o acesso passa por ativo=True, ver
+    # Usuario.clinicas_ativas), mas os agendamentos/registros feitos por
+    # ela continuam intactos.
+    encerrado_em = db.Column(db.DateTime, nullable=True)
 
     clinica = db.relationship("Clinica", back_populates="membros")
     usuario = db.relationship("Usuario", back_populates="vinculos_clinica")
+
+    def encerrar(self):
+        self.ativo = False
+        self.encerrado_em = datetime.utcnow()
+
+    def reativar(self):
+        self.ativo = True
+        self.encerrado_em = None
 
 
 class Usuario(db.Model, UserMixin):

@@ -59,9 +59,11 @@ checar("Mensagem de sucesso aparece", "atualizados" in r2.get_data(as_text=True)
 with app.app_context():
     medico_atualizado = Usuario.query.get(medico_id)
     checar("Nome foi atualizado", medico_atualizado.nome == "Dr. Eduardo Nunes Filho")
+    # Desmarcar uma filial agora ENCERRA o vínculo (não apaga) - ativo
+    # fica só o do Centro.
     checar(
-        "Vínculo com a Praia foi removido (ficou só com o Centro)",
-        ClinicaMembro.query.filter_by(usuario_id=medico_id).count() == 1,
+        "Vínculo com a Praia foi encerrado (ficou ativo só o do Centro)",
+        ClinicaMembro.query.filter_by(usuario_id=medico_id, ativo=True).count() == 1,
     )
     checar(
         "O vínculo restante é o do Centro",

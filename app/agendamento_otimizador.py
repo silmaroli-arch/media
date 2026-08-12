@@ -17,6 +17,38 @@ from app.models import Agendamento, MedicoHorario, MedicoBloqueio
 DURACAO_PADRAO_MINUTOS = 30
 
 
+def _duracao_do_agendamento(agendamento):
+    minutos = (agendamento.exame.duracao_minutos if agendamento.exame else None) or DURACAO_PADRAO_MINUTOS
+    return timedelta(minutes=minutos)
+
+
+def conflito_de_agenda(medico_id, data_hora, duracao_minutos, ignorar_agendamento_id=None):
+    """Agendamento existente do MÉDICO que colide com o intervalo
+    [data_hora, data_hora + duração) - em QUALQUER clínica em que ele
+    atenda, inclusive de outra empresa. É o teste de "choque de horário"
+    do médico multi-clínica: a secretária da Clínica 1 não deve conseguir
+    marcar um horário em que ele já atende na Clínica 2 (as empresas não
+    se enxergam, mas a agenda do médico é uma só). Retorna o agendamento
+    conflitante (pra mensagem citar o local) ou None."""
+    duracao = timedelta(minutes=duracao_minutos or DURACAO_PADRAO_MINUTOS)
+    inicio, fim = data_hora, data_hora + duracao
+    # Janela de busca: nenhum exame dura um dia inteiro, então qualquer
+    # agendamento que começe até 24h antes já cobre todos os casos de
+    # sobreposição possíveis.
+    candidatos = Agendamento.query.filter(
+        Agendamento.medico_id == medico_id,
+        Agendamento.status.in_(("solicitado", "agendado", "confirmado")),
+        Agendamento.data_hora < fim,
+        Agendamento.data_hora > inicio - timedelta(hours=24),
+    ).all()
+    for a in candidatos:
+        if ignorar_agendamento_id and a.id == ignorar_agendamento_id:
+            continue
+        if inicio < a.data_hora + _duracao_do_agendamento(a) and fim > a.data_hora:
+            return a
+    return None
+
+
 def _horarios_do_medico(clinica_id, medico_id):
     horarios = MedicoHorario.query.filter_by(
         clinica_id=clinica_id, medico_id=medico_id, ativo=True
@@ -72,17 +104,23 @@ def sugerir_horarios(exame, medico, clinica, data_inicio=None, quantidade=5, dia
         dia_semana = dia_atual.weekday()
         horario = horarios_por_dia.get(dia_semana)
         if horario and horario.hora_inicio and horario.hora_fim:
+            # Ocupação em TODAS as clínicas do médico (não só nesta) - a
+            # agenda do médico é uma só: um horário tomado na Clínica 2
+            # não pode ser sugerido na Clínica 1 (choque de horário do
+            # médico multi-clínica). Cada agendamento ocupa o tempo do SEU
+            # exame (não o do exame sendo marcado agora).
             ocupados = (
                 Agendamento.query.filter(
                     Agendamento.medico_id == medico.id,
-                    Agendamento.clinica_id == clinica.id,
                     Agendamento.status != "cancelado",
-                    Agendamento.data_hora >= datetime.combine(dia_atual, horario.hora_inicio),
+                    Agendamento.data_hora >= datetime.combine(dia_atual, horario.hora_inicio) - timedelta(hours=24),
                     Agendamento.data_hora < datetime.combine(dia_atual, horario.hora_fim),
                 )
                 .all()
             )
-            ocupados_intervalos = [(a.data_hora, a.data_hora + duracao) for a in ocupados]
+            ocupados_intervalos = [
+                (a.data_hora, a.data_hora + _duracao_do_agendamento(a)) for a in ocupados
+            ]
             ocupados_intervalos += _bloqueios_intervalos_do_dia(clinica.id, medico.id, dia_atual)
 
             slot = datetime.combine(dia_atual, horario.hora_inicio)
