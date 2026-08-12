@@ -1847,10 +1847,17 @@ def agenda_acompanhante(agendamento_id):
 @login_required
 @staff_required
 def agenda_solicitacoes():
+    """Solicitações de agendamento feitas pelos pacientes, aguardando a
+    equipe confirmar/recusar. MESMA regra do contador do Painel (ver
+    dashboard): médico COM a permissão administrativa de pacientes (ex.:
+    o fundador) vê e decide todas as solicitações das filiais dele; só o
+    médico SEM essa permissão fica restrito às solicitações endereçadas a
+    ele mesmo - antes a lista filtrava sempre pelo médico logado, e o
+    Painel mostrava "1" enquanto esta tela vinha vazia."""
     query = Agendamento.query.filter(
         Agendamento.clinica_id.in_(filiais_atuais_ids()), Agendamento.status == "solicitado"
     )
-    if eh_medico():
+    if eh_medico() and not current_user.perm_pacientes:
         query = query.filter(Agendamento.medico_id == current_user.id)
     solicitacoes = query.order_by(Agendamento.data_hora.asc()).all()
     return render_template("medico/agenda_solicitacoes.html", solicitacoes=solicitacoes)
@@ -1864,7 +1871,9 @@ def agenda_confirmar_solicitacao(agendamento_id):
         Agendamento.id == agendamento_id,
         Agendamento.clinica_id.in_(filiais_atuais_ids()), Agendamento.status == "solicitado",
     )
-    if eh_medico():
+    # Mesma regra da listagem (agenda_solicitacoes): médico sem a
+    # permissão administrativa só decide as solicitações dele.
+    if eh_medico() and not current_user.perm_pacientes:
         query = query.filter(Agendamento.medico_id == current_user.id)
     agendamento = query.first_or_404()
     acao = request.form.get("acao")
