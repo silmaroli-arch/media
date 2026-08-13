@@ -156,6 +156,18 @@ with app.app_context():
 r = client.get("/equipe/pacientes/novo")
 html = r.get_data(as_text=True)
 checar("A tela de novo paciente tem a busca por CPF", "Importar paciente pelo CPF" in html)
+# Bug relatado: o botão "Buscar CPF" não fazia nada. Causa: a tela tem
+# DOIS <form> (a busca por CPF, method="get", vem ANTES na página; o
+# cadastro completo, method="post", vem depois) e o JS de validação usava
+# document.querySelector('form'), que pega o PRIMEIRO <form> da página -
+# ou seja, ele acabava anexado no formulário de BUSCA por engano, e a
+# validação de campos que nem existem ali (telefone/data
+# nascimento/CEP do cadastro completo) barrava a busca com
+# preventDefault(). A correção usa um id específico no formulário de
+# cadastro completo, não mais o seletor genérico.
+checar("O formulário de cadastro completo tem um id próprio (não é mais pego por engano pela busca de CPF)",
+       'id="form-paciente"' in html and "document.querySelector('form')" not in html
+       and "getElementById('form-paciente')" in html)
 
 # CPF que existe → mostra o encontrado com botão de importar.
 r = client.get(f"/equipe/pacientes/novo?cpf_busca={CPF}")

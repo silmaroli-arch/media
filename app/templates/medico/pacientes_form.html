@@ -34,7 +34,7 @@
 {% endif %}
 
 <div class="card p-4">
-  <form method="post">
+  <form method="post" id="form-paciente">
     {# O paciente é cadastrado na EMPRESA - não se escolhe filial aqui
        ("o cliente é só cliente"). A filial é escolhida em cada
        agendamento, na hora de marcar a consulta. #}
@@ -282,7 +282,13 @@
   }
   document.getElementById('cep').addEventListener('blur', marcarCepValido);
 
-  document.querySelector('form').addEventListener('submit', function (evento) {
+  // Usa o ID do formulário de cadastro, em vez de pegar genericamente o
+  // primeiro <form> da página - que era o de "Importar paciente pelo
+  // CPF" (method="get"), que vem antes na tela. Isso fazia o botão
+  // "Buscar CPF" não funcionar: a validação abaixo (telefone/data de
+  // nascimento/CEP, campos que nem existem nesse formulário de busca)
+  // barrava a busca com preventDefault() por engano.
+  document.getElementById('form-paciente').addEventListener('submit', function (evento) {
     var dataOk = marcarDataNascimentoValida();
     var telefoneOk = marcarTelefoneValido('telefone', 'telefone_status', true);
     var contatoTelefoneOk = marcarTelefoneValido('contato_emergencia_telefone', 'contato_emergencia_telefone_status', false);
