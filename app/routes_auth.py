@@ -250,7 +250,12 @@ def cadastro():
         # completos já no cadastro (igual à tela "Dados Cadastrais"),
         # substituindo a etapa que antes deixava isso pra depois. Em
         # ambos os modos a pessoa já sai com o primeiro local pronto.
-        nome_filial = request.form.get("nome_filial", "").strip() or ("Consultório" if independente else "")
+        # No modo independente, o nome do local vem do próprio JS
+        # (sincronizado com o nome que a pessoa digitou, ver cadastro.html)
+        # - esse fallback só entra em ação se chegar vazio por algum
+        # motivo (ex.: JS desabilitado), e nesse caso usa o nome da
+        # própria pessoa em vez de um texto fixo tipo "Consultório".
+        nome_filial = request.form.get("nome_filial", "").strip() or (nome if independente else "")
         telefone_filial_digitado = request.form.get("telefone_filial", "").strip()
         cnpj_filial = request.form.get("cnpj_filial", "").strip()
 
@@ -429,17 +434,29 @@ def cadastro_verificar_cnpj():
     """Endpoint público (sem login - é chamado da própria tela de
     cadastro, antes de existir conta) usado pela busca automática de CNPJ:
     ao a pessoa terminar de digitar o CNPJ da clínica, o front consulta
-    aqui se já existe uma Clinica com ele. Só devolve o nome da clínica
-    encontrada (nada de endereço, telefone ou qualquer outro dado) - o
-    bastante pra pessoa reconhecer "é a minha clínica mesmo" sem expor
-    informação de quem ainda nem se identificou."""
+    aqui se já existe uma Clinica com ele. Devolve nome, telefone e
+    endereço da clínica encontrada, pra já preencher esses campos na tela
+    (evita redigitar dados que já existem) - são dados cadastrais da
+    empresa, não dados pessoais de ninguém, então não há problema em
+    mostrá-los antes de a pessoa se identificar."""
     cnpj = request.args.get("cnpj", "")
     if not validar_cnpj(cnpj):
         return jsonify({"encontrada": False})
     clinica = encontrar_clinica_por_cnpj(cnpj)
     if not clinica:
         return jsonify({"encontrada": False})
-    return jsonify({"encontrada": True, "nome": clinica.nome})
+    return jsonify({
+        "encontrada": True,
+        "nome": clinica.nome,
+        "telefone": clinica.telefone or "",
+        "cep": clinica.cep or "",
+        "rua": clinica.rua or "",
+        "numero": clinica.numero or "",
+        "complemento": clinica.complemento or "",
+        "bairro": clinica.bairro or "",
+        "cidade": clinica.cidade or "",
+        "uf": clinica.uf or "",
+    })
 
 
 def _parse_data_nascimento(valor_str):

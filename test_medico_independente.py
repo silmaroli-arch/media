@@ -40,8 +40,8 @@ r_cad = client.get("/cadastro?modo=independente")
 html_cad = r_cad.get_data(as_text=True)
 checar("A tela sabe esconder o grupo de botões quando o modo já vem escolhido",
        'id="grupo-modo"' in html_cad and "grupo-modo').style.display = 'none'" in html_cad)
-checar("Existe um link discreto pra trocar de tipo caso tenha clicado errado",
-       'id="link-trocar-modo"' in html_cad)
+checar("NÃO existe mais um link pra trocar de tipo de conta (concentrado numa única tela)",
+       'id="link-trocar-modo"' not in html_cad and "Escolher outro tipo de conta" not in html_cad)
 
 # ---------- Cadastro modo independente, papel médico ----------
 r = client.post("/cadastro", data={
@@ -67,7 +67,8 @@ with app.app_context():
 
     filial = Clinica.query.filter_by(empresa_id=empresa.id).first()
     checar("Local de atendimento (filial) foi criado automaticamente", filial is not None)
-    checar("Nome do local padrão é 'Consultório'", filial.nome == "Consultório")
+    checar("Nome do local vem do nome cadastrado pela pessoa (não um texto fixo tipo 'Consultório')",
+           filial.nome == "Dr. João Autônomo")
 
 checar("Login automático após cadastro (cai direto no onboarding, não na tela de login)",
        "/login" not in r.request.path if hasattr(r, "request") else True)

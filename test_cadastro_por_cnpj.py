@@ -42,6 +42,8 @@ r = client.post("/cadastro", data={
     "nome_filial": "Clínica Bela Vista - Sede",
     "telefone_filial": "(27) 90000-0009",
     "cnpj_filial": CNPJ_CLINICA,
+    "cep_filial": "29055-360", "rua_filial": "Rua Saúl de Navarro", "numero_filial": "320",
+    "bairro_filial": "Praia do Canto", "cidade_filial": "Vitória", "uf_filial": "ES",
 }, follow_redirects=True)
 checar("Cadastro da fundadora responde 200", r.status_code == 200)
 
@@ -96,6 +98,12 @@ r = client.get("/cadastro/verificar-cnpj?cnpj=" + CNPJ_CLINICA)
 dados = r.get_json()
 checar("Busca por CNPJ já cadastrado encontra a clínica", dados["encontrada"] is True)
 checar("Busca devolve o nome da clínica encontrada", dados["nome"] == "Clínica Bela Vista - Sede")
+checar("Busca devolve o telefone da clínica encontrada (pra já preencher o campo)",
+       dados["telefone"] == "(27) 90000-0009")
+checar("Busca devolve o endereço da clínica encontrada (pra já preencher os campos)",
+       dados["cep"] == "29055-360" and dados["rua"] == "Rua Saúl de Navarro"
+       and dados["numero"] == "320" and dados["bairro"] == "Praia do Canto"
+       and dados["cidade"] == "Vitória" and dados["uf"] == "ES")
 
 # ---------- Segundo médico se cadastra com o MESMO CNPJ, sem saber da Ana ----------
 

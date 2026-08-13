@@ -17,10 +17,6 @@
           <i class="bi bi-person-badge"></i> Sou profissional independente
         </button>
       </div>
-      <div class="text-center mb-3 small" id="link-trocar-modo" style="display:none;">
-        <a href="{{ url_for('auth.cadastro') }}">Não é isso? Escolher outro tipo de conta</a>
-      </div>
-
       <form method="post">
         <input type="hidden" name="modo" id="input-modo" value="empresa">
 
@@ -35,7 +31,7 @@
         <div class="row g-3">
           <div class="col-md-6">
             <label class="form-label">Seu nome</label>
-            <input type="text" name="nome" class="form-control" autocapitalize="words" required autofocus>
+            <input type="text" name="nome" id="nome" class="form-control" autocapitalize="words" required autofocus>
           </div>
           <div class="col-md-6">
             <label class="form-label">CPF</label>
@@ -179,11 +175,11 @@
           </div>
           <div class="col-md-3">
             <label class="form-label">Número</label>
-            <input type="text" name="numero_filial" class="form-control">
+            <input type="text" name="numero_filial" id="numero_filial" class="form-control">
           </div>
           <div class="col-md-4">
             <label class="form-label">Complemento</label>
-            <input type="text" name="complemento_filial" class="form-control">
+            <input type="text" name="complemento_filial" id="complemento_filial" class="form-control">
           </div>
           <div class="col-md-4">
             <label class="form-label">Bairro</label>
@@ -217,6 +213,14 @@ function atualizarCampoCrm() {
   document.getElementById('crm_uf').required = ehMedico;
 }
 
+function sincronizarNomeFilialIndependente() {
+  var independente = document.getElementById('input-modo').value === 'independente';
+  if (independente) {
+    document.getElementById('nome_filial').value = document.getElementById('nome').value;
+  }
+}
+document.getElementById('nome').addEventListener('input', sincronizarNomeFilialIndependente);
+
 function selecionarModo(modo) {
   document.getElementById('input-modo').value = modo;
   const independente = modo === 'independente';
@@ -234,11 +238,12 @@ function selecionarModo(modo) {
   document.getElementById('input-nome_empresa').required = !independente;
   document.getElementById('nome_filial').required = !independente;
   document.getElementById('cnpj_filial').required = !independente;
-  if (independente) {
-    document.getElementById('nome_filial').value = 'Consultório';
-  } else if (document.getElementById('nome_filial').value === 'Consultório') {
-    document.getElementById('nome_filial').value = '';
-  }
+  // No modo independente o campo "nome_filial" fica escondido, mas
+  // continua sendo enviado no formulário - em vez de um texto fixo tipo
+  // "Consultório", o local de atendimento nasce com o próprio nome
+  // cadastrado pela pessoa (sincronizado aqui e de novo no submit, ver
+  // sincronizarNomeFilialIndependente()).
+  sincronizarNomeFilialIndependente();
 
   document.getElementById('titulo-dados-empresa').style.display = independente ? 'none' : 'block';
   document.getElementById('titulo-local-atendimento').textContent = independente
@@ -252,16 +257,15 @@ function selecionarModo(modo) {
 // link genérico de "Criar conta" da tela de login, que manda pra
 // modo=independente — modo=empresa continua existindo, só sem link na
 // tela de login por enquanto), não faz sentido perguntar de novo com o
-// botão de escolha. Nesse caso, mostra só os campos do tipo escolhido
-// (sem o grupo de botões), com um link discreto pra trocar caso tenha
-// caído no modo errado.
+// botão de escolha. Nesse caso, mostra só os campos do tipo escolhido,
+// sem o grupo de botões e sem escape hatch pra trocar de tipo (pedido do
+// usuário: concentrar tudo numa única tela, sem esse desvio de volta).
 (function () {
   const params = new URLSearchParams(window.location.search);
   const modo = params.get('modo');
   if (modo === 'independente' || modo === 'empresa') {
     selecionarModo(modo);
     document.getElementById('grupo-modo').style.display = 'none';
-    document.getElementById('link-trocar-modo').style.display = 'block';
   }
 })();
 
@@ -334,6 +338,44 @@ function cnpjValido(cnpj) {
   var dv2 = dv(d.substring(0, 12) + dv1, pesos2);
   return dv2 === d[13];
 }
+// Campos do local de atendimento que, quando o CNPJ já pertence a uma
+// clínica cadastrada, são preenchidos com os dados dela e travados (não
+// tem por que redigitar nem editar dados que já existem - o cadastro só
+// vai vincular a pessoa a essa clínica, não vai alterá-la).
+var CAMPOS_FILIAL_TRAVAVEIS = ['telefone_filial', 'cep_filial', 'rua_filial', 'numero_filial',
+  'complemento_filial', 'bairro_filial', 'cidade_filial', 'uf_filial'];
+
+function preencherClinicaEncontrada(dados) {
+  document.getElementById('telefone_filial').value = dados.telefone || '';
+  document.getElementById('cep_filial').value = dados.cep || '';
+  document.getElementById('rua_filial').value = dados.rua || '';
+  document.getElementById('numero_filial').value = dados.numero || '';
+  document.getElementById('complemento_filial').value = dados.complemento || '';
+  document.getElementById('bairro_filial').value = dados.bairro || '';
+  document.getElementById('cidade_filial').value = dados.cidade || '';
+  document.getElementById('uf_filial').value = dados.uf || '';
+  CAMPOS_FILIAL_TRAVAVEIS.forEach(function (id) {
+    var campo = document.getElementById(id);
+    campo.readOnly = true;
+    campo.classList.add('bg-light');
+    campo.classList.remove('is-invalid');
+  });
+  document.getElementById('telefone_filial_status').textContent = '';
+  document.getElementById('cep_filial_status').textContent = '';
+}
+
+function destravarCamposFilial() {
+  CAMPOS_FILIAL_TRAVAVEIS.forEach(function (id) {
+    var campo = document.getElementById(id);
+    // rua/bairro/cidade/uf continuam somente-leitura sempre (preenchidos
+    // pela busca de CEP) - só telefone/cep/número/complemento voltam a
+    // ser editáveis quando o CNPJ deixa de bater com uma clínica existente.
+    var sempreReadOnly = ['rua_filial', 'bairro_filial', 'cidade_filial', 'uf_filial'].indexOf(id) !== -1;
+    campo.readOnly = sempreReadOnly;
+    if (!sempreReadOnly) campo.classList.remove('bg-light');
+  });
+}
+
 document.getElementById('cnpj_filial').addEventListener('blur', function () {
   var campo = document.getElementById('cnpj_filial');
   var status = document.getElementById('cnpj_filial_status');
@@ -343,11 +385,13 @@ document.getElementById('cnpj_filial').addEventListener('blur', function () {
   if (!d) {
     status.textContent = '';
     campo.classList.remove('is-invalid');
+    destravarCamposFilial();
     return;
   }
   if (!cnpjValido(campo.value)) {
     status.textContent = 'CNPJ inválido — confira os números digitados.';
     campo.classList.add('is-invalid');
+    destravarCamposFilial();
     return;
   }
   campo.classList.remove('is-invalid');
@@ -360,9 +404,11 @@ document.getElementById('cnpj_filial').addEventListener('blur', function () {
         encontrado.textContent = 'Encontramos "' + dados.nome + '" já cadastrada com esse CNPJ — ' +
           'sua conta será criada já vinculada a ela.';
         encontrado.classList.add('text-success');
+        preencherClinicaEncontrada(dados);
       } else {
         encontrado.textContent = 'Nenhuma clínica encontrada com esse CNPJ — ela será criada no seu cadastro.';
         encontrado.classList.remove('text-success');
+        destravarCamposFilial();
       }
     })
     .catch(function () {
@@ -424,6 +470,7 @@ configurarBuscaCep('cep_filial', 'rua_filial', 'bairro_filial', 'cidade_filial',
 
 document.querySelector('form').addEventListener('submit', function (evento) {
   var independente = document.getElementById('input-modo').value === 'independente';
+  sincronizarNomeFilialIndependente();
   var cpfOk = marcarCpfValido();
   var telefoneOk = marcarTelefoneValido('telefone', 'telefone_status', false);
   var telefoneFilialOk = marcarTelefoneValido('telefone_filial', 'telefone_filial_status', true);
