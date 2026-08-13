@@ -9,13 +9,16 @@
         Escolha a opção que combina com o seu caso.
       </p>
 
-      <div class="btn-group w-100 mb-3" role="group">
+      <div class="btn-group w-100 mb-3" role="group" id="grupo-modo">
         <button type="button" class="btn btn-outline-primary active" id="btn-modo-empresa" onclick="selecionarModo('empresa')">
           <i class="bi bi-building"></i> Tenho uma clínica/empresa
         </button>
         <button type="button" class="btn btn-outline-primary" id="btn-modo-independente" onclick="selecionarModo('independente')">
           <i class="bi bi-person-badge"></i> Sou médico(a) independente
         </button>
+      </div>
+      <div class="text-center mb-3 small" id="link-trocar-modo" style="display:none;">
+        <a href="{{ url_for('auth.cadastro') }}">Não é isso? Escolher outro tipo de conta</a>
       </div>
 
       <form method="post">
@@ -92,13 +95,18 @@ function selecionarModo(modo) {
   document.getElementById('btn-submit').textContent = independente ? 'Criar minha conta' : 'Criar minha empresa';
 }
 
-// Permite chegar direto no modo certo via link (ex.: ?modo=independente,
-// usado no link "Atende por conta própria?" da tela de login), sem o
-// usuário precisar clicar no botão de novo.
+// Chegando direto de um link da tela de login ("Login como médico" ou
+// "Login como clínica"), a pessoa já disse qual é o seu caso — não faz
+// sentido perguntar de novo com o botão de escolha. Nesse caso, mostra
+// só os campos do tipo escolhido (sem o grupo de botões), com um link
+// discreto pra trocar caso tenha clicado errado.
 (function () {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('modo') === 'independente') {
-    selecionarModo('independente');
+  const modo = params.get('modo');
+  if (modo === 'independente' || modo === 'empresa') {
+    selecionarModo(modo);
+    document.getElementById('grupo-modo').style.display = 'none';
+    document.getElementById('link-trocar-modo').style.display = 'block';
   }
 })();
 </script>

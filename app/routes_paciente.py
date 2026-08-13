@@ -10,7 +10,7 @@ from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Agendamento, Exame, PerguntaPendente, FaqItem, ChatMensagem, Usuario, MedicoHorario, Paciente, normalizar_telefone, encontrar_conta_paciente, formatar_nome_proprio, cep_incompleto
+from app.models import Agendamento, Exame, PerguntaPendente, FaqItem, ChatMensagem, Usuario, MedicoHorario, Paciente, normalizar_telefone, encontrar_conta_paciente, formatar_nome_proprio, cep_incompleto, telefone_incompleto
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.ia_preparo import responder_com_ia
 from app.clinica_utils import verificar_vencimento_empresa
@@ -474,6 +474,16 @@ def meus_dados():
 
         if not telefone:
             flash("O telefone é obrigatório — é o contato que as clínicas usam com você.", "danger")
+            return redirect(url_for("paciente.meus_dados"))
+
+        # Telefone incompleto (ex.: "(27" digitado e enviado sem terminar)
+        # não travava o envio - a máscara só formata o que foi digitado,
+        # não garante que a pessoa terminou de digitar.
+        if telefone_incompleto(telefone_digitado):
+            flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
+            return redirect(url_for("paciente.meus_dados"))
+        if telefone_incompleto(request.form.get("contato_emergencia_telefone", "")):
+            flash("Telefone do contato de emergência incompleto — digite o DDD e o número completos.", "danger")
             return redirect(url_for("paciente.meus_dados"))
 
         # CEP incompleto (ex.: "29055") não bloqueava o envio e ficava

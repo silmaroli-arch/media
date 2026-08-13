@@ -24,6 +24,7 @@
       <div class="col-md-3">
         <label class="form-label">Telefone *</label>
         <input type="text" inputmode="numeric" name="telefone" id="telefone_clinica" class="form-control" value="{{ clinica.telefone or '' }}" placeholder="(27) 99999-9999" required>
+        <div class="invalid-feedback" id="telefone_clinica_status"></div>
       </div>
       <div class="col-md-3">
         <label class="form-label">E-mail de contato *</label>
@@ -161,5 +162,29 @@
         });
     });
   }
+
+  // Telefone incompleto (ex.: só o DDD) não travava o envio - um
+  // telefone brasileiro de verdade tem 10 ou 11 dígitos.
+  function marcarTelefoneClinicaValido() {
+    var campo = document.getElementById('telefone_clinica');
+    var status = document.getElementById('telefone_clinica_status');
+    var d = campo.value.replace(/\D/g, '');
+    if (!d) { status.textContent = ''; campo.classList.remove('is-invalid'); return true; }
+    if (d.length === 10 || d.length === 11) {
+      status.textContent = '';
+      campo.classList.remove('is-invalid');
+      return true;
+    }
+    status.textContent = 'Telefone incompleto — digite o DDD e o número completos.';
+    campo.classList.add('is-invalid');
+    return false;
+  }
+  document.getElementById('telefone_clinica').addEventListener('blur', marcarTelefoneClinicaValido);
+  document.querySelector('form').addEventListener('submit', function (evento) {
+    if (!marcarTelefoneClinicaValido()) {
+      evento.preventDefault();
+      document.getElementById('telefone_clinica').focus();
+    }
+  });
 </script>
 {% endblock %}

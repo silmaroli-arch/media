@@ -6,7 +6,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, validar_cpf, formatar_nome_proprio, cep_incompleto
+from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -374,6 +374,16 @@ def cadastro_paciente_global():
 
         if not nome or not _cpf_digitos(cpf) or not telefone or not data_nascimento_str:
             flash("Nome, CPF, telefone e data de nascimento são obrigatórios.", "danger")
+            return render_template("auth/cadastro_paciente.html")
+
+        # Telefone incompleto (ex.: "(27" digitado e enviado sem terminar)
+        # não travava o envio - a máscara só formata o que foi digitado,
+        # não garante que a pessoa terminou de digitar.
+        if telefone_incompleto(telefone_digitado):
+            flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
+            return render_template("auth/cadastro_paciente.html")
+        if telefone_incompleto(request.form.get("contato_emergencia_telefone", "")):
+            flash("Telefone do contato de emergência incompleto — digite o DDD e o número completos.", "danger")
             return render_template("auth/cadastro_paciente.html")
 
         # O CPF é o login e a chave que a clínica usa pra importar o

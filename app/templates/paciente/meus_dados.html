@@ -21,8 +21,9 @@
     <input type="hidden" name="telefone_original" value="{{ current_user.telefone }}">
     <div class="col-md-6">
       <label class="form-label">Telefone <span class="text-danger">*</span></label>
-      <input type="text" name="telefone" class="form-control" value="{{ current_user.telefone }}" required>
+      <input type="text" inputmode="numeric" name="telefone" id="telefone" class="form-control" value="{{ current_user.telefone }}" required>
       <div class="form-text">Contato usado pelas clínicas — seu login é o CPF + data de nascimento.</div>
+      <div class="invalid-feedback" id="telefone_status"></div>
     </div>
     <div class="col-md-6">
       <label class="form-label">E-mail</label>
@@ -67,7 +68,8 @@
     </div>
     <div class="col-md-6">
       <label class="form-label">Telefone</label>
-      <input type="text" name="contato_emergencia_telefone" class="form-control" value="{{ paciente.contato_emergencia_telefone or '' }}">
+      <input type="text" inputmode="numeric" name="contato_emergencia_telefone" id="contato_emergencia_telefone" class="form-control" value="{{ paciente.contato_emergencia_telefone or '' }}">
+      <div class="invalid-feedback" id="contato_emergencia_telefone_status"></div>
     </div>
 
     <div class="col-12">
@@ -77,6 +79,34 @@
   </form>
 </div>
 <script>
+
+  // Telefone incompleto (ex.: "(27" ou só o DDD) não travava o envio - um
+  // telefone brasileiro de verdade tem 10 ou 11 dígitos (DDD + número).
+  function marcarTelefoneValido(idCampo, idStatus, obrigatorio) {
+    var campo = document.getElementById(idCampo);
+    var status = document.getElementById(idStatus);
+    if (!campo || !status) return true;
+    var d = campo.value.replace(/\D/g, '');
+    if (!d) {
+      status.textContent = '';
+      campo.classList.remove('is-invalid');
+      return !obrigatorio;
+    }
+    if (d.length === 10 || d.length === 11) {
+      status.textContent = '';
+      campo.classList.remove('is-invalid');
+      return true;
+    }
+    status.textContent = 'Telefone incompleto — digite o DDD e o número completos.';
+    campo.classList.add('is-invalid');
+    return false;
+  }
+  document.getElementById('telefone').addEventListener('blur', function () {
+    marcarTelefoneValido('telefone', 'telefone_status', true);
+  });
+  document.getElementById('contato_emergencia_telefone').addEventListener('blur', function () {
+    marcarTelefoneValido('contato_emergencia_telefone', 'contato_emergencia_telefone_status', false);
+  });
 
   // Busca de endereço por CEP via ViaCEP — preenche os campos
   // automaticamente; rua, bairro, cidade e UF ficam somente leitura,
@@ -117,12 +147,18 @@
   document.getElementById('cep').addEventListener('blur', marcarCepValido);
 
   document.querySelector('form').addEventListener('submit', function (evento) {
+    var telefoneOk = marcarTelefoneValido('telefone', 'telefone_status', true);
+    var contatoTelefoneOk = marcarTelefoneValido('contato_emergencia_telefone', 'contato_emergencia_telefone_status', false);
     var cepDigitos = document.getElementById('cep').value.replace(/\D/g, '');
+    var cepOk = !cepDigitos || cepDigitos.length === 8;
     if (cepDigitos && cepDigitos.length !== 8) {
       document.getElementById('cep').classList.add('is-invalid');
       document.getElementById('cep_status').textContent = 'CEP incompleto — digite os 8 números.';
+    }
+    if (!telefoneOk || !contatoTelefoneOk || !cepOk) {
       evento.preventDefault();
-      document.getElementById('cep').focus();
+      var primeiroInvalido = document.querySelector('.is-invalid');
+      if (primeiroInvalido) primeiroInvalido.focus();
     }
   });
 </script>

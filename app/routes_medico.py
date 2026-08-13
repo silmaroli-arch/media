@@ -22,7 +22,7 @@ from app.models import (
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, DescontoConfig, Pagamento, EvolucaoClinica,
     ConviteVinculo, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
-    cep_incompleto,
+    cep_incompleto, telefone_incompleto,
 )
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
@@ -664,6 +664,22 @@ def pacientes_novo():
             flash("Nome, CPF, telefone e data de nascimento são obrigatórios.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
+        # Telefone incompleto (ex.: "(27" digitado e enviado sem terminar)
+        # não travava o envio - a máscara só formata o que foi digitado,
+        # não garante que a pessoa terminou de digitar.
+        if telefone_incompleto(telefone_digitado):
+            flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
+            return render_template(
+                "medico/pacientes_form.html", paciente=None,
+                cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
+            )
+        if telefone_incompleto(request.form.get("contato_emergencia_telefone", "")):
+            flash("Telefone do contato de emergência incompleto — digite o DDD e o número completos.", "danger")
+            return render_template(
+                "medico/pacientes_form.html", paciente=None,
+                cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
+            )
+
         data_nascimento = _parse_data_nascimento(data_nascimento_str)
         if not data_nascimento:
             flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
@@ -813,6 +829,9 @@ def pacientes_editar(paciente_id):
         # salvo pela metade, com rua/bairro/cidade/UF vazios.
         if cep_incompleto(request.form.get("cep", "")):
             flash("CEP incompleto — digite os 8 números.", "danger")
+            return render_template("medico/pacientes_form.html", paciente=paciente)
+        if telefone_incompleto(request.form.get("contato_emergencia_telefone", "")):
+            flash("Telefone do contato de emergência incompleto — digite o DDD e o número completos.", "danger")
             return render_template("medico/pacientes_form.html", paciente=paciente)
 
         paciente.nome = formatar_nome_proprio(request.form.get("nome", "")) or paciente.nome
@@ -1905,6 +1924,10 @@ def agenda_novo():
         acompanhante_nome = request.form.get("acompanhante_nome", "").strip()
         acompanhante_telefone = request.form.get("acompanhante_telefone", "").strip()
 
+        if telefone_incompleto(acompanhante_telefone):
+            flash("Telefone do acompanhante incompleto — digite o DDD e o número completos.", "danger")
+            return redirect(url_for("medico.agenda_novo", filial_id=filial_id))
+
         filial = next((f for f in filiais_disponiveis if f.id == filial_id), None)
         if not filial:
             flash("Escolha uma filial válida.", "danger")
@@ -2081,8 +2104,12 @@ def agenda_acompanhante(agendamento_id):
     if eh_medico():
         query = query.filter(Agendamento.medico_id == current_user.id)
     agendamento = query.first_or_404()
+    acompanhante_telefone = request.form.get("acompanhante_telefone", "").strip()
+    if telefone_incompleto(acompanhante_telefone):
+        flash("Telefone do acompanhante incompleto — digite o DDD e o número completos.", "danger")
+        return redirect(url_for("medico.agenda"))
     agendamento.acompanhante_nome = request.form.get("acompanhante_nome", "").strip() or None
-    agendamento.acompanhante_telefone = request.form.get("acompanhante_telefone", "").strip() or None
+    agendamento.acompanhante_telefone = acompanhante_telefone or None
     db.session.commit()
     flash("Acompanhante atualizado.", "success")
     return redirect(url_for("medico.agenda"))
@@ -3168,6 +3195,9 @@ def clinica_configuracoes(filial_id=None):
         clinica.razao_social = request.form.get("razao_social", "").strip()
         clinica.cnpj = request.form.get("cnpj", "").strip()
         telefone = request.form.get("telefone", "").strip()
+        if telefone_incompleto(telefone):
+            flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
+            return redirect(url_for("medico.clinica_configuracoes", filial_id=filial_id))
         if telefone:
             clinica.telefone = telefone
         email_contato = request.form.get("email_contato", "").strip()

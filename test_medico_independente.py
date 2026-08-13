@@ -23,6 +23,20 @@ def checar(nome, condicao):
     print(f"[{status}] {nome}")
     assert condicao, nome
 
+# ---------- Login: os links já dizem o tipo de conta (não pergunta de novo na tela seguinte) ----------
+r_login = client.get("/login")
+html_login = r_login.get_data(as_text=True)
+checar("Link 'Login como médico' já manda modo=independente", "/cadastro?modo=independente" in html_login)
+checar("Link 'Login como clínica' já manda modo=empresa", "/cadastro?modo=empresa" in html_login)
+
+# ---------- Cadastro: chegando com modo pela URL, esconde a escolha (só mostra o tipo certo) ----------
+r_cad = client.get("/cadastro?modo=independente")
+html_cad = r_cad.get_data(as_text=True)
+checar("A tela sabe esconder o grupo de botões quando o modo já vem escolhido",
+       'id="grupo-modo"' in html_cad and "grupo-modo').style.display = 'none'" in html_cad)
+checar("Existe um link discreto pra trocar de tipo caso tenha clicado errado",
+       'id="link-trocar-modo"' in html_cad)
+
 # ---------- Cadastro modo independente ----------
 r = client.post("/cadastro", data={
     "modo": "independente",

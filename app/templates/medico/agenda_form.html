@@ -73,6 +73,7 @@
       <div class="col-md-6">
         <label class="form-label">Telefone do acompanhante</label>
         <input type="text" inputmode="numeric" name="acompanhante_telefone" id="acompanhante_telefone" class="form-control" placeholder="(27) 99999-9999">
+        <div class="invalid-feedback" id="acompanhante_telefone_status"></div>
       </div>
     </div>
     <div class="form-text mt-2">
@@ -117,6 +118,33 @@
     });
   }
   aplicarMascaraFixa(document.getElementById('acompanhante_telefone'), '(99) 99999-9999');
+
+  // Telefone do acompanhante incompleto (ex.: só o DDD) não travava o
+  // envio - um telefone brasileiro de verdade tem 10 ou 11 dígitos.
+  function marcarTelefoneAcompanhanteValido() {
+    var campo = document.getElementById('acompanhante_telefone');
+    var status = document.getElementById('acompanhante_telefone_status');
+    var d = campo.value.replace(/\D/g, '');
+    if (!d) { status.textContent = ''; campo.classList.remove('is-invalid'); return true; }
+    if (d.length === 10 || d.length === 11) {
+      status.textContent = '';
+      campo.classList.remove('is-invalid');
+      return true;
+    }
+    status.textContent = 'Telefone incompleto — digite o DDD e o número completos.';
+    campo.classList.add('is-invalid');
+    return false;
+  }
+  document.getElementById('acompanhante_telefone').addEventListener('blur', marcarTelefoneAcompanhanteValido);
+  var formularioAgenda = document.querySelector('form');
+  if (formularioAgenda) {
+    formularioAgenda.addEventListener('submit', function (evento) {
+      if (!marcarTelefoneAcompanhanteValido()) {
+        evento.preventDefault();
+        document.getElementById('acompanhante_telefone').focus();
+      }
+    });
+  }
 
   // Trocar a filial ou o médico recarrega a página (via GET) só pra
   // atualizar as listas de paciente/exame — não é um envio real do

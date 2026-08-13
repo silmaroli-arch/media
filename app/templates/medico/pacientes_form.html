@@ -53,6 +53,7 @@
         <label class="form-label">Telefone</label>
         <input type="text" inputmode="numeric" name="telefone" id="telefone"
                class="form-control" placeholder="(27) 99999-9999" required>
+        <div class="invalid-feedback" id="telefone_status"></div>
       </div>
       <div class="col-md-6">
         <label class="form-label">Data de nascimento</label>
@@ -126,7 +127,8 @@
       </div>
       <div class="col-md-6">
         <label class="form-label">Telefone</label>
-        <input type="text" name="contato_emergencia_telefone" class="form-control" value="{{ paciente.contato_emergencia_telefone if paciente else '' }}">
+        <input type="text" inputmode="numeric" name="contato_emergencia_telefone" id="contato_emergencia_telefone" class="form-control" value="{{ paciente.contato_emergencia_telefone if paciente else '' }}">
+        <div class="invalid-feedback" id="contato_emergencia_telefone_status"></div>
       </div>
     </div>
 
@@ -177,6 +179,7 @@
   aplicarMascaraFixa(document.getElementById('cpf'), '999.999.999-99');
   aplicarMascaraFixa(document.getElementById('data_nascimento'), '99/99/9999');
   aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
+  aplicarMascaraFixa(document.getElementById('contato_emergencia_telefone'), '(99) 99999-9999');
   aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
 
   // Data de nascimento e CEP com máscara não travavam mais o backspace,
@@ -211,6 +214,37 @@
     return false;
   }
   if (campoDataNasc) campoDataNasc.addEventListener('blur', marcarDataNascimentoValida);
+
+  // Telefone com máscara não travava mais o backspace, mas deixava
+  // enviar o formulário com só o DDD digitado (ex.: "(27") - um telefone
+  // brasileiro de verdade tem 10 ou 11 dígitos (DDD + número).
+  function marcarTelefoneValido(idCampo, idStatus, obrigatorio) {
+    var campo = document.getElementById(idCampo);
+    var status = document.getElementById(idStatus);
+    if (!campo || !status) return true;
+    var d = campo.value.replace(/\D/g, '');
+    if (!d) {
+      status.textContent = '';
+      campo.classList.remove('is-invalid');
+      return !obrigatorio;
+    }
+    if (d.length === 10 || d.length === 11) {
+      status.textContent = '';
+      campo.classList.remove('is-invalid');
+      return true;
+    }
+    status.textContent = 'Telefone incompleto — digite o DDD e o número completos.';
+    campo.classList.add('is-invalid');
+    return false;
+  }
+  if (document.getElementById('telefone')) {
+    document.getElementById('telefone').addEventListener('blur', function () {
+      marcarTelefoneValido('telefone', 'telefone_status', true);
+    });
+  }
+  document.getElementById('contato_emergencia_telefone').addEventListener('blur', function () {
+    marcarTelefoneValido('contato_emergencia_telefone', 'contato_emergencia_telefone_status', false);
+  });
 
   // Busca de endereço por CEP via ViaCEP — preenche os campos
   // automaticamente; os campos de endereço (rua, bairro, cidade e UF)
@@ -250,13 +284,15 @@
 
   document.querySelector('form').addEventListener('submit', function (evento) {
     var dataOk = marcarDataNascimentoValida();
+    var telefoneOk = marcarTelefoneValido('telefone', 'telefone_status', true);
+    var contatoTelefoneOk = marcarTelefoneValido('contato_emergencia_telefone', 'contato_emergencia_telefone_status', false);
     var cepDigitos = document.getElementById('cep').value.replace(/\D/g, '');
     var cepOk = !cepDigitos || cepDigitos.length === 8;
     if (cepDigitos && cepDigitos.length !== 8) {
       document.getElementById('cep').classList.add('is-invalid');
       document.getElementById('cep_status').textContent = 'CEP incompleto — digite os 8 números.';
     }
-    if (!dataOk || !cepOk) {
+    if (!dataOk || !telefoneOk || !contatoTelefoneOk || !cepOk) {
       evento.preventDefault();
       var primeiroInvalido = document.querySelector('.is-invalid');
       if (primeiroInvalido) primeiroInvalido.focus();

@@ -84,6 +84,19 @@ with app.app_context():
     checar("Ninguém foi criado com o CEP incompleto",
            Paciente.query.filter_by(cpf="998.887.776-53").first() is None)
 
+# Telefone incompleto (ex.: só o DDD, "(27") é barrado - a máscara deixava
+# apagar/editar livremente, mas não garantia que a pessoa terminou de
+# digitar os 10 ou 11 dígitos de um telefone de verdade.
+r = client.post("/cadastro-paciente", data={
+    "nome": "Telefone Incompleto", "cpf": "998.887.776-53", "telefone": "(27",
+    "data_nascimento": "01/01/1990",
+}, follow_redirects=True)
+checar("Telefone incompleto ('(27') é barrado",
+       "Telefone incompleto" in r.get_data(as_text=True))
+with app.app_context():
+    checar("Ninguém foi criado com o telefone incompleto",
+           Paciente.query.filter_by(cpf="998.887.776-53").first() is None)
+
 r = client.post("/cadastro-paciente", data={
     "nome": "Diego Plataforma", "cpf": CPF, "telefone": "(27) 93030-0001",
     "data_nascimento": "12/12/1990", "email": "diego@exemplo.com",

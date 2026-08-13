@@ -489,6 +489,15 @@ def validar_cpf(cpf):
     return True
 
 
+def telefone_incompleto(telefone):
+    """True se o telefone foi digitado mas ficou incompleto (nem os 10 ou
+    11 dígitos de um telefone brasileiro - DDD + número) - a máscara
+    "(99) 99999-9999" deixava sair, por exemplo, só "(27" sem travar o
+    envio do formulário."""
+    digitos = re.sub(r"\D", "", telefone or "")
+    return bool(digitos) and len(digitos) not in (10, 11)
+
+
 def cep_incompleto(cep):
     """True se o CEP foi digitado mas ficou incompleto (nem todos os 8
     dígitos) - sem isso, o cadastro deixava salvar um CEP pela metade

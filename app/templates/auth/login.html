@@ -20,7 +20,7 @@
         <a href="{{ url_for('auth.cadastro', modo='independente') }}" class="small"><strong>Login como médico</strong> — primeira vez? Crie sua conta de médico aqui</a>
       </div>
       <div class="text-center mt-2">
-        <a href="{{ url_for('auth.cadastro') }}" class="small"><strong>Login como clínica</strong> — primeira vez? Cadastre sua clínica aqui</a>
+        <a href="{{ url_for('auth.cadastro', modo='empresa') }}" class="small"><strong>Login como clínica</strong> — primeira vez? Cadastre sua clínica aqui</a>
       </div>
       <div class="text-center mt-2">
         <a href="{{ url_for('auth.login_paciente') }}" class="small">Sou paciente &rarr; <strong>Entrar com CPF e data de nascimento</strong></a>
