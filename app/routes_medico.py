@@ -225,6 +225,22 @@ def eh_medico():
     return current_user.is_authenticated and current_user.tipo == "medico"
 
 
+def _restringir_perguntas_para_medico(query):
+    """Restringe uma query de PerguntaPendente às perguntas que ESTE médico
+    logado pode ver: as de exames dos quais ele é responsável (principal ou
+    "extra" - ver Exame.medico_pode_atender), mais as perguntas GERAIS (sem
+    exame associado) quando ele também tiver perm_pacientes - caso do médico
+    fundador de uma clínica sem secretária, que acumula o papel de quem
+    administra pacientes. Vale pra QUALQUER médico, mesmo com perm_pacientes:
+    ter permissão administrativa não deve fazer um médico ver perguntas de
+    exames de OUTRO médico da mesma clínica - só a secretária/dono, que não
+    são "donos" de exame nenhum, veem tudo."""
+    condicoes = [Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id)]
+    if current_user.perm_pacientes:
+        condicoes.append(PerguntaPendente.exame_id.is_(None))
+    return query.outerjoin(Exame, PerguntaPendente.exame_id == Exame.id).filter(or_(*condicoes))
+
+
 def medicos_da_clinica(clinica):
     """Lista os médicos (usuários) vinculados e ativos nesta clínica."""
     return [m for m in clinica.medicos_e_secretarias if m.tipo == "medico"]
@@ -417,21 +433,17 @@ def dashboard():
             .count()
         )
         # (a agenda do painel já vem filtrada pro médico logo acima,
-        # independente de permissão - aqui só os contadores/perguntas)
-        # Perguntas pendentes só entram na conta do médico sem a permissão
-        # administrativa quando forem sobre um exame de sua responsabilidade
-        # (perguntas gerais, sem exame associado, ficam só para quem tem
-        # perm_pacientes responder - secretária, ou o médico fundador que
-        # também administra pacientes).
-        pendentes_q = pendentes_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
-            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
-        )
-        aguardando_q = aguardando_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
-            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
-        )
+        # independente de permissão - aqui só o contador de pacientes/solicitações)
         solicitacoes_q = solicitacoes_q.filter(Agendamento.medico_id == current_user.id)
     else:
         total_pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).count()
+
+    # Perguntas pendentes: um médico só vê (e conta) as de exames dos quais é
+    # responsável, mais as gerais quando também administra pacientes - vale
+    # mesmo pra médico com perm_pacientes (ver _restringir_perguntas_para_medico).
+    if eh_medico():
+        pendentes_q = _restringir_perguntas_para_medico(pendentes_q)
+        aguardando_q = _restringir_perguntas_para_medico(aguardando_q)
 
     # Link de auto-cadastro de paciente é da EMPRESA e fica aqui no
     # Painel - gera o código na primeira vez que o painel é aberto.
@@ -3068,20 +3080,16 @@ def perguntas_pendentes():
         PerguntaPendente.clinica_id.in_(filial_ids), PerguntaPendente.status == "respondida"
     )
 
-    if eh_medico() and not current_user.perm_pacientes:
-        # O médico sem a permissão administrativa só acompanha perguntas
-        # sobre exames de sua responsabilidade; perguntas gerais (sem exame
-        # associado) ficam só para quem tem perm_pacientes responder -
-        # secretária, ou o médico fundador que também administra pacientes.
-        pendentes_q = pendentes_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
-            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
-        )
-        aguardando_q = aguardando_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
-            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
-        )
-        respondidas_q = respondidas_q.join(Exame, PerguntaPendente.exame_id == Exame.id).filter(
-            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
-        )
+    if eh_medico():
+        # O médico só acompanha perguntas sobre exames de sua
+        # responsabilidade (mais as gerais, sem exame, se também administrar
+        # pacientes) - vale mesmo pra quem tem perm_pacientes (ex.: médico
+        # fundador de uma clínica com outros médicos na equipe): ter essa
+        # permissão não deve fazer um médico ver perguntas sobre exames de
+        # OUTRO médico. Ver _restringir_perguntas_para_medico.
+        pendentes_q = _restringir_perguntas_para_medico(pendentes_q)
+        aguardando_q = _restringir_perguntas_para_medico(aguardando_q)
+        respondidas_q = _restringir_perguntas_para_medico(respondidas_q)
 
     pendentes = pendentes_q.order_by(PerguntaPendente.criado_em.desc()).all()
     aguardando = aguardando_q.order_by(PerguntaPendente.criado_em.desc()).all()
@@ -3099,9 +3107,16 @@ def perguntas_responder(pergunta_id):
         PerguntaPendente.id == pergunta_id, PerguntaPendente.clinica_id.in_(filiais_atuais_ids())
     ).first_or_404()
 
-    if eh_medico() and not current_user.perm_pacientes and (not pergunta.exame or not pergunta.exame.medico_pode_atender(current_user.id)):
-        flash("Você só pode responder perguntas sobre os seus próprios exames.", "danger")
-        return redirect(url_for("medico.perguntas_pendentes"))
+    # Mesma regra de quem PODE VER (ver _restringir_perguntas_para_medico):
+    # um médico só responde perguntas dos seus próprios exames, mais as
+    # gerais (sem exame) se também administrar pacientes - mesmo tendo
+    # perm_pacientes, não pode responder pergunta de exame de outro médico.
+    if eh_medico():
+        exame_proprio = pergunta.exame is not None and pergunta.exame.medico_pode_atender(current_user.id)
+        geral_administravel = pergunta.exame is None and current_user.perm_pacientes
+        if not exame_proprio and not geral_administravel:
+            flash("Você só pode responder perguntas sobre os seus próprios exames.", "danger")
+            return redirect(url_for("medico.perguntas_pendentes"))
 
     resposta = request.form.get("resposta", "").strip()
 
