@@ -15,7 +15,7 @@
         <div class="row g-3">
           <div class="col-md-6">
             <label class="form-label">Nome completo</label>
-            <input type="text" name="nome" class="form-control" required autofocus>
+            <input type="text" name="nome" class="form-control" autocapitalize="words" required autofocus>
           </div>
           <div class="col-md-6">
             <label class="form-label">CPF (será seu login de acesso)</label>
@@ -71,7 +71,7 @@
           <div class="col-12"><h6 class="mb-0 mt-2">Contato de emergência</h6></div>
           <div class="col-md-6">
             <label class="form-label">Nome</label>
-            <input type="text" name="contato_emergencia_nome" class="form-control">
+            <input type="text" name="contato_emergencia_nome" class="form-control" autocapitalize="words">
           </div>
           <div class="col-md-6">
             <label class="form-label">Telefone</label>
@@ -97,6 +97,9 @@
         campo.value = '';
         return;
       }
+      // Formata só o que foi digitado, SEM completar com '_' - o
+      // preenchimento fantasma impedia apagar (o backspace removia o '_'
+      // e a máscara o recolocava, travando o campo).
       var resultado = '';
       var pos = 0;
       for (var i = 0; i < padrao.length && pos < digitos.length; i++) {
@@ -106,9 +109,6 @@
         } else {
           resultado += padrao[i];
         }
-      }
-      for (var j = i; j < padrao.length; j++) {
-        resultado += padrao[j] === '9' ? '_' : padrao[j];
       }
       campo.value = resultado;
     });

@@ -68,6 +68,22 @@ r = client.post("/cadastro-paciente", data={
     "contato_emergencia_nome": "Irma Plataforma", "contato_emergencia_telefone": "(27) 93030-0002",
 }, follow_redirects=True)
 checar("Cadastro global cria a conta e já loga", "Diego Plataforma" in r.get_data(as_text=True))
+
+# Nome próprio digitado em minúsculas entra formatado (Primeira Letra
+# Maiúscula, com conectivos em minúsculas).
+r_nome = client.get("/logout")
+r_nome = client.post("/cadastro-paciente", data={
+    "nome": "  maria das graças de   oliveira", "cpf": "222.333.444-05",
+    "telefone": "(27) 93030-0055", "data_nascimento": "05/05/1995",
+    "contato_emergencia_nome": "josé d'ávila", "contato_emergencia_telefone": "",
+}, follow_redirects=True)
+with app.app_context():
+    p_nome = Paciente.query.filter_by(cpf="222.333.444-05").first()
+    checar("Nome digitado minúsculo vira Nome Próprio ('Maria das Graças de Oliveira')",
+           p_nome is not None and p_nome.nome == "Maria das Graças de Oliveira")
+    checar("Contato de emergência também é formatado (José D'Ávila)",
+           p_nome.contato_emergencia_nome == "José D'Ávila")
+client.get("/logout")
 checar("A mensagem orienta informar o CPF na clínica", "CPF" in r.get_data(as_text=True))
 
 with app.app_context():

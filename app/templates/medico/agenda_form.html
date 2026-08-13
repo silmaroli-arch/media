@@ -113,9 +113,6 @@
           resultado += padrao[i];
         }
       }
-      for (var j = i; j < padrao.length; j++) {
-        resultado += padrao[j] === '9' ? '_' : padrao[j];
-      }
       campo.value = resultado;
     });
   }

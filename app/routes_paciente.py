@@ -10,7 +10,7 @@ from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Agendamento, Exame, PerguntaPendente, FaqItem, ChatMensagem, Usuario, MedicoHorario, Paciente, normalizar_telefone, encontrar_conta_paciente
+from app.models import Agendamento, Exame, PerguntaPendente, FaqItem, ChatMensagem, Usuario, MedicoHorario, Paciente, normalizar_telefone, encontrar_conta_paciente, formatar_nome_proprio
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.ia_preparo import responder_com_ia
 from app.clinica_utils import verificar_vencimento_empresa
@@ -489,7 +489,7 @@ def meus_dados():
             p.bairro = request.form.get("bairro", "").strip()
             p.cidade = request.form.get("cidade", "").strip()
             p.uf = request.form.get("uf", "").strip().upper() or None
-            p.contato_emergencia_nome = request.form.get("contato_emergencia_nome", "").strip()
+            p.contato_emergencia_nome = formatar_nome_proprio(request.form.get("contato_emergencia_nome", ""))
             p.contato_emergencia_telefone = request.form.get("contato_emergencia_telefone", "").strip()
         db.session.commit()
 

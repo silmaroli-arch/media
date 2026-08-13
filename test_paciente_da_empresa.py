@@ -52,20 +52,20 @@ html_form = r.get_data(as_text=True)
 checar("Formulário de novo paciente NÃO pede filial", 'name="clinica_id"' not in html_form)
 
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Cliente Da Empresa", "cpf": "321.654.987-00", "email": "",
+    "nome": "cliente da empresa", "cpf": "321.654.987-00", "email": "",
     "telefone": "(27) 97777-0001", "data_nascimento": "1992-05-10",
 }, follow_redirects=True)
 checar("Cadastro do paciente sem filial funciona", "cadastrado" in r.get_data(as_text=True).lower())
 
 with app.app_context():
-    cliente = Paciente.query.filter_by(nome="Cliente Da Empresa").first()
+    cliente = Paciente.query.filter_by(nome="Cliente da Empresa").first()
     checar("Paciente criado com empresa_id (pertence à empresa)", cliente.empresa_id == grupo_id)
     checar("Paciente NÃO tem filial nenhuma (clinica_id vazio)", cliente.clinica_id is None)
     cliente_id = cliente.id
 
 r = client.get("/equipe/pacientes")
 html_lista = r.get_data(as_text=True)
-checar("Paciente aparece na lista", "Cliente Da Empresa" in html_lista)
+checar("Paciente aparece na lista (nome formatado como nome próprio)", "Cliente da Empresa" in html_lista)
 checar("Lista de pacientes NÃO tem coluna de filial", "<th>Filial</th>" not in html_lista)
 
 # CPF duplicado é bloqueado por EMPRESA (não mais por filial).
@@ -117,7 +117,7 @@ client.get("/logout")
 
 login("secretaria@clinicavitoria.com", "123456")
 r = client.get("/equipe/pacientes")
-checar("Paciente do Grupo Saúde Total NÃO aparece para a Clínica Vitória", "Cliente Da Empresa" not in r.get_data(as_text=True))
+checar("Paciente do Grupo Saúde Total NÃO aparece para a Clínica Vitória", "Cliente da Empresa" not in r.get_data(as_text=True))
 client.get("/logout")
 
 # ---------- Área do paciente: exames de todas as filiais, filial pelo exame ----------

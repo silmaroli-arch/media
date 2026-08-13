@@ -6,7 +6,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, validar_cpf
+from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, validar_cpf, formatar_nome_proprio
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -363,7 +363,9 @@ def cadastro_paciente_global():
         return redirect(url_for("index"))
 
     if request.method == "POST":
-        nome = request.form.get("nome", "").strip()
+        # Nome próprio entra formatado (primeira letra de cada nome em
+        # maiúscula) - no celular quase todo mundo digita minúsculo.
+        nome = formatar_nome_proprio(request.form.get("nome", ""))
         cpf = request.form.get("cpf", "").strip()
         email = request.form.get("email", "").strip().lower()
         telefone_digitado = request.form.get("telefone", "").strip()
@@ -427,7 +429,7 @@ def cadastro_paciente_global():
         paciente.bairro = request.form.get("bairro", "").strip()
         paciente.cidade = request.form.get("cidade", "").strip()
         paciente.uf = request.form.get("uf", "").strip().upper() or None
-        paciente.contato_emergencia_nome = request.form.get("contato_emergencia_nome", "").strip()
+        paciente.contato_emergencia_nome = formatar_nome_proprio(request.form.get("contato_emergencia_nome", ""))
         paciente.contato_emergencia_telefone = request.form.get("contato_emergencia_telefone", "").strip()
         db.session.add(paciente)
         db.session.commit()

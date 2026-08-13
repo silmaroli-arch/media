@@ -21,7 +21,7 @@ from app.models import (
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, DescontoConfig, Pagamento, EvolucaoClinica,
-    ConviteVinculo, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf,
+    ConviteVinculo, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
 )
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
@@ -594,7 +594,7 @@ def _preencher_endereco_emergencia(paciente, form):
     paciente.bairro = form.get("bairro", "").strip()
     paciente.cidade = form.get("cidade", "").strip()
     paciente.uf = form.get("uf", "").strip().upper() or None
-    paciente.contato_emergencia_nome = form.get("contato_emergencia_nome", "").strip()
+    paciente.contato_emergencia_nome = formatar_nome_proprio(form.get("contato_emergencia_nome", ""))
     paciente.contato_emergencia_telefone = form.get("contato_emergencia_telefone", "").strip()
 
 
@@ -652,7 +652,7 @@ def pacientes_novo():
         # ("o cliente é só cliente"). A filial só é escolhida na hora de
         # marcar cada consulta (medico.agenda_novo /
         # paciente.solicitar_agendamento).
-        nome = request.form.get("nome", "").strip()
+        nome = formatar_nome_proprio(request.form.get("nome", ""))
         cpf = request.form.get("cpf", "").strip()
         email = request.form.get("email", "").strip().lower()
         telefone_digitado = request.form.get("telefone", "").strip()
@@ -799,7 +799,7 @@ def pacientes_editar(paciente_id):
     ).first_or_404()
 
     if request.method == "POST":
-        paciente.nome = request.form.get("nome", "").strip() or paciente.nome
+        paciente.nome = formatar_nome_proprio(request.form.get("nome", "")) or paciente.nome
         paciente.email = request.form.get("email", "").strip().lower() or None
         paciente.observacoes = request.form.get("observacoes", "").strip() or None
         _preencher_endereco_emergencia(paciente, request.form)

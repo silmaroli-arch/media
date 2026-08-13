@@ -166,9 +166,6 @@
       }
       // Completa o resto do padrao com "_" nas posicoes de digito que
       // ainda faltam, mantendo a pontuacao fixa visivel.
-      for (var j = i; j < padrao.length; j++) {
-        resultado += padrao[j] === '9' ? '_' : padrao[j];
-      }
       campo.value = resultado;
     });
   }

@@ -443,6 +443,34 @@ class Usuario(db.Model, UserMixin):
         ]
 
 
+def formatar_nome_proprio(nome):
+    """Nome de gente com a primeira letra de cada nome em maiúscula:
+    "silvan martins de oliveira" -> "Silvan Martins de Oliveira".
+    Conectivos (de/da/do/das/dos/e) ficam em minúsculas, e nomes compostos
+    com hífen ou apóstrofo são tratados ("anna-luiza d'ávila" ->
+    "Anna-Luiza D'Ávila"). Usado nos cadastros de paciente - quem digita
+    no celular quase sempre deixa tudo minúsculo."""
+    nome = " ".join((nome or "").split())
+    if not nome:
+        return nome
+    conectivos = {"de", "da", "do", "das", "dos", "e", "di", "del", "van", "von"}
+
+    def capitalizar(palavra):
+        for separador in ("-", "'"):
+            if separador in palavra:
+                return separador.join(capitalizar(p) for p in palavra.split(separador))
+        return palavra[:1].upper() + palavra[1:] if palavra else palavra
+
+    partes = []
+    for i, palavra in enumerate(nome.split(" ")):
+        minuscula = palavra.lower()
+        if i > 0 and minuscula in conectivos:
+            partes.append(minuscula)
+        else:
+            partes.append(capitalizar(minuscula))
+    return " ".join(partes)
+
+
 def validar_cpf(cpf):
     """True se o CPF é um número VÁLIDO de verdade (dígitos verificadores
     conferem e não é uma sequência repetida tipo 111.111.111-11). O CPF é
