@@ -57,28 +57,12 @@
         })();
       </script>
       <div class="text-center mt-3">
-        <a href="{{ url_for('auth.cadastro_paciente_global') }}" class="small d-block mb-2">Ainda não tem cadastro? &rarr; <strong>Criar minha conta de paciente</strong></a>
-        <a href="{{ url_for('auth.login') }}" class="small">Sou médico(a) ou secretário(a) &rarr; <strong>Entrar com e-mail e senha</strong></a>
+        {# O paciente vai DIRETO pro cadastro - sem link de equipe nem
+           informações internas de versão/deploy nesta tela (isso é coisa
+           da tela de login da equipe, não do cliente). #}
+        <a href="{{ url_for('auth.cadastro_paciente_global') }}" class="btn btn-outline-primary w-100 mb-2">Ainda não tenho cadastro — <strong>criar minha conta</strong></a>
       </div>
-      {% if versao_info %}
-      <div class="text-muted text-center small mt-3" style="opacity:.55; font-size:.75rem;">
-        versão {{ versao_info.commit_curto }} ({{ versao_info.branch }}) · último deploy: {{ versao_info.deploy_em_local }}
-        {% if historico_deploy %}
-        · <a href="#" class="text-muted" data-bs-toggle="collapse" data-bs-target="#historicoVersoesLogin" style="text-decoration: underline;">ver histórico</a>
-        {% endif %}
-      </div>
-      {% if historico_deploy %}
-      <div class="collapse mt-2" id="historicoVersoesLogin">
-        <ul class="list-unstyled text-start small text-muted mb-0" style="opacity:.75; font-size:.72rem; max-height: 220px; overflow-y: auto;">
-          {% for v in historico_deploy %}
-          <li class="mb-1">
-            <strong>{{ v.commit_curto }}</strong> ({{ v.branch }}) — {{ v.deploy_em_local }}{% if v.mensagem %}: {{ v.mensagem }}{% endif %}
-          </li>
-          {% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-      {% endif %}
+      
     </div>
   </div>
 </div>
