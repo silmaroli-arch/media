@@ -968,7 +968,7 @@ linhas_alimentos_simuladas = [
     "• Alimentos proibidos: leite e derivados, milho, feijão, pão integral.",
     "• Sugestão para consumo: água de coco, chá claro, gelatina sem cor.",
 ]
-alimentos_sugeridos = _sugerir_alimentos(linhas_alimentos_simuladas)
+alimentos_sugeridos = _sugerir_alimentos(linhas_alimentos_simuladas, "\n".join(linhas_alimentos_simuladas))
 checar("Extração de alimentos proibidos aplica o prazo padrão de 12 horas quando não há horário explícito",
        any(a["nome"] == "leite" and not a["permitido"] and a["horas_antes"] == 12 for a in alimentos_sugeridos))
 checar("Extração separa cada alimento proibido da lista em prosa",
