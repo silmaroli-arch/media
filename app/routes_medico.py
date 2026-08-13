@@ -1143,7 +1143,18 @@ def exames_por_filial():
     else:
         exames_visiveis = exames_da_empresa
     nomes = sorted({e.nome for e in exames_visiveis})
-    medicos_por_filial = {f.id: medicos_da_clinica(f) for f in filiais}
+    # O dropdown "Médico" segue a mesma lógica do "Exame" acima: quando
+    # quem está logado é médico, só aparece ele mesmo — um médico só pode
+    # ser o responsável pelos SEUS próprios exames (ver dono_medico), então
+    # listar os colegas da filial ali só confunde. Secretária/dono
+    # continuam vendo todos, já que são quem de fato define qual médico
+    # atende cada exame.
+    if current_user.tipo == "medico":
+        medicos_por_filial = {
+            f.id: [m for m in medicos_da_clinica(f) if m.id == current_user.id] for f in filiais
+        }
+    else:
+        medicos_por_filial = {f.id: medicos_da_clinica(f) for f in filiais}
 
     # "Editar" de uma linha reaproveita o mesmo formulário, pré-preenchido
     # com a associação escolhida (exame+filial ficam fixos; só médico e
@@ -1189,11 +1200,19 @@ def exames_por_filial_associar():
         flash("Escolha um exame e uma filial válidos.", "danger")
         return redirect(url_for("medico.exames_por_filial"))
 
+    # Reforço no servidor da mesma regra do dropdown (ver exames_por_filial
+    # acima): um médico só pode se escolher a si mesmo como responsável,
+    # nunca um colega — mesmo que o exame não tenha dono registrado. Sem
+    # isso, dava pra contornar a restrição do dropdown só editando o HTML.
+    medico_escolhido_id = request.form.get("medico_id", type=int)
+    if current_user.tipo == "medico" and medico_escolhido_id and medico_escolhido_id != current_user.id:
+        flash("Você só pode se associar como responsável pelos seus próprios exames.", "danger")
+        return redirect(url_for("medico.exames_por_filial"))
+
     # DONO do exame: se o exame foi criado por um médico, SÓ ELE pode ser
     # associado a este exame - vale tanto pra associação nova quanto pra
     # tentar adicionar outro médico a uma associação existente.
     dono = _dono_medico_do_exame(nome, empresa)
-    medico_escolhido_id = request.form.get("medico_id", type=int)
     if dono and medico_escolhido_id and medico_escolhido_id != dono.id:
         flash(
             f"O exame \"{nome}\" pertence a {dono.nome} (quem o criou) — só ele pode ser "
