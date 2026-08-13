@@ -21,6 +21,7 @@ from app.models import (
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, DescontoConfig, Pagamento, EvolucaoClinica,
+    ProcedimentoGastro, ProcedimentoPolipo,
     ConviteVinculo, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto, validar_cpf,
 )
@@ -2815,6 +2816,109 @@ def resultado_upload(agendamento_id):
         return redirect(url_for("medico.agenda"))
 
     return render_template("medico/resultado_upload.html", agendamento=agendamento)
+
+
+# ---------- Achados do procedimento gastro ----------
+
+@medico_bp.route("/agenda/<int:agendamento_id>/procedimento-gastro", methods=["GET", "POST"])
+@login_required
+@staff_required
+def procedimento_gastro_salvar(agendamento_id):
+    """Registra os achados de um procedimento gastroenterológico (colonoscopia,
+    endoscopia, etc.) — qualidade de preparo, sedação, achados, pólipos,
+    complicações, tempo de duração."""
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+    )
+    if eh_medico():
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
+
+    procedimento = agendamento.procedimento_gastro
+
+    if request.method == "POST":
+        def _int_ou_none(campo):
+            valor = request.form.get(campo, "").strip()
+            if not valor:
+                return None
+            try:
+                return int(valor)
+            except ValueError:
+                return None
+
+        # Dados principais
+        qualidade_preparo = request.form.get("qualidade_preparo", "").strip() or None
+        sedacao_realizada = request.form.get("sedacao_realizada") == "true"
+        sedacao_tipo = request.form.get("sedacao_tipo", "").strip() or None
+        sedacao_dose = request.form.get("sedacao_dose", "").strip() or None
+        achados_texto = request.form.get("achados_texto", "").strip() or None
+        numero_polipos = _int_ou_none("numero_polipos") or 0
+        polipos_removidos = _int_ou_none("polipos_removidos") or 0
+        biopsias_coletadas = _int_ou_none("biopsias_coletadas") or 0
+        resseccao_endoscopica = request.form.get("resseccao_endoscopica") == "true"
+        hemorragia_controlada = request.form.get("hemorragia_controlada") == "true"
+        complicacoes = request.form.get("complicacoes", "").strip() or None
+        tempo_procedimento_minutos = _int_ou_none("tempo_procedimento_minutos")
+        observacoes = request.form.get("observacoes", "").strip() or None
+
+        if not procedimento:
+            procedimento = ProcedimentoGastro(
+                agendamento_id=agendamento.id,
+                paciente_id=agendamento.paciente_id,
+                medico_id=current_user.id,
+            )
+            db.session.add(procedimento)
+
+        # Remove pólipos antigos se for uma atualização
+        if procedimento.id:
+            for polipo in procedimento.polipos:
+                db.session.delete(polipo)
+
+        procedimento.qualidade_preparo = qualidade_preparo
+        procedimento.sedacao_realizada = sedacao_realizada
+        procedimento.sedacao_tipo = sedacao_tipo if sedacao_realizada else None
+        procedimento.sedacao_dose = sedacao_dose if sedacao_realizada else None
+        procedimento.achados_texto = achados_texto
+        procedimento.numero_polipos = numero_polipos
+        procedimento.polipos_removidos = polipos_removidos
+        procedimento.biopsias_coletadas = biopsias_coletadas
+        procedimento.resseccao_endoscopica = resseccao_endoscopica
+        procedimento.hemorragia_controlada = hemorragia_controlada
+        procedimento.complicacoes = complicacoes
+        procedimento.tempo_procedimento_minutos = tempo_procedimento_minutos
+        procedimento.observacoes = observacoes
+
+        # Processa os pólipos (arrays do form)
+        localizacoes = request.form.getlist("polipo_localizacao[]")
+        tamanhos = request.form.getlist("polipo_tamanho[]")
+        paris = request.form.getlist("polipo_paris[]")
+        acoes = request.form.getlist("polipo_acoes[]")
+        histopatologias = request.form.getlist("polipo_histopatologia[]")
+        obs_polipos = request.form.getlist("polipo_obs[]")
+
+        for i, loc in enumerate(localizacoes):
+            if loc:  # Só cria polipo se houver localização preenchida
+                polipo = ProcedimentoPolipo(
+                    localizacao=loc,
+                    tamanho_mm=int(tamanhos[i]) if i < len(tamanhos) and tamanhos[i] else None,
+                    classificacao_paris=paris[i] if i < len(paris) and paris[i] else None,
+                    acoes=acoes[i] if i < len(acoes) and acoes[i] else None,
+                    histopatologia=histopatologias[i] if i < len(histopatologias) and histopatologias[i] else None,
+                    observacoes=obs_polipos[i] if i < len(obs_polipos) and obs_polipos[i] else None,
+                )
+                procedimento.polipos.append(polipo)
+
+        db.session.commit()
+        flash("Achados do procedimento registrados com sucesso.", "success")
+        return redirect(url_for("medico.atendimento", agendamento_id=agendamento.id))
+
+    # GET: renderiza o form com dados existentes (se houver)
+    return render_template(
+        "medico/procedimento_gastro.html",
+        agendamento=agendamento,
+        procedimento=procedimento,
+    )
 
 
 # ---------- Pagamento e descontos ----------

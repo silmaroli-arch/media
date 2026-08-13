@@ -105,6 +105,26 @@
   </form>
 </div>
 
+<div class="card p-4 mb-4">
+  <h5 class="mb-3">Achados do Procedimento</h5>
+  <p class="text-muted small mb-3">
+    Registro estruturado dos achados do procedimento — qualidade de preparo, sedação, pólipos encontrados, biópsias, complicações, etc.
+  </p>
+  {% if agendamento.procedimento_gastro %}
+    <div class="alert alert-info mb-3">
+      <strong>Procedimento registrado em:</strong> {{ agendamento.procedimento_gastro.criado_em.strftime('%d/%m/%Y %H:%M') }} por {{ agendamento.procedimento_gastro.medico.nome }}
+      {% if agendamento.procedimento_gastro.numero_polipos %}
+        <br><strong>Pólipos encontrados:</strong> {{ agendamento.procedimento_gastro.numero_polipos }}
+        ({{ agendamento.procedimento_gastro.polipos_removidos }} removidos)
+      {% endif %}
+    </div>
+    <a href="{{ url_for('medico.procedimento_gastro_salvar', agendamento_id=agendamento.id) }}" class="btn btn-primary">Editar achados</a>
+  {% else %}
+    <p class="text-muted mb-3">Nenhum procedimento registrado ainda para este atendimento.</p>
+    <a href="{{ url_for('medico.procedimento_gastro_salvar', agendamento_id=agendamento.id) }}" class="btn btn-primary">Registrar achados do procedimento</a>
+  {% endif %}
+</div>
+
 <div class="accordion" id="accordionHistoricoPaciente">
   <div class="accordion-item">
     <h2 class="accordion-header">

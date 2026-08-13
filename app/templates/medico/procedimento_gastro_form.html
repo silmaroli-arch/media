@@ -1,0 +1,238 @@
+{% macro render_procedimento_form(procedimento, agendamento) %}
+<div class="card p-4 mb-4">
+    <h5 class="mb-3">Achados do Procedimento</h5>
+
+    {% if procedimento %}
+        <div class="alert alert-info mb-3">
+            <strong>Procedimento registrado em:</strong> {{ procedimento.criado_em.strftime('%d/%m/%Y %H:%M') }}
+            {% if procedimento.assinado %}
+                <span class="badge bg-success ms-2">Assinado</span>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('medico.procedimento_gastro_salvar', agendamento_id=agendamento.id) }}" id="form-procedimento-gastro">
+
+        <!-- Preparo observado -->
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <label for="qualidade_preparo" class="form-label">Qualidade do Preparo Observada</label>
+                <select class="form-select" id="qualidade_preparo" name="qualidade_preparo" required>
+                    <option value="">Selecionar...</option>
+                    <option value="excelente" {% if procedimento and procedimento.qualidade_preparo == 'excelente' %}selected{% endif %}>Excelente</option>
+                    <option value="bom" {% if procedimento and procedimento.qualidade_preparo == 'bom' %}selected{% endif %}>Bom</option>
+                    <option value="adequado" {% if procedimento and procedimento.qualidade_preparo == 'adequado' %}selected{% endif %}>Adequado</option>
+                    <option value="insuficiente" {% if procedimento and procedimento.qualidade_preparo == 'insuficiente' %}selected{% endif %}>Insuficiente</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Sedação -->
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="sedacao_realizada" name="sedacao_realizada" value="true" {% if procedimento and procedimento.sedacao_realizada %}checked{% endif %}>
+                    <label class="form-check-label" for="sedacao_realizada">Sedação/Anestesia realizada</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-3" id="sedacao-fields" style="{% if not (procedimento and procedimento.sedacao_realizada) %}display:none;{% endif %}">
+            <div class="col-md-4">
+                <label for="sedacao_tipo" class="form-label">Tipo</label>
+                <input type="text" class="form-control" id="sedacao_tipo" name="sedacao_tipo" placeholder="Propofol, Midazolam, etc." value="{{ procedimento.sedacao_tipo if procedimento else '' }}">
+            </div>
+            <div class="col-md-4">
+                <label for="sedacao_dose" class="form-label">Dose</label>
+                <input type="text" class="form-control" id="sedacao_dose" name="sedacao_dose" placeholder="1.5mg/kg, 5mg, etc." value="{{ procedimento.sedacao_dose if procedimento else '' }}">
+            </div>
+        </div>
+
+        <!-- Achados principais -->
+        <div class="mb-3">
+            <label for="achados_texto" class="form-label">Achados Principais</label>
+            <textarea class="form-control" id="achados_texto" name="achados_texto" rows="3" placeholder="Descrição dos achados (ex.: Íngreme colônica com infiltração mucosa)">{{ procedimento.achados_texto if procedimento else '' }}</textarea>
+        </div>
+
+        <!-- Procedimentos realizados -->
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <label for="numero_polipos" class="form-label">Número de Pólipos Encontrados</label>
+                <input type="number" class="form-control" id="numero_polipos" name="numero_polipos" min="0" value="{{ procedimento.numero_polipos if procedimento else 0 }}">
+            </div>
+            <div class="col-md-3">
+                <label for="polipos_removidos" class="form-label">Pólipos Removidos</label>
+                <input type="number" class="form-control" id="polipos_removidos" name="polipos_removidos" min="0" value="{{ procedimento.polipos_removidos if procedimento else 0 }}">
+            </div>
+            <div class="col-md-3">
+                <label for="biopsias_coletadas" class="form-label">Biópsias Coletadas</label>
+                <input type="number" class="form-control" id="biopsias_coletadas" name="biopsias_coletadas" min="0" value="{{ procedimento.biopsias_coletadas if procedimento else 0 }}">
+            </div>
+            <div class="col-md-3">
+                <label for="tempo_procedimento_minutos" class="form-label">Tempo (minutos)</label>
+                <input type="number" class="form-control" id="tempo_procedimento_minutos" name="tempo_procedimento_minutos" min="0" value="{{ procedimento.tempo_procedimento_minutos if procedimento else '' }}">
+            </div>
+        </div>
+
+        <!-- Checkboxes -->
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="resseccao_endoscopica" name="resseccao_endoscopica" value="true" {% if procedimento and procedimento.resseccao_endoscopica %}checked{% endif %}>
+                    <label class="form-check-label" for="resseccao_endoscopica">Ressecção endoscópica</label>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="hemorragia_controlada" name="hemorragia_controlada" value="true" {% if procedimento and procedimento.hemorragia_controlada %}checked{% endif %}>
+                    <label class="form-check-label" for="hemorragia_controlada">Hemorragia controlada</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Complicações -->
+        <div class="mb-3">
+            <label for="complicacoes" class="form-label">Complicações</label>
+            <textarea class="form-control" id="complicacoes" name="complicacoes" rows="2" placeholder="Ex.: sangramento leve controlado, perfuração, etc.">{{ procedimento.complicacoes if procedimento else '' }}</textarea>
+        </div>
+
+        <!-- Pólipos individuais -->
+        <div class="mb-3">
+            <label class="form-label">Pólipos Encontrados</label>
+            <div id="polipos-lista">
+                {% if procedimento and procedimento.polipos %}
+                    {% for polipo in procedimento.polipos %}
+                        <div class="card p-3 mb-2 polipo-item" data-index="{{ loop.index0 }}">
+                            <div class="row mb-2">
+                                <div class="col-md-3">
+                                    <label class="form-label">Localização</label>
+                                    <select class="form-select form-select-sm" name="polipo_localizacao[]">
+                                        <option value="">Selecionar...</option>
+                                        <option value="ceco" {% if polipo.localizacao == 'ceco' %}selected{% endif %}>Ceco</option>
+                                        <option value="colon ascendente" {% if polipo.localizacao == 'colon ascendente' %}selected{% endif %}>Cólon ascendente</option>
+                                        <option value="flexura hepática" {% if polipo.localizacao == 'flexura hepática' %}selected{% endif %}>Flexura hepática</option>
+                                        <option value="colon transverso" {% if polipo.localizacao == 'colon transverso' %}selected{% endif %}>Cólon transverso</option>
+                                        <option value="flexura esplênica" {% if polipo.localizacao == 'flexura esplênica' %}selected{% endif %}>Flexura esplênica</option>
+                                        <option value="colon descendente" {% if polipo.localizacao == 'colon descendente' %}selected{% endif %}>Cólon descendente</option>
+                                        <option value="sigmóide" {% if polipo.localizacao == 'sigmóide' %}selected{% endif %}>Sigmóide</option>
+                                        <option value="reto" {% if polipo.localizacao == 'reto' %}selected{% endif %}>Reto</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Tamanho (mm)</label>
+                                    <input type="number" class="form-control form-control-sm" name="polipo_tamanho[]" min="0" value="{{ polipo.tamanho_mm or '' }}">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Classificação Paris</label>
+                                    <input type="text" class="form-control form-control-sm" name="polipo_paris[]" placeholder="1p, 2a, 2c, etc." value="{{ polipo.classificacao_paris or '' }}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Ação</label>
+                                    <input type="text" class="form-control form-control-sm" name="polipo_acoes[]" placeholder="Removido, biopsiado, marcado" value="{{ polipo.acoes or '' }}">
+                                </div>
+                                <div class="col-md-2" style="padding-top: 32px;">
+                                    <button type="button" class="btn btn-sm btn-danger btn-remover-polipo">✕</button>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label class="form-label">Histopatologia</label>
+                                    <input type="text" class="form-control form-control-sm" name="polipo_histopatologia[]" placeholder="Adenoma tubular, pólipo hiperplásico, etc." value="{{ polipo.histopatologia or '' }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Observações</label>
+                                    <input type="text" class="form-control form-control-sm" name="polipo_obs[]" value="{{ polipo.observacoes or '' }}">
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="btn-adicionar-polipo">+ Adicionar pólipo</button>
+        </div>
+
+        <!-- Observações gerais -->
+        <div class="mb-3">
+            <label for="observacoes" class="form-label">Observações Gerais</label>
+            <textarea class="form-control" id="observacoes" name="observacoes" rows="3" placeholder="Anotações adicionais">{{ procedimento.observacoes if procedimento else '' }}</textarea>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Salvar Achados do Procedimento</button>
+            <a href="{{ url_for('medico.atendimento', agendamento_id=agendamento.id) }}" class="btn btn-secondary">Cancelar</a>
+        </div>
+    </form>
+</div>
+
+<script>
+document.getElementById('sedacao_realizada').addEventListener('change', function() {
+    const sedacaoFields = document.getElementById('sedacao-fields');
+    sedacaoFields.style.display = this.checked ? '' : 'none';
+});
+
+document.getElementById('btn-adicionar-polipo').addEventListener('click', function() {
+    const lista = document.getElementById('polipos-lista');
+    const novoIndice = lista.querySelectorAll('.polipo-item').length;
+
+    const novoPolipo = `
+        <div class="card p-3 mb-2 polipo-item" data-index="${novoIndice}">
+            <div class="row mb-2">
+                <div class="col-md-3">
+                    <label class="form-label">Localização</label>
+                    <select class="form-select form-select-sm" name="polipo_localizacao[]">
+                        <option value="">Selecionar...</option>
+                        <option value="ceco">Ceco</option>
+                        <option value="colon ascendente">Cólon ascendente</option>
+                        <option value="flexura hepática">Flexura hepática</option>
+                        <option value="colon transverso">Cólon transverso</option>
+                        <option value="flexura esplênica">Flexura esplênica</option>
+                        <option value="colon descendente">Cólon descendente</option>
+                        <option value="sigmóide">Sigmóide</option>
+                        <option value="reto">Reto</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Tamanho (mm)</label>
+                    <input type="number" class="form-control form-control-sm" name="polipo_tamanho[]" min="0">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Classificação Paris</label>
+                    <input type="text" class="form-control form-control-sm" name="polipo_paris[]" placeholder="1p, 2a, 2c, etc.">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Ação</label>
+                    <input type="text" class="form-control form-control-sm" name="polipo_acoes[]" placeholder="Removido, biopsiado, marcado">
+                </div>
+                <div class="col-md-2" style="padding-top: 32px;">
+                    <button type="button" class="btn btn-sm btn-danger btn-remover-polipo">✕</button>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <label class="form-label">Histopatologia</label>
+                    <input type="text" class="form-control form-control-sm" name="polipo_histopatologia[]" placeholder="Adenoma tubular, pólipo hiperplásico, etc.">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Observações</label>
+                    <input type="text" class="form-control form-control-sm" name="polipo_obs[]">
+                </div>
+            </div>
+        </div>
+    `;
+    lista.insertAdjacentHTML('beforeend', novoPolipo);
+
+    // Reatar handlers de remover
+    document.querySelectorAll('.btn-remover-polipo').forEach(btn => {
+        btn.addEventListener('click', function() {
+            this.closest('.polipo-item').remove();
+        });
+    });
+});
+
+document.querySelectorAll('.btn-remover-polipo').forEach(btn => {
+    btn.addEventListener('click', function() {
+        this.closest('.polipo-item').remove();
+    });
+});
+</script>
+{% endmacro %}

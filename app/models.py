@@ -1272,6 +1272,86 @@ class ResultadoExame(db.Model):
     agendamento = db.relationship("Agendamento", back_populates="resultado")
 
 
+class ProcedimentoGastro(db.Model):
+    """Registro clínico estruturado de um procedimento gastroenterológico
+    (colonoscopia, endoscopia, etc.) — achados, pólipos, sedação, complicações,
+    tempo de procedimento. Imutável por desenho (não admite edição, só criação
+    nova como correção, seguindo princípio de prontuário)."""
+    __tablename__ = "procedimentos_gastro"
+
+    id = db.Column(db.Integer, primary_key=True)
+    agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=False, unique=True)
+    paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
+    medico_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+
+    # Preparo observado na hora — escala de Boston (0=inadequado até 3=excelente)
+    qualidade_preparo = db.Column(db.String(20))  # "excelente", "bom", "adequado", "insuficiente"
+
+    # Sedação/anestesia realizada
+    sedacao_realizada = db.Column(db.Boolean, default=False)
+    sedacao_tipo = db.Column(db.String(100))  # "propofol", "midazolam", "sem sedação", etc.
+    sedacao_dose = db.Column(db.String(100))  # "1.5mg/kg", "5mg", etc.
+
+    # Achados principais em texto
+    achados_texto = db.Column(db.Text)  # Descrição dos achados (ex.: "Íngreme colônica com infiltração mucosa")
+
+    # Resumo de procedimentos realizados
+    numero_polipos = db.Column(db.Integer, default=0)
+    polipos_removidos = db.Column(db.Integer, default=0)  # Quantos foram removidos
+    biopsias_coletadas = db.Column(db.Integer, default=0)
+    resseccao_endoscopica = db.Column(db.Boolean, default=False)
+    hemorragia_controlada = db.Column(db.Boolean, default=False)
+
+    # Complicações registradas durante/após
+    complicacoes = db.Column(db.Text)  # "sangramento leve controlado", etc.
+
+    # Duração do procedimento em minutos
+    tempo_procedimento_minutos = db.Column(db.Integer)
+
+    # Observações gerais do médico
+    observacoes = db.Column(db.Text)
+
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    assinado_em = db.Column(db.DateTime)
+
+    agendamento = db.relationship("Agendamento", backref=db.backref("procedimento_gastro", uselist=False))
+    paciente = db.relationship("Paciente")
+    medico = db.relationship("Usuario")
+    polipos = db.relationship("ProcedimentoPolipo", cascade="all, delete-orphan", backref="procedimento")
+
+    @property
+    def assinado(self):
+        return self.assinado_em is not None
+
+
+class ProcedimentoPolipo(db.Model):
+    """Cada pólipo encontrado durante um procedimento gastro — permite
+    registro individualizado de localização, tamanho, classificação,
+    ações tomadas (remoção, biópsia, marcação) e resultado histopatológico."""
+    __tablename__ = "procedimento_polipos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    procedimento_gastro_id = db.Column(db.Integer, db.ForeignKey("procedimentos_gastro.id"), nullable=False)
+
+    # Localização anatômica
+    localizacao = db.Column(db.String(100))  # "ceco", "colon ascendente", "flexura hepática", "colon transverso", "flexura esplênica", "colon descendente", "sigmóide", "reto"
+
+    # Características do pólipo
+    tamanho_mm = db.Column(db.Integer)  # Tamanho em milímetros
+    classificacao_paris = db.Column(db.String(20))  # "1p" (pediculado), "2a", "2b", "2c" (sésseis), "3" (submerso), etc.
+
+    # Ação tomada
+    acoes = db.Column(db.String(255))  # "removido", "biopsiado", "marcado", "fotocoagulado"
+
+    # Resultado histopatológico (se biopsiado/removido)
+    histopatologia = db.Column(db.String(255))  # "adenoma tubular de baixo grau", "pólipo hiperplásico", "carcinoma", etc.
+
+    # Observações específicas do pólipo
+    observacoes = db.Column(db.Text)
+
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
 class DescontoConfig(db.Model):
     """Percentual de desconto pré-cadastrado, que pode ser aplicado ao
     registrar o pagamento de uma consulta/procedimento (ex.: "Convênio X —
