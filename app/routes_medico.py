@@ -22,6 +22,7 @@ from app.models import (
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, DescontoConfig, Pagamento, EvolucaoClinica,
     ConviteVinculo, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
+    cep_incompleto,
 )
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
@@ -668,6 +669,15 @@ def pacientes_novo():
             flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
+        # CEP incompleto (ex.: "29055") não bloqueava o envio e ficava
+        # salvo pela metade, com rua/bairro/cidade/UF vazios.
+        if cep_incompleto(request.form.get("cep", "")):
+            flash("CEP incompleto — digite os 8 números.", "danger")
+            return render_template(
+                "medico/pacientes_form.html", paciente=None,
+                cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
+            )
+
         # Telefone não é único por pessoa - é normal uma família inteira
         # (pais e filhos, por exemplo) compartilhar o mesmo telefone de
         # contato, cada um com seu próprio cadastro de paciente. O login
@@ -799,6 +809,12 @@ def pacientes_editar(paciente_id):
     ).first_or_404()
 
     if request.method == "POST":
+        # CEP incompleto (ex.: "29055") não bloqueava o envio e ficava
+        # salvo pela metade, com rua/bairro/cidade/UF vazios.
+        if cep_incompleto(request.form.get("cep", "")):
+            flash("CEP incompleto — digite os 8 números.", "danger")
+            return render_template("medico/pacientes_form.html", paciente=paciente)
+
         paciente.nome = formatar_nome_proprio(request.form.get("nome", "")) or paciente.nome
         paciente.email = request.form.get("email", "").strip().lower() or None
         paciente.observacoes = request.form.get("observacoes", "").strip() or None

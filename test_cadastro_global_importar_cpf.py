@@ -60,6 +60,30 @@ r = client.post("/cadastro-paciente", data={
 checar("Sequência repetida (111.111.111-11) também é barrada",
        "CPF inválido" in r.get_data(as_text=True))
 
+# Data de nascimento incompleta (mascara deixando apagar não pode virar
+# "deixa enviar pela metade") é barrada - "10" não é uma data.
+r = client.post("/cadastro-paciente", data={
+    "nome": "Data Incompleta", "cpf": "998.887.776-53", "telefone": "(27) 93030-0010",
+    "data_nascimento": "10",
+}, follow_redirects=True)
+checar("Data de nascimento incompleta ('10') é barrada",
+       "Data de nascimento inválida" in r.get_data(as_text=True))
+with app.app_context():
+    checar("Ninguém foi criado com a data incompleta",
+           Paciente.query.filter_by(cpf="998.887.776-53").first() is None)
+
+# CEP incompleto (ex.: "29055", faltando os 3 últimos números) é barrado -
+# sem isso, o cadastro salvava com rua/bairro/cidade/UF sempre em branco.
+r = client.post("/cadastro-paciente", data={
+    "nome": "Cep Incompleto", "cpf": "998.887.776-53", "telefone": "(27) 93030-0011",
+    "data_nascimento": "01/01/1990", "cep": "29055",
+}, follow_redirects=True)
+checar("CEP incompleto ('29055') é barrado",
+       "CEP incompleto" in r.get_data(as_text=True))
+with app.app_context():
+    checar("Ninguém foi criado com o CEP incompleto",
+           Paciente.query.filter_by(cpf="998.887.776-53").first() is None)
+
 r = client.post("/cadastro-paciente", data={
     "nome": "Diego Plataforma", "cpf": CPF, "telefone": "(27) 93030-0001",
     "data_nascimento": "12/12/1990", "email": "diego@exemplo.com",

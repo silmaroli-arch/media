@@ -59,4 +59,16 @@ with app.app_context():
     checar("Cadastro sem endereço/emergência (campos opcionais) continua funcionando", p2 is not None)
 client.get("/logout")
 
+# ---------- CEP incompleto é rejeitado (não pode salvar endereço pela metade) ----------
+r = client.post("/cadastro-paciente", data={
+    "nome": "Paciente Cep Incompleto", "cpf": "123.456.789-09",
+    "telefone": "(27) 94444-5555", "data_nascimento": "01/01/2001",
+    "cep": "29055",
+}, follow_redirects=True)
+checar("CEP incompleto ('29055') é rejeitado no cadastro", "CEP incompleto" in r.get_data(as_text=True))
+with app.app_context():
+    checar("Ninguém foi criado com o CEP incompleto",
+           Paciente.query.filter_by(cpf="123.456.789-09").first() is None)
+client.get("/logout")
+
 print("\nTodos os testes de endereço/emergência no autocadastro de paciente passaram.")

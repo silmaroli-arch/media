@@ -75,6 +75,18 @@ r = client.post("/equipe/pacientes/novo", data={
 }, follow_redirects=True)
 checar("CPF repetido na mesma empresa é rejeitado", "já existe um paciente com esse cpf nesta empresa" in r.get_data(as_text=True).lower())
 
+# CEP incompleto (ex.: "29055") é rejeitado - não pode salvar o endereço
+# pela metade (rua/bairro/cidade/UF sempre em branco).
+r = client.post("/equipe/pacientes/novo", data={
+    "nome": "Cliente Cep Incompleto", "cpf": "321.654.987-70", "email": "",
+    "telefone": "(27) 97777-0009", "data_nascimento": "1994-07-12", "cep": "29055",
+}, follow_redirects=True)
+checar("CEP incompleto é rejeitado no cadastro pela equipe",
+       "CEP incompleto" in r.get_data(as_text=True))
+with app.app_context():
+    checar("Ninguém foi criado com o CEP incompleto",
+           Paciente.query.filter_by(cpf="321.654.987-70").first() is None)
+
 # ---------- Agendar o MESMO paciente em DUAS filiais diferentes ----------
 
 with app.app_context():

@@ -489,6 +489,16 @@ def validar_cpf(cpf):
     return True
 
 
+def cep_incompleto(cep):
+    """True se o CEP foi digitado mas ficou incompleto (nem todos os 8
+    dígitos) - sem isso, o cadastro deixava salvar um CEP pela metade
+    (ex.: "29055") com rua/bairro/cidade/UF vazios, porque a busca do
+    ViaCEP só dispara com os 8 números completos e nada travava o envio
+    do formulário com o restante em branco."""
+    digitos = re.sub(r"\D", "", cep or "")
+    return bool(digitos) and len(digitos) != 8
+
+
 def encontrar_conta_paciente_por_cpf(cpf):
     """Conta única por CPF: acha a conta (Usuario) do paciente dono deste
     CPF - agora que o CPF é o login (é a identidade que não muda), ele é

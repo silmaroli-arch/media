@@ -81,11 +81,20 @@
   // Busca de endereço por CEP via ViaCEP — preenche os campos
   // automaticamente; rua, bairro, cidade e UF ficam somente leitura,
   // preenchidos só pela busca do CEP (igual ao cadastro feito pela
-  // equipe da clínica).
-  document.getElementById('cep').addEventListener('blur', function () {
-    var cep = this.value.replace(/\D/g, '');
+  // equipe da clínica). O CEP é opcional, mas se a pessoa começar a
+  // digitar tem que terminar os 8 números - do contrário o formulário
+  // seguia com o CEP pela metade e o endereço sempre em branco.
+  function marcarCepValido() {
+    var campo = document.getElementById('cep');
     var status = document.getElementById('cep_status');
-    if (cep.length !== 8) return;
+    var cep = campo.value.replace(/\D/g, '');
+    if (!cep) { status.textContent = ''; campo.classList.remove('is-invalid'); return true; }
+    if (cep.length !== 8) {
+      status.textContent = 'CEP incompleto — digite os 8 números.';
+      campo.classList.add('is-invalid');
+      return false;
+    }
+    campo.classList.remove('is-invalid');
     status.textContent = 'Buscando endereço...';
     fetch('https://viacep.com.br/ws/' + cep + '/json/')
       .then(function (r) { return r.json(); })
@@ -103,6 +112,18 @@
       .catch(function () {
         status.textContent = 'Não foi possível consultar o CEP agora — tente de novo.';
       });
+    return true;
+  }
+  document.getElementById('cep').addEventListener('blur', marcarCepValido);
+
+  document.querySelector('form').addEventListener('submit', function (evento) {
+    var cepDigitos = document.getElementById('cep').value.replace(/\D/g, '');
+    if (cepDigitos && cepDigitos.length !== 8) {
+      document.getElementById('cep').classList.add('is-invalid');
+      document.getElementById('cep_status').textContent = 'CEP incompleto — digite os 8 números.';
+      evento.preventDefault();
+      document.getElementById('cep').focus();
+    }
   });
 </script>
 

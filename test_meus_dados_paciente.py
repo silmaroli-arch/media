@@ -114,5 +114,17 @@ r = client.post("/paciente/meus-dados", data={
 }, follow_redirects=True)
 checar("Telefone vazio é rejeitado", "obrigatório" in r.get_data(as_text=True))
 
+# CEP incompleto (ex.: "29055") é rejeitado - sem isso, salvava com
+# rua/bairro/cidade/UF sempre em branco.
+r = client.post("/paciente/meus-dados", data={
+    "telefone_original": normalizar_telefone("(27) 96060-0002"),
+    "telefone": "(27) 96060-0002", "email": "carla@exemplo.com",
+    "cep": "29055", "rua": "", "numero": "", "complemento": "", "bairro": "", "cidade": "", "uf": "",
+    "contato_emergencia_nome": "", "contato_emergencia_telefone": "",
+}, follow_redirects=True)
+checar("CEP incompleto é rejeitado", "CEP incompleto" in r.get_data(as_text=True))
+with app.app_context():
+    checar("O endereço não foi salvo pela metade", Paciente.query.get(p1_id).rua == "Rua Nova")
+
 client.get("/logout")
 print("\nTodos os testes de 'Meus dados' do paciente passaram.")

@@ -6,7 +6,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, validar_cpf, formatar_nome_proprio
+from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, validar_cpf, formatar_nome_proprio, cep_incompleto
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -386,6 +386,13 @@ def cadastro_paciente_global():
         data_nascimento = _parse_data_nascimento(data_nascimento_str)
         if not data_nascimento:
             flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
+            return render_template("auth/cadastro_paciente.html")
+
+        # CEP incompleto (ex.: "29055") não bloqueava o envio e ficava
+        # salvo pela metade, com rua/bairro/cidade/UF vazios (a busca do
+        # ViaCEP só preenche esses campos com os 8 números completos).
+        if cep_incompleto(request.form.get("cep", "")):
+            flash("CEP incompleto — digite os 8 números.", "danger")
             return render_template("auth/cadastro_paciente.html")
 
         # A pessoa já tem conta (telefone + nascimento)? Então já está

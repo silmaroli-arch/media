@@ -31,6 +31,7 @@
             <input type="text" inputmode="numeric" name="data_nascimento" id="data_nascimento"
                    class="form-control" placeholder="DD/MM/AAAA" autocomplete="bday" required>
             <div class="form-text">Você vai usar o CPF e a data de nascimento para entrar no sistema — não é preciso criar senha.</div>
+            <div class="invalid-feedback" id="data_nascimento_status"></div>
           </div>
           <div class="col-md-6">
             <label class="form-label">E-mail (opcional)</label>
@@ -133,28 +134,73 @@
     }
     return true;
   }
-  document.getElementById('cpf').addEventListener('blur', function () {
+  function marcarCpfValido() {
     var status = document.getElementById('cpf_status');
-    var d = this.value.replace(/\D/g, '');
-    if (!d) { status.textContent = ''; return; }
-    if (d.length === 11 && cpfValido(this.value)) {
+    var campo = document.getElementById('cpf');
+    var d = campo.value.replace(/\D/g, '');
+    if (!d) { status.textContent = ''; campo.classList.remove('is-invalid'); return true; }
+    if (d.length === 11 && cpfValido(campo.value)) {
       status.textContent = '';
-      this.classList.remove('is-invalid');
-    } else {
-      status.textContent = 'CPF inválido — confira os números digitados.';
-      this.classList.add('is-invalid');
+      campo.classList.remove('is-invalid');
+      return true;
     }
-  });
+    status.textContent = 'CPF inválido — confira os números digitados.';
+    campo.classList.add('is-invalid');
+    return false;
+  }
+  document.getElementById('cpf').addEventListener('blur', marcarCpfValido);
 
+  // Data de nascimento com máscara não travava mais o backspace, mas
+  // deixava enviar o formulário pela metade (ex.: só "10" digitado, sem
+  // dia/mês/ano completos) - agora, ao saber do campo, confere se os 8
+  // dígitos foram digitados e se formam uma data que existe de verdade
+  // (rejeita "31/02/2020", por exemplo).
+  function dataNascimentoValida(valor) {
+    var d = valor.replace(/\D/g, '');
+    if (d.length !== 8) return false;
+    var dia = parseInt(d.slice(0, 2), 10);
+    var mes = parseInt(d.slice(2, 4), 10);
+    var ano = parseInt(d.slice(4, 8), 10);
+    if (mes < 1 || mes > 12 || dia < 1 || ano < 1900) return false;
+    var data = new Date(ano, mes - 1, dia);
+    return data.getFullYear() === ano && data.getMonth() === mes - 1 && data.getDate() === dia;
+  }
+  function marcarDataNascimentoValida() {
+    var status = document.getElementById('data_nascimento_status');
+    var campo = document.getElementById('data_nascimento');
+    var d = campo.value.replace(/\D/g, '');
+    if (!d) { status.textContent = ''; campo.classList.remove('is-invalid'); return true; }
+    if (dataNascimentoValida(campo.value)) {
+      status.textContent = '';
+      campo.classList.remove('is-invalid');
+      return true;
+    }
+    status.textContent = d.length < 8
+      ? 'Data incompleta — preencha dia, mês e ano (DD/MM/AAAA).'
+      : 'Data inválida — confira o dia e o mês digitados.';
+    campo.classList.add('is-invalid');
+    return false;
+  }
+  document.getElementById('data_nascimento').addEventListener('blur', marcarDataNascimentoValida);
 
   // Busca de endereço por CEP via ViaCEP — preenche os campos
   // automaticamente; rua, bairro, cidade e UF ficam somente leitura,
   // preenchidos só pela busca do CEP (igual ao cadastro feito pela
-  // equipe da clínica).
-  document.getElementById('cep').addEventListener('blur', function () {
-    var cep = this.value.replace(/\D/g, '');
+  // equipe da clínica). O CEP é opcional, mas se a pessoa começar a
+  // digitar tem que terminar os 8 números - do contrário o formulário
+  // seguia com o CEP pela metade e o endereço (rua/bairro/cidade/UF)
+  // sempre em branco.
+  function marcarCepValido() {
+    var campo = document.getElementById('cep');
     var status = document.getElementById('cep_status');
-    if (cep.length !== 8) return;
+    var cep = campo.value.replace(/\D/g, '');
+    if (!cep) { status.textContent = ''; campo.classList.remove('is-invalid'); return true; }
+    if (cep.length !== 8) {
+      status.textContent = 'CEP incompleto — digite os 8 números.';
+      campo.classList.add('is-invalid');
+      return false;
+    }
+    campo.classList.remove('is-invalid');
     status.textContent = 'Buscando endereço...';
     fetch('https://viacep.com.br/ws/' + cep + '/json/')
       .then(function (r) { return r.json(); })
@@ -172,9 +218,28 @@
       .catch(function () {
         status.textContent = 'Não foi possível consultar o CEP agora — tente de novo.';
       });
-  });
+    return true;
+  }
+  document.getElementById('cep').addEventListener('blur', marcarCepValido);
 
-  document.querySelector('form').addEventListener('submit', function () {
+  document.querySelector('form').addEventListener('submit', function (evento) {
+    // Confere de novo no envio (não só no "sair do campo") - garante que
+    // nenhum campo com máscara fique pela metade mesmo se a pessoa nunca
+    // tiver saído dele (ex.: colar o valor e apertar o botão direto).
+    var cpfOk = marcarCpfValido();
+    var dataOk = marcarDataNascimentoValida();
+    var cepDigitos = document.getElementById('cep').value.replace(/\D/g, '');
+    var cepOk = !cepDigitos || cepDigitos.length === 8;
+    if (cepDigitos && cepDigitos.length !== 8) {
+      document.getElementById('cep').classList.add('is-invalid');
+      document.getElementById('cep_status').textContent = 'CEP incompleto — digite os 8 números.';
+    }
+    if (!cpfOk || !dataOk || !cepOk) {
+      evento.preventDefault();
+      var primeiroInvalido = document.querySelector('.is-invalid');
+      if (primeiroInvalido) primeiroInvalido.focus();
+      return;
+    }
     var botao = document.getElementById('btn-cadastrar-paciente');
     botao.disabled = true;
     botao.innerHTML = 'Enviando...';

@@ -59,6 +59,7 @@
         <input type="text" inputmode="numeric" name="data_nascimento" id="data_nascimento"
                class="form-control" placeholder="DD/MM/AAAA" autocomplete="bday" required>
         <div class="form-text">O paciente usa o CPF e a data de nascimento para acessar o sistema — não é preciso criar senha.</div>
+        <div class="invalid-feedback" id="data_nascimento_status"></div>
       </div>
       {% else %}
       <div class="col-md-6">
@@ -178,13 +179,54 @@
   aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
   aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
 
+  // Data de nascimento e CEP com máscara não travavam mais o backspace,
+  // mas deixavam enviar o formulário pela metade (ex.: só "10" no
+  // nascimento, ou CEP incompleto com rua/bairro/cidade/UF em branco) -
+  // agora confere ao sair do campo e de novo no envio.
+  var campoDataNasc = document.getElementById('data_nascimento');
+  function dataNascimentoValida(valor) {
+    var d = valor.replace(/\D/g, '');
+    if (d.length !== 8) return false;
+    var dia = parseInt(d.slice(0, 2), 10);
+    var mes = parseInt(d.slice(2, 4), 10);
+    var ano = parseInt(d.slice(4, 8), 10);
+    if (mes < 1 || mes > 12 || dia < 1 || ano < 1900) return false;
+    var data = new Date(ano, mes - 1, dia);
+    return data.getFullYear() === ano && data.getMonth() === mes - 1 && data.getDate() === dia;
+  }
+  function marcarDataNascimentoValida() {
+    if (!campoDataNasc) return true;
+    var status = document.getElementById('data_nascimento_status');
+    var d = campoDataNasc.value.replace(/\D/g, '');
+    if (!d) { status.textContent = ''; campoDataNasc.classList.remove('is-invalid'); return true; }
+    if (dataNascimentoValida(campoDataNasc.value)) {
+      status.textContent = '';
+      campoDataNasc.classList.remove('is-invalid');
+      return true;
+    }
+    status.textContent = d.length < 8
+      ? 'Data incompleta — preencha dia, mês e ano (DD/MM/AAAA).'
+      : 'Data inválida — confira o dia e o mês digitados.';
+    campoDataNasc.classList.add('is-invalid');
+    return false;
+  }
+  if (campoDataNasc) campoDataNasc.addEventListener('blur', marcarDataNascimentoValida);
+
   // Busca de endereço por CEP via ViaCEP — preenche os campos
   // automaticamente; os campos de endereço (rua, bairro, cidade e UF)
-  // ficam somente leitura, preenchidos só por essa busca do CEP.
-  document.getElementById('cep').addEventListener('blur', function () {
-    var cep = this.value.replace(/\D/g, '');
+  // ficam somente leitura, preenchidos só por essa busca do CEP. O CEP é
+  // opcional, mas se começar a digitar tem que terminar os 8 números.
+  function marcarCepValido() {
+    var campo = document.getElementById('cep');
     var status = document.getElementById('cep_status');
-    if (cep.length !== 8) return;
+    var cep = campo.value.replace(/\D/g, '');
+    if (!cep) { status.textContent = ''; campo.classList.remove('is-invalid'); return true; }
+    if (cep.length !== 8) {
+      status.textContent = 'CEP incompleto — digite os 8 números.';
+      campo.classList.add('is-invalid');
+      return false;
+    }
+    campo.classList.remove('is-invalid');
     status.textContent = 'Buscando endereço...';
     fetch('https://viacep.com.br/ws/' + cep + '/json/')
       .then(function (r) { return r.json(); })
@@ -202,6 +244,23 @@
       .catch(function () {
         status.textContent = 'Não foi possível consultar o CEP agora — preencha manualmente.';
       });
+    return true;
+  }
+  document.getElementById('cep').addEventListener('blur', marcarCepValido);
+
+  document.querySelector('form').addEventListener('submit', function (evento) {
+    var dataOk = marcarDataNascimentoValida();
+    var cepDigitos = document.getElementById('cep').value.replace(/\D/g, '');
+    var cepOk = !cepDigitos || cepDigitos.length === 8;
+    if (cepDigitos && cepDigitos.length !== 8) {
+      document.getElementById('cep').classList.add('is-invalid');
+      document.getElementById('cep_status').textContent = 'CEP incompleto — digite os 8 números.';
+    }
+    if (!dataOk || !cepOk) {
+      evento.preventDefault();
+      var primeiroInvalido = document.querySelector('.is-invalid');
+      if (primeiroInvalido) primeiroInvalido.focus();
+    }
   });
 </script>
 {% endblock %}
