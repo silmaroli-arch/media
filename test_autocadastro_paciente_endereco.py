@@ -26,7 +26,7 @@ with app.app_context():
         db.session.commit()
 
 r = client.post("/cadastro-paciente", data={
-    "nome": "Paciente Endereco Teste", "cpf": "321.654.987-00",
+    "nome": "Paciente Endereco Teste", "cpf": "321.654.987-91",
     "telefone": "(27) 95555-4444", "data_nascimento": "05/05/1995",
     "cep": "29010-000", "rua": "Av. Jerônimo Monteiro", "numero": "123",
     "complemento": "Sala 2", "bairro": "Centro", "cidade": "Vitória", "uf": "ES",
@@ -35,7 +35,7 @@ r = client.post("/cadastro-paciente", data={
 checar("Cadastro com endereço/emergência responde 200", r.status_code == 200)
 
 with app.app_context():
-    p = Paciente.query.filter_by(cpf="321.654.987-00").first()
+    p = Paciente.query.filter_by(cpf="321.654.987-91").first()
     checar("Paciente foi criado", p is not None)
     checar("CEP salvo", p.cep == "29010-000")
     checar("Rua salva", p.rua == "Av. Jerônimo Monteiro")
@@ -51,11 +51,11 @@ client.get("/logout")
 
 # ---------- Campos continuam opcionais: cadastro sem endereço/emergência ainda funciona ----------
 r = client.post("/cadastro-paciente", data={
-    "nome": "Paciente Sem Endereco", "cpf": "444.555.666-77",
+    "nome": "Paciente Sem Endereco", "cpf": "444.555.666-19",
     "telefone": "(27) 94444-3333", "data_nascimento": "10/10/2000",
 }, follow_redirects=True)
 with app.app_context():
-    p2 = Paciente.query.filter_by(cpf="444.555.666-77").first()
+    p2 = Paciente.query.filter_by(cpf="444.555.666-19").first()
     checar("Cadastro sem endereço/emergência (campos opcionais) continua funcionando", p2 is not None)
 client.get("/logout")
 

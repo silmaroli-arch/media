@@ -30,7 +30,7 @@ def login_equipe(email, senha="123456"):
     return client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
 
 
-CPF = "852.963.741-05"
+CPF = "852.963.741-00"  # CPF VÁLIDO (dígitos verificadores conferem)
 
 # ---------- 1) Cadastro global do paciente (independente de clínica) ----------
 
@@ -45,6 +45,20 @@ checar("Tem os campos de contato de emergência",
 checar("O CEP busca o endereço automaticamente (ViaCEP), com rua/bairro/cidade/UF travados",
        "viacep.com.br" in html and 'id="cep_status"' in html
        and 'name="rua" id="rua"' in html and 'readonly' in html)
+
+# CPF INVÁLIDO (número inventado) é barrado antes de qualquer coisa.
+r = client.post("/cadastro-paciente", data={
+    "nome": "Cpf Invalido", "cpf": "123.456.789-99", "telefone": "(27) 93030-0000",
+    "data_nascimento": "01/01/1990",
+}, follow_redirects=True)
+checar("CPF inexistente (dígitos verificadores errados) é barrado",
+       "CPF inválido" in r.get_data(as_text=True))
+r = client.post("/cadastro-paciente", data={
+    "nome": "Cpf Repetido", "cpf": "111.111.111-11", "telefone": "(27) 93030-0000",
+    "data_nascimento": "01/01/1990",
+}, follow_redirects=True)
+checar("Sequência repetida (111.111.111-11) também é barrada",
+       "CPF inválido" in r.get_data(as_text=True))
 
 r = client.post("/cadastro-paciente", data={
     "nome": "Diego Plataforma", "cpf": CPF, "telefone": "(27) 93030-0001",
@@ -74,7 +88,7 @@ checar("CPF já cadastrado na plataforma é barrado",
 
 # Mesma pessoa (telefone+nascimento) tentando de novo → orienta o login.
 r = client.post("/cadastro-paciente", data={
-    "nome": "Diego Plataforma", "cpf": "999.888.777-66", "telefone": "(27) 93030-0001",
+    "nome": "Diego Plataforma", "cpf": "998.887.776-53", "telefone": "(27) 93030-0001",
     "data_nascimento": "12/12/1990",
 }, follow_redirects=True)
 checar("Quem já tem conta é orientado a entrar pelo login",

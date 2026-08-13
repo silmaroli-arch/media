@@ -6,7 +6,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf
+from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, validar_cpf
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -372,6 +372,13 @@ def cadastro_paciente_global():
 
         if not nome or not _cpf_digitos(cpf) or not telefone or not data_nascimento_str:
             flash("Nome, CPF, telefone e data de nascimento são obrigatórios.", "danger")
+            return render_template("auth/cadastro_paciente.html")
+
+        # O CPF é o login e a chave que a clínica usa pra importar o
+        # paciente - precisa ser um CPF que EXISTE (dígitos verificadores
+        # conferem), não qualquer número digitado.
+        if not validar_cpf(cpf):
+            flash("CPF inválido — confira os números digitados.", "danger")
             return render_template("auth/cadastro_paciente.html")
 
         data_nascimento = _parse_data_nascimento(data_nascimento_str)

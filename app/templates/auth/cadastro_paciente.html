@@ -20,6 +20,7 @@
           <div class="col-md-6">
             <label class="form-label">CPF (será seu login de acesso)</label>
             <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" required>
+            <div class="form-text" id="cpf_status"></div>
           </div>
           <div class="col-md-6">
             <label class="form-label">Telefone</label>
@@ -116,6 +117,34 @@
   aplicarMascaraFixa(document.getElementById('data_nascimento'), '99/99/9999');
   aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
   aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
+
+  // Valida os dígitos verificadores do CPF já no navegador (o servidor
+  // valida de novo ao enviar) - CPF é o login do paciente, não pode ser
+  // um número inventado.
+  function cpfValido(cpf) {
+    var d = cpf.replace(/\D/g, '');
+    if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+    for (var t = 9; t <= 10; t++) {
+      var soma = 0;
+      for (var i = 0; i < t; i++) soma += parseInt(d[i]) * (t + 1 - i);
+      var resto = (soma * 10) % 11;
+      if (resto === 10) resto = 0;
+      if (resto !== parseInt(d[t])) return false;
+    }
+    return true;
+  }
+  document.getElementById('cpf').addEventListener('blur', function () {
+    var status = document.getElementById('cpf_status');
+    var d = this.value.replace(/\D/g, '');
+    if (!d) { status.textContent = ''; return; }
+    if (d.length === 11 && cpfValido(this.value)) {
+      status.textContent = '';
+      this.classList.remove('is-invalid');
+    } else {
+      status.textContent = 'CPF inválido — confira os números digitados.';
+      this.classList.add('is-invalid');
+    }
+  });
 
 
   // Busca de endereço por CEP via ViaCEP — preenche os campos

@@ -443,6 +443,24 @@ class Usuario(db.Model, UserMixin):
         ]
 
 
+def validar_cpf(cpf):
+    """True se o CPF é um número VÁLIDO de verdade (dígitos verificadores
+    conferem e não é uma sequência repetida tipo 111.111.111-11). O CPF é
+    o login do paciente e a chave de importação entre clínicas - um CPF
+    inexistente no cadastro quebraria tudo isso."""
+    digitos = re.sub(r"\D", "", cpf or "")
+    if len(digitos) != 11 or digitos == digitos[0] * 11:
+        return False
+    for tamanho in (9, 10):
+        soma = sum(int(digitos[i]) * (tamanho + 1 - i) for i in range(tamanho))
+        resto = (soma * 10) % 11
+        if resto == 10:
+            resto = 0
+        if resto != int(digitos[tamanho]):
+            return False
+    return True
+
+
 def encontrar_conta_paciente_por_cpf(cpf):
     """Conta única por CPF: acha a conta (Usuario) do paciente dono deste
     CPF - agora que o CPF é o login (é a identidade que não muda), ele é

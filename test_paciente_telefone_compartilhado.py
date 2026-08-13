@@ -72,15 +72,15 @@ client.get("/logout")
 TELEFONE_FAMILIA2 = "(27) 96666-5555"
 
 r = client.post("/cadastro-paciente", data={
-    "nome": "Mãe Autocadastro", "cpf": "222.333.444-55",
+    "nome": "Mãe Autocadastro", "cpf": "222.333.444-05",
     "telefone": TELEFONE_FAMILIA2, "data_nascimento": "01/01/1985",
 }, follow_redirects=True)
 with app.app_context():
-    checar("Autocadastro da mãe funciona", Paciente.query.filter_by(cpf="222.333.444-55").first() is not None)
+    checar("Autocadastro da mãe funciona", Paciente.query.filter_by(cpf="222.333.444-05").first() is not None)
 client.get("/logout")
 
 r = client.post("/cadastro-paciente", data={
-    "nome": "Filha Autocadastro", "cpf": "666.777.888-99",
+    "nome": "Filha Autocadastro", "cpf": "666.777.888-30",
     "telefone": TELEFONE_FAMILIA2, "data_nascimento": "15/09/2018",
 }, follow_redirects=True)
 html = r.get_data(as_text=True)
@@ -89,7 +89,7 @@ checar(
     "já existe" not in html.lower(),
 )
 with app.app_context():
-    checar("Paciente 'Filha Autocadastro' foi criado", Paciente.query.filter_by(cpf="666.777.888-99").first() is not None)
+    checar("Paciente 'Filha Autocadastro' foi criado", Paciente.query.filter_by(cpf="666.777.888-30").first() is not None)
 client.get("/logout")
 
 print("\nTodos os testes de telefone compartilhado entre familiares passaram.")
