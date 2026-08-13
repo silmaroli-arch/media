@@ -1125,9 +1125,24 @@ def exames_por_filial():
         key=lambda e: (e.nome.lower(), (e.clinica.nome or "").lower()),
     )
 
-    # O dropdown "Exame" do formulário lista TODOS os exames cadastrados
-    # (inclusive os que ainda são só catálogo, sem nenhuma associação).
-    nomes = sorted({e.nome for e in exames_da_empresa})
+    # O dropdown "Exame" do formulário lista os exames cadastrados
+    # (inclusive os que ainda são só catálogo, sem nenhuma associação) -
+    # mas quando quem está logado é médico, só aparecem os exames que são
+    # DELE (ver Exame.dono_medico) ou que não têm dono médico registrado
+    # (cadastro antigo/criado pela secretária). Isso evita o médico
+    # escolher na lista um exame de outro médico e só descobrir depois,
+    # ao tentar salvar, que a associação é rejeitada (ver
+    # _dono_medico_do_exame, chamada em exames_por_filial_associar).
+    # Secretária/dono continuam vendo todos, já que não são "donos" de
+    # exame nenhum.
+    if current_user.tipo == "medico":
+        exames_visiveis = [
+            e for e in exames_da_empresa
+            if e.dono_medico is None or e.dono_medico.id == current_user.id
+        ]
+    else:
+        exames_visiveis = exames_da_empresa
+    nomes = sorted({e.nome for e in exames_visiveis})
     medicos_por_filial = {f.id: medicos_da_clinica(f) for f in filiais}
 
     # "Editar" de uma linha reaproveita o mesmo formulário, pré-preenchido
