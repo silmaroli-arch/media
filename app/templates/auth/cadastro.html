@@ -14,7 +14,7 @@
           <i class="bi bi-building"></i> Tenho uma clínica/empresa
         </button>
         <button type="button" class="btn btn-outline-primary" id="btn-modo-independente" onclick="selecionarModo('independente')">
-          <i class="bi bi-person-badge"></i> Sou médico(a) independente
+          <i class="bi bi-person-badge"></i> Sou profissional independente
         </button>
       </div>
       <div class="text-center mb-3 small" id="link-trocar-modo" style="display:none;">
@@ -50,7 +50,7 @@
             </select>
             <div class="form-text">
               Não tem problema se a sua clínica não tem secretária — como você está criando a
-              empresa, você recebe acesso a todas as telas administrativas (equipe, filiais, dados
+              conta, você recebe acesso a todas as telas administrativas (equipe, filiais, dados
               da clínica), seja qual for sua escolha aqui.
             </div>
           </div>
@@ -199,31 +199,6 @@
           </div>
         </div>
 
-        <hr class="my-4">
-        <div id="bloco-secretaria">
-          <h6 class="mb-1">Cadastrar uma secretária também? (opcional)</h6>
-          <p class="text-muted small mb-3">
-            Se preencher os dados abaixo, já criamos a conta dela também, vinculada a este mesmo
-            local de atendimento. Se preferir, deixe em branco e adicione depois em "Equipe".
-          </p>
-          <div class="row g-3">
-            <div class="col-md-4">
-              <label class="form-label">Nome da secretária</label>
-              <input type="text" name="nome_secretaria" id="nome_secretaria" class="form-control" autocapitalize="words">
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">E-mail da secretária</label>
-              <input type="email" name="email_secretaria" id="email_secretaria" class="form-control">
-              <div class="invalid-feedback" id="email_secretaria_status"></div>
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Senha da secretária</label>
-              <input type="password" name="senha_secretaria" id="senha_secretaria" class="form-control" minlength="6">
-              <div class="form-text">Mínimo de 6 caracteres.</div>
-            </div>
-          </div>
-        </div>
-
         <button type="submit" class="btn btn-primary w-100 mt-4" id="btn-submit">Criar minha empresa</button>
       </form>
       <div class="text-center mt-3">
@@ -235,8 +210,7 @@
 
 <script>
 function atualizarCampoCrm() {
-  const ehMedico = document.getElementById('papel').value === 'medico'
-    || document.getElementById('input-modo').value === 'independente';
+  const ehMedico = document.getElementById('papel').value === 'medico';
   document.getElementById('campo-crm-numero').style.display = ehMedico ? 'block' : 'none';
   document.getElementById('campo-crm-uf').style.display = ehMedico ? 'block' : 'none';
   document.getElementById('crm_numero').required = ehMedico;
@@ -252,7 +226,9 @@ function selecionarModo(modo) {
 
   document.getElementById('bloco-independente').style.display = independente ? 'block' : 'none';
   document.getElementById('campos-empresa').style.display = independente ? 'none' : 'block';
-  document.getElementById('campo-papel').style.display = independente ? 'none' : 'block';
+  // O papel (médico/secretário(a)) agora é perguntado nos dois modos —
+  // inclusive no independente, que antes só servia pro médico e forçava
+  // papel="medico" sem perguntar nada (ver app/routes_auth.py).
   document.getElementById('campo-nome-filial').style.display = independente ? 'none' : 'block';
 
   document.getElementById('input-nome_empresa').required = !independente;
@@ -266,17 +242,19 @@ function selecionarModo(modo) {
 
   document.getElementById('titulo-dados-empresa').style.display = independente ? 'none' : 'block';
   document.getElementById('titulo-local-atendimento').textContent = independente
-    ? 'Seu consultório' : 'Seu primeiro local de atendimento';
+    ? 'Seu local de atendimento' : 'Seu primeiro local de atendimento';
 
   document.getElementById('btn-submit').textContent = independente ? 'Criar minha conta' : 'Criar minha empresa';
   atualizarCampoCrm();
 }
 
-// Chegando direto de um link da tela de login ("Login como médico" ou
-// "Login como clínica"), a pessoa já disse qual é o seu caso — não faz
-// sentido perguntar de novo com o botão de escolha. Nesse caso, mostra
-// só os campos do tipo escolhido (sem o grupo de botões), com um link
-// discreto pra trocar caso tenha clicado errado.
+// Chegando direto de um link com o modo já definido na URL (hoje só o
+// link genérico de "Criar conta" da tela de login, que manda pra
+// modo=independente — modo=empresa continua existindo, só sem link na
+// tela de login por enquanto), não faz sentido perguntar de novo com o
+// botão de escolha. Nesse caso, mostra só os campos do tipo escolhido
+// (sem o grupo de botões), com um link discreto pra trocar caso tenha
+// caído no modo errado.
 (function () {
   const params = new URLSearchParams(window.location.search);
   const modo = params.get('modo');
@@ -378,22 +356,13 @@ document.getElementById('cnpj_filial').addEventListener('blur', function () {
   fetch('/cadastro/verificar-cnpj?cnpj=' + encodeURIComponent(d))
     .then(function (r) { return r.json(); })
     .then(function (dados) {
-      var blocoSecretaria = document.getElementById('bloco-secretaria');
       if (dados.encontrada) {
         encontrado.textContent = 'Encontramos "' + dados.nome + '" já cadastrada com esse CNPJ — ' +
           'sua conta será criada já vinculada a ela.';
         encontrado.classList.add('text-success');
-        // A clínica já existe - quem se cadastra não é fundador(a) dela,
-        // então não faz sentido oferecer criar uma conta de secretária
-        // aqui (isso é coisa de quem já administra a equipe).
-        blocoSecretaria.style.display = 'none';
-        document.getElementById('nome_secretaria').value = '';
-        document.getElementById('email_secretaria').value = '';
-        document.getElementById('senha_secretaria').value = '';
       } else {
         encontrado.textContent = 'Nenhuma clínica encontrada com esse CNPJ — ela será criada no seu cadastro.';
         encontrado.classList.remove('text-success');
-        blocoSecretaria.style.display = 'block';
       }
     })
     .catch(function () {
@@ -490,26 +459,7 @@ document.querySelector('form').addEventListener('submit', function (evento) {
     }
   }
 
-  // Secretária opcional: ou preenche os três campos, ou deixa os três em branco.
-  var nomeSecretaria = document.getElementById('nome_secretaria').value.trim();
-  var emailSecretaria = document.getElementById('email_secretaria').value.trim();
-  var senhaSecretaria = document.getElementById('senha_secretaria').value;
-  var secretariaOk = true;
-  var algumPreenchido = nomeSecretaria || emailSecretaria || senhaSecretaria;
-  var statusEmailSecretaria = document.getElementById('email_secretaria_status');
-  statusEmailSecretaria.textContent = '';
-  document.getElementById('email_secretaria').classList.remove('is-invalid');
-  if (algumPreenchido && (!nomeSecretaria || !emailSecretaria || !senhaSecretaria)) {
-    statusEmailSecretaria.textContent = 'Preencha nome, e-mail e senha da secretária, ou deixe os três em branco.';
-    document.getElementById('email_secretaria').classList.add('is-invalid');
-    secretariaOk = false;
-  } else if (senhaSecretaria && senhaSecretaria.length < 6) {
-    statusEmailSecretaria.textContent = 'A senha da secretária deve ter pelo menos 6 caracteres.';
-    document.getElementById('email_secretaria').classList.add('is-invalid');
-    secretariaOk = false;
-  }
-
-  if (!cpfOk || !telefoneOk || !telefoneFilialOk || !cepPessoalOk || !cepFilialOk || !cnpjOk || !secretariaOk) {
+  if (!cpfOk || !telefoneOk || !telefoneFilialOk || !cepPessoalOk || !cepFilialOk || !cnpjOk) {
     evento.preventDefault();
     var primeiroInvalido = document.querySelector('.is-invalid');
     if (primeiroInvalido) primeiroInvalido.focus();

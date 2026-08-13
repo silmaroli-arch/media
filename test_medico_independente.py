@@ -1,7 +1,9 @@
-"""Testa o novo fluxo de cadastro público 'médico independente' (modo=independente):
-não deve exigir nome_empresa/nome_filial (gerados automaticamente), deve criar
-papel=medico, permitir múltiplos locais de atendimento depois via
-/equipe/filiais/nova, e não deve quebrar o fluxo 'empresa' original.
+"""Testa o novo fluxo de cadastro público 'independente' (modo=independente):
+não deve exigir nome_empresa/nome_filial (gerados automaticamente), deve
+permitir escolher o papel (médico ou secretário(a), igual no modo
+"empresa" — deixou de ser exclusivo de médico), permitir múltiplos
+locais de atendimento depois via /equipe/filiais/nova, e não deve
+quebrar o fluxo 'empresa' original.
 
 Roda contra SQLite local (não usa a DATABASE_URL do .env) e reseta esse banco de
 teste no início — não toca no banco real. Para rodar:
@@ -23,11 +25,15 @@ def checar(nome, condicao):
     print(f"[{status}] {nome}")
     assert condicao, nome
 
-# ---------- Login: os links já dizem o tipo de conta (não pergunta de novo na tela seguinte) ----------
+# ---------- Login: um único link de cadastro, genérico, manda pra modo=independente ----------
+# ("Login como clínica" ficou temporariamente escondido dessa tela, a
+# pedido do usuário - a rota modo='empresa' continua existindo, só sem
+# link aqui, ver test_cadastro_empresa_sem_filial.py etc.)
 r_login = client.get("/login")
 html_login = r_login.get_data(as_text=True)
-checar("Link 'Login como médico' já manda modo=independente", "/cadastro?modo=independente" in html_login)
-checar("Link 'Login como clínica' já manda modo=empresa", "/cadastro?modo=empresa" in html_login)
+checar("Link de criar conta manda pra modo=independente", "/cadastro?modo=independente" in html_login)
+checar("Link de 'Login como clínica' não aparece mais nesta tela (escondido, não removido)",
+       "/cadastro?modo=empresa" not in html_login)
 
 # ---------- Cadastro: chegando com modo pela URL, esconde a escolha (só mostra o tipo certo) ----------
 r_cad = client.get("/cadastro?modo=independente")
@@ -37,10 +43,11 @@ checar("A tela sabe esconder o grupo de botões quando o modo já vem escolhido"
 checar("Existe um link discreto pra trocar de tipo caso tenha clicado errado",
        'id="link-trocar-modo"' in html_cad)
 
-# ---------- Cadastro modo independente ----------
+# ---------- Cadastro modo independente, papel médico ----------
 r = client.post("/cadastro", data={
     "modo": "independente",
     "nome": "Dr. João Autônomo",
+    "papel": "medico",
     "cpf": "852.963.741-00", "crm_numero": "44444", "crm_uf": "ES",
     "email": "joao.autonomo@example.com",
     "senha": "123456",
@@ -51,7 +58,7 @@ checar("Cadastro independente responde 200", r.status_code == 200)
 with app.app_context():
     usuario = Usuario.query.filter_by(email="joao.autonomo@example.com").first()
     checar("Usuário foi criado", usuario is not None)
-    checar("Papel é 'medico' automaticamente (não pedimos na tela)", usuario.tipo == "medico")
+    checar("Papel escolhido (médico) foi respeitado", usuario.tipo == "medico")
     checar("Usuário recebeu perm_filiais (pode cadastrar novos locais sozinho)", usuario.perm_filiais is True)
 
     empresa = Empresa.query.filter_by(email_contato="joao.autonomo@example.com").first()
@@ -74,6 +81,25 @@ with app.app_context():
     total_filiais = Clinica.query.filter_by(empresa_id=empresa.id).count()
     checar("Agora existem 2 locais de atendimento na mesma empresa oculta", total_filiais == 2)
 
+client.get("/logout")
+
+# ---------- Cadastro modo independente, papel secretária (não é mais exclusivo de médico) ----------
+r = client.post("/cadastro", data={
+    "modo": "independente",
+    "nome": "Secretária Autônoma",
+    "papel": "secretaria",
+    "cpf": "123.456.789-09",
+    "email": "secretaria.autonoma@example.com",
+    "senha": "123456",
+    "telefone_filial": "(27) 90000-0099",
+}, follow_redirects=True)
+checar("Cadastro independente como secretária responde 200", r.status_code == 200)
+with app.app_context():
+    secretaria_autonoma = Usuario.query.filter_by(email="secretaria.autonoma@example.com").first()
+    checar("Secretária foi criada com o papel certo", secretaria_autonoma is not None and secretaria_autonoma.tipo == "secretaria")
+    checar("Secretária não recebeu código mestre (isso é só de médico)", secretaria_autonoma.codigo_mestre is None)
+    checar("Secretária também recebeu todas as permissões (é fundadora da própria conta)",
+           secretaria_autonoma.perm_filiais is True)
 client.get("/logout")
 
 # ---------- Validação: modo independente sem nome/email/senha é rejeitado ----------

@@ -17,11 +17,12 @@
         <button type="submit" class="btn btn-primary w-100">Entrar</button>
       </form>
       <div class="text-center mt-3">
-        <a href="{{ url_for('auth.cadastro', modo='independente') }}" class="small"><strong>Login como médico</strong> — primeira vez? Crie sua conta de médico aqui</a>
+        <a href="{{ url_for('auth.cadastro', modo='independente') }}" class="small"><strong>Primeira vez por aqui?</strong> Crie sua conta</a>
       </div>
-      <div class="text-center mt-2">
-        <a href="{{ url_for('auth.cadastro', modo='empresa') }}" class="small"><strong>Login como clínica</strong> — primeira vez? Cadastre sua clínica aqui</a>
-      </div>
+      {# Login como clínica temporariamente escondido daqui (teste de
+      concentrar o cadastro num único fluxo, a pedido do usuário) - a
+      rota/implementação de auth.cadastro(modo='empresa') continua
+      existindo normalmente, só não tem mais link nesta tela. #}
       <div class="text-center mt-2">
         <a href="{{ url_for('auth.login_paciente') }}" class="small">Sou paciente &rarr; <strong>Entrar com CPF e data de nascimento</strong></a>
       </div>

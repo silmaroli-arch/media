@@ -206,19 +206,21 @@ def cadastro():
       Usuario.definir_permissoes_padrao) e pode ter mais concedidas depois
       por quem já administra a equipe.
 
-    - "independente": pensado para o médico que atende por conta própria,
-      sem uma empresa/clínica de verdade por trás. Não pede nome de
-      empresa nem de filial — esses são gerados automaticamente a partir
-      do nome do médico, ficando "invisíveis" pra ele (ele nunca vê as
-      palavras "empresa"/"filial" no cadastro). Diferente do modo
+    - "independente": pensado pra quem se cadastra por conta própria, sem
+      uma empresa/clínica de verdade por trás — médico(a) ou secretário(a)
+      (a pessoa escolhe o papel aqui também, igual no modo "empresa"; até
+      pouco tempo esse modo era só pra médico, mas a secretária se
+      cadastra do mesmo jeito, como "um usuário qualquer"). Não pede nome
+      de empresa nem de filial — esses são gerados automaticamente a
+      partir do nome de quem se cadastrou, ficando "invisíveis" (nunca vê
+      as palavras "empresa"/"filial" no cadastro). Diferente do modo
       "empresa" acima, aqui a primeira filial JÁ vem criada (com o
-      ClinicaMembro correspondente) — é a promessa explícita dessa
-      opção, pra pessoa já cair pronta pra usar. Por baixo, a estrutura é
-      exatamente a mesma (Empresa -> Clinica -> ClinicaMembro): se esse
-      médico passar a atender em mais de um local, ele cadastra os
+      ClinicaMembro correspondente) — é a promessa explícita dessa opção,
+      pra pessoa já cair pronta pra usar. Por baixo, a estrutura é
+      exatamente a mesma (Empresa -> Clinica -> ClinicaMembro): se essa
+      pessoa passar a atender/trabalhar em mais de um local, cadastra os
       próximos em "Meus locais de atendimento" (medico.filiais_nova), que
-      viram novas filiais dentro dessa mesma empresa oculta. papel é
-      sempre "medico" nesse modo.
+      viram novas filiais dentro dessa mesma empresa oculta.
 
     Em ambos os modos, quem cria a conta recebe todas as permissões
     administrativas (conceder_todas_permissoes) e pode ajustá-las depois
@@ -235,15 +237,14 @@ def cadastro():
         senha = request.form.get("senha", "")
         cpf = request.form.get("cpf", "").strip()
 
+        papel = request.form.get("papel", "secretaria")
         if independente:
-            papel = "medico"
-            # Nomes gerados a partir do nome do médico — ele não preenche
-            # nem vê "empresa"/"filial" nessa tela. Ficam só como
-            # identificação interna dos registros no banco.
+            # Nomes gerados a partir do nome de quem se cadastrou — a
+            # pessoa não preenche nem vê "empresa"/"filial" nessa tela.
+            # Ficam só como identificação interna dos registros no banco.
             nome_empresa = nome
         else:
             nome_empresa = request.form.get("nome_empresa", "").strip()
-            papel = request.form.get("papel", "secretaria")
 
         # Dados da filial (local de atendimento) - agora coletados
         # completos já no cadastro (igual à tela "Dados Cadastrais"),
@@ -309,30 +310,6 @@ def cadastro():
                 flash("CNPJ inválido — confira os números digitados.", "danger")
                 return render_template("auth/cadastro.html")
             clinica_existente = encontrar_clinica_por_cnpj(cnpj_filial)
-
-        # Secretária opcional, criada junto na mesma submissão — só faz
-        # sentido pra quem está FUNDANDO o local de atendimento (o
-        # front esconde esse bloco quando o CNPJ já pertence a uma
-        # clínica existente, já que aí quem se cadastra não administra
-        # a equipe dela). Ou preenche os três campos, ou nenhum.
-        nome_secretaria = request.form.get("nome_secretaria", "").strip()
-        email_secretaria = request.form.get("email_secretaria", "").strip().lower()
-        senha_secretaria = request.form.get("senha_secretaria", "")
-        criar_secretaria = False
-        if clinica_existente is None and (nome_secretaria or email_secretaria or senha_secretaria):
-            if not nome_secretaria or not email_secretaria or not senha_secretaria:
-                flash("Preencha nome, e-mail e senha da secretária, ou deixe os três em branco.", "danger")
-                return render_template("auth/cadastro.html")
-            if len(senha_secretaria) < 6:
-                flash("A senha da secretária deve ter pelo menos 6 caracteres.", "danger")
-                return render_template("auth/cadastro.html")
-            if email_secretaria == email:
-                flash("A secretária precisa de um e-mail diferente do seu.", "danger")
-                return render_template("auth/cadastro.html")
-            if Usuario.query.filter_by(email=email_secretaria).first():
-                flash("Já existe uma conta com o e-mail informado para a secretária.", "danger")
-                return render_template("auth/cadastro.html")
-            criar_secretaria = True
 
         if clinica_existente is None:
             if not nome_filial:
@@ -426,34 +403,20 @@ def cadastro():
         db.session.flush()
         vinculo = ClinicaMembro(clinica_id=filial.id, usuario_id=usuario.id, ativo=True)
         db.session.add(vinculo)
-
-        if criar_secretaria:
-            # Secretária já sai com as permissões administrativas padrão
-            # dela (ver Usuario.definir_permissoes_padrao) e vinculada ao
-            # mesmo local recém-criado - não faz login automático (quem
-            # loga é sempre quem preencheu o formulário).
-            secretaria = Usuario(nome=nome_secretaria, email=email_secretaria, tipo="secretaria")
-            secretaria.set_senha(senha_secretaria)
-            secretaria.definir_permissoes_padrao()
-            db.session.add(secretaria)
-            db.session.flush()
-            db.session.add(ClinicaMembro(clinica_id=filial.id, usuario_id=secretaria.id, ativo=True))
-
         db.session.commit()
         login_user(usuario)
         session["clinica_id"] = filial.id
 
-        complemento_secretaria = f" A conta da secretária {nome_secretaria} também já foi criada." if criar_secretaria else ""
         if independente:
             flash(
                 f"Conta criada com sucesso, {usuario.nome}! "
-                f"Vamos te ajudar a deixar tudo pronto para uso.{complemento_secretaria}",
+                "Vamos te ajudar a deixar tudo pronto para uso.",
                 "success",
             )
         else:
             flash(
                 f"Empresa '{empresa.nome}' criada com sucesso, junto com o seu primeiro local "
-                f"de atendimento! Vamos te ajudar a deixar tudo pronto para uso.{complemento_secretaria}",
+                "de atendimento! Vamos te ajudar a deixar tudo pronto para uso.",
                 "success",
             )
         return redirect(url_for("medico.onboarding"))
