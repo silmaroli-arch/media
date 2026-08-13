@@ -83,9 +83,12 @@ r = client.post("/cadastro", data={
     "modo": "empresa",
     "nome_empresa": "Clínica Fundador Agenda",
     "nome": "Dr. Fundador Agenda",
+    "cpf": "852.963.741-00", "crm_numero": "66666", "crm_uf": "ES",
     "email": "fundador.agenda@example.com",
     "senha": "123456",
     "papel": "medico",
+    "nome_filial": "Clínica Fundador Agenda - Sede",
+    "telefone_filial": "(27) 90000-0006",
 }, follow_redirects=True)
 checar("Cadastro do médico fundador responde 200", r.status_code == 200)
 with app.app_context():

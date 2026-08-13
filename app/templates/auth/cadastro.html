@@ -2,7 +2,7 @@
 {% block titulo %}Criar conta{% endblock %}
 {% block conteudo %}
 <div class="row justify-content-center">
-  <div class="col-md-6">
+  <div class="col-md-7">
     <div class="card p-4 mt-4">
       <h4 class="mb-1 text-center"><i class="bi bi-hospital"></i> Criar conta</h4>
       <p class="text-muted text-center small">
@@ -31,45 +31,144 @@
           "Meus locais de atendimento".
         </div>
 
+        <h5 class="mb-3">Seus dados</h5>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Seu nome</label>
+            <input type="text" name="nome" class="form-control" autocapitalize="words" required autofocus>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">CPF</label>
+            <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" required>
+            <div class="invalid-feedback" id="cpf_status"></div>
+          </div>
+          <div class="col-md-6" id="campo-papel">
+            <label class="form-label">Você é médico(a) ou secretário(a)?</label>
+            <select name="papel" id="papel" class="form-select" required onchange="atualizarCampoCrm()">
+              <option value="secretaria">Secretário(a)</option>
+              <option value="medico">Médico(a)</option>
+            </select>
+            <div class="form-text">
+              Não tem problema se a sua clínica não tem secretária — como você está criando a
+              empresa, você recebe acesso a todas as telas administrativas (equipe, filiais, dados
+              da clínica), seja qual for sua escolha aqui.
+            </div>
+          </div>
+          <div class="col-md-3" id="campo-crm-numero" style="display:none;">
+            <label class="form-label">CRM (número)</label>
+            <input type="text" inputmode="numeric" name="crm_numero" id="crm_numero" class="form-control" placeholder="123456">
+          </div>
+          <div class="col-md-3" id="campo-crm-uf" style="display:none;">
+            <label class="form-label">CRM (UF de emissão)</label>
+            <input type="text" name="crm_uf" id="crm_uf" class="form-control" maxlength="2" placeholder="ES" style="text-transform:uppercase;">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Telefone</label>
+            <input type="text" inputmode="numeric" name="telefone" id="telefone" class="form-control" placeholder="(27) 99999-9999">
+            <div class="invalid-feedback" id="telefone_status"></div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Seu e-mail (será seu login)</label>
+            <input type="email" name="email" class="form-control" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Senha</label>
+            <input type="password" name="senha" class="form-control" minlength="6" required>
+            <div class="form-text">Mínimo de 6 caracteres.</div>
+          </div>
+        </div>
+
+        <h6 class="mb-0 mt-3">Seu endereço</h6>
+        <div class="row g-3 mt-0">
+          <div class="col-md-3">
+            <label class="form-label">CEP</label>
+            <input type="text" inputmode="numeric" name="cep" id="cep" class="form-control" placeholder="00000-000">
+            <div class="form-text" id="cep_status"></div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Rua</label>
+            <input type="text" name="rua" id="rua" class="form-control bg-light" readonly>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Número</label>
+            <input type="text" name="numero" class="form-control">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Complemento</label>
+            <input type="text" name="complemento" class="form-control">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Bairro</label>
+            <input type="text" name="bairro" id="bairro" class="form-control bg-light" readonly>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Cidade</label>
+            <input type="text" name="cidade" id="cidade" class="form-control bg-light" readonly>
+          </div>
+          <div class="col-md-1">
+            <label class="form-label">UF</label>
+            <input type="text" name="uf" id="uf" class="form-control bg-light" maxlength="2" readonly>
+          </div>
+        </div>
+
+        <hr class="my-4">
+        <h5 class="mb-3" id="titulo-dados-empresa">Dados da empresa</h5>
         <div id="campos-empresa">
           <div class="mb-3">
             <label class="form-label">Nome da empresa</label>
-            <input type="text" name="nome_empresa" id="input-nome_empresa" class="form-control" required autofocus>
-            <div class="form-text">
-              Os dados do seu local de atendimento (nome da unidade, endereço, CNPJ, telefone) você
-              preenche depois, ao entrar no app — inclusive se tiver mais de uma unidade.
-            </div>
+            <input type="text" name="nome_empresa" id="input-nome_empresa" class="form-control" required>
           </div>
         </div>
 
-        <div class="mb-3">
-          <label class="form-label">Seu nome</label>
-          <input type="text" name="nome" class="form-control" required>
+        <h6 class="mb-0" id="titulo-local-atendimento">Seu primeiro local de atendimento</h6>
+        <div class="row g-3 mt-0">
+          <div class="col-md-8" id="campo-nome-filial">
+            <label class="form-label">Nome do local</label>
+            <input type="text" name="nome_filial" id="nome_filial" class="form-control" placeholder="ex.: Consultório, Clínica Centro">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">CNPJ (opcional)</label>
+            <input type="text" inputmode="numeric" name="cnpj_filial" id="cnpj_filial" class="form-control" placeholder="00.000.000/0000-00">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Telefone</label>
+            <input type="text" inputmode="numeric" name="telefone_filial" id="telefone_filial" class="form-control" placeholder="(27) 99999-9999" required>
+            <div class="invalid-feedback" id="telefone_filial_status"></div>
+          </div>
         </div>
-
-        <div class="mb-3" id="campo-papel">
-          <label class="form-label">Você é médico(a) ou secretário(a)?</label>
-          <select name="papel" class="form-select" required>
-            <option value="secretaria">Secretário(a)</option>
-            <option value="medico">Médico(a)</option>
-          </select>
-          <div class="form-text">
-            Não tem problema se a sua clínica não tem secretária — como você está criando a
-            empresa, você recebe acesso a todas as telas administrativas (equipe, filiais, dados
-            da clínica), seja qual for sua escolha aqui.
+        <div class="row g-3 mt-0">
+          <div class="col-md-3">
+            <label class="form-label">CEP</label>
+            <input type="text" inputmode="numeric" name="cep_filial" id="cep_filial" class="form-control" placeholder="00000-000">
+            <div class="form-text" id="cep_filial_status"></div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Rua</label>
+            <input type="text" name="rua_filial" id="rua_filial" class="form-control bg-light" readonly>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Número</label>
+            <input type="text" name="numero_filial" class="form-control">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Complemento</label>
+            <input type="text" name="complemento_filial" class="form-control">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Bairro</label>
+            <input type="text" name="bairro_filial" id="bairro_filial" class="form-control bg-light" readonly>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Cidade</label>
+            <input type="text" name="cidade_filial" id="cidade_filial" class="form-control bg-light" readonly>
+          </div>
+          <div class="col-md-1">
+            <label class="form-label">UF</label>
+            <input type="text" name="uf_filial" id="uf_filial" class="form-control bg-light" maxlength="2" readonly>
           </div>
         </div>
 
-        <div class="mb-3">
-          <label class="form-label">Seu e-mail (será seu login)</label>
-          <input type="email" name="email" class="form-control" required>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Senha</label>
-          <input type="password" name="senha" class="form-control" minlength="6" required>
-          <div class="form-text">Mínimo de 6 caracteres.</div>
-        </div>
-        <button type="submit" class="btn btn-primary w-100" id="btn-submit">Criar minha empresa</button>
+        <button type="submit" class="btn btn-primary w-100 mt-4" id="btn-submit">Criar minha empresa</button>
       </form>
       <div class="text-center mt-3">
         <a href="{{ url_for('auth.login') }}" class="small">Já tem conta? Fazer login</a>
@@ -79,6 +178,15 @@
 </div>
 
 <script>
+function atualizarCampoCrm() {
+  const ehMedico = document.getElementById('papel').value === 'medico'
+    || document.getElementById('input-modo').value === 'independente';
+  document.getElementById('campo-crm-numero').style.display = ehMedico ? 'block' : 'none';
+  document.getElementById('campo-crm-uf').style.display = ehMedico ? 'block' : 'none';
+  document.getElementById('crm_numero').required = ehMedico;
+  document.getElementById('crm_uf').required = ehMedico;
+}
+
 function selecionarModo(modo) {
   document.getElementById('input-modo').value = modo;
   const independente = modo === 'independente';
@@ -89,10 +197,22 @@ function selecionarModo(modo) {
   document.getElementById('bloco-independente').style.display = independente ? 'block' : 'none';
   document.getElementById('campos-empresa').style.display = independente ? 'none' : 'block';
   document.getElementById('campo-papel').style.display = independente ? 'none' : 'block';
+  document.getElementById('campo-nome-filial').style.display = independente ? 'none' : 'block';
 
   document.getElementById('input-nome_empresa').required = !independente;
+  document.getElementById('nome_filial').required = !independente;
+  if (independente) {
+    document.getElementById('nome_filial').value = 'Consultório';
+  } else if (document.getElementById('nome_filial').value === 'Consultório') {
+    document.getElementById('nome_filial').value = '';
+  }
+
+  document.getElementById('titulo-dados-empresa').style.display = independente ? 'none' : 'block';
+  document.getElementById('titulo-local-atendimento').textContent = independente
+    ? 'Seu consultório' : 'Seu primeiro local de atendimento';
 
   document.getElementById('btn-submit').textContent = independente ? 'Criar minha conta' : 'Criar minha empresa';
+  atualizarCampoCrm();
 }
 
 // Chegando direto de um link da tela de login ("Login como médico" ou
@@ -109,5 +229,133 @@ function selecionarModo(modo) {
     document.getElementById('link-trocar-modo').style.display = 'block';
   }
 })();
+
+// ---------- Máscaras (mesma lógica usada no resto do app: só formata o
+// que foi digitado, sem preencher com "_" o que falta - isso é o que
+// permite apagar/editar livremente) ----------
+function aplicarMascaraFixa(campo, padrao) {
+  if (!campo) return;
+  var maxDigitos = (padrao.match(/9/g) || []).length;
+  campo.addEventListener('input', function () {
+    var digitos = campo.value.replace(/\D/g, '').slice(0, maxDigitos);
+    if (!digitos) { campo.value = ''; return; }
+    var resultado = '', pos = 0;
+    for (var i = 0; i < padrao.length && pos < digitos.length; i++) {
+      if (padrao[i] === '9') { resultado += digitos[pos]; pos++; }
+      else { resultado += padrao[i]; }
+    }
+    campo.value = resultado;
+  });
+}
+aplicarMascaraFixa(document.getElementById('cpf'), '999.999.999-99');
+aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
+aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
+aplicarMascaraFixa(document.getElementById('cnpj_filial'), '99.999.999/9999-99');
+aplicarMascaraFixa(document.getElementById('telefone_filial'), '(99) 99999-9999');
+aplicarMascaraFixa(document.getElementById('cep_filial'), '99999-999');
+
+// ---------- Validação de CPF (dígitos verificadores) ----------
+function cpfValido(cpf) {
+  var d = cpf.replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  for (var t = 9; t <= 10; t++) {
+    var soma = 0;
+    for (var i = 0; i < t; i++) soma += parseInt(d[i]) * (t + 1 - i);
+    var resto = (soma * 10) % 11;
+    if (resto === 10) resto = 0;
+    if (resto !== parseInt(d[t])) return false;
+  }
+  return true;
+}
+function marcarCpfValido() {
+  var campo = document.getElementById('cpf');
+  var status = document.getElementById('cpf_status');
+  var d = campo.value.replace(/\D/g, '');
+  if (!d) { status.textContent = ''; campo.classList.remove('is-invalid'); return true; }
+  if (d.length === 11 && cpfValido(campo.value)) {
+    status.textContent = ''; campo.classList.remove('is-invalid'); return true;
+  }
+  status.textContent = 'CPF inválido — confira os números digitados.';
+  campo.classList.add('is-invalid');
+  return false;
+}
+document.getElementById('cpf').addEventListener('blur', marcarCpfValido);
+
+// ---------- Validação de telefone completo (10 ou 11 dígitos) ----------
+function marcarTelefoneValido(idCampo, idStatus, obrigatorio) {
+  var campo = document.getElementById(idCampo);
+  var status = document.getElementById(idStatus);
+  var d = campo.value.replace(/\D/g, '');
+  if (!d) { status.textContent = ''; campo.classList.remove('is-invalid'); return !obrigatorio; }
+  if (d.length === 10 || d.length === 11) {
+    status.textContent = ''; campo.classList.remove('is-invalid'); return true;
+  }
+  status.textContent = 'Telefone incompleto — digite o DDD e o número completos.';
+  campo.classList.add('is-invalid');
+  return false;
+}
+document.getElementById('telefone').addEventListener('blur', function () {
+  marcarTelefoneValido('telefone', 'telefone_status', false);
+});
+document.getElementById('telefone_filial').addEventListener('blur', function () {
+  marcarTelefoneValido('telefone_filial', 'telefone_filial_status', true);
+});
+
+// ---------- Busca de endereço por CEP via ViaCEP (pessoal e da filial) ----------
+function configurarBuscaCep(idCep, idRua, idBairro, idCidade, idUf, idStatus) {
+  var campo = document.getElementById(idCep);
+  campo.addEventListener('blur', function () {
+    var cep = campo.value.replace(/\D/g, '');
+    var status = document.getElementById(idStatus);
+    if (!cep) { status.textContent = ''; campo.classList.remove('is-invalid'); return; }
+    if (cep.length !== 8) {
+      status.textContent = 'CEP incompleto — digite os 8 números.';
+      campo.classList.add('is-invalid');
+      return;
+    }
+    campo.classList.remove('is-invalid');
+    status.textContent = 'Buscando endereço...';
+    fetch('https://viacep.com.br/ws/' + cep + '/json/')
+      .then(function (r) { return r.json(); })
+      .then(function (dados) {
+        if (dados.erro) { status.textContent = 'CEP não encontrado — confira o número digitado.'; return; }
+        document.getElementById(idRua).value = dados.logradouro || '';
+        document.getElementById(idBairro).value = dados.bairro || '';
+        document.getElementById(idCidade).value = dados.localidade || '';
+        document.getElementById(idUf).value = dados.uf || '';
+        status.textContent = 'Endereço preenchido automaticamente pelo CEP.';
+      })
+      .catch(function () {
+        status.textContent = 'Não foi possível consultar o CEP agora — tente de novo.';
+      });
+  });
+}
+configurarBuscaCep('cep', 'rua', 'bairro', 'cidade', 'uf', 'cep_status');
+configurarBuscaCep('cep_filial', 'rua_filial', 'bairro_filial', 'cidade_filial', 'uf_filial', 'cep_filial_status');
+
+document.querySelector('form').addEventListener('submit', function (evento) {
+  var cpfOk = marcarCpfValido();
+  var telefoneOk = marcarTelefoneValido('telefone', 'telefone_status', false);
+  var telefoneFilialOk = marcarTelefoneValido('telefone_filial', 'telefone_filial_status', true);
+
+  function cepOk(idCampo, idStatus) {
+    var campo = document.getElementById(idCampo);
+    var d = campo.value.replace(/\D/g, '');
+    if (d && d.length !== 8) {
+      campo.classList.add('is-invalid');
+      document.getElementById(idStatus).textContent = 'CEP incompleto — digite os 8 números.';
+      return false;
+    }
+    return true;
+  }
+  var cepPessoalOk = cepOk('cep', 'cep_status');
+  var cepFilialOk = cepOk('cep_filial', 'cep_filial_status');
+
+  if (!cpfOk || !telefoneOk || !telefoneFilialOk || !cepPessoalOk || !cepFilialOk) {
+    evento.preventDefault();
+    var primeiroInvalido = document.querySelector('.is-invalid');
+    if (primeiroInvalido) primeiroInvalido.focus();
+  }
+});
 </script>
 {% endblock %}

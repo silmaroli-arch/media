@@ -267,6 +267,21 @@ CREATE TABLE IF NOT EXISTS convites_vinculo (
     criado_em TIMESTAMP,
     decidido_em TIMESTAMP
 );
+
+-- CPF e endereço PESSOAL de quem trabalha na plataforma, e CRM (só
+-- médico) - ver Usuario.cpf/cep/.../crm_numero/crm_uf em app/models.py.
+-- Coletados no cadastro (auth.cadastro) e no cadastro/edição de membros
+-- da equipe (medico.equipe_novo/equipe_editar).
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cpf VARCHAR(20);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cep VARCHAR(10);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rua VARCHAR(200);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS numero VARCHAR(20);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS complemento VARCHAR(100);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bairro VARCHAR(100);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cidade VARCHAR(100);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS uf VARCHAR(2);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS crm_numero VARCHAR(20);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS crm_uf VARCHAR(2);
 """
 
 # Trilha de auditoria de acesso ao prontuario (ver LogAcessoProntuario em

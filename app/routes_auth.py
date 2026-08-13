@@ -230,6 +230,7 @@ def cadastro():
         nome = request.form.get("nome", "").strip()
         email = request.form.get("email", "").strip().lower()
         senha = request.form.get("senha", "")
+        cpf = request.form.get("cpf", "").strip()
 
         if independente:
             papel = "medico"
@@ -237,13 +238,32 @@ def cadastro():
             # nem vê "empresa"/"filial" nessa tela. Ficam só como
             # identificação interna dos registros no banco.
             nome_empresa = nome
-            nome_filial = "Consultório"
         else:
             nome_empresa = request.form.get("nome_empresa", "").strip()
             papel = request.form.get("papel", "secretaria")
 
-        if not nome or not email or not senha:
-            flash("Preencha todos os campos.", "danger")
+        # Dados da filial (local de atendimento) - agora coletados
+        # completos já no cadastro (igual à tela "Dados Cadastrais"),
+        # substituindo a etapa que antes deixava isso pra depois. Em
+        # ambos os modos a pessoa já sai com o primeiro local pronto.
+        nome_filial = request.form.get("nome_filial", "").strip() or ("Consultório" if independente else "")
+        telefone_filial_digitado = request.form.get("telefone_filial", "").strip()
+        cnpj_filial = request.form.get("cnpj_filial", "").strip()
+
+        if not nome or not email or not senha or not cpf:
+            flash("Preencha todos os campos obrigatórios (nome, e-mail, senha e CPF).", "danger")
+            return render_template("auth/cadastro.html")
+
+        if not validar_cpf(cpf):
+            flash("CPF inválido — confira os números digitados.", "danger")
+            return render_template("auth/cadastro.html")
+
+        if telefone_incompleto(request.form.get("telefone", "")):
+            flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
+            return render_template("auth/cadastro.html")
+
+        if cep_incompleto(request.form.get("cep", "")):
+            flash("CEP incompleto — digite os 8 números.", "danger")
             return render_template("auth/cadastro.html")
 
         if not independente and not nome_empresa:
@@ -254,12 +274,33 @@ def cadastro():
             flash("Escolha se você é médico(a) ou secretário(a).", "danger")
             return render_template("auth/cadastro.html")
 
+        if papel == "medico":
+            crm_numero = request.form.get("crm_numero", "").strip()
+            crm_uf = request.form.get("crm_uf", "").strip().upper()
+            if not crm_numero or not crm_uf:
+                flash("Informe o número e o estado (UF) do seu CRM.", "danger")
+                return render_template("auth/cadastro.html")
+        else:
+            crm_numero = crm_uf = None
+
         if len(senha) < 6:
             flash("A senha deve ter pelo menos 6 caracteres.", "danger")
             return render_template("auth/cadastro.html")
 
         if Usuario.query.filter_by(email=email).first():
             flash("Já existe uma conta com esse e-mail. Faça login ou use outro e-mail.", "danger")
+            return render_template("auth/cadastro.html")
+
+        if not nome_filial:
+            flash("Informe o nome do seu local de atendimento.", "danger")
+            return render_template("auth/cadastro.html")
+
+        if not telefone_filial_digitado or telefone_incompleto(telefone_filial_digitado):
+            flash("Telefone do local de atendimento incompleto — digite o DDD e o número completos.", "danger")
+            return render_template("auth/cadastro.html")
+
+        if cep_incompleto(request.form.get("cep_filial", "")):
+            flash("CEP do local de atendimento incompleto — digite os 8 números.", "danger")
             return render_template("auth/cadastro.html")
 
         trial_dias = PlataformaConfig.obter().trial_dias
@@ -272,8 +313,19 @@ def cadastro():
         db.session.add(empresa)
         db.session.flush()
 
-        usuario = Usuario(nome=nome, email=email, tipo=papel)
+        usuario = Usuario(nome=nome, email=email, tipo=papel, cpf=cpf)
         usuario.set_senha(senha)
+        usuario.empresa_fundadora_id = empresa.id
+        usuario.telefone = normalizar_telefone(request.form.get("telefone", ""))
+        usuario.cep = request.form.get("cep", "").strip()
+        usuario.rua = request.form.get("rua", "").strip()
+        usuario.numero = request.form.get("numero", "").strip()
+        usuario.complemento = request.form.get("complemento", "").strip()
+        usuario.bairro = request.form.get("bairro", "").strip()
+        usuario.cidade = request.form.get("cidade", "").strip()
+        usuario.uf = request.form.get("uf", "").strip().upper() or None
+        usuario.crm_numero = crm_numero
+        usuario.crm_uf = crm_uf
         if papel == "medico":
             # Todo médico nasce com seu código mestre (ver
             # Usuario.codigo_mestre em app/models.py).
@@ -285,43 +337,43 @@ def cadastro():
         # cadastrar novos locais de atendimento sozinho depois.
         usuario.conceder_todas_permissoes()
 
+        # O primeiro local de atendimento já vem completo (nome, telefone,
+        # CNPJ opcional e endereço) em vez de ficar pra depois - mesma
+        # ideia da tela "Dados Cadastrais" (medico.clinica_configuracoes).
+        filial = Clinica(
+            empresa_id=empresa.id,
+            nome=nome_filial,
+            email_contato=email,
+            telefone=telefone_filial_digitado or None,
+            cnpj=cnpj_filial or None,
+            cep=request.form.get("cep_filial", "").strip(),
+            rua=request.form.get("rua_filial", "").strip(),
+            numero=request.form.get("numero_filial", "").strip(),
+            complemento=request.form.get("complemento_filial", "").strip(),
+            bairro=request.form.get("bairro_filial", "").strip(),
+            cidade=request.form.get("cidade_filial", "").strip(),
+            uf=request.form.get("uf_filial", "").strip().upper() or None,
+        )
+        db.session.add(filial)
+        db.session.flush()
+        db.session.add(usuario)
+        db.session.flush()
+        vinculo = ClinicaMembro(clinica_id=filial.id, usuario_id=usuario.id, ativo=True)
+        db.session.add(vinculo)
+        db.session.commit()
+        login_user(usuario)
+        session["clinica_id"] = filial.id
+
         if independente:
-            # Modo "independente" continua vindo com o primeiro local já
-            # pronto pra usar (promessa explícita dessa opção - a pessoa
-            # nunca vê "filial" nessa tela) - diferente do modo "empresa"
-            # logo abaixo.
-            filial = Clinica(empresa_id=empresa.id, nome=nome_filial, email_contato=email)
-            db.session.add(filial)
-            db.session.flush()
-            db.session.add(usuario)
-            db.session.flush()
-            vinculo = ClinicaMembro(clinica_id=filial.id, usuario_id=usuario.id, ativo=True)
-            db.session.add(vinculo)
-            db.session.commit()
-            login_user(usuario)
-            session["clinica_id"] = filial.id
             flash(
                 f"Conta criada com sucesso, {usuario.nome}! "
                 "Vamos te ajudar a deixar tudo pronto para uso.",
                 "success",
             )
         else:
-            # Modo "empresa": o cadastro público cria só a EMPRESA - nenhuma
-            # filial/ClinicaMembro ainda. A pessoa cadastra o(s) local(is)
-            # de atendimento de verdade depois, ao entrar no app, em "Meus
-            # Locais de Atendimento" (etapa do assistente de configuração
-            # inicial) - até lá, o vínculo com a empresa é feito por
-            # empresa_fundadora_id (ver Usuario em app/models.py e
-            # empresas_do_usuario() em app/clinica_utils.py), não por
-            # ClinicaMembro.
-            usuario.empresa_fundadora_id = empresa.id
-            db.session.add(usuario)
-            db.session.commit()
-            login_user(usuario)
             flash(
-                f"Empresa '{empresa.nome}' criada com sucesso! "
-                "Vamos te ajudar a deixar tudo pronto para uso — o primeiro passo é cadastrar "
-                "seu local de atendimento.",
+                f"Empresa '{empresa.nome}' criada com sucesso, junto com o seu primeiro local "
+                "de atendimento! Vamos te ajudar a deixar tudo pronto para uso.",
                 "success",
             )
         return redirect(url_for("medico.onboarding"))

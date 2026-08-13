@@ -32,9 +32,12 @@ r = client.post("/cadastro", data={
     "modo": "empresa",
     "nome_empresa": "Medical Gastro Config",
     "nome": "Bruno Config",
+    "cpf": "852.963.741-00", "crm_numero": "33333", "crm_uf": "ES",
     "email": "bruno.config@example.com",
     "senha": "123456",
     "papel": "medico",
+    "nome_filial": "Medical Gastro Sede",
+    "telefone_filial": "(27) 90000-0003",
 }, follow_redirects=True)
 checar("Cadastro da empresa responde 200", r.status_code == 200)
 client.post("/equipe/filiais/nova", data={"nome": "Medical Gastro Centro"}, follow_redirects=True)
@@ -43,9 +46,14 @@ client.post("/equipe/filiais/nova", data={"nome": "Medical Gastro Santa Lucia"},
 with app.app_context():
     empresa = Empresa.query.filter_by(nome="Medical Gastro Config").first()
     bruno = Usuario.query.filter_by(email="bruno.config@example.com").first()
-    checar("Empresa tem 2 locais", Clinica.query.filter_by(empresa_id=empresa.id).count() == 2)
-    checar("Fundador NÃO está vinculado a nenhum local (cenário do bug)",
-           ClinicaMembro.query.filter_by(usuario_id=bruno.id).count() == 0)
+    # O cadastro agora já cria e vincula o fundador ao primeiro local
+    # (Sede) - os outros 2, cadastrados depois em "Meus locais de
+    # atendimento", continuam SEM vínculo automático (regra que este
+    # teste verifica: configuração é da EMPRESA, não depende de vínculo).
+    checar("Empresa tem 3 locais (Sede do cadastro + 2 cadastrados depois)",
+           Clinica.query.filter_by(empresa_id=empresa.id).count() == 3)
+    checar("Fundador está vinculado só ao primeiro local (Sede), não aos outros 2",
+           ClinicaMembro.query.filter_by(usuario_id=bruno.id).count() == 1)
     empresa_id = empresa.id
 
 # ---------- Salvar modelo de preparo SEM vínculo nenhum ----------

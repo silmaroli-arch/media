@@ -180,21 +180,26 @@ client.get("/logout")
 r = client.post("/cadastro", data={
     "nome_empresa": "Empresa Teste Automatizado",
     "nome": "Fulano Teste",
+    "cpf": "852.963.741-00",
     "email": "fulano@clinicateste.com",
     "senha": "senha123",
     "papel": "secretaria",
+    "nome_filial": "Empresa Teste Automatizado - Sede",
+    "telefone_filial": "(27) 90000-0007",
 }, follow_redirects=True)
 texto = r.get_data(as_text=True)
 checar("Cadastro público cria a empresa e loga automaticamente", "Painel" in texto)
 checar("Nome da empresa aparece na navbar", "Empresa Teste Automatizado" in texto)
-# O cadastro público (modo "empresa") não cria mais NENHUMA filial
-# automaticamente - isso é feito depois, ao entrar no app, em "Meus
-# Locais de Atendimento" (ver test_cadastro_empresa_sem_filial.py para o
-# fluxo completo).
+# O cadastro público (modo "empresa") já cria o primeiro local de
+# atendimento, completo, e vincula quem se cadastrou a ele (ver
+# test_cadastro_empresa_sem_filial.py para o fluxo completo).
 with app.app_context():
     empresa_nova = Empresa.query.filter_by(nome="Empresa Teste Automatizado").first()
     checar("Empresa nova foi criada", empresa_nova is not None)
-    checar("NENHUMA filial foi criada automaticamente no cadastro", Clinica.query.filter_by(empresa_id=empresa_nova.id).first() is None)
+    checar(
+        "O primeiro local de atendimento já foi criado automaticamente no cadastro",
+        Clinica.query.filter_by(empresa_id=empresa_nova.id, nome="Empresa Teste Automatizado - Sede").count() == 1,
+    )
     usuario_novo = Usuario.query.filter_by(email="fulano@clinicateste.com").first()
     checar("Usuário fica vinculado à empresa via empresa_fundadora_id", usuario_novo.empresa_fundadora_id == empresa_nova.id)
 
@@ -209,9 +214,12 @@ client.get("/logout")
 r = client.post("/cadastro", data={
     "nome_empresa": "Clínica Solo do Dr. Ricardo",
     "nome": "Dr. Ricardo Alves",
+    "cpf": "852.963.741-00", "crm_numero": "77777", "crm_uf": "ES",
     "email": "ricardo@clinicasolo.com",
     "senha": "senha123",
     "papel": "medico",
+    "nome_filial": "Consultório do Dr. Ricardo",
+    "telefone_filial": "(27) 90000-0008",
 }, follow_redirects=True)
 checar("Cadastro público como médico também funciona", "Painel" in r.get_data(as_text=True))
 
@@ -222,34 +230,19 @@ with app.app_context():
         "Médico fundador recebe todas as permissões administrativas (não há secretária)",
         ricardo.perm_pacientes and ricardo.perm_equipe and ricardo.perm_filiais and ricardo.perm_dados_clinica,
     )
+    consultorio_ricardo = Clinica.query.filter_by(nome="Consultório do Dr. Ricardo").first()
+    checar("O primeiro local (Consultório) já foi criado pelo cadastro", consultorio_ricardo is not None)
+    checar("O médico fundador já fica vinculado a esse primeiro local",
+           ClinicaMembro.query.filter_by(clinica_id=consultorio_ricardo.id, usuario_id=ricardo.id).count() == 1)
 
 r = client.get("/equipe/equipe-membros")
 checar("Médico fundador consegue acessar a tela de Equipe mesmo sendo médico", "Equipe da empresa" in r.get_data(as_text=True))
 r = client.get("/equipe/filiais")
-checar("Médico fundador consegue acessar a tela de Filiais (ainda vazia)", "Nenhum local de atendimento cadastrado" in r.get_data(as_text=True))
+checar("Médico fundador consegue acessar a tela de Filiais (já com o local do cadastro)", "Consultório do Dr. Ricardo" in r.get_data(as_text=True))
 r = client.get("/equipe/clinica/configuracoes", follow_redirects=True)
-checar("Médico fundador consegue acessar Dados da clínica (com aviso, sem filial ainda)", r.status_code == 200)
-r = client.get("/equipe/pacientes/novo", follow_redirects=True)
-checar(
-    "Sem nenhum local ainda, 'Novo paciente' redireciona pedindo pra cadastrar o local primeiro",
-    "cadastre seu primeiro local de atendimento" in r.get_data(as_text=True).lower(),
-)
-
-# Cadastra o primeiro local de atendimento do médico fundador. Cadastrar o
-# local NÃO vincula ninguém a ele (nem quem cadastrou) - o vínculo é sempre
-# uma ação separada e explícita (ver medico.filiais_nova e
-# medico.filiais_vincular_me).
-r = client.post("/equipe/filiais/nova", data={"nome": "Consultório do Dr. Ricardo"}, follow_redirects=True)
-checar("Médico fundador consegue cadastrar seu primeiro local de atendimento", r.status_code == 200)
-with app.app_context():
-    consultorio_ricardo = Clinica.query.filter_by(nome="Consultório do Dr. Ricardo").first()
-    checar("Cadastrar o local NÃO vinculou ninguém a ele automaticamente",
-           ClinicaMembro.query.filter_by(clinica_id=consultorio_ricardo.id).count() == 0)
-    consultorio_ricardo_id = consultorio_ricardo.id
-r = client.post(f"/equipe/filiais/{consultorio_ricardo_id}/vincular-me", follow_redirects=True)
-checar("Médico fundador se vincula ao local explicitamente, pelo botão", r.status_code == 200)
+checar("Médico fundador consegue acessar Dados da clínica normalmente (o local já existe)", r.status_code == 200)
 r = client.get("/equipe/pacientes/novo")
-checar("Depois de ter um local (e estar vinculado a ele), 'Novo paciente' já é acessível normalmente", r.status_code == 200)
+checar("Com o local já criado e vinculado pelo cadastro, 'Novo paciente' já é acessível normalmente", r.status_code == 200)
 
 # ---------- Cadastro de paciente sem senha: login por telefone + data de nascimento ----------
 

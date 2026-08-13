@@ -24,14 +24,21 @@ def checar(nome, condicao):
     assert condicao, nome
 
 
-# Cenário exato do usuário: fundador médico, empresa com 2 locais, zero vínculos.
+# Cenário exato do usuário: fundador médico, empresa com 2 locais, zero
+# vínculos. O cadastro agora já cria e vincula o fundador ao primeiro
+# local (Sede) - para recriar o cenário original do bug (zero vínculos
+# ativos), o fundador se desvincula deliberadamente desse primeiro local
+# antes de cadastrar os outros dois.
 r = client.post("/cadastro", data={
     "modo": "empresa",
     "nome_empresa": "Medical Gastro Equipe",
     "nome": "Bruno Pavan",
+    "cpf": "852.963.741-00", "crm_numero": "22222", "crm_uf": "ES",
     "email": "bruno.equipe@example.com",
     "senha": "123456",
     "papel": "medico",
+    "nome_filial": "MG Sede",
+    "telefone_filial": "(27) 90000-0002",
 }, follow_redirects=True)
 checar("Cadastro do fundador responde 200", r.status_code == 200)
 client.post("/equipe/filiais/nova", data={"nome": "MG Centro"}, follow_redirects=True)
@@ -40,10 +47,14 @@ client.post("/equipe/filiais/nova", data={"nome": "MG Santa Lucia"}, follow_redi
 with app.app_context():
     empresa = Empresa.query.filter_by(nome="Medical Gastro Equipe").first()
     bruno = Usuario.query.filter_by(email="bruno.equipe@example.com").first()
-    checar("Fundador não tem vínculo nenhum (cenário do bug)",
-           ClinicaMembro.query.filter_by(usuario_id=bruno.id).count() == 0)
     bruno_id = bruno.id
     centro_id = Clinica.query.filter_by(empresa_id=empresa.id, nome="MG Centro").first().id
+    sede_id = Clinica.query.filter_by(empresa_id=empresa.id, nome="MG Sede").first().id
+
+client.post(f"/equipe/filiais/{sede_id}/desvincular-me", follow_redirects=True)
+with app.app_context():
+    checar("Fundador não tem vínculo nenhum (cenário do bug, recriado deliberadamente)",
+           ClinicaMembro.query.filter_by(usuario_id=bruno_id, ativo=True).count() == 0)
 
 # ---------- O fundador aparece na lista da Equipe ----------
 

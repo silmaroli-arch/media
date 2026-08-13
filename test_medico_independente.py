@@ -1,7 +1,7 @@
 """Testa o novo fluxo de cadastro público 'médico independente' (modo=independente):
-não deve exigir nome_empresa/nome_filial, deve criar papel=medico, permitir múltiplos
-locais de atendimento depois via /equipe/filiais/nova, e não deve quebrar o fluxo
-'empresa' original.
+não deve exigir nome_empresa/nome_filial (gerados automaticamente), deve criar
+papel=medico, permitir múltiplos locais de atendimento depois via
+/equipe/filiais/nova, e não deve quebrar o fluxo 'empresa' original.
 
 Roda contra SQLite local (não usa a DATABASE_URL do .env) e reseta esse banco de
 teste no início — não toca no banco real. Para rodar:
@@ -41,8 +41,10 @@ checar("Existe um link discreto pra trocar de tipo caso tenha clicado errado",
 r = client.post("/cadastro", data={
     "modo": "independente",
     "nome": "Dr. João Autônomo",
+    "cpf": "852.963.741-00", "crm_numero": "44444", "crm_uf": "ES",
     "email": "joao.autonomo@example.com",
     "senha": "123456",
+    "telefone_filial": "(27) 90000-0004",
 }, follow_redirects=True)
 checar("Cadastro independente responde 200", r.status_code == 200)
 
@@ -78,28 +80,34 @@ client.get("/logout")
 r = client.post("/cadastro", data={"modo": "independente", "nome": "", "email": "", "senha": ""})
 checar("Cadastro independente sem dados obrigatórios é rejeitado", r.status_code == 200 and "Preencha todos os campos" in r.get_data(as_text=True))
 
-# ---------- Fluxo 'empresa' original continua funcionando sem alterações ----------
-# O cadastro público só pede o nome da EMPRESA agora - NENHUMA filial é
-# criada aqui (isso é configurado depois, ao entrar no app, em "Meus
-# Locais de Atendimento", ver test_cadastro_empresa_sem_filial.py para o
-# fluxo completo).
+# ---------- Fluxo 'empresa' original continua funcionando ----------
+# O cadastro público agora pede o nome da empresa E os dados completos do
+# primeiro local de atendimento (nome, telefone, endereço) - já cria e
+# vincula quem se cadastrou a esse primeiro local (ver
+# test_cadastro_empresa_sem_filial.py para o fluxo completo).
 r = client.post("/cadastro", data={
     "modo": "empresa",
     "nome_empresa": "Clínica Teste Regressão",
     "nome": "Dra. Empresa Teste",
+    "cpf": "852.963.741-00", "crm_numero": "55555", "crm_uf": "ES",
     "email": "dra.empresa.teste@example.com",
     "senha": "123456",
     "papel": "medico",
+    "nome_filial": "Clínica Teste Regressão - Sede",
+    "telefone_filial": "(27) 90000-0005",
 }, follow_redirects=True)
 checar("Cadastro 'empresa' responde 200 (cai no assistente de configuração inicial)", r.status_code == 200)
 with app.app_context():
     empresa2 = Empresa.query.filter_by(nome="Clínica Teste Regressão").first()
     checar("Fluxo 'empresa' tradicional continua criando empresa com o nome informado", empresa2 is not None)
     checar(
-        "Fluxo 'empresa' NÃO cria mais nenhuma filial automaticamente no cadastro",
-        Clinica.query.filter_by(empresa_id=empresa2.id).first() is None,
+        "Fluxo 'empresa' já cria o primeiro local de atendimento, com os dados completos",
+        Clinica.query.filter_by(empresa_id=empresa2.id, nome="Clínica Teste Regressão - Sede").count() == 1,
     )
     dra_empresa = Usuario.query.filter_by(email="dra.empresa.teste@example.com").first()
-    checar("Usuário fica vinculado à empresa via empresa_fundadora_id (ainda sem filial)", dra_empresa.empresa_fundadora_id == empresa2.id)
+    checar("Usuário fica vinculado à empresa via empresa_fundadora_id", dra_empresa.empresa_fundadora_id == empresa2.id)
+    from app.models import ClinicaMembro
+    checar("Usuário já fica vinculado ao primeiro local criado no cadastro",
+           ClinicaMembro.query.filter_by(usuario_id=dra_empresa.id).count() == 1)
 
 print("\nTodos os testes do fluxo médico independente passaram.")

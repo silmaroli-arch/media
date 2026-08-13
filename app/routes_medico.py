@@ -22,7 +22,7 @@ from app.models import (
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, DescontoConfig, Pagamento, EvolucaoClinica,
     ConviteVinculo, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
-    cep_incompleto, telefone_incompleto,
+    cep_incompleto, telefone_incompleto, validar_cpf,
 )
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
@@ -3734,9 +3734,24 @@ def equipe_novo():
             flash("Informe o nome da pessoa.", "danger")
             return render_template("medico/equipe_form.html", filiais=filiais)
 
+        cpf = request.form.get("cpf", "").strip()
+        if cpf and not validar_cpf(cpf):
+            flash("CPF inválido — confira os números digitados.", "danger")
+            return render_template("medico/equipe_form.html", filiais=filiais)
+        if cep_incompleto(request.form.get("cep", "")):
+            flash("CEP incompleto — digite os 8 números.", "danger")
+            return render_template("medico/equipe_form.html", filiais=filiais)
+
         senha_final = senha or "123456"
-        usuario = Usuario(nome=nome, email=email, tipo=papel)
+        usuario = Usuario(nome=nome, email=email, tipo=papel, cpf=cpf or None)
         usuario.set_senha(senha_final)
+        usuario.cep = request.form.get("cep", "").strip()
+        usuario.rua = request.form.get("rua", "").strip()
+        usuario.numero = request.form.get("numero", "").strip()
+        usuario.complemento = request.form.get("complemento", "").strip()
+        usuario.bairro = request.form.get("bairro", "").strip()
+        usuario.cidade = request.form.get("cidade", "").strip()
+        usuario.uf = request.form.get("uf", "").strip().upper() or None
         # As permissões administrativas (pacientes, equipe, filiais, dados
         # da clínica) vêm dos checkboxes do formulário — nem toda clínica
         # tem secretária, então quem cadastra escolhe explicitamente quais
@@ -4011,7 +4026,32 @@ def equipe_editar(usuario_id):
                         filial_ids_atuais=filial_ids_atuais,
                     )
 
+        cpf = request.form.get("cpf", "").strip()
+        if cpf and not validar_cpf(cpf):
+            flash("CPF inválido — confira os números digitados.", "danger")
+            return render_template(
+                "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
+                filial_ids_atuais=filial_ids_atuais,
+            )
+        if cep_incompleto(request.form.get("cep", "")):
+            flash("CEP incompleto — digite os 8 números.", "danger")
+            return render_template(
+                "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
+                filial_ids_atuais=filial_ids_atuais,
+            )
+
         usuario.nome = nome
+        usuario.cpf = cpf or None
+        usuario.cep = request.form.get("cep", "").strip()
+        usuario.rua = request.form.get("rua", "").strip()
+        usuario.numero = request.form.get("numero", "").strip()
+        usuario.complemento = request.form.get("complemento", "").strip()
+        usuario.bairro = request.form.get("bairro", "").strip()
+        usuario.cidade = request.form.get("cidade", "").strip()
+        usuario.uf = request.form.get("uf", "").strip().upper() or None
+        if usuario.tipo == "medico":
+            usuario.crm_numero = request.form.get("crm_numero", "").strip() or None
+            usuario.crm_uf = request.form.get("crm_uf", "").strip().upper() or None
 
         vinculos_por_filial = {v.clinica_id: v for v in vinculos_desta_empresa}
         for f in filiais:

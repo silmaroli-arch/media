@@ -356,6 +356,27 @@ class Usuario(db.Model, UserMixin):
     certificado_digital_titular = db.Column(db.String(200))
     certificado_digital_validade = db.Column(db.Date)
 
+    # CPF e endereço PESSOAL de quem trabalha na plataforma (dono/médico/
+    # secretária) - coletados no cadastro (auth.cadastro) e também no
+    # cadastro/edição de membros da equipe (medico.equipe_novo/
+    # equipe_editar). Endereço da PESSOA, não da clínica (ver Clinica.cep
+    # etc. para o endereço do local de atendimento).
+    cpf = db.Column(db.String(20))
+    cep = db.Column(db.String(10))
+    rua = db.Column(db.String(200))
+    numero = db.Column(db.String(20))
+    complemento = db.Column(db.String(100))
+    bairro = db.Column(db.String(100))
+    cidade = db.Column(db.String(100))
+    uf = db.Column(db.String(2))
+
+    # CRM (registro no Conselho Regional de Medicina) - só faz sentido
+    # para tipo == "medico". Dois campos porque o CRM é emitido por
+    # estado (ex.: "12345" + "ES") - o número sozinho não identifica o
+    # médico sem o estado de emissão.
+    crm_numero = db.Column(db.String(20))
+    crm_uf = db.Column(db.String(2))
+
     # CONTA ÚNICA do paciente: uma pessoa (um Usuario) pode ter VÁRIOS
     # cadastros de paciente - um por empresa que frequenta (ver
     # encontrar_conta_paciente). O que é global é a PESSOA e o login dela;
