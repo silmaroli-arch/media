@@ -5,11 +5,7 @@
 
 {% if sugestao %}
 <div class="alert alert-warning">
-  {% if sugestao.origem == "xlsx" %}
   Dados extraídos automaticamente da planilha Excel enviada.
-  {% else %}
-  Texto extraído automaticamente de um PDF.
-  {% endif %}
   <strong>Revise com cuidado</strong> — a extração é automática e pode ter interpretado algo errado ou
   deixado de reconhecer alguma regra. Nada foi salvo ainda.
 </div>
@@ -23,11 +19,11 @@
 
 {% if not modelo %}
 <div class="mb-3">
-  {# Importar preenche este formulário - por isso os botões moram aqui,
-     não na lista. Cada um abre um popup pra escolher o arquivo. #}
-  <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-importar-pdf">
-    <i class="bi bi-file-earmark-pdf"></i> Importar de um PDF
-  </button>
+  {# Importar preenche este formulário - por isso o botão mora aqui, não
+     na lista. Abre um popup pra escolher o arquivo. A importação de PDF
+     saiu daqui - agora é feita numa tela própria (Configuração de exames
+     > Gerar Excel a partir de PDF, ver medico.preparo_pdf_para_excel) que
+     gera um Excel pronto pra ser importado por este mesmo botão. #}
   <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx">
     <i class="bi bi-file-earmark-excel"></i> Importar de um Excel
   </button>
@@ -295,32 +291,8 @@
 </div>
 
 {% if not modelo %}
-{# ---------- Popups de importação (fora do <form> principal - formulário
+{# ---------- Popup de importação (fora do <form> principal - formulário
    aninhado não existe em HTML) ---------- #}
-<div class="modal fade" id="modal-importar-pdf" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <form method="post" action="{{ url_for('medico.preparo_modelos_importar_pdf') }}" enctype="multipart/form-data">
-        <div class="modal-header">
-          <h6 class="modal-title"><i class="bi bi-file-earmark-pdf"></i> Importar de um PDF</h6>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <p class="text-muted small">
-            Envie o PDF do preparo (com texto selecionável, não escaneado como imagem). O texto é
-            extraído e preenche os campos do formulário pra você revisar — nada é salvo antes do Salvar.
-          </p>
-          <input type="file" name="arquivo_pdf" class="form-control" accept=".pdf,application/pdf" required>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Extrair dados</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-
 <div class="modal fade" id="modal-importar-xlsx" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">

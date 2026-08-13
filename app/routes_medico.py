@@ -29,7 +29,7 @@ from app.clinica_utils import (
     empresa_atual, empresas_do_usuario, selecionar_empresa,
     filiais_atuais, filiais_atuais_ids,
 )
-from app.pdf_preparo import extrair_sugestao_de_pdf
+from app.pdf_preparo import extrair_sugestao_de_pdf, gerar_xlsx_da_sugestao
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.agendamento_otimizador import sugerir_horarios, medico_tem_bloqueio, conflito_de_agenda
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
@@ -1811,38 +1811,42 @@ def preparo_modelos_remover(modelo_id):
     return redirect(url_for("medico.preparo_modelos_lista"))
 
 
-@medico_bp.route("/preparo-modelos/importar-pdf", methods=["GET", "POST"])
+@medico_bp.route("/preparo-modelos/pdf-para-excel", methods=["GET", "POST"])
 @login_required
 @staff_required
-def preparo_modelos_importar_pdf():
+def preparo_pdf_para_excel():
+    """Gera uma planilha Excel (.xlsx) pronta pra revisão a partir de um PDF
+    de preparo - substitui a antiga importação direta de PDF pro formulário
+    de modelo (preparo_modelos_importar_pdf, removida): a extração
+    heurística de PDF nunca foi tão confiável quanto a de Excel (ver
+    app.xlsx_preparo), então agora ela só gera a planilha - a pessoa revisa/
+    ajusta no Excel com calma e importa o resultado pelo botão "Importar de
+    um Excel" já existente na tela de novo modelo de preparo."""
     if request.method == "POST":
         arquivo = request.files.get("arquivo_pdf")
         if not arquivo or not arquivo.filename:
             flash("Selecione um arquivo PDF.", "danger")
-            return render_template("medico/preparo_modelo_importar.html")
+            return render_template("medico/preparo_pdf_para_excel.html")
 
         try:
             sugestao = extrair_sugestao_de_pdf(arquivo.stream)
+            planilha_buffer = gerar_xlsx_da_sugestao(sugestao)
         except Exception:
             flash(
                 "Não foi possível ler esse PDF. Ele pode estar corrompido, protegido por senha, ou ser "
                 "uma imagem escaneada sem texto selecionável — nesse caso, cadastre o modelo manualmente.",
                 "danger",
             )
-            return render_template("medico/preparo_modelo_importar.html")
+            return render_template("medico/preparo_pdf_para_excel.html")
 
-        # Guarda a sugestão na sessão só até a próxima tela (o formulário
-        # de "novo modelo" é aberto já preenchido, mas nada é salvo até a
-        # pessoa revisar e clicar em "Salvar").
-        session["preparo_sugestao_importada"] = sugestao
-        flash(
-            "Texto extraído do PDF. Revise com cuidado antes de salvar — a extração é automática e pode "
-            "ter interpretado algo errado.",
-            "warning",
+        return send_file(
+            planilha_buffer,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="preparo-extraido-do-pdf.xlsx",
         )
-        return redirect(url_for("medico.preparo_modelos_novo", de_importacao=1))
 
-    return render_template("medico/preparo_modelo_importar.html")
+    return render_template("medico/preparo_pdf_para_excel.html")
 
 
 @medico_bp.route("/preparo-modelos/importar-xlsx", methods=["GET", "POST"])

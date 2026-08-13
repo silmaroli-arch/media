@@ -8,8 +8,10 @@ informações gerais avulsas — tudo isso é só uma sugestão pré-preenchida 
 formulário de cadastro de um novo modelo de preparo; nada é salvo no banco
 até a pessoa revisar e clicar em "Salvar".
 """
+import io
 import re
 
+from openpyxl import Workbook
 from pypdf import PdfReader
 
 
@@ -134,8 +136,13 @@ def _sugerir_medicamentos(texto):
 
 
 def _sugerir_observacoes_medicamentos(linhas):
+    # "e"/"eh" além de "é": a extração de texto de PDF às vezes perde
+    # acentos (comum quando o documento foi gerado sem os caracteres
+    # devidamente codificados), então "não é necessário" pode chegar como
+    # "nao e necessario" - sem aceitar o "e" solto aqui, essa observação
+    # (que é toda a razão de ser desta função) passava despercebida.
     for linha in linhas:
-        if re.search(r"n[aã]o\s+(?:é|eh)?\s*necess[aá]rio\s+suspender", linha, re.IGNORECASE):
+        if re.search(r"n[aã]o\s+(?:é|eh|e)?\s*necess[aá]rio\s+suspender", linha, re.IGNORECASE):
             return linha.strip()
     return None
 
@@ -314,3 +321,74 @@ def extrair_sugestao_de_pdf(stream):
         "alimentos": _sugerir_alimentos(linhas),
         "exames_anteriores": _sugerir_exames_anteriores(texto),
     }
+
+
+_CARACTERES_INVALIDOS_NOME_ABA = set('[]:*?/\\')
+
+
+def _nome_aba_valido(nome_sugerido):
+    """Nome de aba do Excel tem limite de 31 caracteres e não pode conter
+    alguns símbolos - normaliza a sugestão de nome (ou usa um genérico) pra
+    caber nessa regra."""
+    nome = "".join(c for c in (nome_sugerido or "") if c not in _CARACTERES_INVALIDOS_NOME_ABA).strip()
+    return (nome or "Preparo")[:31]
+
+
+def gerar_xlsx_da_sugestao(sugestao):
+    """Gera uma planilha .xlsx no MESMO formato aceito pela importação de
+    Excel do cadastro de modelo de preparo (ver `app.xlsx_preparo` — colunas
+    Tipo/Ação/Agrupador/Nome/Dias antes/Horas antes/Hora exata), a partir de
+    uma sugestão extraída de um PDF (ver `extrair_sugestao_de_pdf`).
+
+    A ideia é dar pra pessoa uma planilha já preenchida pra revisar e
+    ajustar com calma no Excel — depois é só importar essa mesma planilha
+    pelo botão "Importar de um Excel" na tela de novo modelo de preparo.
+    Não tenta ser perfeito (mesma heurística da extração de PDF): algumas
+    regras em prosa livre viram um aviso solto em vez de uma regra
+    estruturada — por isso vale sempre revisar antes de importar de volta.
+    """
+    workbook = Workbook()
+    planilha = workbook.active
+    planilha.title = _nome_aba_valido(sugestao.get("nome_sugerido"))
+    planilha.append(["Tipo", "Ação", "Agrupador", "Nome", "Dias antes", "Horas antes", "Hora exata"])
+
+    for corte in sugestao.get("cortes") or []:
+        planilha.append(["Aviso", "", "", corte.get("descricao", ""), None, corte.get("horas_antes"), None])
+
+    for medicamento in sugestao.get("medicamentos") or []:
+        planilha.append([
+            "Medicamento", "Suspender", medicamento.get("categoria") or "",
+            medicamento.get("nome", ""), medicamento.get("dias_antes"), None, None,
+        ])
+
+    observacoes = sugestao.get("observacoes_medicamentos")
+    if observacoes:
+        # Frase solta (ex.: "Não é necessário suspender o AAS...") - vira
+        # uma única linha de "não suspender", sem separar por medicamento.
+        planilha.append(["Medicamento", "Não suspender", "", observacoes, None, None, None])
+
+    for alimento in sugestao.get("alimentos") or []:
+        acao = "Permitido (Sugestão de consumo)" if alimento.get("permitido") else "Suspender"
+        planilha.append([
+            "Alimento", acao, "", alimento.get("nome", ""),
+            alimento.get("dias_antes"), alimento.get("horas_antes"), None,
+        ])
+
+    for exame in sugestao.get("exames_anteriores") or []:
+        planilha.append([
+            "Exames / Procedimentos", "Proibido", "", exame.get("nome", ""),
+            exame.get("dias_antes"), None, None,
+        ])
+
+    for info in sugestao.get("informacoes_gerais") or []:
+        # A extração de PDF devolve texto solto (sem prazo estruturado) -
+        # a extração de Excel, ao reimportar, vai tratar como um aviso sem
+        # prazo (ou como corte, se mencionar jejum com horas).
+        texto = info if isinstance(info, str) else info.get("texto", "")
+        if texto:
+            planilha.append(["Aviso", "", "", texto, None, None, None])
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer

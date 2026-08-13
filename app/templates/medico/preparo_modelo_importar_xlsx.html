@@ -36,6 +36,7 @@
   </form>
 </div>
 <p class="mt-3">
-  Prefere enviar um PDF? <a href="{{ url_for('medico.preparo_modelos_importar_pdf') }}">Importar de um PDF</a> em vez de Excel.
+  Só tem um PDF? <a href="{{ url_for('medico.preparo_pdf_para_excel') }}">Gere um Excel a partir dele</a>
+  primeiro, revise os dados extraídos, e depois importe a planilha aqui.
 </p>
 {% endblock %}

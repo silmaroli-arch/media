@@ -48,7 +48,7 @@
   {% set grupo_config_exames = ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar',
                                  'medico.exames_por_filial',
                                  'medico.preparo_modelos_lista', 'medico.preparo_modelos_novo',
-                                 'medico.preparo_modelos_editar', 'medico.preparo_modelos_importar_pdf'] %}
+                                 'medico.preparo_modelos_editar', 'medico.preparo_pdf_para_excel'] %}
   {% set grupo_relatorios = ['relatorios.index', 'relatorios.financeiro', 'relatorios.agenda',
                               'relatorios.pacientes', 'relatorios.desempenho_medico'] %}
   <nav class="app-sidebar bg-primary text-white p-3 no-print">
@@ -207,6 +207,9 @@
             </li>
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint == 'medico.exames_por_filial' %}active{% endif %}" href="{{ url_for('medico.exames_por_filial') }}">Associar exames entre filiais</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'medico.preparo_pdf_para_excel' %}active{% endif %}" href="{{ url_for('medico.preparo_pdf_para_excel') }}">Gerar Excel a partir de PDF</a>
             </li>
           </ul>
         </div>

@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta, time as dt_time
 from unittest.mock import patch
 
 from reportlab.pdfgen import canvas
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from app import create_app
 from app.extensions import db
@@ -527,7 +527,10 @@ checar("Lista de medicamentos mostra a data calculada de suspensão (14 dias ant
        "27/07/2026" in texto)
 client.get("/logout")
 
-# Importação de PDF: extrai texto e sugere cortes/medicamentos automaticamente
+# Geração de Excel a partir de PDF: extrai texto e gera uma planilha com os
+# cortes/medicamentos sugeridos, pra revisão fora do sistema (ver
+# medico.preparo_pdf_para_excel - substituiu a antiga importação direta de
+# PDF pro formulário).
 buffer_pdf = io.BytesIO()
 c = canvas.Canvas(buffer_pdf)
 c.drawString(50, 800, "TESTE DE EXTRACAO AUTOMATICA DE PDF")
@@ -543,23 +546,52 @@ buffer_pdf.seek(0)
 
 login("secretaria@clinicavitoria.com", "123456")
 r = client.post(
-    "/equipe/preparo-modelos/importar-pdf",
+    "/equipe/preparo-modelos/pdf-para-excel",
     data={"arquivo_pdf": (buffer_pdf, "teste_preparo.pdf")},
+    content_type="multipart/form-data",
+)
+checar("Gerar Excel a partir de PDF responde 200 com um arquivo pra baixar", r.status_code == 200)
+checar(
+    "A resposta é uma planilha Excel (não a página HTML)",
+    "spreadsheet" in r.headers.get("Content-Type", "") and r.headers.get("Content-Disposition", "").find("attachment") != -1,
+)
+planilha_gerada = load_workbook(io.BytesIO(r.data))
+aba = planilha_gerada.active
+# Nome de aba do Excel tem limite de 31 caracteres - o nome sugerido é
+# truncado nesse tamanho (ver _nome_aba_valido em app/pdf_preparo.py).
+checar("A aba da planilha usa o nome sugerido do exame (truncado a 31 caracteres)",
+       aba.title == "TESTE DE EXTRACAO AUTOMATICA DE PDF"[:31])
+linhas_planilha = [tuple(linha) for linha in aba.iter_rows(min_row=2, values_only=True)]
+nomes_planilha = [str(linha[3]) for linha in linhas_planilha]
+checar("A planilha gerada tem o cabeçalho esperado pela importação de Excel",
+       tuple(c.value for c in aba[1]) == ("Tipo", "Ação", "Agrupador", "Nome", "Dias antes", "Horas antes", "Hora exata"))
+checar("A planilha sugere o corte de jejum de 12 horas",
+       any(l[3] and "jejum total" in str(l[3]).lower() and l[5] == 12 for l in linhas_planilha))
+checar("A planilha sugere o corte de líquidos de 2 horas",
+       any(l[3] and "líquidos claros" in str(l[3]).lower() and l[5] == 2 for l in linhas_planilha))
+checar("A planilha separa a lista de medicamentos (separados por vírgula) em linhas diferentes",
+       "OZEMPIC" in nomes_planilha and "MOUNJARO" in nomes_planilha and "TRULICITY OU SIMILARES" in nomes_planilha)
+checar("A planilha sugere os medicamentos separados com 14 dias de prazo cada",
+       sum(1 for l in linhas_planilha if l[0] == "Medicamento" and l[4] == 14) >= 3)
+checar("A planilha sugere a observação de medicamentos que não precisam ser suspensos",
+       any(l[0] == "Medicamento" and l[1] == "Não suspender" and "aas" in str(l[3]).lower() for l in linhas_planilha))
+checar("A planilha sugere os exames/procedimentos proibidos antes, separados (colonoscopia e endoscopia)",
+       any(l[0] == "Exames / Procedimentos" and "colonoscopia" in str(l[3]).lower() and l[4] == 28 for l in linhas_planilha)
+       and any(l[0] == "Exames / Procedimentos" and "endoscopia" in str(l[3]).lower() and l[4] == 28 for l in linhas_planilha))
+
+# A planilha gerada é compatível com a importação de Excel já existente:
+# reenviar ela pro cadastro de modelo funciona normalmente.
+r_importar = client.post(
+    "/equipe/preparo-modelos/importar-xlsx",
+    data={"arquivo_xlsx": (io.BytesIO(r.data), "preparo-extraido-do-pdf.xlsx")},
     content_type="multipart/form-data",
     follow_redirects=True,
 )
-texto = r.get_data(as_text=True)
-checar("Importação de PDF extrai o nome sugerido do exame", "TESTE DE EXTRACAO AUTOMATICA DE PDF" in texto)
-checar("Importação de PDF sugere o corte de jejum de 12 horas", 'value="12"' in texto and "Jejum total" in texto)
-checar("Importação de PDF sugere o corte de líquidos de 2 horas", 'value="2"' in texto)
-checar("Importação de PDF separa a lista de medicamentos (separados por vírgula) em linhas diferentes",
-       "OZEMPIC" in texto and "MOUNJARO" in texto and "TRULICITY OU SIMILARES" in texto)
-checar("Importação de PDF sugere os medicamentos separados com 14 dias de prazo cada",
-       texto.count('value="14"') >= 3)
-checar("Importação de PDF sugere a observação de medicamentos que não precisam ser suspensos",
-       "não" in texto.lower() and "suspender" in texto.lower() and "aas" in texto.lower())
-checar("Importação de PDF sugere os exames/procedimentos proibidos antes, separados (colonoscopia e endoscopia)",
-       "colonoscopia" in texto.lower() and "endoscopia" in texto.lower() and 'value="28"' in texto)
+texto_importado = r_importar.get_data(as_text=True)
+checar(
+    "A planilha gerada a partir do PDF é aceita de volta pela importação de Excel",
+    "Revise com cuidado" in texto_importado and "OZEMPIC" in texto_importado,
+)
 client.get("/logout")
 
 # A extração de "informações gerais" (regras avulsas, sem data calculada) reconhece

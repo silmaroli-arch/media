@@ -1,8 +1,11 @@
 """Testa a reformulação da tela de modelo de preparo:
 
-- Os botões "Importar de um PDF"/"Importar de um Excel" saíram da LISTA e
-  foram pro FORMULÁRIO de novo modelo, abrindo um popup (modal) pra
-  escolher o arquivo e extrair os dados.
+- O botão "Importar de um Excel" saiu da LISTA e foi pro FORMULÁRIO de
+  novo modelo, abrindo um popup (modal) pra escolher o arquivo e extrair
+  os dados. A importação DIRETA de PDF saiu de vez desse formulário - virou
+  a tela própria "Gerar Excel a partir de PDF" (ver
+  test_preparo_pdf_para_excel.py), que só gera uma planilha pra revisão,
+  sem preencher formulário nenhum diretamente.
 - O formulário foi dividido em ABAS (uma por tópico: Dados gerais, Cortes
   de alimentação, Medicamentos, Informações gerais, Alimentos, Exames
   proibidos antes) - tudo dentro do MESMO <form>, então salvar continua
@@ -27,20 +30,19 @@ def checar(nome, condicao):
 
 client.post("/login", data={"email": "secretaria@gruposaude.com", "senha": "123456"}, follow_redirects=True)
 
-# ---------- Lista: sem botões de importar; formulário: com eles (em modal) ----------
+# ---------- Lista: sem botão de importar; formulário: com ele (em modal) ----------
 
 r = client.get("/equipe/preparo-modelos")
 html_lista = r.get_data(as_text=True)
-checar("Lista NÃO tem mais os botões de importar", "Importar de um PDF" not in html_lista)
+checar("Lista NÃO tem mais o botão de importar", "Importar de um Excel" not in html_lista)
 checar("Lista continua com o botão de novo modelo", "Novo modelo" in html_lista)
 
 r = client.get("/equipe/preparo-modelos/novo")
 html_form = r.get_data(as_text=True)
-checar("Formulário tem o botão de importar PDF", "Importar de um PDF" in html_form)
+checar("Formulário NÃO tem mais o botão de importar PDF (virou tela própria)", "Importar de um PDF" not in html_form)
 checar("Formulário tem o botão de importar Excel", "Importar de um Excel" in html_form)
-checar("Os botões abrem popups (modais) com o campo de arquivo",
-       'id="modal-importar-pdf"' in html_form and 'id="modal-importar-xlsx"' in html_form
-       and 'name="arquivo_pdf"' in html_form and 'name="arquivo_xlsx"' in html_form)
+checar("O botão abre um popup (modal) com o campo de arquivo",
+       'id="modal-importar-xlsx"' in html_form and 'name="arquivo_xlsx"' in html_form)
 
 # ---------- Abas por tópico ----------
 
@@ -49,11 +51,11 @@ for aba in ("aba-geral", "aba-cortes", "aba-medicamentos", "aba-infos", "aba-ali
 checar("As abas ficam dentro do MESMO formulário (salvar envia tudo junto)",
        html_form.index('id="form-preparo"') < html_form.index('id="aba-exames-anteriores"'))
 
-# Na tela de EDITAR os botões de importar não aparecem (importação é só pra novo).
+# Na tela de EDITAR o botão de importar não aparece (importação é só pra novo).
 with app.app_context():
     modelo_qualquer = PreparoModelo.query.first()
 r = client.get(f"/equipe/preparo-modelos/{modelo_qualquer.id}/editar")
-checar("Tela de editar não mostra os botões de importar", "Importar de um PDF" not in r.get_data(as_text=True))
+checar("Tela de editar não mostra o botão de importar", "Importar de um Excel" not in r.get_data(as_text=True))
 
 # ---------- Salvar preenche campos de VÁRIAS abas de uma vez ----------
 
