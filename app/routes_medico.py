@@ -938,6 +938,11 @@ def exames_novo():
     filial_ids = [f.id for f in filiais]
     medicos = medicos_das_filiais(filiais)
     modelos = PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(filial_ids)).order_by(PreparoModelo.nome).all()
+    # Mesmo padrão de dono de conteúdo clínico: o médico só pode escolher
+    # (e, portanto, só vê no dropdown) os SEUS modelos de preparo ou os sem
+    # dono registrado - não os de outro médico da empresa.
+    if eh_medico():
+        modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
 
     if request.method == "POST":
         # O cadastro de exame é genérico - só define nome/descrição/duração/
@@ -1056,6 +1061,8 @@ def exames_editar(exame_id):
     # genérico - vale qualquer modelo acessível ao usuário na empresa.
     medicos = medicos_da_clinica(exame.clinica)
     modelos = PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(filial_ids)).order_by(PreparoModelo.nome).all()
+    if eh_medico():
+        modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
 
     if request.method == "POST":
         exame.nome = request.form.get("nome", "").strip()
@@ -1515,6 +1522,14 @@ def preparo_modelos_lista():
         PreparoModelo.query.filter(PreparoModelo.clinica_id.in_(_filiais_da_empresa_ids()))
         .order_by(PreparoModelo.nome).all()
     )
+    # Mesmo padrão do dono de conteúdo clínico usado em "Exames"/"Associar
+    # exames" (ver Exame.dono_medico): um médico só ENXERGA os modelos de
+    # preparo que são dele ou que não têm dono médico registrado (legado/
+    # criado pela secretária) - não só a edição já era bloqueada, a lista
+    # inteira não deveria nem mostrar o conteúdo clínico de outro médico.
+    # Secretária/dono continuam vendo todos.
+    if eh_medico():
+        modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
     return render_template("medico/preparo_modelos_lista.html", modelos=modelos)
 
 
