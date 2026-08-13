@@ -138,4 +138,32 @@ with app.app_context():
     checar("Usuário já fica vinculado ao primeiro local criado no cadastro",
            ClinicaMembro.query.filter_by(usuario_id=dra_empresa.id).count() == 1)
 
+# ---------- Modo 'empresa': se "nome_filial" chegar em branco (ex.: alguém
+# preenche sem passar pelo JS que marca o campo como obrigatório), o local
+# nasce com o nome DA EMPRESA cadastrada - nunca com o nome de quem se
+# cadastrou (bug relatado: local criado como "Bruno Pavan" em vez de
+# "Medical Gastro", o nome da empresa que a pessoa realmente informou). ----------
+client.get("/logout")
+r = client.post("/cadastro", data={
+    "modo": "empresa",
+    "nome_empresa": "Medical Gastro",
+    "nome": "Bruno Pavan",
+    "cpf": "168.995.350-09", "crm_numero": "77777", "crm_uf": "ES",
+    "email": "bruno.pavan@example.com",
+    "senha": "123456",
+    "papel": "medico",
+    "nome_filial": "",
+    "telefone_filial": "(27) 90000-0006",
+    "cnpj_filial": "12.345.609/0001-81",
+}, follow_redirects=True)
+checar("Cadastro 'empresa' com nome_filial em branco ainda responde 200", r.status_code == 200)
+with app.app_context():
+    empresa3 = Empresa.query.filter_by(nome="Medical Gastro").first()
+    checar("Empresa foi criada com o nome informado (Medical Gastro)", empresa3 is not None)
+    filial3 = Clinica.query.filter_by(empresa_id=empresa3.id).first()
+    checar(
+        "Local nasce com o nome DA EMPRESA (Medical Gastro), não com o nome do médico (Bruno Pavan)",
+        filial3 is not None and filial3.nome == "Medical Gastro",
+    )
+
 print("\nTodos os testes do fluxo médico independente passaram.")

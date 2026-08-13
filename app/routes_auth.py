@@ -250,12 +250,15 @@ def cadastro():
         # completos já no cadastro (igual à tela "Dados Cadastrais"),
         # substituindo a etapa que antes deixava isso pra depois. Em
         # ambos os modos a pessoa já sai com o primeiro local pronto.
-        # No modo independente, o nome do local vem do próprio JS
-        # (sincronizado com o nome que a pessoa digitou, ver cadastro.html)
-        # - esse fallback só entra em ação se chegar vazio por algum
-        # motivo (ex.: JS desabilitado), e nesse caso usa o nome da
-        # própria pessoa em vez de um texto fixo tipo "Consultório".
-        nome_filial = request.form.get("nome_filial", "").strip() or (nome if independente else "")
+        # O campo já é obrigatório na tela (HTML + JS) nos dois modos, mas
+        # se ainda assim chegar vazio (ex.: JS desabilitado, ou alguém
+        # chega direto em /cadastro sem selecionar um modo antes de
+        # preencher), o fallback usa: no modo independente, o nome da
+        # própria pessoa (sincronizado pelo JS, ver cadastro.html) em vez
+        # de um texto fixo tipo "Consultório"; no modo empresa, o nome da
+        # empresa cadastrada (nome_empresa) em vez de deixar em branco ou
+        # usar o nome de quem se cadastrou.
+        nome_filial = request.form.get("nome_filial", "").strip() or (nome if independente else nome_empresa)
         telefone_filial_digitado = request.form.get("telefone_filial", "").strip()
         cnpj_filial = request.form.get("cnpj_filial", "").strip()
 
