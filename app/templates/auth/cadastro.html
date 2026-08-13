@@ -199,6 +199,31 @@
           </div>
         </div>
 
+        <hr class="my-4">
+        <div id="bloco-secretaria">
+          <h6 class="mb-1">Cadastrar uma secretária também? (opcional)</h6>
+          <p class="text-muted small mb-3">
+            Se preencher os dados abaixo, já criamos a conta dela também, vinculada a este mesmo
+            local de atendimento. Se preferir, deixe em branco e adicione depois em "Equipe".
+          </p>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">Nome da secretária</label>
+              <input type="text" name="nome_secretaria" id="nome_secretaria" class="form-control" autocapitalize="words">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">E-mail da secretária</label>
+              <input type="email" name="email_secretaria" id="email_secretaria" class="form-control">
+              <div class="invalid-feedback" id="email_secretaria_status"></div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Senha da secretária</label>
+              <input type="password" name="senha_secretaria" id="senha_secretaria" class="form-control" minlength="6">
+              <div class="form-text">Mínimo de 6 caracteres.</div>
+            </div>
+          </div>
+        </div>
+
         <button type="submit" class="btn btn-primary w-100 mt-4" id="btn-submit">Criar minha empresa</button>
       </form>
       <div class="text-center mt-3">
@@ -353,13 +378,22 @@ document.getElementById('cnpj_filial').addEventListener('blur', function () {
   fetch('/cadastro/verificar-cnpj?cnpj=' + encodeURIComponent(d))
     .then(function (r) { return r.json(); })
     .then(function (dados) {
+      var blocoSecretaria = document.getElementById('bloco-secretaria');
       if (dados.encontrada) {
         encontrado.textContent = 'Encontramos "' + dados.nome + '" já cadastrada com esse CNPJ — ' +
           'sua conta será criada já vinculada a ela.';
         encontrado.classList.add('text-success');
+        // A clínica já existe - quem se cadastra não é fundador(a) dela,
+        // então não faz sentido oferecer criar uma conta de secretária
+        // aqui (isso é coisa de quem já administra a equipe).
+        blocoSecretaria.style.display = 'none';
+        document.getElementById('nome_secretaria').value = '';
+        document.getElementById('email_secretaria').value = '';
+        document.getElementById('senha_secretaria').value = '';
       } else {
         encontrado.textContent = 'Nenhuma clínica encontrada com esse CNPJ — ela será criada no seu cadastro.';
         encontrado.classList.remove('text-success');
+        blocoSecretaria.style.display = 'block';
       }
     })
     .catch(function () {
@@ -456,7 +490,26 @@ document.querySelector('form').addEventListener('submit', function (evento) {
     }
   }
 
-  if (!cpfOk || !telefoneOk || !telefoneFilialOk || !cepPessoalOk || !cepFilialOk || !cnpjOk) {
+  // Secretária opcional: ou preenche os três campos, ou deixa os três em branco.
+  var nomeSecretaria = document.getElementById('nome_secretaria').value.trim();
+  var emailSecretaria = document.getElementById('email_secretaria').value.trim();
+  var senhaSecretaria = document.getElementById('senha_secretaria').value;
+  var secretariaOk = true;
+  var algumPreenchido = nomeSecretaria || emailSecretaria || senhaSecretaria;
+  var statusEmailSecretaria = document.getElementById('email_secretaria_status');
+  statusEmailSecretaria.textContent = '';
+  document.getElementById('email_secretaria').classList.remove('is-invalid');
+  if (algumPreenchido && (!nomeSecretaria || !emailSecretaria || !senhaSecretaria)) {
+    statusEmailSecretaria.textContent = 'Preencha nome, e-mail e senha da secretária, ou deixe os três em branco.';
+    document.getElementById('email_secretaria').classList.add('is-invalid');
+    secretariaOk = false;
+  } else if (senhaSecretaria && senhaSecretaria.length < 6) {
+    statusEmailSecretaria.textContent = 'A senha da secretária deve ter pelo menos 6 caracteres.';
+    document.getElementById('email_secretaria').classList.add('is-invalid');
+    secretariaOk = false;
+  }
+
+  if (!cpfOk || !telefoneOk || !telefoneFilialOk || !cepPessoalOk || !cepFilialOk || !cnpjOk || !secretariaOk) {
     evento.preventDefault();
     var primeiroInvalido = document.querySelector('.is-invalid');
     if (primeiroInvalido) primeiroInvalido.focus();

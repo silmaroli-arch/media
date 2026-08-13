@@ -310,6 +310,30 @@ def cadastro():
                 return render_template("auth/cadastro.html")
             clinica_existente = encontrar_clinica_por_cnpj(cnpj_filial)
 
+        # Secretária opcional, criada junto na mesma submissão — só faz
+        # sentido pra quem está FUNDANDO o local de atendimento (o
+        # front esconde esse bloco quando o CNPJ já pertence a uma
+        # clínica existente, já que aí quem se cadastra não administra
+        # a equipe dela). Ou preenche os três campos, ou nenhum.
+        nome_secretaria = request.form.get("nome_secretaria", "").strip()
+        email_secretaria = request.form.get("email_secretaria", "").strip().lower()
+        senha_secretaria = request.form.get("senha_secretaria", "")
+        criar_secretaria = False
+        if clinica_existente is None and (nome_secretaria or email_secretaria or senha_secretaria):
+            if not nome_secretaria or not email_secretaria or not senha_secretaria:
+                flash("Preencha nome, e-mail e senha da secretária, ou deixe os três em branco.", "danger")
+                return render_template("auth/cadastro.html")
+            if len(senha_secretaria) < 6:
+                flash("A senha da secretária deve ter pelo menos 6 caracteres.", "danger")
+                return render_template("auth/cadastro.html")
+            if email_secretaria == email:
+                flash("A secretária precisa de um e-mail diferente do seu.", "danger")
+                return render_template("auth/cadastro.html")
+            if Usuario.query.filter_by(email=email_secretaria).first():
+                flash("Já existe uma conta com o e-mail informado para a secretária.", "danger")
+                return render_template("auth/cadastro.html")
+            criar_secretaria = True
+
         if clinica_existente is None:
             if not nome_filial:
                 flash("Informe o nome do seu local de atendimento.", "danger")
@@ -402,20 +426,34 @@ def cadastro():
         db.session.flush()
         vinculo = ClinicaMembro(clinica_id=filial.id, usuario_id=usuario.id, ativo=True)
         db.session.add(vinculo)
+
+        if criar_secretaria:
+            # Secretária já sai com as permissões administrativas padrão
+            # dela (ver Usuario.definir_permissoes_padrao) e vinculada ao
+            # mesmo local recém-criado - não faz login automático (quem
+            # loga é sempre quem preencheu o formulário).
+            secretaria = Usuario(nome=nome_secretaria, email=email_secretaria, tipo="secretaria")
+            secretaria.set_senha(senha_secretaria)
+            secretaria.definir_permissoes_padrao()
+            db.session.add(secretaria)
+            db.session.flush()
+            db.session.add(ClinicaMembro(clinica_id=filial.id, usuario_id=secretaria.id, ativo=True))
+
         db.session.commit()
         login_user(usuario)
         session["clinica_id"] = filial.id
 
+        complemento_secretaria = f" A conta da secretária {nome_secretaria} também já foi criada." if criar_secretaria else ""
         if independente:
             flash(
                 f"Conta criada com sucesso, {usuario.nome}! "
-                "Vamos te ajudar a deixar tudo pronto para uso.",
+                f"Vamos te ajudar a deixar tudo pronto para uso.{complemento_secretaria}",
                 "success",
             )
         else:
             flash(
                 f"Empresa '{empresa.nome}' criada com sucesso, junto com o seu primeiro local "
-                "de atendimento! Vamos te ajudar a deixar tudo pronto para uso.",
+                f"de atendimento! Vamos te ajudar a deixar tudo pronto para uso.{complemento_secretaria}",
                 "success",
             )
         return redirect(url_for("medico.onboarding"))
