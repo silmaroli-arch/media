@@ -38,6 +38,7 @@ r = client.post("/cadastro", data={
     "papel": "medico",
     "nome_filial": "Medical Gastro Sede",
     "telefone_filial": "(27) 90000-0003",
+    "cnpj_filial": "12.345.604/0001-59",
 }, follow_redirects=True)
 checar("Cadastro da empresa responde 200", r.status_code == 200)
 client.post("/equipe/filiais/nova", data={"nome": "Medical Gastro Centro"}, follow_redirects=True)

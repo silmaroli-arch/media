@@ -519,6 +519,46 @@ def telefone_incompleto(telefone):
     return bool(digitos) and len(digitos) not in (10, 11)
 
 
+def validar_cnpj(cnpj):
+    """True se o CNPJ é um número VÁLIDO de verdade (dígitos verificadores
+    conferem e não é uma sequência repetida tipo 11.111.111/1111-11). É o
+    identificador único da clínica - usado no cadastro público pra
+    encontrar uma clínica que já exista na plataforma (ver
+    encontrar_clinica_por_cnpj), então precisa ser um CNPJ que existe de
+    verdade, não qualquer número digitado."""
+    digitos = re.sub(r"\D", "", cnpj or "")
+    if len(digitos) != 14 or digitos == digitos[0] * 14:
+        return False
+    pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    pesos2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+
+    def _digito_verificador(nums, pesos):
+        soma = sum(int(n) * p for n, p in zip(nums, pesos))
+        resto = soma % 11
+        return "0" if resto < 2 else str(11 - resto)
+
+    dv1 = _digito_verificador(digitos[:12], pesos1)
+    if dv1 != digitos[12]:
+        return False
+    dv2 = _digito_verificador(digitos[:12] + dv1, pesos2)
+    return dv2 == digitos[13]
+
+
+def encontrar_clinica_por_cnpj(cnpj):
+    """Procura uma Clinica já cadastrada na plataforma com o mesmo CNPJ,
+    comparando só os dígitos (o campo pode ter sido salvo com ou sem
+    pontuação). Usado no cadastro público: se duas pessoas da mesma
+    clínica se cadastram sem uma saber da outra, a segunda encontra a
+    clínica já existente pelo CNPJ em vez de criar uma empresa duplicada."""
+    digitos = re.sub(r"\D", "", cnpj or "")
+    if not digitos:
+        return None
+    for clinica in Clinica.query.filter(Clinica.cnpj.isnot(None)).all():
+        if re.sub(r"\D", "", clinica.cnpj or "") == digitos:
+            return clinica
+    return None
+
+
 def cep_incompleto(cep):
     """True se o CEP foi digitado mas ficou incompleto (nem todos os 8
     dígitos) - sem isso, o cadastro deixava salvar um CEP pela metade

@@ -95,6 +95,7 @@ r = client.post("/cadastro", data={
     "papel": "medico",
     "nome_filial": "Clínica Teste Regressão - Sede",
     "telefone_filial": "(27) 90000-0005",
+    "cnpj_filial": "12.345.606/0001-48",
 }, follow_redirects=True)
 checar("Cadastro 'empresa' responde 200 (cai no assistente de configuração inicial)", r.status_code == 200)
 with app.app_context():

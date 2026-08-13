@@ -155,9 +155,11 @@
             <label class="form-label">Nome do local</label>
             <input type="text" name="nome_filial" id="nome_filial" class="form-control" placeholder="ex.: Consultório, Clínica Centro">
           </div>
-          <div class="col-md-4">
-            <label class="form-label">CNPJ (opcional)</label>
-            <input type="text" inputmode="numeric" name="cnpj_filial" id="cnpj_filial" class="form-control" placeholder="00.000.000/0000-00">
+          <div class="col-md-4" id="campo-cnpj-filial">
+            <label class="form-label">CNPJ</label>
+            <input type="text" inputmode="numeric" name="cnpj_filial" id="cnpj_filial" class="form-control" placeholder="00.000.000/0000-00" required>
+            <div class="invalid-feedback" id="cnpj_filial_status"></div>
+            <div class="form-text" id="cnpj_filial_encontrado"></div>
           </div>
           <div class="col-md-6">
             <label class="form-label">Telefone</label>
@@ -230,6 +232,7 @@ function selecionarModo(modo) {
 
   document.getElementById('input-nome_empresa').required = !independente;
   document.getElementById('nome_filial').required = !independente;
+  document.getElementById('cnpj_filial').required = !independente;
   if (independente) {
     document.getElementById('nome_filial').value = 'Consultório';
   } else if (document.getElementById('nome_filial').value === 'Consultório') {
@@ -310,6 +313,60 @@ function marcarCpfValido() {
 }
 document.getElementById('cpf').addEventListener('blur', marcarCpfValido);
 
+// ---------- Validação de CNPJ (dígitos verificadores) + busca automática
+// de clínica já cadastrada com o mesmo CNPJ ----------
+function cnpjValido(cnpj) {
+  var d = cnpj.replace(/\D/g, '');
+  if (d.length !== 14 || /^(\d)\1{13}$/.test(d)) return false;
+  function dv(nums, pesos) {
+    var soma = 0;
+    for (var i = 0; i < pesos.length; i++) soma += parseInt(nums[i]) * pesos[i];
+    var resto = soma % 11;
+    return resto < 2 ? '0' : String(11 - resto);
+  }
+  var pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  var pesos2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  var dv1 = dv(d.substring(0, 12), pesos1);
+  if (dv1 !== d[12]) return false;
+  var dv2 = dv(d.substring(0, 12) + dv1, pesos2);
+  return dv2 === d[13];
+}
+document.getElementById('cnpj_filial').addEventListener('blur', function () {
+  var campo = document.getElementById('cnpj_filial');
+  var status = document.getElementById('cnpj_filial_status');
+  var encontrado = document.getElementById('cnpj_filial_encontrado');
+  encontrado.textContent = '';
+  var d = campo.value.replace(/\D/g, '');
+  if (!d) {
+    status.textContent = '';
+    campo.classList.remove('is-invalid');
+    return;
+  }
+  if (!cnpjValido(campo.value)) {
+    status.textContent = 'CNPJ inválido — confira os números digitados.';
+    campo.classList.add('is-invalid');
+    return;
+  }
+  campo.classList.remove('is-invalid');
+  status.textContent = '';
+  encontrado.textContent = 'Verificando se essa clínica já está cadastrada...';
+  fetch('/cadastro/verificar-cnpj?cnpj=' + encodeURIComponent(d))
+    .then(function (r) { return r.json(); })
+    .then(function (dados) {
+      if (dados.encontrada) {
+        encontrado.textContent = 'Encontramos "' + dados.nome + '" já cadastrada com esse CNPJ — ' +
+          'sua conta será criada já vinculada a ela.';
+        encontrado.classList.add('text-success');
+      } else {
+        encontrado.textContent = 'Nenhuma clínica encontrada com esse CNPJ — ela será criada no seu cadastro.';
+        encontrado.classList.remove('text-success');
+      }
+    })
+    .catch(function () {
+      encontrado.textContent = '';
+    });
+});
+
 // ---------- Validação de telefone completo (10 ou 11 dígitos) ----------
 function marcarTelefoneValido(idCampo, idStatus, obrigatorio) {
   var campo = document.getElementById(idCampo);
@@ -363,6 +420,7 @@ configurarBuscaCep('cep', 'rua', 'bairro', 'cidade', 'uf', 'cep_status');
 configurarBuscaCep('cep_filial', 'rua_filial', 'bairro_filial', 'cidade_filial', 'uf_filial', 'cep_filial_status');
 
 document.querySelector('form').addEventListener('submit', function (evento) {
+  var independente = document.getElementById('input-modo').value === 'independente';
   var cpfOk = marcarCpfValido();
   var telefoneOk = marcarTelefoneValido('telefone', 'telefone_status', false);
   var telefoneFilialOk = marcarTelefoneValido('telefone_filial', 'telefone_filial_status', true);
@@ -380,7 +438,25 @@ document.querySelector('form').addEventListener('submit', function (evento) {
   var cepPessoalOk = cepOk('cep', 'cep_status');
   var cepFilialOk = cepOk('cep_filial', 'cep_filial_status');
 
-  if (!cpfOk || !telefoneOk || !telefoneFilialOk || !cepPessoalOk || !cepFilialOk) {
+  var cnpjCampo = document.getElementById('cnpj_filial');
+  var cnpjOk = true;
+  if (!independente || cnpjCampo.value.replace(/\D/g, '')) {
+    var cnpjStatus = document.getElementById('cnpj_filial_status');
+    if (!cnpjCampo.value.replace(/\D/g, '')) {
+      cnpjCampo.classList.add('is-invalid');
+      cnpjStatus.textContent = 'Informe o CNPJ da sua clínica.';
+      cnpjOk = false;
+    } else if (!cnpjValido(cnpjCampo.value)) {
+      cnpjCampo.classList.add('is-invalid');
+      cnpjStatus.textContent = 'CNPJ inválido — confira os números digitados.';
+      cnpjOk = false;
+    } else {
+      cnpjCampo.classList.remove('is-invalid');
+      cnpjStatus.textContent = '';
+    }
+  }
+
+  if (!cpfOk || !telefoneOk || !telefoneFilialOk || !cepPessoalOk || !cepFilialOk || !cnpjOk) {
     evento.preventDefault();
     var primeiroInvalido = document.querySelector('.is-invalid');
     if (primeiroInvalido) primeiroInvalido.focus();

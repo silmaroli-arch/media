@@ -54,6 +54,7 @@ r = client.post("/cadastro", data={
     "papel": "medico",
     "nome_filial": "Medical Gastro - Matriz",
     "telefone_filial": "(27) 90000-0001",
+    "cnpj_filial": "12.345.603/0001-04",
 }, follow_redirects=True)
 checar("Cadastro responde 200 e cai no assistente de configuração inicial", r.status_code == 200 and "Configuração inicial" in r.get_data(as_text=True))
 

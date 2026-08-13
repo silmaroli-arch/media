@@ -1,12 +1,12 @@
 import re
 from datetime import date, datetime, timedelta
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, session
+from flask import Blueprint, render_template, redirect, url_for, request, flash, session, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto, validar_cnpj, encontrar_clinica_por_cnpj
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -190,18 +190,21 @@ def trocar_senha():
 def cadastro():
     """Cadastro público. Dois modos, escolhidos pelo campo "modo":
 
-    - "empresa" (padrão/original): quem se cadastra cria uma empresa nova
-      na plataforma, informando só o nome DELA — nenhuma filial é criada
-      aqui. O cadastro do(s) local(is) de atendimento de verdade (nome,
-      endereço, CNPJ, telefone) é feito depois, ao entrar no app, na
-      etapa "Meus Locais de Atendimento" do assistente de configuração
-      inicial (ver medico.onboarding e medico.filiais_nova) — até lá, o
-      vínculo da pessoa com a empresa é feito por
-      Usuario.empresa_fundadora_id (ver app/models.py e
-      empresas_do_usuario() em app/clinica_utils.py), não por
-      ClinicaMembro. Nem toda clínica tem secretária, então a pessoa
-      escolhe se é médico ou secretário(a) — mas por ser quem está
-      criando a empresa, recebe todas as permissões administrativas.
+    - "empresa" (padrão/original): quem se cadastra informa o CNPJ da
+      clínica (agora obrigatório) — se já existir uma Clinica cadastrada
+      com esse CNPJ na plataforma (ver encontrar_clinica_por_cnpj em
+      app/models.py), a pessoa é vinculada direto a ela (ClinicaMembro),
+      SEM criar uma empresa/filial nova e SEM precisar de convite ou
+      aceite de ninguém — resolve o caso de dois médicos da mesma clínica
+      se cadastrarem sem um saber do outro e acabarem com duas empresas
+      duplicadas. Só quando o CNPJ é inédito é que uma empresa e uma
+      filial novas são criadas, com quem se cadastrou como fundador(a).
+      Nem toda clínica tem secretária, então a pessoa escolhe se é médico
+      ou secretário(a) — mas só quem FUNDA a empresa recebe todas as
+      permissões administrativas automaticamente; quem entra numa clínica
+      já existente pelo CNPJ recebe as permissões padrão do papel (ver
+      Usuario.definir_permissoes_padrao) e pode ter mais concedidas depois
+      por quem já administra a equipe.
 
     - "independente": pensado para o médico que atende por conta própria,
       sem uma empresa/clínica de verdade por trás. Não pede nome de
@@ -291,31 +294,37 @@ def cadastro():
             flash("Já existe uma conta com esse e-mail. Faça login ou use outro e-mail.", "danger")
             return render_template("auth/cadastro.html")
 
-        if not nome_filial:
-            flash("Informe o nome do seu local de atendimento.", "danger")
-            return render_template("auth/cadastro.html")
+        # CNPJ - obrigatório e validado só no modo "empresa": é o
+        # identificador que permite encontrar uma clínica já cadastrada
+        # (ver encontrar_clinica_por_cnpj) e vincular direto a ela, em vez
+        # de duas pessoas da mesma clínica criarem cada uma a sua própria
+        # empresa duplicada. No modo "independente" a empresa é oculta e
+        # pessoal — o CNPJ continua opcional, sem essa checagem.
+        clinica_existente = None
+        if not independente:
+            if not cnpj_filial:
+                flash("Informe o CNPJ da sua clínica.", "danger")
+                return render_template("auth/cadastro.html")
+            if not validar_cnpj(cnpj_filial):
+                flash("CNPJ inválido — confira os números digitados.", "danger")
+                return render_template("auth/cadastro.html")
+            clinica_existente = encontrar_clinica_por_cnpj(cnpj_filial)
 
-        if not telefone_filial_digitado or telefone_incompleto(telefone_filial_digitado):
-            flash("Telefone do local de atendimento incompleto — digite o DDD e o número completos.", "danger")
-            return render_template("auth/cadastro.html")
+        if clinica_existente is None:
+            if not nome_filial:
+                flash("Informe o nome do seu local de atendimento.", "danger")
+                return render_template("auth/cadastro.html")
 
-        if cep_incompleto(request.form.get("cep_filial", "")):
-            flash("CEP do local de atendimento incompleto — digite os 8 números.", "danger")
-            return render_template("auth/cadastro.html")
+            if not telefone_filial_digitado or telefone_incompleto(telefone_filial_digitado):
+                flash("Telefone do local de atendimento incompleto — digite o DDD e o número completos.", "danger")
+                return render_template("auth/cadastro.html")
 
-        trial_dias = PlataformaConfig.obter().trial_dias
-        empresa = Empresa(
-            nome=nome_empresa,
-            email_contato=email,
-            status="trial",
-            data_vencimento=date.today() + timedelta(days=trial_dias),
-        )
-        db.session.add(empresa)
-        db.session.flush()
+            if cep_incompleto(request.form.get("cep_filial", "")):
+                flash("CEP do local de atendimento incompleto — digite os 8 números.", "danger")
+                return render_template("auth/cadastro.html")
 
         usuario = Usuario(nome=nome, email=email, tipo=papel, cpf=cpf)
         usuario.set_senha(senha)
-        usuario.empresa_fundadora_id = empresa.id
         usuario.telefone = normalizar_telefone(request.form.get("telefone", ""))
         usuario.cep = request.form.get("cep", "").strip()
         usuario.rua = request.form.get("rua", "").strip()
@@ -330,7 +339,40 @@ def cadastro():
             # Todo médico nasce com seu código mestre (ver
             # Usuario.codigo_mestre em app/models.py).
             usuario.codigo_mestre = gerar_codigo_mestre_medico()
-        # Quem cria a empresa é a administradora inicial — recebe todas as
+
+        if clinica_existente is not None:
+            # O CNPJ já pertence a uma clínica cadastrada por outra pessoa
+            # - a conta é criada e já entra vinculada a ela (sem convite,
+            # sem aceite: quem se cadastra está confirmando que atua ali).
+            # Não é fundador(a) dessa empresa, então recebe as permissões
+            # PADRÃO do papel, não todas - quem já administra a equipe
+            # concede mais depois, se for o caso.
+            usuario.definir_permissoes_padrao()
+            db.session.add(usuario)
+            db.session.flush()
+            vinculo = ClinicaMembro(clinica_id=clinica_existente.id, usuario_id=usuario.id, ativo=True)
+            db.session.add(vinculo)
+            db.session.commit()
+            login_user(usuario)
+            session["clinica_id"] = clinica_existente.id
+            flash(
+                f"Encontramos '{clinica_existente.nome}' já cadastrada na plataforma com esse CNPJ — "
+                f"sua conta foi criada e você já está vinculado(a) a ela!",
+                "success",
+            )
+            return redirect(url_for("medico.onboarding"))
+
+        trial_dias = PlataformaConfig.obter().trial_dias
+        empresa = Empresa(
+            nome=nome_empresa,
+            email_contato=email,
+            status="trial",
+            data_vencimento=date.today() + timedelta(days=trial_dias),
+        )
+        db.session.add(empresa)
+        db.session.flush()
+        usuario.empresa_fundadora_id = empresa.id
+        # Quem funda a empresa é a administradora inicial — recebe todas as
         # permissões administrativas independentemente de ser médico(a) ou
         # secretário(a), já que a clínica pode não ter uma secretária. Isso
         # inclui perm_filiais, essencial pro médico independente poder
@@ -338,8 +380,8 @@ def cadastro():
         usuario.conceder_todas_permissoes()
 
         # O primeiro local de atendimento já vem completo (nome, telefone,
-        # CNPJ opcional e endereço) em vez de ficar pra depois - mesma
-        # ideia da tela "Dados Cadastrais" (medico.clinica_configuracoes).
+        # CNPJ e endereço) em vez de ficar pra depois - mesma ideia da tela
+        # "Dados Cadastrais" (medico.clinica_configuracoes).
         filial = Clinica(
             empresa_id=empresa.id,
             nome=nome_filial,
@@ -379,6 +421,24 @@ def cadastro():
         return redirect(url_for("medico.onboarding"))
 
     return render_template("auth/cadastro.html")
+
+
+@auth_bp.route("/cadastro/verificar-cnpj")
+def cadastro_verificar_cnpj():
+    """Endpoint público (sem login - é chamado da própria tela de
+    cadastro, antes de existir conta) usado pela busca automática de CNPJ:
+    ao a pessoa terminar de digitar o CNPJ da clínica, o front consulta
+    aqui se já existe uma Clinica com ele. Só devolve o nome da clínica
+    encontrada (nada de endereço, telefone ou qualquer outro dado) - o
+    bastante pra pessoa reconhecer "é a minha clínica mesmo" sem expor
+    informação de quem ainda nem se identificou."""
+    cnpj = request.args.get("cnpj", "")
+    if not validar_cnpj(cnpj):
+        return jsonify({"encontrada": False})
+    clinica = encontrar_clinica_por_cnpj(cnpj)
+    if not clinica:
+        return jsonify({"encontrada": False})
+    return jsonify({"encontrada": True, "nome": clinica.nome})
 
 
 def _parse_data_nascimento(valor_str):

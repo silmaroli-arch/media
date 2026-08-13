@@ -186,6 +186,7 @@ r = client.post("/cadastro", data={
     "papel": "secretaria",
     "nome_filial": "Empresa Teste Automatizado - Sede",
     "telefone_filial": "(27) 90000-0007",
+    "cnpj_filial": "12.345.601/0001-15",
 }, follow_redirects=True)
 texto = r.get_data(as_text=True)
 checar("Cadastro público cria a empresa e loga automaticamente", "Painel" in texto)
@@ -220,6 +221,7 @@ r = client.post("/cadastro", data={
     "papel": "medico",
     "nome_filial": "Consultório do Dr. Ricardo",
     "telefone_filial": "(27) 90000-0008",
+    "cnpj_filial": "12.345.602/0001-60",
 }, follow_redirects=True)
 checar("Cadastro público como médico também funciona", "Painel" in r.get_data(as_text=True))
 
