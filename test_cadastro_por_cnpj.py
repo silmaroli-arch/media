@@ -145,7 +145,7 @@ client.get("/logout")
 # ---------- Modo "independente" continua sem exigir CNPJ (empresa oculta/pessoal) ----------
 
 r = client.post("/cadastro", data={
-    "modo": "independente",
+    "modo": "independente", "papel": "medico",
     "nome": "Dra. Autonoma Sem Cnpj",
     "cpf": "111.444.777-35", "crm_numero": "54321", "crm_uf": "ES",
     "email": "autonoma.semcnpj@example.com",
