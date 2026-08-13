@@ -30,8 +30,6 @@ def checar(nome, condicao):
 # ativos), o fundador se desvincula deliberadamente desse primeiro local
 # antes de cadastrar os outros dois.
 r = client.post("/cadastro", data={
-    "modo": "empresa",
-    "nome_empresa": "Medical Gastro Equipe",
     "nome": "Bruno Pavan",
     "cpf": "852.963.741-00", "crm_numero": "22222", "crm_uf": "ES",
     "email": "bruno.equipe@example.com",
@@ -46,7 +44,9 @@ client.post("/equipe/filiais/nova", data={"nome": "MG Centro"}, follow_redirects
 client.post("/equipe/filiais/nova", data={"nome": "MG Santa Lucia"}, follow_redirects=True)
 
 with app.app_context():
-    empresa = Empresa.query.filter_by(nome="Medical Gastro Equipe").first()
+    # Não existe mais um "nome da empresa" separado do nome do local - a
+    # empresa nasce com o mesmo nome informado pro primeiro local.
+    empresa = Empresa.query.filter_by(nome="MG Sede").first()
     bruno = Usuario.query.filter_by(email="bruno.equipe@example.com").first()
     bruno_id = bruno.id
     centro_id = Clinica.query.filter_by(empresa_id=empresa.id, nome="MG Centro").first().id

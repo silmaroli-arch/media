@@ -188,77 +188,64 @@ def trocar_senha():
 
 @auth_bp.route("/cadastro", methods=["GET", "POST"])
 def cadastro():
-    """Cadastro público. Dois modos, escolhidos pelo campo "modo":
+    """Cadastro público — uma ÚNICA tela pra todo mundo (médico(a) ou
+    secretário(a)), sem "modo" nenhum pra escolher. Antes existiam dois
+    modos escolhidos por botão ("Tenho uma clínica/empresa" x "Sou
+    profissional independente"); isso foi removido porque, quando o link
+    de cadastro leva direto a um modo específico (ex.: o único link
+    genérico que fica na tela de login), o outro modo simplesmente não
+    aparece — e sem ele a pessoa nunca tem a chance de informar o CNPJ da
+    clínica. Resultado prático: médicos e secretárias da MESMA clínica,
+    cadastrando-se cada um na sua vez, acabavam cada um com a sua própria
+    empresa isolada, sem nenhum vínculo entre elas (secretária sem ver os
+    médicos, e vice-versa).
 
-    - "empresa" (padrão/original): quem se cadastra informa o CNPJ da
-      clínica (agora obrigatório) — se já existir uma Clinica cadastrada
-      com esse CNPJ na plataforma (ver encontrar_clinica_por_cnpj em
-      app/models.py), a pessoa é vinculada direto a ela (ClinicaMembro),
-      SEM criar uma empresa/filial nova e SEM precisar de convite ou
-      aceite de ninguém — resolve o caso de dois médicos da mesma clínica
-      se cadastrarem sem um saber do outro e acabarem com duas empresas
-      duplicadas. Só quando o CNPJ é inédito é que uma empresa e uma
-      filial novas são criadas, com quem se cadastrou como fundador(a).
-      Nem toda clínica tem secretária, então a pessoa escolhe se é médico
-      ou secretário(a) — mas só quem FUNDA a empresa recebe todas as
-      permissões administrativas automaticamente; quem entra numa clínica
-      já existente pelo CNPJ recebe as permissões padrão do papel (ver
-      Usuario.definir_permissoes_padrao) e pode ter mais concedidas depois
-      por quem já administra a equipe.
+    Agora o CNPJ é só um campo OPCIONAL dentro do formulário do próprio
+    local de atendimento:
 
-    - "independente": pensado pra quem se cadastra por conta própria, sem
-      uma empresa/clínica de verdade por trás — médico(a) ou secretário(a)
-      (a pessoa escolhe o papel aqui também, igual no modo "empresa"; até
-      pouco tempo esse modo era só pra médico, mas a secretária se
-      cadastra do mesmo jeito, como "um usuário qualquer"). Não pede nome
-      de empresa nem de filial — esses são gerados automaticamente a
-      partir do nome de quem se cadastrou, ficando "invisíveis" (nunca vê
-      as palavras "empresa"/"filial" no cadastro). Diferente do modo
-      "empresa" acima, aqui a primeira filial JÁ vem criada (com o
-      ClinicaMembro correspondente) — é a promessa explícita dessa opção,
-      pra pessoa já cair pronta pra usar. Por baixo, a estrutura é
-      exatamente a mesma (Empresa -> Clinica -> ClinicaMembro): se essa
-      pessoa passar a atender/trabalhar em mais de um local, cadastra os
-      próximos em "Meus locais de atendimento" (medico.filiais_nova), que
-      viram novas filiais dentro dessa mesma empresa oculta.
+    - Se a pessoa informar um CNPJ válido que já existe numa Clinica
+      cadastrada na plataforma (ver encontrar_clinica_por_cnpj em
+      app/models.py), ela é vinculada direto a essa clínica (via
+      ClinicaMembro) — SEM criar empresa/filial nova e SEM precisar de
+      convite ou aceite de ninguém (quem digita o CNPJ já está
+      confirmando que atua ali). É assim que duas ou mais pessoas da
+      mesma clínica, se cadastrando cada uma na sua vez sem saber uma da
+      outra, acabam juntas na mesma empresa em vez de cada uma criar a
+      sua própria — e a partir daí passam a se ver mutuamente (equipe,
+      agenda, pacientes), de acordo com as permissões de cada uma.
+    - Se o CNPJ não for informado (ou for de uma clínica ainda inédita na
+      plataforma), uma empresa nova é criada — com o nome do próprio
+      local de atendimento informado — e a pessoa é a fundadora dela, já
+      com o primeiro local pronto pra usar (ClinicaMembro incluído). Se
+      essa pessoa passar a atender/trabalhar em mais de um local depois,
+      cadastra os próximos em "Meus locais de atendimento"
+      (medico.filiais_nova), que viram novas filiais da mesma empresa.
 
-    Em ambos os modos, quem cria a conta recebe todas as permissões
-    administrativas (conceder_todas_permissoes) e pode ajustá-las depois
-    para cada pessoa que adicionar à equipe."""
+    Em qualquer um dos dois casos, a pessoa escolhe se é médico(a) ou
+    secretário(a) (isso só muda a exigência de CRM). Só quem FUNDA a
+    empresa recebe todas as permissões administrativas automaticamente
+    (conceder_todas_permissoes); quem entra numa clínica já existente
+    pelo CNPJ recebe as permissões padrão do papel (ver
+    Usuario.definir_permissoes_padrao) e pode ter mais concedidas depois
+    por quem já administra a equipe."""
     if current_user.is_authenticated:
         return redirect(url_for("index"))
 
     if request.method == "POST":
-        modo = request.form.get("modo", "empresa")
-        independente = modo == "independente"
-
         nome = request.form.get("nome", "").strip()
         email = request.form.get("email", "").strip().lower()
         senha = request.form.get("senha", "")
         cpf = request.form.get("cpf", "").strip()
 
         papel = request.form.get("papel", "secretaria")
-        if independente:
-            # Nomes gerados a partir do nome de quem se cadastrou — a
-            # pessoa não preenche nem vê "empresa"/"filial" nessa tela.
-            # Ficam só como identificação interna dos registros no banco.
-            nome_empresa = nome
-        else:
-            nome_empresa = request.form.get("nome_empresa", "").strip()
 
-        # Dados da filial (local de atendimento) - agora coletados
-        # completos já no cadastro (igual à tela "Dados Cadastrais"),
-        # substituindo a etapa que antes deixava isso pra depois. Em
-        # ambos os modos a pessoa já sai com o primeiro local pronto.
-        # O campo já é obrigatório na tela (HTML + JS) nos dois modos, mas
-        # se ainda assim chegar vazio (ex.: JS desabilitado, ou alguém
-        # chega direto em /cadastro sem selecionar um modo antes de
-        # preencher), o fallback usa: no modo independente, o nome da
-        # própria pessoa (sincronizado pelo JS, ver cadastro.html) em vez
-        # de um texto fixo tipo "Consultório"; no modo empresa, o nome da
-        # empresa cadastrada (nome_empresa) em vez de deixar em branco ou
-        # usar o nome de quem se cadastrou.
-        nome_filial = request.form.get("nome_filial", "").strip() or (nome if independente else nome_empresa)
+        # Dados do local de atendimento - coletados completos já no
+        # cadastro (igual à tela "Dados Cadastrais"), pra pessoa já sair
+        # com o primeiro local pronto. O nome do local é obrigatório na
+        # tela (HTML); se ainda assim chegar vazio (ex.: JS desabilitado),
+        # o fallback usa o nome da própria pessoa em vez de deixar em
+        # branco.
+        nome_filial = request.form.get("nome_filial", "").strip() or nome
         telefone_filial_digitado = request.form.get("telefone_filial", "").strip()
         cnpj_filial = request.form.get("cnpj_filial", "").strip()
 
@@ -276,10 +263,6 @@ def cadastro():
 
         if cep_incompleto(request.form.get("cep", "")):
             flash("CEP incompleto — digite os 8 números.", "danger")
-            return render_template("auth/cadastro.html")
-
-        if not independente and not nome_empresa:
-            flash("Preencha todos os campos.", "danger")
             return render_template("auth/cadastro.html")
 
         if papel not in ("medico", "secretaria"):
@@ -303,17 +286,14 @@ def cadastro():
             flash("Já existe uma conta com esse e-mail. Faça login ou use outro e-mail.", "danger")
             return render_template("auth/cadastro.html")
 
-        # CNPJ - obrigatório e validado só no modo "empresa": é o
-        # identificador que permite encontrar uma clínica já cadastrada
-        # (ver encontrar_clinica_por_cnpj) e vincular direto a ela, em vez
-        # de duas pessoas da mesma clínica criarem cada uma a sua própria
-        # empresa duplicada. No modo "independente" a empresa é oculta e
-        # pessoal — o CNPJ continua opcional, sem essa checagem.
+        # CNPJ - agora é OPCIONAL: é o identificador que permite encontrar
+        # uma clínica já cadastrada (ver encontrar_clinica_por_cnpj) e
+        # vincular direto a ela, em vez de duas pessoas da mesma clínica
+        # criarem cada uma a sua própria empresa duplicada. Se a pessoa
+        # não informar nenhum CNPJ, a empresa é nova e pessoal (como era
+        # o antigo modo "independente").
         clinica_existente = None
-        if not independente:
-            if not cnpj_filial:
-                flash("Informe o CNPJ da sua clínica.", "danger")
-                return render_template("auth/cadastro.html")
+        if cnpj_filial:
             if not validar_cnpj(cnpj_filial):
                 flash("CNPJ inválido — confira os números digitados.", "danger")
                 return render_template("auth/cadastro.html")
@@ -373,7 +353,12 @@ def cadastro():
 
         trial_dias = PlataformaConfig.obter().trial_dias
         empresa = Empresa(
-            nome=nome_empresa,
+            # Não pedimos mais um "nome da empresa" separado do "nome do
+            # local" - só complicava (era comum a pessoa confundir os
+            # dois e digitar o próprio nome num campo que devia ter o
+            # nome do estabelecimento). A empresa nasce com o mesmo nome
+            # do primeiro local de atendimento cadastrado.
+            nome=nome_filial,
             email_contato=email,
             status="trial",
             data_vencimento=date.today() + timedelta(days=trial_dias),
@@ -415,18 +400,12 @@ def cadastro():
         login_user(usuario)
         session["clinica_id"] = filial.id
 
-        if independente:
-            flash(
-                f"Conta criada com sucesso, {usuario.nome}! "
-                "Vamos te ajudar a deixar tudo pronto para uso.",
-                "success",
-            )
-        else:
-            flash(
-                f"Empresa '{empresa.nome}' criada com sucesso, junto com o seu primeiro local "
-                "de atendimento! Vamos te ajudar a deixar tudo pronto para uso.",
-                "success",
-            )
+        flash(
+            f"Conta criada com sucesso, {usuario.nome}! Seu local de atendimento "
+            f"'{filial.nome}' já está pronto pra uso. Vamos te ajudar a deixar tudo "
+            "configurado.",
+            "success",
+        )
         return redirect(url_for("medico.onboarding"))
 
     return render_template("auth/cadastro.html")

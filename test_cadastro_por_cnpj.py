@@ -1,12 +1,13 @@
-"""Testa a resolução do problema relatado: dois médicos da mesma clínica
-podiam se cadastrar (modo "empresa") sem um saber do outro e cada um
-acabava criando a sua PRÓPRIA empresa/filial - duplicando o que deveria
-ser um único registro. Regra nova: o CNPJ da clínica agora é obrigatório
-no cadastro (modo "empresa") e, se já existir uma Clinica cadastrada com
-esse CNPJ, quem se cadastra é vinculado direto a ela (ClinicaMembro),
-sem criar empresa/filial nova, sem convite e sem aceite de ninguém -
-quem digita o CNPJ já está confirmando que atua ali. Só quando o CNPJ é
-inédito é que uma empresa nova é fundada."""
+"""Testa a resolução do problema relatado: pessoas da mesma clínica
+podiam se cadastrar sem uma saber da outra e cada uma acabava criando a
+sua PRÓPRIA empresa/filial - duplicando o que deveria ser um único
+registro. Regra: o CNPJ da clínica é um campo OPCIONAL no cadastro
+público único (não existe mais "modo" escolhido por botão) e, se já
+existir uma Clinica cadastrada com esse CNPJ, quem se cadastra é
+vinculado direto a ela (ClinicaMembro), sem criar empresa/filial nova,
+sem convite e sem aceite de ninguém - quem digita o CNPJ já está
+confirmando que atua ali. Se o CNPJ não for informado (ou for inédito),
+uma empresa nova é fundada."""
 from app import create_app
 from app.extensions import db
 from app.models import Usuario, Empresa, Clinica, ClinicaMembro
@@ -29,11 +30,9 @@ r = client.get("/cadastro/verificar-cnpj?cnpj=" + CNPJ_CLINICA)
 checar("Busca por CNPJ inédito responde 200", r.status_code == 200)
 checar("CNPJ inédito não é encontrado", r.get_json()["encontrada"] is False)
 
-# ---------- Primeiro médico funda a clínica com esse CNPJ ----------
+# ---------- Primeira médica funda a clínica informando o CNPJ ----------
 
 r = client.post("/cadastro", data={
-    "modo": "empresa",
-    "nome_empresa": "Clínica Bela Vista",
     "nome": "Dra. Ana Bela Vista",
     "cpf": "852.963.741-00", "crm_numero": "88888", "crm_uf": "ES",
     "email": "ana@clinicabelavista.com",
@@ -48,7 +47,9 @@ r = client.post("/cadastro", data={
 checar("Cadastro da fundadora responde 200", r.status_code == 200)
 
 with app.app_context():
-    empresa = Empresa.query.filter_by(nome="Clínica Bela Vista").first()
+    # Não existe mais um "nome da empresa" separado do nome do local - a
+    # empresa nasce com o mesmo nome informado pro local de atendimento.
+    empresa = Empresa.query.filter_by(nome="Clínica Bela Vista - Sede").first()
     ana = Usuario.query.filter_by(email="ana@clinicabelavista.com").first()
     checar("Empresa foi criada", empresa is not None)
     checar("Ana é a fundadora (âncora empresa_fundadora_id)", ana.empresa_fundadora_id == empresa.id)
@@ -59,28 +60,32 @@ with app.app_context():
     filial_id = filial.id
 client.get("/logout")
 
-# ---------- Cadastro sem informar CNPJ (modo empresa) é rejeitado ----------
+# ---------- Cadastro sem informar CNPJ não é mais rejeitado - o CNPJ é ----------
+# ---------- opcional; sem ele, nasce uma empresa nova e pessoal ----------
+
+with app.app_context():
+    total_empresas_antes = Empresa.query.count()
 
 r = client.post("/cadastro", data={
-    "modo": "empresa",
-    "nome_empresa": "Clínica Sem CNPJ",
     "nome": "Dr. Sem Cnpj",
     "cpf": "123.456.789-09", "crm_numero": "99999", "crm_uf": "ES",
     "email": "semcnpj@example.com",
     "senha": "123456",
     "papel": "medico",
-    "nome_filial": "Consultório",
+    "nome_filial": "Consultório do Dr. Sem Cnpj",
     "telefone_filial": "(27) 90000-0010",
 }, follow_redirects=True)
-checar("Cadastro 'empresa' sem CNPJ é rejeitado", "Informe o CNPJ da sua clínica" in r.get_data(as_text=True))
+checar("Cadastro sem CNPJ funciona normalmente (CNPJ é opcional)", r.status_code == 200)
 with app.app_context():
-    checar("Nenhuma empresa foi criada", Empresa.query.filter_by(nome="Clínica Sem CNPJ").first() is None)
+    checar("Uma empresa nova e pessoal foi criada mesmo sem CNPJ",
+           Empresa.query.filter_by(nome="Consultório do Dr. Sem Cnpj").first() is not None)
+    checar("Só essa empresa nova foi criada (nada além do esperado)",
+           Empresa.query.count() == total_empresas_antes + 1)
+client.get("/logout")
 
 # ---------- Cadastro com CNPJ inválido é rejeitado ----------
 
 r = client.post("/cadastro", data={
-    "modo": "empresa",
-    "nome_empresa": "Clínica CNPJ Invalido",
     "nome": "Dr. Cnpj Invalido",
     "cpf": "123.456.789-09", "crm_numero": "99999", "crm_uf": "ES",
     "email": "cnpjinvalido@example.com",
@@ -90,7 +95,7 @@ r = client.post("/cadastro", data={
     "telefone_filial": "(27) 90000-0011",
     "cnpj_filial": "11.111.111/1111-11",
 }, follow_redirects=True)
-checar("Cadastro 'empresa' com CNPJ inválido é rejeitado", "CNPJ inválido" in r.get_data(as_text=True))
+checar("Cadastro com CNPJ inválido é rejeitado", "CNPJ inválido" in r.get_data(as_text=True))
 
 # ---------- Busca: agora o CNPJ já é encontrado, com o nome da clínica ----------
 
@@ -107,9 +112,10 @@ checar("Busca devolve o endereço da clínica encontrada (pra já preencher os c
 
 # ---------- Segundo médico se cadastra com o MESMO CNPJ, sem saber da Ana ----------
 
+with app.app_context():
+    total_empresas_antes_bruno = Empresa.query.count()
+
 r = client.post("/cadastro", data={
-    "modo": "empresa",
-    "nome_empresa": "Clínica Bela Vista (nome que nem chega a ser usado)",
     "nome": "Dr. Bruno Bela Vista",
     "cpf": "123.456.789-09", "crm_numero": "12345", "crm_uf": "ES",
     "email": "bruno@clinicabelavista.com",
@@ -127,8 +133,8 @@ checar("Mensagem avisa que a clínica já existia e ele já foi vinculado a ela"
        "já cadastrada" in texto.lower() and "clínica bela vista" in texto.lower())
 
 with app.app_context():
-    checar("NENHUMA empresa nova foi criada para o Bruno",
-           Empresa.query.filter_by(nome="Clínica Bela Vista (nome que nem chega a ser usado)").first() is None)
+    checar("NENHUMA empresa nova foi criada para o Bruno (o CNPJ já existia)",
+           Empresa.query.count() == total_empresas_antes_bruno)
     bruno = Usuario.query.filter_by(email="bruno@clinicabelavista.com").first()
     checar("Bruno foi criado", bruno is not None)
     checar("Bruno NÃO é fundador dessa empresa (quem fundou foi a Ana)",
@@ -150,20 +156,27 @@ r = client.post("/login", data={"email": "bruno@clinicabelavista.com", "senha": 
 checar("Bruno já entra direto, vinculado à clínica encontrada pelo CNPJ", "Clínica Bela Vista" in r.get_data(as_text=True))
 client.get("/logout")
 
-# ---------- Modo "independente" continua sem exigir CNPJ (empresa oculta/pessoal) ----------
+# ---------- Secretária também pode informar o CNPJ e entrar na mesma clínica ----------
+# (é exatamente o cenário relatado: secretária cadastrada sem informar o
+# CNPJ acabava isolada numa empresa própria, sem ver os médicos da mesma
+# clínica - agora, informando o mesmo CNPJ, ela entra vinculada a eles.)
 
 r = client.post("/cadastro", data={
-    "modo": "independente", "papel": "medico",
-    "nome": "Dra. Autonoma Sem Cnpj",
-    "cpf": "111.444.777-35", "crm_numero": "54321", "crm_uf": "ES",
-    "email": "autonoma.semcnpj@example.com",
+    "nome": "Secretária da Bela Vista",
+    "cpf": "111.444.777-35",
+    "email": "secretaria@clinicabelavista.com",
     "senha": "123456",
-    "telefone_filial": "(27) 90000-0012",
+    "papel": "secretaria",
+    "nome_filial": "Nome que nem chega a ser usado",
+    "telefone_filial": "(27) 90000-0098",
+    "cnpj_filial": CNPJ_CLINICA,
 }, follow_redirects=True)
-checar("Cadastro 'independente' sem CNPJ continua funcionando normalmente", r.status_code == 200)
+checar("Cadastro da secretária com o mesmo CNPJ responde 200", r.status_code == 200)
 with app.app_context():
-    checar("Conta da médica independente foi criada mesmo sem CNPJ",
-           Usuario.query.filter_by(email="autonoma.semcnpj@example.com").first() is not None)
+    secretaria = Usuario.query.filter_by(email="secretaria@clinicabelavista.com").first()
+    checar("Secretária foi criada", secretaria is not None)
+    checar("Secretária está vinculada à MESMA filial dos médicos (mesmo CNPJ)",
+           ClinicaMembro.query.filter_by(clinica_id=filial_id, usuario_id=secretaria.id, ativo=True).count() == 1)
 client.get("/logout")
 
 print("\nTodos os testes de cadastro por CNPJ passaram.")

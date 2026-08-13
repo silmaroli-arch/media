@@ -44,8 +44,6 @@ def checar(nome, condicao):
 CPF_BRUNO = "852.963.741-00"  # CPF VÁLIDO (dígitos verificadores conferem)
 
 r = client.post("/cadastro", data={
-    "modo": "empresa",
-    "nome_empresa": "Medical Gastro",
     "nome": "Bruno Pavan",
     "cpf": CPF_BRUNO,
     "crm_numero": "11111", "crm_uf": "ES",
@@ -59,7 +57,9 @@ r = client.post("/cadastro", data={
 checar("Cadastro responde 200 e cai no assistente de configuração inicial", r.status_code == 200 and "Configuração inicial" in r.get_data(as_text=True))
 
 with app.app_context():
-    empresa = Empresa.query.filter_by(nome="Medical Gastro").first()
+    # Não existe mais um "nome da empresa" separado do nome do local - a
+    # empresa nasce com o mesmo nome informado pro local de atendimento.
+    empresa = Empresa.query.filter_by(nome="Medical Gastro - Matriz").first()
     checar("Empresa foi criada", empresa is not None)
     usuario = Usuario.query.filter_by(email="bruno.pavan@medicalgastro.com").first()
     checar("Usuário foi criado", usuario is not None)

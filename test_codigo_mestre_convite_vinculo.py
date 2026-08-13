@@ -79,7 +79,7 @@ client.get("/logout")
 
 # Médico nasce com código quando cria a PRÓPRIA conta (cadastro público).
 r = client.post("/cadastro", data={
-    "modo": "independente", "nome": "Dra. Nova Com Codigo", "papel": "medico",
+    "nome": "Dra. Nova Com Codigo", "papel": "medico",
     "cpf": "852.963.741-00", "crm_numero": "22222", "crm_uf": "ES",
     "telefone_filial": "(27) 90000-0002",
     "email": "novamedica@gruposaude.com", "senha": "123456",

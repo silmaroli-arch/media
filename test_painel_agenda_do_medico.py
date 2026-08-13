@@ -80,8 +80,6 @@ client.get("/logout")
 # ---------- Médico fundador COM todas as permissões: agenda continua só a dele ----------
 
 r = client.post("/cadastro", data={
-    "modo": "empresa",
-    "nome_empresa": "Clínica Fundador Agenda",
     "nome": "Dr. Fundador Agenda",
     "cpf": "852.963.741-00", "crm_numero": "66666", "crm_uf": "ES",
     "email": "fundador.agenda@example.com",

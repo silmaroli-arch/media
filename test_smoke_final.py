@@ -178,7 +178,6 @@ client.get("/logout")
 # ---------- Cadastro público cria nova empresa + 1ª filial, isoladas ----------
 
 r = client.post("/cadastro", data={
-    "nome_empresa": "Empresa Teste Automatizado",
     "nome": "Fulano Teste",
     "cpf": "852.963.741-00",
     "email": "fulano@clinicateste.com",
@@ -191,11 +190,12 @@ r = client.post("/cadastro", data={
 texto = r.get_data(as_text=True)
 checar("Cadastro público cria a empresa e loga automaticamente", "Painel" in texto)
 checar("Nome da empresa aparece na navbar", "Empresa Teste Automatizado" in texto)
-# O cadastro público (modo "empresa") já cria o primeiro local de
-# atendimento, completo, e vincula quem se cadastrou a ele (ver
-# test_cadastro_empresa_sem_filial.py para o fluxo completo).
+# O cadastro público já cria o primeiro local de atendimento, completo, e
+# vincula quem se cadastrou a ele (ver test_cadastro_empresa_sem_filial.py
+# para o fluxo completo). Não existe mais um "nome da empresa" separado do
+# nome do local — a empresa nasce com o mesmo nome informado pro local.
 with app.app_context():
-    empresa_nova = Empresa.query.filter_by(nome="Empresa Teste Automatizado").first()
+    empresa_nova = Empresa.query.filter_by(nome="Empresa Teste Automatizado - Sede").first()
     checar("Empresa nova foi criada", empresa_nova is not None)
     checar(
         "O primeiro local de atendimento já foi criado automaticamente no cadastro",
@@ -213,7 +213,6 @@ client.get("/logout")
 # ---------- quem cria a empresa recebe todas as permissões administrativas ----------
 
 r = client.post("/cadastro", data={
-    "nome_empresa": "Clínica Solo do Dr. Ricardo",
     "nome": "Dr. Ricardo Alves",
     "cpf": "852.963.741-00", "crm_numero": "77777", "crm_uf": "ES",
     "email": "ricardo@clinicasolo.com",
@@ -890,6 +889,7 @@ with app.app_context():
 # palavras, a resposta certa pode ser diferente. Sem chamar a IA de novo
 # aqui (fica None), a pergunta deve cair para a fila da secretaria, e
 # NÃO reaproveitar a resposta específica sobre uva.
+login_paciente("123.456.789-00", "1985-04-12")
 with patch.object(routes_paciente_mod, "responder_com_ia", return_value=None):
     r = client.post(
         "/paciente/chat",
@@ -897,8 +897,24 @@ with patch.object(routes_paciente_mod, "responder_com_ia", return_value=None):
         follow_redirects=True,
     )
 texto = r.get_data(as_text=True)
-checar("FAQ aprendida sobre um sabor (uva) NÃO é reaproveitada para uma pergunta sobre outro sabor (limão)",
-       "gatorade de cor clara" not in texto.lower() and ("encaminhei" in texto.lower() or "pendente" in texto.lower()))
+checar("A pergunta sobre limão é encaminhada para a secretaria (a IA não sabe responder)",
+       "encaminhei" in texto.lower() or "pendente" in texto.lower())
+with app.app_context():
+    # Checagem pelo BANCO, não pelo texto da página inteira: a página do
+    # paciente também mostra o HISTÓRICO de perguntas já respondidas (a de
+    # "uva", aprovada mais acima, contém literalmente "gatorade de cor
+    # clara" na própria resposta) - procurar essa frase na página inteira
+    # dá falso positivo mesmo quando a pergunta do limão NÃO reaproveitou
+    # nada. O que importa é que a pergunta do limão específica não tenha
+    # sido respondida automaticamente com o texto da resposta da uva.
+    pendente_limao = PerguntaPendente.query.filter_by(
+        clinica_id=clinica_vitoria_id, pergunta="Esse gatorade sabor limão pode ser tomado?",
+    ).order_by(PerguntaPendente.criado_em.desc()).first()
+    checar(
+        "FAQ aprendida sobre um sabor (uva) NÃO é reaproveitada para uma pergunta sobre outro sabor (limão)",
+        pendente_limao is not None and pendente_limao.status == "pendente"
+        and (pendente_limao.resposta is None or "cor clara" not in pendente_limao.resposta.lower()),
+    )
 
 # Quando a IA está configurada mas sinaliza que não sabe responder (fora do
 # escopo do preparo), o comportamento continua o mesmo de sempre: cai para a
@@ -1130,7 +1146,9 @@ with app.app_context():
     config = PlataformaConfig.obter()
     checar("Configuração de trial tem um valor padrão de dias", config.trial_dias > 0)
 
-    empresa_teste = Empresa.query.filter_by(nome="Empresa Teste Automatizado").first()
+    # Não existe mais um "nome da empresa" separado do nome do local - a
+    # empresa nasce com o mesmo nome informado pro local de atendimento.
+    empresa_teste = Empresa.query.filter_by(nome="Empresa Teste Automatizado - Sede").first()
     checar("Empresa nova recebeu data de vencimento do trial", empresa_teste.data_vencimento is not None)
     checar("Empresa nova começa com status 'trial'", empresa_teste.status == "trial")
 

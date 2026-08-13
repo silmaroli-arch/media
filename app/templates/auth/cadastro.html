@@ -6,27 +6,10 @@
     <div class="card p-4 mt-4">
       <h4 class="mb-1 text-center"><i class="bi bi-hospital"></i> Criar conta</h4>
       <p class="text-muted text-center small">
-        Escolha a opção que combina com o seu caso.
+        Uma única tela pra todo mundo — médico(a) ou secretário(a), com ou sem clínica própria.
       </p>
 
-      <div class="btn-group w-100 mb-3" role="group" id="grupo-modo">
-        <button type="button" class="btn btn-outline-primary active" id="btn-modo-empresa" onclick="selecionarModo('empresa')">
-          <i class="bi bi-building"></i> Tenho uma clínica/empresa
-        </button>
-        <button type="button" class="btn btn-outline-primary" id="btn-modo-independente" onclick="selecionarModo('independente')">
-          <i class="bi bi-person-badge"></i> Sou profissional independente
-        </button>
-      </div>
       <form method="post">
-        <input type="hidden" name="modo" id="input-modo" value="empresa">
-
-        <div id="bloco-independente" class="alert alert-info small" style="display:none;">
-          Sua conta é só sua — sem depender da empresa de uma clínica de terceiros.
-          Ela já vem criada com o primeiro local de atendimento pronto pra usar, e se você
-          atender em mais de um lugar, é só cadastrar os outros locais depois, em
-          "Meus locais de atendimento".
-        </div>
-
         <h5 class="mb-3">Seus dados</h5>
         <div class="row g-3">
           <div class="col-md-6">
@@ -137,23 +120,22 @@
         </div>
 
         <hr class="my-4">
-        <h5 class="mb-3" id="titulo-dados-empresa">Dados da empresa</h5>
-        <div id="campos-empresa">
-          <div class="mb-3">
-            <label class="form-label">Nome da empresa</label>
-            <input type="text" name="nome_empresa" id="input-nome_empresa" class="form-control" required>
-          </div>
+        <h6 class="mb-0">Seu local de atendimento</h6>
+        <div class="form-text mb-2">
+          Se você já atua numa clínica que tem CNPJ, informe-o abaixo — se ela já estiver
+          cadastrada na plataforma, sua conta entra vinculada direto a ela (com os dados já
+          preenchidos), sem precisar de convite de ninguém. Se não tiver CNPJ (ou for a primeira
+          pessoa a se cadastrar por ali), é só preencher os dados do local abaixo — sua própria
+          conta já nasce como responsável por ele.
         </div>
-
-        <h6 class="mb-0" id="titulo-local-atendimento">Seu primeiro local de atendimento</h6>
         <div class="row g-3 mt-0">
-          <div class="col-md-8" id="campo-nome-filial">
+          <div class="col-md-8">
             <label class="form-label">Nome do local</label>
             <input type="text" name="nome_filial" id="nome_filial" class="form-control" placeholder="ex.: Consultório, Clínica Centro" required>
           </div>
-          <div class="col-md-4" id="campo-cnpj-filial">
-            <label class="form-label">CNPJ</label>
-            <input type="text" inputmode="numeric" name="cnpj_filial" id="cnpj_filial" class="form-control" placeholder="00.000.000/0000-00" required>
+          <div class="col-md-4">
+            <label class="form-label">CNPJ (opcional)</label>
+            <input type="text" inputmode="numeric" name="cnpj_filial" id="cnpj_filial" class="form-control" placeholder="00.000.000/0000-00">
             <div class="invalid-feedback" id="cnpj_filial_status"></div>
             <div class="form-text" id="cnpj_filial_encontrado"></div>
           </div>
@@ -195,7 +177,7 @@
           </div>
         </div>
 
-        <button type="submit" class="btn btn-primary w-100 mt-4" id="btn-submit">Criar minha empresa</button>
+        <button type="submit" class="btn btn-primary w-100 mt-4" id="btn-submit">Criar minha conta</button>
       </form>
       <div class="text-center mt-3">
         <a href="{{ url_for('auth.login') }}" class="small">Já tem conta? Fazer login</a>
@@ -212,62 +194,7 @@ function atualizarCampoCrm() {
   document.getElementById('crm_numero').required = ehMedico;
   document.getElementById('crm_uf').required = ehMedico;
 }
-
-function sincronizarNomeFilialIndependente() {
-  var independente = document.getElementById('input-modo').value === 'independente';
-  if (independente) {
-    document.getElementById('nome_filial').value = document.getElementById('nome').value;
-  }
-}
-document.getElementById('nome').addEventListener('input', sincronizarNomeFilialIndependente);
-
-function selecionarModo(modo) {
-  document.getElementById('input-modo').value = modo;
-  const independente = modo === 'independente';
-
-  document.getElementById('btn-modo-empresa').classList.toggle('active', !independente);
-  document.getElementById('btn-modo-independente').classList.toggle('active', independente);
-
-  document.getElementById('bloco-independente').style.display = independente ? 'block' : 'none';
-  document.getElementById('campos-empresa').style.display = independente ? 'none' : 'block';
-  // O papel (médico/secretário(a)) agora é perguntado nos dois modos —
-  // inclusive no independente, que antes só servia pro médico e forçava
-  // papel="medico" sem perguntar nada (ver app/routes_auth.py).
-  document.getElementById('campo-nome-filial').style.display = independente ? 'none' : 'block';
-
-  document.getElementById('input-nome_empresa').required = !independente;
-  document.getElementById('nome_filial').required = !independente;
-  document.getElementById('cnpj_filial').required = !independente;
-  // No modo independente o campo "nome_filial" fica escondido, mas
-  // continua sendo enviado no formulário - em vez de um texto fixo tipo
-  // "Consultório", o local de atendimento nasce com o próprio nome
-  // cadastrado pela pessoa (sincronizado aqui e de novo no submit, ver
-  // sincronizarNomeFilialIndependente()).
-  sincronizarNomeFilialIndependente();
-
-  document.getElementById('titulo-dados-empresa').style.display = independente ? 'none' : 'block';
-  document.getElementById('titulo-local-atendimento').textContent = independente
-    ? 'Seu local de atendimento' : 'Seu primeiro local de atendimento';
-
-  document.getElementById('btn-submit').textContent = independente ? 'Criar minha conta' : 'Criar minha empresa';
-  atualizarCampoCrm();
-}
-
-// Chegando direto de um link com o modo já definido na URL (hoje só o
-// link genérico de "Criar conta" da tela de login, que manda pra
-// modo=independente — modo=empresa continua existindo, só sem link na
-// tela de login por enquanto), não faz sentido perguntar de novo com o
-// botão de escolha. Nesse caso, mostra só os campos do tipo escolhido,
-// sem o grupo de botões e sem escape hatch pra trocar de tipo (pedido do
-// usuário: concentrar tudo numa única tela, sem esse desvio de volta).
-(function () {
-  const params = new URLSearchParams(window.location.search);
-  const modo = params.get('modo');
-  if (modo === 'independente' || modo === 'empresa') {
-    selecionarModo(modo);
-    document.getElementById('grupo-modo').style.display = 'none';
-  }
-})();
+atualizarCampoCrm();
 
 // ---------- Máscaras (mesma lógica usada no resto do app: só formata o
 // que foi digitado, sem preencher com "_" o que falta - isso é o que
@@ -321,7 +248,8 @@ function marcarCpfValido() {
 document.getElementById('cpf').addEventListener('blur', marcarCpfValido);
 
 // ---------- Validação de CNPJ (dígitos verificadores) + busca automática
-// de clínica já cadastrada com o mesmo CNPJ ----------
+// de clínica já cadastrada com o mesmo CNPJ. O CNPJ é opcional aqui: só é
+// validado se a pessoa preencher algo ----------
 function cnpjValido(cnpj) {
   var d = cnpj.replace(/\D/g, '');
   if (d.length !== 14 || /^(\d)\1{13}$/.test(d)) return false;
@@ -469,8 +397,6 @@ configurarBuscaCep('cep', 'rua', 'bairro', 'cidade', 'uf', 'cep_status');
 configurarBuscaCep('cep_filial', 'rua_filial', 'bairro_filial', 'cidade_filial', 'uf_filial', 'cep_filial_status');
 
 document.querySelector('form').addEventListener('submit', function (evento) {
-  var independente = document.getElementById('input-modo').value === 'independente';
-  sincronizarNomeFilialIndependente();
   var cpfOk = marcarCpfValido();
   var telefoneOk = marcarTelefoneValido('telefone', 'telefone_status', false);
   var telefoneFilialOk = marcarTelefoneValido('telefone_filial', 'telefone_filial_status', true);
@@ -488,15 +414,12 @@ document.querySelector('form').addEventListener('submit', function (evento) {
   var cepPessoalOk = cepOk('cep', 'cep_status');
   var cepFilialOk = cepOk('cep_filial', 'cep_filial_status');
 
+  // CNPJ é opcional aqui - só valida se a pessoa preencheu algo.
   var cnpjCampo = document.getElementById('cnpj_filial');
   var cnpjOk = true;
-  if (!independente || cnpjCampo.value.replace(/\D/g, '')) {
+  if (cnpjCampo.value.replace(/\D/g, '')) {
     var cnpjStatus = document.getElementById('cnpj_filial_status');
-    if (!cnpjCampo.value.replace(/\D/g, '')) {
-      cnpjCampo.classList.add('is-invalid');
-      cnpjStatus.textContent = 'Informe o CNPJ da sua clínica.';
-      cnpjOk = false;
-    } else if (!cnpjValido(cnpjCampo.value)) {
+    if (!cnpjValido(cnpjCampo.value)) {
       cnpjCampo.classList.add('is-invalid');
       cnpjStatus.textContent = 'CNPJ inválido — confira os números digitados.';
       cnpjOk = false;

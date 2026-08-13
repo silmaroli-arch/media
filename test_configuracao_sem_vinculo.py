@@ -29,8 +29,6 @@ def checar(nome, condicao):
 # exatamente o estado das telas do usuário ("Marcar que você também atua
 # aqui" aparecendo nos dois locais).
 r = client.post("/cadastro", data={
-    "modo": "empresa",
-    "nome_empresa": "Medical Gastro Config",
     "nome": "Bruno Config",
     "cpf": "852.963.741-00", "crm_numero": "33333", "crm_uf": "ES",
     "email": "bruno.config@example.com",
@@ -45,7 +43,9 @@ client.post("/equipe/filiais/nova", data={"nome": "Medical Gastro Centro"}, foll
 client.post("/equipe/filiais/nova", data={"nome": "Medical Gastro Santa Lucia"}, follow_redirects=True)
 
 with app.app_context():
-    empresa = Empresa.query.filter_by(nome="Medical Gastro Config").first()
+    # Não existe mais um "nome da empresa" separado do nome do local - a
+    # empresa nasce com o mesmo nome informado pro primeiro local.
+    empresa = Empresa.query.filter_by(nome="Medical Gastro Sede").first()
     bruno = Usuario.query.filter_by(email="bruno.config@example.com").first()
     # O cadastro agora já cria e vincula o fundador ao primeiro local
     # (Sede) - os outros 2, cadastrados depois em "Meus locais de
