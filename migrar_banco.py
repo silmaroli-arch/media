@@ -247,6 +247,7 @@ UPDATE empresas SET codigo_cadastro_paciente = (SELECT c.codigo_cadastro_pacient
 -- app/models.py.
 ALTER TABLE exames ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
 ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
+ALTER TABLE descontos_config ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
 
 -- Código mestre do médico (identidade portátil dele na plataforma) e os
 -- convites de vínculo por código - ver Usuario.codigo_mestre e
