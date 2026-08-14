@@ -40,18 +40,18 @@
         <div class="row mb-3" id="sedacao-fields" style="{% if not (procedimento and procedimento.sedacao_realizada) %}display:none;{% endif %}">
             <div class="col-md-4">
                 <label for="sedacao_tipo" class="form-label">Tipo</label>
-                <input type="text" class="form-control" id="sedacao_tipo" name="sedacao_tipo" placeholder="Propofol, Midazolam, etc." value="{{ procedimento.sedacao_tipo if procedimento else '' }}">
+                <input type="text" class="form-control" id="sedacao_tipo" name="sedacao_tipo" placeholder="Propofol, Midazolam, etc." value="{{ (procedimento.sedacao_tipo or '') if procedimento else '' }}">
             </div>
             <div class="col-md-4">
                 <label for="sedacao_dose" class="form-label">Dose</label>
-                <input type="text" class="form-control" id="sedacao_dose" name="sedacao_dose" placeholder="1.5mg/kg, 5mg, etc." value="{{ procedimento.sedacao_dose if procedimento else '' }}">
+                <input type="text" class="form-control" id="sedacao_dose" name="sedacao_dose" placeholder="1.5mg/kg, 5mg, etc." value="{{ (procedimento.sedacao_dose or '') if procedimento else '' }}">
             </div>
         </div>
 
         <!-- Achados principais -->
         <div class="mb-3">
             <label for="achados_texto" class="form-label">Achados Principais</label>
-            <textarea class="form-control" id="achados_texto" name="achados_texto" rows="3" placeholder="Descrição dos achados (ex.: Íngreme colônica com infiltração mucosa)">{{ procedimento.achados_texto if procedimento else '' }}</textarea>
+            <textarea class="form-control" id="achados_texto" name="achados_texto" rows="3" placeholder="Descrição dos achados (ex.: Íngreme colônica com infiltração mucosa)">{{ (procedimento.achados_texto or '') if procedimento else '' }}</textarea>
         </div>
 
         <!-- Procedimentos realizados -->
@@ -70,7 +70,7 @@
             </div>
             <div class="col-md-3">
                 <label for="tempo_procedimento_minutos" class="form-label">Tempo (minutos)</label>
-                <input type="number" class="form-control" id="tempo_procedimento_minutos" name="tempo_procedimento_minutos" min="0" value="{{ procedimento.tempo_procedimento_minutos if procedimento else '' }}">
+                <input type="number" class="form-control" id="tempo_procedimento_minutos" name="tempo_procedimento_minutos" min="0" value="{{ (procedimento.tempo_procedimento_minutos if procedimento.tempo_procedimento_minutos is not none else '') if procedimento else '' }}">
             </div>
         </div>
 
@@ -93,7 +93,7 @@
         <!-- Complicações -->
         <div class="mb-3">
             <label for="complicacoes" class="form-label">Complicações</label>
-            <textarea class="form-control" id="complicacoes" name="complicacoes" rows="2" placeholder="Ex.: sangramento leve controlado, perfuração, etc.">{{ procedimento.complicacoes if procedimento else '' }}</textarea>
+            <textarea class="form-control" id="complicacoes" name="complicacoes" rows="2" placeholder="Ex.: sangramento leve controlado, perfuração, etc.">{{ (procedimento.complicacoes or '') if procedimento else '' }}</textarea>
         </div>
 
         <!-- Pólipos individuais -->
@@ -154,7 +154,7 @@
         <!-- Observações gerais -->
         <div class="mb-3">
             <label for="observacoes" class="form-label">Observações Gerais</label>
-            <textarea class="form-control" id="observacoes" name="observacoes" rows="3" placeholder="Anotações adicionais">{{ procedimento.observacoes if procedimento else '' }}</textarea>
+            <textarea class="form-control" id="observacoes" name="observacoes" rows="3" placeholder="Anotações adicionais">{{ (procedimento.observacoes or '') if procedimento else '' }}</textarea>
         </div>
 
         <div class="d-flex gap-2">
