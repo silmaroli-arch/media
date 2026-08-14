@@ -2929,18 +2929,22 @@ def procedimento_gastro_salvar(agendamento_id):
 def financeiro_receber_pagamento():
     """Lista os agendamentos que ainda não têm pagamento registrado, pra
     quem cuida do financeiro dar baixa sem precisar navegar pela agenda —
-    ver medico.pagamento_registrar para o registro em si."""
-    pendentes = (
-        Agendamento.query
-        .outerjoin(Pagamento, Pagamento.agendamento_id == Agendamento.id)
-        .filter(
-            Agendamento.clinica_id.in_(filiais_atuais_ids()),
-            Agendamento.status == "realizado",
-            Pagamento.id.is_(None),
-        )
-        .order_by(Agendamento.data_hora.desc())
-        .all()
+    ver medico.pagamento_registrar para o registro em si.
+
+    Segue a MESMA restrição de lá: um médico só vê (e só consegue abrir)
+    os agendamentos dele mesmo - sem isso a lista mostrava também
+    agendamentos de OUTROS médicos da clínica, que ao clicar davam 404
+    (pagamento_registrar já restringe por medico_id)."""
+    query = Agendamento.query.outerjoin(
+        Pagamento, Pagamento.agendamento_id == Agendamento.id
+    ).filter(
+        Agendamento.clinica_id.in_(filiais_atuais_ids()),
+        Agendamento.status == "realizado",
+        Pagamento.id.is_(None),
     )
+    if eh_medico():
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    pendentes = query.order_by(Agendamento.data_hora.desc()).all()
     return render_template("medico/financeiro_receber_pagamento.html", pendentes=pendentes)
 
 
