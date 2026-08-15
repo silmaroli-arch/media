@@ -12,7 +12,7 @@ from app.models import (
     Empresa, Clinica, PlataformaConfig, Usuario, Paciente, Exame, Agendamento,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, PerguntaPendente, FaqItem,
-    MedicoHorario, ChatMensagem, ResultadoExame, DescontoConfig, Pagamento,
+    MedicoHorario, ChatMensagem, ResultadoExame,
 )
 from app.pdf_preparo import (
     _sugerir_informacoes_gerais, _sugerir_alimentos, _sugerir_medicamentos, _sugerir_cortes,
@@ -1210,7 +1210,7 @@ client.get("/logout")
 # ---------- Novas funcionalidades: duração/preço/acompanhante do exame,
 # horário do médico, otimizador de agenda, solicitação de agendamento pelo
 # paciente, atendimento (histórico de chat + encerramento), resultado em
-# PDF, pagamento/desconto/comprovante, e endereço/contato de emergência ----------
+# PDF, e endereço/contato de emergência ----------
 
 with app.app_context():
     clinica_vitoria_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
@@ -1365,28 +1365,6 @@ client.get("/logout")
 login_paciente("(27) 99999-0000", "1985-04-12")
 r = client.get(f"/paciente/exame/{agendamento_colono_id}/resultado")
 checar("Paciente consegue baixar o resultado do exame anexado", r.status_code == 200 and r.mimetype == "application/pdf")
-client.get("/logout")
-
-# --- Descontos + registro de pagamento + comprovante ---
-login("secretaria@clinicavitoria.com", "123456")
-r = client.post("/equipe/descontos", data={"nome": "Convênio Saúde+", "percentual": "10"}, follow_redirects=True)
-checar("Desconto cadastrado com sucesso", "Convênio Saúde+" in r.get_data(as_text=True))
-
-with app.app_context():
-    desconto_id = DescontoConfig.query.filter_by(clinica_id=clinica_vitoria_id, nome="Convênio Saúde+").first().id
-
-r = client.post(f"/equipe/agenda/{agendamento_colono_id}/pagamento", data={
-    "desconto_id": str(desconto_id), "forma_pagamento": "pix",
-}, follow_redirects=True)
-checar("Pagamento registrado com sucesso", "comprovante" in r.get_data(as_text=True).lower() or r.status_code == 200)
-
-with app.app_context():
-    pagamento = Pagamento.query.filter_by(agendamento_id=agendamento_colono_id).first()
-    checar("Valor do procedimento no pagamento bate com o preço cadastrado (350.00)", float(pagamento.valor_procedimento) == 350.00)
-    checar("Desconto de 10% aplicado corretamente (valor final 315.00)", float(pagamento.valor_final) == 315.00)
-
-r = client.get(f"/equipe/agenda/{agendamento_colono_id}/pagamento/comprovante")
-checar("Comprovante de pagamento mostra o valor final", "315" in r.get_data(as_text=True))
 client.get("/logout")
 
 # --- Endereço (CEP) e contato de emergência no cadastro do paciente ---

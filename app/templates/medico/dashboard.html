@@ -162,7 +162,7 @@
   <div class="card p-3">
     <h5>Lista completa</h5>
     <table class="table table-hover">
-      <thead><tr><th>Data/Hora</th>{{ th_filial() }}<th>Paciente</th><th>Exame</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Data/Hora</th>{{ th_filial() }}<th>Paciente</th><th>Exame</th><th>Status</th></tr></thead>
       <tbody>
         {% for a in agendamentos %}
         <tr>
@@ -180,12 +180,9 @@
               {% else %}bg-danger{% endif %}">{{ a.status }}</span>
             {% if a.encerrada %}<span class="badge bg-dark">encerrado</span>{% endif %}
           </td>
-          <td class="text-nowrap">
-            <a href="{{ url_for('medico.pagamento_registrar', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Pagamento">Pagamento</a>
-          </td>
         </tr>
         {% else %}
-        <tr><td colspan="{{ 6 if mostrar_filial else 5 }}" class="text-muted text-center">Nenhum agendamento cadastrado.</td></tr>
+        <tr><td colspan="{{ 5 if mostrar_filial else 4 }}" class="text-muted text-center">Nenhum agendamento cadastrado.</td></tr>
         {% endfor %}
       </tbody>
     </table>
