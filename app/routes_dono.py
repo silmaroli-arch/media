@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Empresa, Clinica, ClinicaMembro, Paciente, Agendamento, PlataformaConfig
+from app.models import Empresa, ClinicaMembro, Paciente, Agendamento, PlataformaConfig
 from app.clinica_utils import verificar_vencimento_empresa
 
 dono_bp = Blueprint("dono", __name__, url_prefix="/dono")

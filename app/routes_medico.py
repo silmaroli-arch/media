@@ -2,13 +2,13 @@ import os
 import re
 import secrets
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 from flask import (
     Blueprint, render_template, redirect, url_for, request, flash, jsonify, session,
-    send_from_directory, send_file, current_app,
+    send_file, current_app,
 )
 from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
@@ -32,7 +32,7 @@ from app.clinica_utils import (
 )
 from app.pdf_preparo import extrair_sugestao_de_pdf, gerar_xlsx_da_sugestao
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
-from app.agendamento_otimizador import sugerir_horarios, medico_tem_bloqueio, conflito_de_agenda
+from app.agendamento_otimizador import medico_tem_bloqueio, conflito_de_agenda
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
 from app.cripto_clinico import criptografar_bytes as criptografar_bytes_clinico, criptografar_texto as criptografar_texto_clinico
 from app.nfse_nacional import emitir_nfse, reenviar_nfse_pendente, gerar_pdf_contingencia, ErroEmissaoNfse
@@ -2156,31 +2156,6 @@ def agenda_status(agendamento_id):
     return redirect(url_for("medico.agenda"))
 
 
-@medico_bp.route("/agenda/<int:agendamento_id>/acompanhante", methods=["POST"])
-@login_required
-@staff_required
-def agenda_acompanhante(agendamento_id):
-    """Indica/atualiza quem vai acompanhar o paciente no dia do exame —
-    pode ser preenchido no momento do agendamento ou alterado depois, até
-    o próprio dia do exame."""
-    query = Agendamento.query.filter(
-        Agendamento.id == agendamento_id,
-        Agendamento.clinica_id.in_(filiais_atuais_ids()),
-    )
-    if eh_medico():
-        query = query.filter(Agendamento.medico_id == current_user.id)
-    agendamento = query.first_or_404()
-    acompanhante_telefone = request.form.get("acompanhante_telefone", "").strip()
-    if telefone_incompleto(acompanhante_telefone):
-        flash("Telefone do acompanhante incompleto — digite o DDD e o número completos.", "danger")
-        return redirect(url_for("medico.agenda"))
-    agendamento.acompanhante_nome = request.form.get("acompanhante_nome", "").strip() or None
-    agendamento.acompanhante_telefone = acompanhante_telefone or None
-    db.session.commit()
-    flash("Acompanhante atualizado.", "success")
-    return redirect(url_for("medico.agenda"))
-
-
 # ---------- Solicitações de agendamento feitas pelo paciente ----------
 
 @medico_bp.route("/agenda/solicitacoes")
@@ -3444,28 +3419,6 @@ def clinica_dados_fiscais(filial_id=None):
         "medico/clinica_dados_fiscais.html",
         clinica=clinica,
     )
-
-
-@medico_bp.route("/clinica/codigo-cadastro-paciente/regenerar", methods=["POST"])
-@medico_bp.route("/clinica/codigo-cadastro-paciente/regenerar/<int:filial_id>", methods=["POST"])
-@login_required
-@staff_required
-@permissao_required("perm_dados_clinica")
-def clinica_codigo_cadastro_regenerar(filial_id=None):
-    """Gera um novo código de auto-cadastro DA EMPRESA, invalidando o link
-    antigo — útil se o link foi compartilhado por engano com quem não
-    deveria ter acesso. (A rota manteve o nome antigo por compatibilidade,
-    mas o código é da empresa - o paciente é da empresa, e o link fica no
-    Painel. Também zera os códigos legados por filial, senão os links
-    antigos continuariam funcionando e "gerar novo link" não invalidaria
-    nada de verdade.)"""
-    empresa = empresa_atual()
-    empresa.codigo_cadastro_paciente = _gerar_codigo_cadastro_paciente()
-    for filial in Clinica.query.filter_by(empresa_id=empresa.id).all():
-        filial.codigo_cadastro_paciente = None
-    db.session.commit()
-    flash("Novo link de cadastro gerado — o link antigo não funciona mais.", "success")
-    return redirect(url_for("medico.dashboard"))
 
 
 @medico_bp.route("/clinica/emissao-fiscal", methods=["POST"])

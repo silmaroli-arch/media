@@ -10,7 +10,7 @@ from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Agendamento, Exame, PerguntaPendente, FaqItem, ChatMensagem, Usuario, MedicoHorario, Paciente, normalizar_telefone, encontrar_conta_paciente, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, normalizar_telefone, formatar_nome_proprio, cep_incompleto, telefone_incompleto
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.ia_preparo import responder_com_ia
 from app.clinica_utils import verificar_vencimento_empresa

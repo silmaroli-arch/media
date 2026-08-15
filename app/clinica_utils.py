@@ -18,7 +18,6 @@ from flask import session
 from flask_login import current_user
 
 from app.extensions import db
-from app.models import Clinica
 
 
 def verificar_vencimento_empresa(empresa):

@@ -710,10 +710,6 @@ class Grupo(db.Model):
                 return m
         return None
 
-    def eh_administrador(self, usuario_id):
-        m = self.membro_ativo(usuario_id)
-        return bool(m and m.papel in ("dono", "administrador"))
-
     def paciente_pode_ser_removido(self, paciente_id):
         """BBP seção 7: um paciente sem nenhuma consulta agendada neste
         grupo pode ser removido normalmente; a partir da primeira consulta

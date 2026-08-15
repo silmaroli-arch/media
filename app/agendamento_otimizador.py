@@ -10,7 +10,7 @@ Usado tanto pela tela da secretaria/médico quanto pela solicitação de
 agendamento feita pelo próprio paciente pelo aplicativo (ver
 app.routes_paciente.solicitar_agendamento).
 """
-from datetime import datetime, timedelta, date as date_cls
+from datetime import datetime, timedelta
 
 from app.models import Agendamento, MedicoHorario, MedicoBloqueio
 

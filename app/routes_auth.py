@@ -3,10 +3,9 @@ from datetime import date, datetime, timedelta
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, session, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
-from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto, validar_cnpj, encontrar_clinica_por_cnpj
+from app.models import Usuario, Empresa, Clinica, ClinicaMembro, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto, validar_cnpj, encontrar_clinica_por_cnpj
 
 auth_bp = Blueprint("auth", __name__)
 
