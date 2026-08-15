@@ -4,7 +4,7 @@
 <p class="text-muted mb-1"><a href="{{ url_for('grupo.meus_grupos') }}">Meus grupos</a> &rsaquo; {{ grupo.nome }} &rsaquo;
   <a href="{{ url_for('grupo.agenda_lista', grupo_id=grupo.id) }}">Agenda</a> &rsaquo; Consulta</p>
 <h3 class="mb-1">{{ agendamento.exame.nome }} — {{ agendamento.paciente.nome }}</h3>
-<p class="text-muted">{{ agendamento.data_hora.strftime('%d/%m/%Y às %H:%M') }} · com {{ agendamento.medico.nome if agendamento.medico else '-' }} · status: {{ agendamento.status }}</p>
+<p class="text-muted">{{ agendamento.data_hora.strftime('%d/%m/%Y às %H:%M') }} · com {{ agendamento.medico.nome if agendamento.medico else '-' }}</p>
 
 <div class="card p-4 mb-3">
   <h5>Cronograma de preparo (calculado automaticamente)</h5>

@@ -58,9 +58,9 @@ with app.app_context():
     db.session.add(pac)
     db.session.flush()
     ag_futuro = Agendamento(clinica_id=praia_id, paciente_id=pac.id, exame_id=exame_praia.id,
-                            medico_id=eduardo_id, data_hora=datetime(2026, 9, 20, 9, 0), status="agendado")
+                            medico_id=eduardo_id, data_hora=datetime(2026, 9, 20, 9, 0))
     ag_passado = Agendamento(clinica_id=centro_id, paciente_id=pac.id, exame_id=exame_centro.id,
-                             medico_id=eduardo_id, data_hora=datetime(2026, 5, 10, 9, 0), status="realizado")
+                             medico_id=eduardo_id, data_hora=datetime(2026, 5, 10, 9, 0))
     db.session.add_all([ag_futuro, ag_passado])
     db.session.commit()
     ag_futuro_id, ag_passado_id = ag_futuro.id, ag_passado.id
@@ -79,9 +79,10 @@ with app.app_context():
     checar("O vínculo continua ativo",
            ClinicaMembro.query.get(vinculo_praia_id).ativo)
 
-# Cancela o agendamento futuro e tenta de novo.
+# Move o agendamento futuro pro passado (sem status pra "cancelar", a
+# trava olha só data_hora) e tenta de novo.
 with app.app_context():
-    Agendamento.query.get(ag_futuro_id).status = "cancelado"
+    Agendamento.query.get(ag_futuro_id).data_hora = datetime(2020, 1, 1, 9, 0)
     db.session.commit()
 
 r = client.post(f"/equipe/equipe-membros/{vinculo_praia_id}/remover", follow_redirects=True)
@@ -95,8 +96,10 @@ with app.app_context():
     checar("O registro do vínculo CONTINUA no banco", v is not None)
     checar("Encerrado: ativo=False e encerrado_em preenchido",
            v.ativo is False and v.encerrado_em is not None)
-    checar("O agendamento histórico (realizado) continua intacto",
-           Agendamento.query.get(ag_passado_id).status == "realizado")
+    ag_hist = Agendamento.query.get(ag_passado_id)
+    checar("O agendamento histórico continua intacto",
+           ag_hist is not None and ag_hist.data_hora == datetime(2026, 5, 10, 9, 0)
+           and ag_hist.clinica_id == centro_id)
 
 r = client.get("/equipe/equipe-membros")
 html = r.get_data(as_text=True)
@@ -137,7 +140,7 @@ with app.app_context():
 
 # Editar também respeita a trava de agendamentos futuros.
 with app.app_context():
-    Agendamento.query.get(ag_futuro_id).status = "agendado"
+    Agendamento.query.get(ag_futuro_id).data_hora = datetime(2026, 9, 20, 9, 0)
     db.session.commit()
 r = client.post(f"/equipe/equipe-membros/{eduardo_id}/editar", data={
     "nome": "Dr. Eduardo Nunes", "filial_ids": [str(centro_id)],
@@ -147,7 +150,7 @@ checar("Editar bloqueia o encerramento com agendamento futuro",
 with app.app_context():
     checar("Vínculo da Praia segue ativo",
            ClinicaMembro.query.get(vinculo_praia_id).ativo)
-    Agendamento.query.get(ag_futuro_id).status = "cancelado"
+    Agendamento.query.get(ag_futuro_id).data_hora = datetime(2020, 1, 1, 9, 0)
     db.session.commit()
 
 client.get("/logout")

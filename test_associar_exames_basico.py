@@ -236,7 +236,7 @@ with app.app_context():
     db.session.flush()
     ag = Agendamento(
         clinica_id=praia_id, paciente_id=pac.id, exame_id=exame_praia_id,
-        medico_id=medico_grupo_id, data_hora=datetime.utcnow() + timedelta(days=10), status="agendado",
+        medico_id=medico_grupo_id, data_hora=datetime.utcnow() + timedelta(days=10),
     )
     db.session.add(ag)
     db.session.commit()

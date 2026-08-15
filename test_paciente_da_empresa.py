@@ -4,11 +4,7 @@ EMPRESA, não a uma filial.
 - O cadastro de paciente (equipe) não pede/define filial nenhuma - cria o
   paciente com Paciente.empresa_id.
 - A filial só é escolhida na hora de marcar a consulta: pela equipe em
-  "Agendar exame" (medico.agenda_novo, que já tem seletor de filial), e
-  pelo próprio paciente no pedido de agendamento
-  (paciente.solicitar_agendamento) - onde os exames de TODAS as filiais da
-  empresa aparecem, com o nome da filial junto, e a filial do agendamento
-  criado é a do exame escolhido.
+  "Agendar exame" (medico.agenda_novo, que já tem seletor de filial).
 - Um paciente da empresa pode ser agendado em qualquer filial dela.
 - Cadastros antigos (só com a filial legada clinica_id) continuam
   aparecendo/funcionando (compatibilidade)."""
@@ -132,23 +128,11 @@ r = client.get("/equipe/pacientes")
 checar("Paciente do Grupo Saúde Total NÃO aparece para a Clínica Vitória", "Cliente da Empresa" not in r.get_data(as_text=True))
 client.get("/logout")
 
-# ---------- Área do paciente: exames de todas as filiais, filial pelo exame ----------
-
 r = client.post("/login-paciente", data={"cpf": "321.654.987-00", "data_nascimento": "10/05/1992"}, follow_redirects=True)
 checar("Paciente da empresa loga normalmente (CPF + nascimento)", r.status_code == 200)
-
-r = client.get("/paciente/agendar")
-html_agendar = r.get_data(as_text=True)
-checar("Pedido de agendamento lista exames das DUAS filiais", "Consulta no Centro" in html_agendar and "Consulta na Praia" in html_agendar)
-# O fluxo agora é em etapas: escolhe o EXAME (só nome) e depois o LOCAL -
-# a filial aparece no dropdown de local depois da escolha do exame (ver
-# test_agendamento_paciente_exame_local.py para o fluxo completo).
-r = client.get("/paciente/agendar?exame_nome=Consulta na Praia")
-checar("Escolhido o exame, o local em que ele é feito aparece",
-       "Grupo Saúde Total - Praia" in r.get_data(as_text=True))
+client.get("/logout")
 
 # Compatibilidade: paciente antigo (só com a filial legada) continua funcionando.
-client.get("/logout")
 with app.app_context():
     tel_legado = normalizar_telefone("(27) 96666-0009")
     usuario_legado = Usuario(nome="Paciente Legado", telefone=tel_legado, tipo="paciente")
@@ -170,9 +154,6 @@ client.get("/logout")
 
 r = client.post("/login-paciente", data={"cpf": "444.555.666-77", "data_nascimento": "02/01/1980"}, follow_redirects=True)
 checar("Paciente legado loga normalmente", r.status_code == 200)
-r = client.get("/paciente/agendar")
-checar("Paciente legado também vê exames de todas as filiais da empresa",
-       "Consulta no Centro" in r.get_data(as_text=True) and "Consulta na Praia" in r.get_data(as_text=True))
 client.get("/logout")
 
 print("\nTodos os testes de paciente da empresa (sem filial no cadastro) passaram.")

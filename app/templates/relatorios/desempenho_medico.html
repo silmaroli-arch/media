@@ -40,21 +40,16 @@
   <div class="table-responsive">
     <table class="table table-sm table-hover align-middle">
       <thead>
-        <tr><th>Médico</th><th class="text-end">Agendamentos</th><th class="text-end">Realizados</th><th class="text-end">Cancelados</th><th class="text-end">Não compareceu</th><th class="text-end">Taxa de cancelamento</th><th class="text-end">Taxa de no-show</th></tr>
+        <tr><th>Médico</th><th class="text-end">Agendamentos</th></tr>
       </thead>
       <tbody>
         {% for d in linhas_dados %}
         <tr>
           <td>{{ d.medico.nome }}</td>
           <td class="text-end">{{ d.total }}</td>
-          <td class="text-end">{{ d.realizados }}</td>
-          <td class="text-end">{{ d.cancelados }}</td>
-          <td class="text-end">{{ d.no_shows }}</td>
-          <td class="text-end">{{ "%.1f"|format(d.taxa_cancelamento)|replace(".", ",") }}%</td>
-          <td class="text-end">{{ "%.1f"|format(d.taxa_no_show)|replace(".", ",") }}%</td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="text-center text-muted py-4">Nenhum dado encontrado para este período.</td></tr>
+        <tr><td colspan="2" class="text-center text-muted py-4">Nenhum dado encontrado para este período.</td></tr>
         {% endfor %}
       </tbody>
     </table>

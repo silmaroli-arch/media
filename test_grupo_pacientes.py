@@ -164,7 +164,7 @@ with app.app_context():
     clinica_teste_local = Clinica.query.filter_by(nome="Clínica Teste BBP").first()
     ag = Agendamento(
         clinica_id=clinica_teste_local.id, paciente_id=paciente1_id, exame_id=exame_id,
-        medico_id=dono_id, data_hora=datetime.utcnow() + timedelta(days=1), status="agendado",
+        medico_id=dono_id, data_hora=datetime.utcnow() + timedelta(days=1),
     )
     db.session.add(ag)
     db.session.commit()

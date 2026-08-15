@@ -14,28 +14,8 @@ from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Pacie
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.ia_preparo import responder_com_ia
 from app.clinica_utils import verificar_vencimento_empresa
-from app.agendamento_otimizador import sugerir_horarios
 
 paciente_bp = Blueprint("paciente", __name__, url_prefix="/paciente")
-
-
-def _exames_da_empresa(paciente):
-    """Exames disponíveis para o paciente: os de TODAS as filiais da
-    empresa dele (o paciente é da empresa, não de uma filial - a filial
-    do atendimento é escolhida na hora de marcar, através do exame, que é
-    por filial)."""
-    empresa = paciente.empresa_efetiva
-    if not empresa:
-        return []
-    filial_ids = [c.id for c in empresa.filiais]
-    return (
-        # Só exames ASSOCIADOS (exame + filial + médico + preço definidos
-        # na tela "Associar exames") são ofertados ao paciente - item de
-        # catálogo sem associação não aparece.
-        Exame.query.filter(Exame.clinica_id.in_(filial_ids), Exame.associado.is_(True))
-        .order_by(Exame.nome)
-        .all()
-    )
 
 
 def _clinica_ancora(paciente, exame=None, agendamento=None):
@@ -109,20 +89,19 @@ def dashboard():
     # ele vê tudo junto; cada clínica continua vendo só o que é dela.
     meus_ids = _meus_cadastros_ids()
     agora = datetime.utcnow()
-    # "Próximos exames" só mostra o que ainda está de pé e no futuro.
-    # Cancelado ou realizado vai para o Histórico independente da data —
-    # mesmo um agendamento cancelado que estava marcado para o futuro não
-    # é mais um "próximo exame" de verdade.
+    # "Próximos exames" mostra o que ainda está no futuro e não foi
+    # encerrado; o resto (passado ou já encerrado pelo médico) vai para o
+    # Histórico.
     proximos = (
         Agendamento.query.filter(Agendamento.paciente_id.in_(meus_ids))
         .filter(Agendamento.data_hora >= agora)
-        .filter(Agendamento.status.in_(["solicitado", "agendado", "confirmado"]))
+        .filter(Agendamento.encerrado_em.is_(None))
         .order_by(Agendamento.data_hora.asc())
         .all()
     )
     historico = (
         Agendamento.query.filter(Agendamento.paciente_id.in_(meus_ids))
-        .filter(or_(Agendamento.status.in_(["cancelado", "realizado", "nao_compareceu"]), Agendamento.data_hora < agora))
+        .filter(or_(Agendamento.encerrado_em.isnot(None), Agendamento.data_hora < agora))
         .order_by(Agendamento.data_hora.desc())
         .all()
     )
@@ -166,12 +145,11 @@ def preparo_exame(agendamento_id):
 @paciente_required
 def chat():
     paciente = current_user.paciente
-    # O seletor "sobre qual exame" só mostra exames agendados ou
-    # confirmados — solicitado ainda não é certo, e cancelado/realizado
-    # não fazem mais sentido como opção pra tirar dúvida sobre o preparo.
+    # O seletor "sobre qual exame" mostra os agendamentos ainda não
+    # encerrados pelo médico.
     agendamentos = (
         Agendamento.query.filter_by(paciente_id=paciente.id)
-        .filter(Agendamento.status.in_(["agendado", "confirmado"]))
+        .filter(Agendamento.encerrado_em.is_(None))
         .order_by(Agendamento.data_hora.desc())
         .all()
     )
@@ -332,123 +310,6 @@ def pergunta_remover(pergunta_id):
     db.session.commit()
     flash("Pergunta removida.", "success")
     return redirect(url_for("paciente.chat"))
-
-
-# ---------- Solicitação de agendamento pelo próprio paciente ----------
-
-@paciente_bp.route("/agendar", methods=["GET", "POST"])
-@login_required
-@paciente_required
-def solicitar_agendamento():
-    paciente = current_user.paciente
-    if paciente.status_cadastro != "aprovado":
-        # Conta única: se o cadastro ATIVO ainda não foi aprovado mas
-        # outro cadastro da conta já foi, troca pra ele automaticamente
-        # em vez de barrar a pessoa.
-        aprovado = next((p for p in current_user.pacientes if p.status_cadastro == "aprovado"), None)
-        if aprovado:
-            session["paciente_id"] = aprovado.id
-            paciente = aprovado
-        else:
-            flash(
-                "Seu cadastro ainda está em análise pela clínica — assim que for aceito, "
-                "você poderá solicitar agendamento de exames.",
-                "warning",
-            )
-            return redirect(url_for("paciente.dashboard"))
-    # Fluxo em etapas: o paciente escolhe primeiro O EXAME (só o nome,
-    # sem local concatenado), depois EM QUAL LOCAL quer fazê-lo (só os
-    # locais que oferecem aquele exame aparecem), e aí vê o endereço do
-    # local, os médicos e os horários. Se o exame só é feito num local, o
-    # local é selecionado direto.
-    exames = _exames_da_empresa(paciente)
-    nomes_exames = sorted({e.nome for e in exames}, key=str.lower)
-
-    exame_id = request.form.get("exame_id", type=int) or request.args.get("exame_id", type=int)
-    exame_selecionado = next((e for e in exames if e.id == exame_id), None) if exame_id else None
-
-    exame_nome = (
-        (request.form.get("exame_nome") or request.args.get("exame_nome") or "").strip()
-        or (exame_selecionado.nome if exame_selecionado else "")
-    )
-    if exame_nome not in nomes_exames:
-        exame_nome = ""
-
-    # Locais em que ESTE exame é oferecido (uma associação por local).
-    opcoes_locais = [e for e in exames if e.nome == exame_nome] if exame_nome else []
-
-    # Trocou o exame no primeiro dropdown? A escolha antiga de local não
-    # vale mais.
-    if exame_selecionado and exame_selecionado.nome != exame_nome:
-        exame_selecionado = None
-    # Um local só oferece o exame -> seleciona direto, sem pedir mais um clique.
-    if not exame_selecionado and len(opcoes_locais) == 1:
-        exame_selecionado = opcoes_locais[0]
-
-    medicos_disponiveis = []
-    medico_selecionado = None
-    if exame_selecionado:
-        # Um exame pode ter mais de um médico associado (médico principal +
-        # médicos "extra") — o paciente escolhe com qual deles prefere
-        # agendar; sem escolha explícita, cai no médico principal.
-        medicos_disponiveis = exame_selecionado.medicos
-        medico_id_escolhido = request.form.get("medico_id", type=int) or request.args.get("medico_id", type=int)
-        medico_selecionado = next(
-            (m for m in medicos_disponiveis if m.id == medico_id_escolhido), None
-        ) or exame_selecionado.medico
-
-    sugestoes = []
-    if exame_selecionado and medico_selecionado:
-        sugestoes = sugerir_horarios(
-            exame_selecionado, medico_selecionado, exame_selecionado.clinica,
-        )
-
-    if request.method == "POST":
-        horario_escolhido = request.form.get("horario_escolhido")
-        if not exame_selecionado or not medico_selecionado:
-            flash("Escolha um exame e um médico válidos.", "danger")
-        elif not horario_escolhido:
-            flash("Escolha um dos horários sugeridos.", "danger")
-        else:
-            try:
-                data_hora = datetime.strptime(horario_escolhido, "%Y-%m-%dT%H:%M:%S")
-            except ValueError:
-                flash("Horário inválido — escolha novamente um dos horários sugeridos.", "danger")
-                return redirect(url_for(
-                    "paciente.solicitar_agendamento",
-                    exame_id=exame_selecionado.id, medico_id=medico_selecionado.id,
-                ))
-
-            agendamento = Agendamento(
-                # A filial do agendamento é a filial DO EXAME escolhido -
-                # o paciente é da empresa, não de uma filial fixa.
-                clinica_id=exame_selecionado.clinica_id,
-                paciente_id=paciente.id,
-                exame_id=exame_selecionado.id,
-                medico_id=medico_selecionado.id,
-                data_hora=data_hora,
-                status="solicitado",
-            )
-            db.session.add(agendamento)
-            db.session.commit()
-            flash(
-                "Solicitação de agendamento enviada! A clínica vai confirmar o horário em breve — "
-                "você pode acompanhar o status pelo seu painel.",
-                "success",
-            )
-            return redirect(url_for("paciente.dashboard"))
-
-    return render_template(
-        "paciente/solicitar_agendamento.html",
-        exames=exames,
-        nomes_exames=nomes_exames,
-        exame_nome=exame_nome,
-        opcoes_locais=opcoes_locais,
-        medicos_disponiveis=medicos_disponiveis,
-        medico_selecionado=medico_selecionado,
-        exame_selecionado=exame_selecionado,
-        sugestoes=sugestoes,
-    )
 
 
 # ---------- Meus dados (o próprio paciente atualiza, vale em todas as clínicas) ----------

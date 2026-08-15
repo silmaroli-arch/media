@@ -777,7 +777,6 @@ def agenda_novo(grupo_id):
             exame_id=exame.id,
             medico_id=exame.medico_id,
             data_hora=data_hora,
-            status="agendado",
         )
         db.session.add(agendamento)
         db.session.commit()

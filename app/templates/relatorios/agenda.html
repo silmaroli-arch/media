@@ -43,41 +43,17 @@
       <div class="fs-3 fw-bold">{{ total }}</div>
     </div>
   </div>
-  <div class="col-md-3">
-    <div class="card p-3">
-      <div class="text-muted small">Realizados</div>
-      <div class="fs-3 fw-bold text-success">{{ total_realizados }}</div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card p-3">
-      <div class="text-muted small">Cancelados</div>
-      <div class="fs-3 fw-bold text-danger">{{ total_cancelados }} <span class="fs-6 text-muted">({{ "%.1f"|format(taxa_cancelamento)|replace(".", ",") }}%)</span></div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card p-3">
-      <div class="text-muted small">Não compareceu</div>
-      <div class="fs-3 fw-bold" style="color:#fd7e14">{{ total_no_show }} <span class="fs-6 text-muted">({{ "%.1f"|format(taxa_no_show)|replace(".", ",") }}%)</span></div>
-    </div>
-  </div>
 </div>
 
 {% if total %}
 <div class="row g-3 mb-4">
-  <div class="col-lg-4">
-    <div class="card p-3">
-      <div class="text-muted small mb-2">Por status</div>
-      <canvas id="graficoStatus" height="140"></canvas>
-    </div>
-  </div>
-  <div class="col-lg-4">
+  <div class="col-lg-6">
     <div class="card p-3">
       <div class="text-muted small mb-2">Por tipo de exame</div>
       <canvas id="graficoExame" height="140"></canvas>
     </div>
   </div>
-  <div class="col-lg-4">
+  <div class="col-lg-6">
     <div class="card p-3">
       <div class="text-muted small mb-2">Por dia</div>
       <canvas id="graficoDia" height="140"></canvas>
@@ -90,7 +66,7 @@
   <div class="table-responsive">
     <table class="table table-sm table-hover align-middle">
       <thead>
-        <tr><th>Data/hora</th><th>Paciente</th><th>Exame</th><th>Médico</th><th>Status</th></tr>
+        <tr><th>Data/hora</th><th>Paciente</th><th>Exame</th><th>Médico</th></tr>
       </thead>
       <tbody>
         {% for a in agendamentos %}
@@ -99,14 +75,9 @@
           <td>{{ a.paciente.nome }}</td>
           <td>{{ a.exame.nome }}</td>
           <td>{{ a.medico.nome }}</td>
-          <td>
-            <span class="badge {% if a.status == 'realizado' %}bg-success{% elif a.status == 'cancelado' %}bg-danger{% elif a.status == 'nao_compareceu' %}badge-nao-compareceu{% elif a.status == 'confirmado' %}bg-primary{% else %}bg-secondary{% endif %}">
-              {{ a.status }}
-            </span>
-          </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="text-center text-muted py-4">Nenhum agendamento encontrado para este período/filtro.</td></tr>
+        <tr><td colspan="4" class="text-center text-muted py-4">Nenhum agendamento encontrado para este período/filtro.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -116,10 +87,6 @@
 {% if total %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
-new Chart(document.getElementById('graficoStatus'), {
-  type: 'doughnut',
-  data: { labels: {{ por_status.keys()|list|tojson }}, datasets: [{ data: {{ por_status.values()|list|tojson }}, backgroundColor: ['#6c757d', '#0dcaf0', '#0d6efd', '#198754', '#fd7e14', '#dc3545'] }] }
-});
 new Chart(document.getElementById('graficoExame'), {
   type: 'bar',
   data: { labels: {{ por_exame.keys()|list|tojson }}, datasets: [{ label: 'Agendamentos', data: {{ por_exame.values()|list|tojson }}, backgroundColor: '#0d6efd' }] },

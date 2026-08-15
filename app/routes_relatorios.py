@@ -21,12 +21,6 @@ from app.relatorios_utils import (
 
 relatorios_bp = Blueprint("relatorios", __name__, url_prefix="/equipe/relatorios")
 
-STATUS_AGENDAMENTO_LABEL = OrderedDict([
-    ("solicitado", "Solicitado"), ("agendado", "Agendado"),
-    ("confirmado", "Confirmado"), ("realizado", "Realizado"),
-    ("nao_compareceu", "Não compareceu"), ("cancelado", "Cancelado"),
-])
-
 
 def _medico_restrito_a_si_mesmo():
     """Um médico sem perm_equipe só deve ver os próprios números nos
@@ -63,9 +57,6 @@ def index():
         Agendamento.clinica_id.in_(filial_ids), Agendamento.data_hora.between(inicio_dt, fim_dt),
     )
     total_agendamentos = agendamentos_periodo.count()
-    total_realizados = agendamentos_periodo.filter(Agendamento.status == "realizado").count()
-    total_cancelados = agendamentos_periodo.filter(Agendamento.status == "cancelado").count()
-    total_no_show = agendamentos_periodo.filter(Agendamento.status == "nao_compareceu").count()
 
     novos_pacientes = Paciente.query.filter(
         _filtro_pacientes_da_empresa(), Paciente.criado_em.between(inicio_dt, fim_dt),
@@ -75,8 +66,7 @@ def index():
     return render_template(
         "relatorios/index.html",
         data_inicio=data_inicio, data_fim=data_fim,
-        total_agendamentos=total_agendamentos, total_realizados=total_realizados, total_cancelados=total_cancelados,
-        total_no_show=total_no_show,
+        total_agendamentos=total_agendamentos,
         novos_pacientes=novos_pacientes, cadastros_pendentes=cadastros_pendentes,
     )
 
@@ -97,21 +87,14 @@ def agenda():
         consulta = consulta.filter(Agendamento.medico_id == medico_id)
     agendamentos = consulta.order_by(Agendamento.data_hora.asc()).all()
 
-    por_status = OrderedDict((rotulo, 0) for rotulo in STATUS_AGENDAMENTO_LABEL.values())
     por_exame = OrderedDict()
     por_dia = OrderedDict()
     for a in agendamentos:
-        por_status[STATUS_AGENDAMENTO_LABEL.get(a.status, a.status)] = por_status.get(STATUS_AGENDAMENTO_LABEL.get(a.status, a.status), 0) + 1
         por_exame[a.exame.nome] = por_exame.get(a.exame.nome, 0) + 1
         chave_dia = a.data_hora.strftime("%d/%m")
         por_dia[chave_dia] = por_dia.get(chave_dia, 0) + 1
 
     total = len(agendamentos)
-    total_cancelados = sum(1 for a in agendamentos if a.status == "cancelado")
-    total_realizados = sum(1 for a in agendamentos if a.status == "realizado")
-    total_no_show = sum(1 for a in agendamentos if a.status == "nao_compareceu")
-    taxa_cancelamento = (total_cancelados / total * 100) if total else 0
-    taxa_no_show = (total_no_show / total * 100) if total else 0
 
     linhas = [
         [
@@ -119,11 +102,10 @@ def agenda():
             a.paciente.nome,
             a.exame.nome,
             a.medico.nome,
-            STATUS_AGENDAMENTO_LABEL.get(a.status, a.status),
         ]
         for a in agendamentos
     ]
-    cabecalho = ["Data/hora", "Paciente", "Exame", "Médico", "Status"]
+    cabecalho = ["Data/hora", "Paciente", "Exame", "Médico"]
 
     formato = request.args.get("formato")
     if formato == "csv":
@@ -133,8 +115,6 @@ def agenda():
     if formato == "pdf":
         resumo = [
             f"<b>Total de agendamentos:</b> {total}",
-            f"<b>Realizados:</b> {total_realizados}  ·  <b>Cancelados:</b> {total_cancelados} ({taxa_cancelamento:.1f}%)".replace(".", ","),
-            f"<b>Não compareceu:</b> {total_no_show} ({taxa_no_show:.1f}%)".replace(".", ","),
         ]
         return exportar_pdf("agenda", data_inicio, data_fim, "Relatório de agenda/operação", cabecalho, linhas, resumo)
 
@@ -142,10 +122,8 @@ def agenda():
         "relatorios/agenda.html",
         data_inicio=data_inicio, data_fim=data_fim, medico_id=medico_id,
         medicos=medicos_das_filiais(filiais_atuais()), restrito_a_si_mesmo=_medico_restrito_a_si_mesmo(),
-        agendamentos=agendamentos, total=total, total_realizados=total_realizados,
-        total_cancelados=total_cancelados, taxa_cancelamento=taxa_cancelamento,
-        total_no_show=total_no_show, taxa_no_show=taxa_no_show,
-        por_status=por_status, por_exame=por_exame, por_dia=por_dia,
+        agendamentos=agendamentos, total=total,
+        por_exame=por_exame, por_dia=por_dia,
     )
 
 
@@ -225,33 +203,20 @@ def desempenho_medico():
 
     linhas_dados = []
     for medico in medicos:
-        agendamentos_medico = Agendamento.query.filter(
+        total = Agendamento.query.filter(
             Agendamento.clinica_id.in_(filial_ids), Agendamento.medico_id == medico.id,
             Agendamento.data_hora.between(inicio_dt, fim_dt),
-        ).all()
-        total = len(agendamentos_medico)
-        realizados = sum(1 for a in agendamentos_medico if a.status == "realizado")
-        cancelados = sum(1 for a in agendamentos_medico if a.status == "cancelado")
-        no_shows = sum(1 for a in agendamentos_medico if a.status == "nao_compareceu")
+        ).count()
 
-        linhas_dados.append({
-            "medico": medico, "total": total, "realizados": realizados, "cancelados": cancelados,
-            "no_shows": no_shows,
-            "taxa_cancelamento": (cancelados / total * 100) if total else 0,
-            "taxa_no_show": (no_shows / total * 100) if total else 0,
-        })
+        linhas_dados.append({"medico": medico, "total": total})
 
     linhas_dados.sort(key=lambda d: d["total"], reverse=True)
 
     linhas = [
-        [
-            d["medico"].nome, d["total"], d["realizados"], d["cancelados"], d["no_shows"],
-            f"{d['taxa_cancelamento']:.1f}".replace(".", ","),
-            f"{d['taxa_no_show']:.1f}".replace(".", ","),
-        ]
+        [d["medico"].nome, d["total"]]
         for d in linhas_dados
     ]
-    cabecalho = ["Médico", "Agendamentos", "Realizados", "Cancelados", "Não compareceu", "Taxa de cancelamento (%)", "Taxa de no-show (%)"]
+    cabecalho = ["Médico", "Agendamentos"]
 
     formato = request.args.get("formato")
     if formato == "csv":

@@ -71,7 +71,7 @@ with app.app_context():
         db.session.flush()
         agendamento = Agendamento(
             clinica_id=c.id, paciente_id=paciente.id, exame_id=exame.id, medico_id=medico_id,
-            data_hora=datetime.utcnow() + timedelta(days=2), status="confirmado",
+            data_hora=datetime.utcnow() + timedelta(days=2),
         )
         db.session.add(agendamento)
         db.session.flush()

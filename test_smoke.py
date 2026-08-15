@@ -12,7 +12,7 @@ from app.models import (
     Empresa, Clinica, PlataformaConfig, Usuario, Paciente, Exame, Agendamento,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, PerguntaPendente, FaqItem,
-    MedicoHorario, ChatMensagem, ResultadoExame,
+    ChatMensagem, ResultadoExame,
 )
 from app.pdf_preparo import (
     _sugerir_informacoes_gerais, _sugerir_alimentos, _sugerir_medicamentos, _sugerir_cortes,
@@ -461,7 +461,7 @@ with app.app_context():
     exame_lactose = Exame.query.filter_by(clinica_id=clinica_vitoria_id, nome="Teste do Hidrogênio - Lactose").first()
     ag_teste = Agendamento(
         clinica_id=clinica_vitoria_id, paciente_id=joao.id, exame_id=exame_lactose.id,
-        medico_id=exame_lactose.medico_id, data_hora=datetime(2026, 8, 10, 8, 0), status="agendado",
+        medico_id=exame_lactose.medico_id, data_hora=datetime(2026, 8, 10, 8, 0),
     )
     db.session.add(ag_teste)
     db.session.commit()
@@ -571,7 +571,7 @@ with app.app_context():
     joao = Paciente.query.filter_by(cpf="123.456.789-00").first()
     ag_colono = Agendamento(
         clinica_id=clinica_vitoria_id, paciente_id=joao.id, exame_id=colonoscopia_vitoria.id,
-        medico_id=colonoscopia_vitoria.medico_id, data_hora=datetime(2026, 8, 10, 8, 0), status="agendado",
+        medico_id=colonoscopia_vitoria.medico_id, data_hora=datetime(2026, 8, 10, 8, 0),
     )
     db.session.add(ag_colono)
     db.session.commit()
@@ -1268,70 +1268,15 @@ with app.app_context():
     agendamento_colono_id = agendamento_colono.id
     checar("Nome do acompanhante foi salvo no agendamento", agendamento_colono.acompanhante_nome == "Maria (esposa)")
 
-# --- Horário de atendimento do médico + otimizador de agenda ---
-r = client.get(f"/equipe/medico-horarios/{medico_carlos_id}")
-checar("Tela de horário do médico carrega", r.status_code == 200)
-
-dados_horario = {}
-for dia in range(7):
-    if dia in (0, 1, 2, 3, 4):  # segunda a sexta
-        dados_horario[f"dia_{dia}_ativo"] = "on"
-        dados_horario[f"dia_{dia}_inicio"] = "08:00"
-        dados_horario[f"dia_{dia}_fim"] = "12:00"
-r = client.post(f"/equipe/medico-horarios/{medico_carlos_id}", data=dados_horario, follow_redirects=True)
-checar("Horário de atendimento do médico salvo", "atualizado" in r.get_data(as_text=True).lower())
-
-with app.app_context():
-    from app.agendamento_otimizador import sugerir_horarios
-    colonoscopia_reload = Exame.query.get(colonoscopia_id)
-    clinica_vitoria_reload = Clinica.query.get(clinica_vitoria_id)
-    medico_carlos_reload = Usuario.query.get(medico_carlos_id)
-    sugestoes = sugerir_horarios(colonoscopia_reload, medico_carlos_reload, clinica_vitoria_reload, quantidade=3)
-    checar("Otimizador sugere horários dentro do expediente cadastrado (08h-12h)",
-           len(sugestoes) > 0 and all(8 <= s.hour < 12 for s in sugestoes))
+# --- Paciente deixa uma pergunta no chat, para aparecer no atendimento ---
 client.get("/logout")
-
-# --- Solicitação de agendamento pelo paciente ---
 login_paciente("(27) 99999-0000", "1985-04-12")
-r = client.get(f"/paciente/agendar?exame_id={colonoscopia_id}")
-checar("Tela de solicitar agendamento mostra horários sugeridos", "Escolha um dos próximos horários" in r.get_data(as_text=True))
-
-texto_pagina = r.get_data(as_text=True)
-import re as _re
-match_horario = _re.search(r'value="(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"', texto_pagina)
-checar("Encontrou pelo menos um horário sugerido no HTML", match_horario is not None)
-
-r = client.post("/paciente/agendar", data={
-    "exame_id": str(colonoscopia_id),
-    "horario_escolhido": match_horario.group(1),
-}, follow_redirects=True)
-checar("Solicitação de agendamento enviada com sucesso", "solicitação" in r.get_data(as_text=True).lower() or "enviada" in r.get_data(as_text=True).lower())
-
-with app.app_context():
-    solicitacao = Agendamento.query.filter_by(
-        paciente_id=joao_id, exame_id=colonoscopia_id, status="solicitado"
-    ).first()
-    checar("Agendamento solicitado pelo paciente fica com status 'solicitado'", solicitacao is not None)
-    solicitacao_id = solicitacao.id
-
-# Deixa uma pergunta registrada no chat, para aparecer no atendimento
 r = client.post("/paciente/chat", data={
     "pergunta": "Posso comer batata no preparo?", "exame_id": str(colonoscopia_id),
 }, follow_redirects=True)
 client.get("/logout")
 
-# --- Secretária confirma a solicitação de agendamento ---
-login("secretaria@clinicavitoria.com", "123456")
-r = client.get("/equipe/agenda/solicitacoes")
-checar("Tela de solicitações lista o pedido do paciente", "João Pereira" in r.get_data(as_text=True))
-
-r = client.post(f"/equipe/agenda/{solicitacao_id}/confirmar-solicitacao", data={"acao": "confirmar"}, follow_redirects=True)
-with app.app_context():
-    solicitacao_confirmada = Agendamento.query.get(solicitacao_id)
-    checar("Solicitação confirmada vira status 'agendado'", solicitacao_confirmada.status == "agendado")
-
 # --- Atendimento: médico vê as perguntas do paciente e encerra a consulta ---
-client.get("/logout")
 login("medico@clinicavitoria.com", "123456")
 client.post("/equipe/clinica", data={"clinica_id": str(clinica_vitoria_id)}, follow_redirects=True)
 r = client.get(f"/equipe/agenda/{agendamento_colono_id}/atendimento")
@@ -1345,8 +1290,7 @@ checar("Atendimento encerrado com sucesso", "encerrado" in r.get_data(as_text=Tr
 
 with app.app_context():
     agendamento_encerrado = Agendamento.query.get(agendamento_colono_id)
-    checar("Agendamento marcado como 'realizado' após encerrar o atendimento", agendamento_encerrado.status == "realizado")
-    checar("Data/hora de encerramento foi registrada", agendamento_encerrado.encerrado_em is not None)
+    checar("Data/hora de encerramento foi registrada após encerrar o atendimento", agendamento_encerrado.encerrado_em is not None)
     checar("Observações da consulta foram salvas", "sem queixas" in (agendamento_encerrado.notas_atendimento or ""))
 
 # --- Resultado de exame em PDF (upload pela equipe, download pelo paciente) ---

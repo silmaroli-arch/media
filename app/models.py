@@ -185,53 +185,6 @@ class PlataformaConfig(db.Model):
         return config
 
 
-class MedicoHorario(db.Model):
-    """Horário de atendimento de um médico numa filial específica, por dia
-    da semana — usado pelo otimizador de agenda (ver
-    app.agendamento_otimizador) para sugerir datas/horários de acordo com
-    a duração do exame (Exame.duracao_minutos) e os agendamentos já
-    existentes. dia_semana: 0=segunda, 1=terça, ..., 6=domingo (padrão
-    Python/ISO)."""
-    __tablename__ = "medico_horarios"
-    __table_args__ = (
-        db.UniqueConstraint("clinica_id", "medico_id", "dia_semana", name="uq_medico_clinica_dia"),
-    )
-
-    id = db.Column(db.Integer, primary_key=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
-    medico_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
-    dia_semana = db.Column(db.Integer, nullable=False)
-    ativo = db.Column(db.Boolean, default=False)
-    hora_inicio = db.Column(db.Time)
-    hora_fim = db.Column(db.Time)
-
-    clinica = db.relationship("Clinica")
-    medico = db.relationship("Usuario")
-
-
-class MedicoBloqueio(db.Model):
-    """Bloqueio de agenda de um médico por conta de compromisso próprio
-    (consulta, viagem, férias etc.) — cobre um intervalo de data/hora
-    (data_inicio até data_fim). Um bloqueio de dia inteiro é representado
-    com data_inicio às 00:00 e data_fim às 23:59:59 do(s) dia(s) afetado(s).
-    Usado pelo otimizador de agenda (app.agendamento_otimizador) para não
-    sugerir horários dentro do período bloqueado, e também para impedir
-    que a secretária agende manualmente nesse período."""
-    __tablename__ = "medico_bloqueios"
-
-    id = db.Column(db.Integer, primary_key=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
-    medico_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
-    data_inicio = db.Column(db.DateTime, nullable=False)
-    data_fim = db.Column(db.DateTime, nullable=False)
-    motivo = db.Column(db.String(200))
-    dia_inteiro = db.Column(db.Boolean, nullable=False, default=False)
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
-
-    clinica = db.relationship("Clinica")
-    medico = db.relationship("Usuario")
-
-
 class ClinicaMembro(db.Model):
     """Vínculo entre um usuário da equipe (médico/secretária) e uma clínica.
     Um mesmo usuário pode estar vinculado a várias clínicas."""
@@ -789,9 +742,7 @@ class Paciente(db.Model):
     # O paciente pertence à EMPRESA, não a uma filial - "o cliente é só
     # cliente". A filial só entra em cena na hora de marcar a consulta:
     # cada Agendamento tem sua própria clinica_id (a filial escolhida
-    # naquele agendamento), escolhida tanto pela equipe (medico.agenda_novo)
-    # quanto pelo próprio paciente no pedido de agendamento
-    # (paciente.solicitar_agendamento, via exame - que é por filial).
+    # naquele agendamento), escolhida pela equipe (medico.agenda_novo).
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresas.id"), nullable=True)
     # LEGADO: antes o paciente era amarrado a uma filial no cadastro. O
     # campo fica só para dados históricos (a migração copia
@@ -828,8 +779,7 @@ class Paciente(db.Model):
 
     # 'aprovado' (padrão — cadastro feito pela equipe já é confiável),
     # 'pendente' (paciente se cadastrou sozinho pelo app e aguarda a
-    # clínica aceitar) ou 'rejeitado'. Só paciente com status 'aprovado'
-    # pode solicitar agendamento (ver paciente.solicitar_agendamento).
+    # clínica aceitar) ou 'rejeitado'.
     status_cadastro = db.Column(db.String(20), nullable=False, default="aprovado")
 
     empresa = db.relationship("Empresa", foreign_keys=[empresa_id])
@@ -913,10 +863,7 @@ class Exame(db.Model):
     # precisar duplicar o cadastro do preparo.
     preparo_modelo_id = db.Column(db.Integer, db.ForeignKey("preparo_modelos.id"))
 
-    # Quanto tempo (em minutos) esse exame costuma levar — usado pelo
-    # otimizador de agenda para calcular horários disponíveis a partir do
-    # horário de atendimento do médico (ver MedicoHorario e
-    # app.agendamento_otimizador).
+    # Quanto tempo (em minutos) esse exame costuma levar — informativo.
     duracao_minutos = db.Column(db.Integer)
 
     # Preço do procedimento — informativo (sem controle financeiro no sistema).
@@ -1232,12 +1179,6 @@ class Agendamento(db.Model):
     # (o mesmo paciente pode ter agendamentos com médicos diferentes).
     medico_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
     data_hora = db.Column(db.DateTime, nullable=False)
-    # status: solicitado (pedido pelo paciente, aguardando confirmação da
-    # clínica), agendado, confirmado, realizado, cancelado, nao_compareceu
-    # (paciente não apareceu no horário marcado - usado só em agendamentos
-    # já passados, pra distinguir de um cancelamento de fato e alimentar a
-    # taxa de no-show nos relatórios).
-    status = db.Column(db.String(20), default="agendado")
     observacoes = db.Column(db.Text)
 
     # Quem vai acompanhar o paciente no dia do exame — só usado quando

@@ -1,9 +1,9 @@
 """Testa a reorganização do menu lateral: "Pessoas" deixou de existir -
 Pacientes e Equipe passaram a ser submenus de "Cadastro geral" (junto com
 "Meus locais de atendimento"), e o menu "Cadastro geral" agora aparece logo
-abaixo de "Solicitações de agendamento" (antes de "Médico"). Também testa
-que as telas "Dados Cadastrais" e "Dados Fiscais" ganharam um botão
-"Cancelar" que volta para "Meus locais de atendimento"."""
+abaixo de "Grupos de trabalho" (antes de "Médico"). Também testa que as
+telas "Dados Cadastrais" e "Dados Fiscais" ganharam um botão "Cancelar" que
+volta para "Meus locais de atendimento"."""
 from app import create_app
 from app.extensions import db
 from app.models import Clinica
@@ -40,11 +40,11 @@ idx_cadastro = html0.find("Cadastro geral")
 idx_medico = html0.find(">Médico<")
 checar("'Cadastro geral' vem antes de 'Médico' na página", idx_cadastro != -1 and idx_medico != -1 and idx_cadastro < idx_medico)
 
-# "Cadastro geral" vem logo depois de "Solicitações de agendamento".
-idx_solicitacoes = html0.find("Solicitações de agendamento")
+# "Cadastro geral" vem logo depois de "Grupos de trabalho".
+idx_grupos = html0.find("Grupos de trabalho")
 checar(
-    "'Cadastro geral' vem logo após 'Solicitações de agendamento'",
-    idx_solicitacoes != -1 and idx_solicitacoes < idx_cadastro < idx_medico,
+    "'Cadastro geral' vem logo após 'Grupos de trabalho'",
+    idx_grupos != -1 and idx_grupos < idx_cadastro < idx_medico,
 )
 
 # Dados Cadastrais e Dados Fiscais têm botão "Cancelar" voltando pra lista de locais.

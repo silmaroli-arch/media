@@ -144,9 +144,9 @@ checar("Login da Ana entra direto (sem tela de escolha)",
        'name="paciente_id_escolhido"' not in html and "Olá, Ana Portatil" in html)
 checar("O painel mostra que ela é paciente em 3 clínicas",
        "paciente em 3 clínicas" in html)
-r = client.get("/paciente/agendar")
-checar("O cadastro ATIVO é o aprovado (exames do Grupo aparecem)",
-       "Exame Conta Unica Grupo" in r.get_data(as_text=True))
+opcao_grupo = html.split(f'value="{pac_grupo_id}"')[1][:60]
+checar("O cadastro ATIVO é o aprovado (Grupo vem selecionado no seletor de clínica)",
+       "selected" in opcao_grupo)
 
 # Trocar pra um cadastro que não é da conta é rejeitado.
 r = client.post("/paciente/trocar-clinica", data={"paciente_id": "999999"}, follow_redirects=True)

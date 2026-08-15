@@ -41,11 +41,11 @@ with app.app_context():
     futuro = datetime.utcnow() + timedelta(days=30)
     ag_carlos = Agendamento(
         clinica_id=vitoria.id, paciente_id=joao.id, exame_id=exame_carlos.id,
-        medico_id=carlos.id, data_hora=futuro.replace(hour=9, minute=0), status="agendado",
+        medico_id=carlos.id, data_hora=futuro.replace(hour=9, minute=0),
     )
     ag_fernanda = Agendamento(
         clinica_id=vitoria.id, paciente_id=pedro.id, exame_id=exame_fernanda.id,
-        medico_id=fernanda.id, data_hora=futuro.replace(hour=10, minute=0), status="agendado",
+        medico_id=fernanda.id, data_hora=futuro.replace(hour=10, minute=0),
     )
     db.session.add_all([ag_carlos, ag_fernanda])
     db.session.commit()

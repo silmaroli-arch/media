@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 from flask import (
-    Blueprint, render_template, redirect, url_for, request, flash, jsonify, session,
+    Blueprint, render_template, redirect, url_for, request, flash, session,
     send_file, current_app,
 )
 from werkzeug.utils import secure_filename
@@ -17,7 +17,7 @@ from sqlalchemy import or_, and_, func
 from app.extensions import db
 from app.models import (
     Paciente, Usuario, Exame, Agendamento, FaqItem, Empresa,
-    PerguntaPendente, ClinicaMembro, MedicoHorario, MedicoBloqueio, Clinica,
+    PerguntaPendente, ClinicaMembro, Clinica,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame,
@@ -31,16 +31,8 @@ from app.clinica_utils import (
 )
 from app.pdf_preparo import extrair_sugestao_de_pdf, gerar_xlsx_da_sugestao
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
-from app.agendamento_otimizador import medico_tem_bloqueio, conflito_de_agenda
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
 from cryptography.hazmat.primitives.serialization import pkcs12
-
-# Dias da semana usados no formulário de horário de atendimento por médico.
-# Índice = MedicoHorario.dia_semana (0=segunda ... 6=domingo).
-DIAS_SEMANA = [
-    "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
-    "Sexta-feira", "Sábado", "Domingo",
-]
 
 medico_bp = Blueprint("medico", __name__, url_prefix="/equipe")
 
@@ -114,7 +106,6 @@ def _agendamentos_futuros_do_vinculo(clinica_id, usuario_id):
         Agendamento.clinica_id == clinica_id,
         Agendamento.medico_id == usuario_id,
         Agendamento.data_hora >= datetime.utcnow(),
-        Agendamento.status.in_(("solicitado", "agendado", "confirmado")),
     ).count()
 
 
@@ -272,10 +263,6 @@ def status_configuracao_inicial(filiais):
     partir dos dados reais, permanece correto mesmo que a pessoa pule
     etapas e preencha as coisas por fora do assistente, em outra ordem."""
     filial_ids = [f.id for f in filiais]
-    tem_medico = len(medicos_das_filiais(filiais)) > 0
-    tem_horario = MedicoHorario.query.filter(
-        MedicoHorario.clinica_id.in_(filial_ids), MedicoHorario.ativo.is_(True)
-    ).first() is not None
     tem_mais_gente = (
         db.session.query(ClinicaMembro.usuario_id)
         .filter(ClinicaMembro.clinica_id.in_(filial_ids), ClinicaMembro.ativo.is_(True))
@@ -304,15 +291,6 @@ def status_configuracao_inicial(filiais):
             "endpoint": "medico.equipe_lista",
             "permissao": "perm_equipe",
             "opcional": True,
-        },
-        {
-            "id": "horario",
-            "titulo": "Horário de atendimento do médico",
-            "descricao": "Necessário para o sistema sugerir horários automaticamente na hora de agendar.",
-            "concluida": tem_horario,
-            "endpoint": "medico.medico_horarios",
-            "bloqueada": not tem_medico,
-            "motivo_bloqueio": "Cadastre um médico na etapa \"Convidar mais gente para a equipe\" primeiro.",
         },
         {
             "id": "modelo_preparo",
@@ -409,9 +387,6 @@ def dashboard():
     aguardando_q = PerguntaPendente.query.filter(
         PerguntaPendente.clinica_id.in_(filial_ids), PerguntaPendente.status == "aguardando_aprovacao"
     )
-    solicitacoes_q = Agendamento.query.filter(
-        Agendamento.clinica_id.in_(filial_ids), Agendamento.status == "solicitado"
-    )
     # Pacientes que se cadastraram sozinhos pelo app (ver
     # auth.cadastro_paciente) e aguardam a equipe aceitar o cadastro antes
     # de poder solicitar agendamento — qualquer um da equipe pode ver e
@@ -427,9 +402,6 @@ def dashboard():
             .distinct()
             .count()
         )
-        # (a agenda do painel já vem filtrada pro médico logo acima,
-        # independente de permissão - aqui só o contador de pacientes/solicitações)
-        solicitacoes_q = solicitacoes_q.filter(Agendamento.medico_id == current_user.id)
     else:
         total_pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).count()
 
@@ -469,9 +441,8 @@ def dashboard():
         .all()
     )
     pendentes = pendentes_q.count() + aguardando_q.count()
-    solicitacoes_pendentes = solicitacoes_q.count()
-    # A agenda completa (calendário + lista) foi incorporada ao painel — não
-    # existe mais uma tela separada de "Agenda" no menu.
+    # A agenda completa (lista) foi incorporada ao painel — não existe mais
+    # uma tela separada de "Agenda" no menu.
     agendamentos = agendamentos_q.order_by(Agendamento.data_hora.asc()).all()
     return render_template(
         "medico/dashboard.html",
@@ -481,7 +452,6 @@ def dashboard():
         total_pacientes=total_pacientes,
         proximos=proximos,
         pendentes=pendentes,
-        solicitacoes_pendentes=solicitacoes_pendentes,
         cadastros_pendentes=cadastros_pendentes_count,
         convites_pendentes=convites_pendentes,
         agendamentos=agendamentos,
@@ -658,8 +628,7 @@ def pacientes_novo():
     if request.method == "POST":
         # O paciente é cadastrado na EMPRESA - não se escolhe filial aqui
         # ("o cliente é só cliente"). A filial só é escolhida na hora de
-        # marcar cada consulta (medico.agenda_novo /
-        # paciente.solicitar_agendamento).
+        # marcar cada consulta (medico.agenda_novo).
         nome = formatar_nome_proprio(request.form.get("nome", ""))
         cpf = request.form.get("cpf", "").strip()
         email = request.form.get("email", "").strip().lower()
@@ -1879,17 +1848,6 @@ def preparo_modelos_importar_xlsx_escolher():
 
 # ---------- Agenda ----------
 
-# Cores por status (mesmas usadas nos badges do Bootstrap, em hexadecimal,
-# para o componente de calendário pintar os eventos de forma consistente).
-CORES_STATUS = {
-    "agendado": "#6c757d",
-    "confirmado": "#0dcaf0",
-    "realizado": "#198754",
-    "cancelado": "#dc3545",
-    "nao_compareceu": "#fd7e14",
-}
-
-
 @medico_bp.route("/agenda")
 @login_required
 @staff_required
@@ -1898,40 +1856,6 @@ def agenda():
     # de menu separado) — este redirecionamento mantém funcionando os
     # links/botões antigos que ainda apontam para cá.
     return redirect(url_for("medico.dashboard", _anchor="agenda-completa"))
-
-
-@medico_bp.route("/agenda/eventos")
-@login_required
-@staff_required
-def agenda_eventos():
-    """Retorna os agendamentos no formato que o FullCalendar espera. Só
-    mostra o que ainda está de pé (solicitado/agendado/confirmado) —
-    cancelado e realizado não aparecem mais no calendário do painel."""
-    query = Agendamento.query.filter(
-        Agendamento.clinica_id.in_(filiais_atuais_ids()),
-        Agendamento.status.in_(["solicitado", "agendado", "confirmado"]),
-    )
-    if eh_medico():
-        query = query.filter_by(medico_id=current_user.id)
-    agendamentos = query.all()
-    eventos = [
-        {
-            "id": a.id,
-            "title": f"{a.data_hora.strftime('%H:%M')} · {a.paciente.nome} · {a.exame.nome}",
-            "filial": a.clinica.nome,
-            "start": a.data_hora.isoformat(),
-            "color": CORES_STATUS.get(a.status, "#6c757d"),
-            "extendedProps": {
-                "paciente": a.paciente.nome,
-                "exame": a.exame.nome,
-                "status": a.status,
-                "filial": a.clinica.nome,
-                "observacoes": a.observacoes or "",
-            },
-        }
-        for a in agendamentos
-    ]
-    return jsonify(eventos)
 
 
 @medico_bp.route("/agenda/novo", methods=["GET", "POST"])
@@ -2010,30 +1934,6 @@ def agenda_novo():
             )
             return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
 
-        if medico_tem_bloqueio(filial.id, medico_atende_id, data_hora):
-            flash(
-                "Esse médico bloqueou a agenda nesse horário (compromisso próprio) — escolha outro horário.",
-                "danger",
-            )
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
-
-        # Choque de horário do médico multi-clínica: se ele já tem um
-        # agendamento nesse intervalo em OUTRO local (mesmo de outra
-        # empresa), não deixa marcar - a agenda do médico é uma só. A
-        # mensagem não expõe dados da outra empresa: só diz que o horário
-        # está tomado em outro local de atuação do médico.
-        conflito = conflito_de_agenda(medico_atende_id, data_hora, exame.duracao_minutos)
-        if conflito and conflito.clinica_id != filial.id:
-            if conflito.clinica.empresa_id == filial.empresa_id:
-                onde = f"na filial '{conflito.clinica.nome}'"
-            else:
-                onde = "em outro local em que ele atende (fora desta empresa)"
-            flash(
-                f"Esse médico já tem um agendamento nesse horário {onde} — escolha outro horário.",
-                "danger",
-            )
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
-
         agendamento = Agendamento(
             clinica_id=filial.id,
             paciente_id=paciente.id,
@@ -2095,185 +1995,6 @@ def agenda_novo():
     )
 
 
-@medico_bp.route("/agenda/<int:agendamento_id>/status", methods=["POST"])
-@login_required
-@staff_required
-def agenda_status(agendamento_id):
-    query = Agendamento.query.filter(
-        Agendamento.id == agendamento_id,
-        Agendamento.clinica_id.in_(filiais_atuais_ids()),
-    )
-    if eh_medico():
-        query = query.filter(Agendamento.medico_id == current_user.id)
-    agendamento = query.first_or_404()
-    novo_status = request.form.get("status", agendamento.status)
-    status_validos = {"solicitado", "agendado", "confirmado", "realizado", "cancelado", "nao_compareceu"}
-    if novo_status in status_validos:
-        agendamento.status = novo_status
-    db.session.commit()
-    flash("Status do agendamento atualizado.", "success")
-    return redirect(url_for("medico.agenda"))
-
-
-# ---------- Solicitações de agendamento feitas pelo paciente ----------
-
-@medico_bp.route("/agenda/solicitacoes")
-@login_required
-@staff_required
-def agenda_solicitacoes():
-    """Solicitações de agendamento feitas pelos pacientes, aguardando a
-    equipe confirmar/recusar. MESMA regra do contador do Painel (ver
-    dashboard): médico COM a permissão administrativa de pacientes (ex.:
-    o fundador) vê e decide todas as solicitações das filiais dele; só o
-    médico SEM essa permissão fica restrito às solicitações endereçadas a
-    ele mesmo - antes a lista filtrava sempre pelo médico logado, e o
-    Painel mostrava "1" enquanto esta tela vinha vazia."""
-    query = Agendamento.query.filter(
-        Agendamento.clinica_id.in_(filiais_atuais_ids()), Agendamento.status == "solicitado"
-    )
-    if eh_medico() and not current_user.perm_pacientes:
-        query = query.filter(Agendamento.medico_id == current_user.id)
-    solicitacoes = query.order_by(Agendamento.data_hora.asc()).all()
-    return render_template("medico/agenda_solicitacoes.html", solicitacoes=solicitacoes)
-
-
-@medico_bp.route("/agenda/<int:agendamento_id>/confirmar-solicitacao", methods=["POST"])
-@login_required
-@staff_required
-def agenda_confirmar_solicitacao(agendamento_id):
-    query = Agendamento.query.filter(
-        Agendamento.id == agendamento_id,
-        Agendamento.clinica_id.in_(filiais_atuais_ids()), Agendamento.status == "solicitado",
-    )
-    # Mesma regra da listagem (agenda_solicitacoes): médico sem a
-    # permissão administrativa só decide as solicitações dele.
-    if eh_medico() and not current_user.perm_pacientes:
-        query = query.filter(Agendamento.medico_id == current_user.id)
-    agendamento = query.first_or_404()
-    acao = request.form.get("acao")
-    if acao == "recusar":
-        agendamento.status = "cancelado"
-        flash("Solicitação de agendamento recusada.", "success")
-    else:
-        # Antes de confirmar, checa o choque de horário do médico em
-        # QUALQUER local em que ele atenda (a agenda dele é uma só) - a
-        # solicitação pode ter sido feita antes de outro agendamento
-        # ocupar o horário.
-        conflito = conflito_de_agenda(
-            agendamento.medico_id, agendamento.data_hora,
-            agendamento.exame.duracao_minutos if agendamento.exame else None,
-            ignorar_agendamento_id=agendamento.id,
-        )
-        if conflito:
-            if conflito.clinica_id == agendamento.clinica_id:
-                onde = "nesta filial"
-            elif conflito.clinica.empresa_id == agendamento.clinica.empresa_id:
-                onde = f"na filial '{conflito.clinica.nome}'"
-            else:
-                onde = "em outro local em que ele atende (fora desta empresa)"
-            flash(
-                f"O médico já tem um agendamento nesse horário {onde} — combine outro horário "
-                "com o paciente (recuse esta solicitação e crie um novo agendamento).",
-                "danger",
-            )
-            return redirect(url_for("medico.agenda_solicitacoes"))
-        agendamento.status = "agendado"
-        flash("Agendamento confirmado.", "success")
-    db.session.commit()
-    return redirect(url_for("medico.agenda_solicitacoes"))
-
-
-# ---------- Horário de atendimento do médico (por filial) ----------
-
-@medico_bp.route("/medico-horarios", methods=["GET", "POST"])
-@medico_bp.route("/medico-horarios/<int:medico_id>", methods=["GET", "POST"])
-@login_required
-@staff_required
-def medico_horarios(medico_id=None):
-    filiais = filiais_atuais()
-    empresa = empresa_atual()
-
-    # Um médico sem a permissão de gerir a equipe só configura o próprio
-    # horário. Secretárias e médicos com "perm_equipe" (ex.: o médico
-    # fundador da clínica) podem escolher qualquer médico dos locais em que
-    # a pessoa atua — mesma regra usada nas outras telas administrativas.
-    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(filiais, medico_id)
-    if not medico_alvo:
-        flash("Nenhum médico cadastrado ainda.", "danger")
-        return redirect(url_for("medico.equipe_lista"))
-
-    # Locais (filiais da mesma empresa) em que esse médico atende - permite
-    # escolher o horário de qualquer um deles direto nesta tela, sem
-    # precisar trocar de filial no menu superior primeiro. Cada local tem
-    # seu próprio horário independente (ver MedicoHorario.clinica_id).
-    locais_do_medico = (
-        Clinica.query.join(ClinicaMembro, ClinicaMembro.clinica_id == Clinica.id)
-        .filter(
-            ClinicaMembro.usuario_id == medico_alvo.id, Clinica.empresa_id == empresa.id,
-            ClinicaMembro.ativo.is_(True),
-        )
-        .order_by(Clinica.nome)
-        .all()
-    )
-    if not locais_do_medico:
-        locais_do_medico = list(filiais)
-
-    clinica_id_escolhida = request.values.get("clinica_id", type=int)
-    clinica_alvo = (
-        next((c for c in locais_do_medico if c.id == clinica_id_escolhida), None)
-        or next((c for c in locais_do_medico if c in filiais), locais_do_medico[0])
-    )
-
-    if request.method == "POST":
-        horarios_existentes = {
-            h.dia_semana: h
-            for h in MedicoHorario.query.filter_by(clinica_id=clinica_alvo.id, medico_id=medico_alvo.id).all()
-        }
-        for dia_idx in range(7):
-            ativo = request.form.get(f"dia_{dia_idx}_ativo") == "on"
-            hora_inicio_str = request.form.get(f"dia_{dia_idx}_inicio", "").strip()
-            hora_fim_str = request.form.get(f"dia_{dia_idx}_fim", "").strip()
-
-            def parse_hora(valor):
-                try:
-                    return datetime.strptime(valor, "%H:%M").time() if valor else None
-                except ValueError:
-                    return None
-
-            horario = horarios_existentes.get(dia_idx)
-            if not horario:
-                horario = MedicoHorario(clinica_id=clinica_alvo.id, medico_id=medico_alvo.id, dia_semana=dia_idx)
-                db.session.add(horario)
-
-            horario.ativo = ativo
-            horario.hora_inicio = parse_hora(hora_inicio_str)
-            horario.hora_fim = parse_hora(hora_fim_str)
-
-        db.session.commit()
-        flash(f"Horário de atendimento de {medico_alvo.nome} em {clinica_alvo.nome} atualizado.", "success")
-        # Salvar CONTINUA na tela de horário (mesmo médico/local) - mesmo
-        # quando a pessoa chegou aqui pelo assistente de configuração
-        # inicial. É comum salvar e continuar ajustando (outro local do
-        # mesmo médico, outro médico); o assistente marca a etapa como
-        # concluída sozinho (o status é calculado dos dados reais) e segue
-        # acessível pelo aviso no Painel.
-        return redirect(url_for("medico.medico_horarios", medico_id=medico_alvo.id, clinica_id=clinica_alvo.id))
-
-    horarios_por_dia = {
-        h.dia_semana: h
-        for h in MedicoHorario.query.filter_by(clinica_id=clinica_alvo.id, medico_id=medico_alvo.id).all()
-    }
-    return render_template(
-        "medico/medico_horarios.html",
-        medico_alvo=medico_alvo,
-        medicos=(medicos_das_filiais(filiais) if pode_escolher_medico else []),
-        locais_do_medico=locais_do_medico,
-        clinica_alvo=clinica_alvo,
-        dias_semana=list(enumerate(DIAS_SEMANA)),
-        horarios_por_dia=horarios_por_dia,
-    )
-
-
 def _resolver_medico_alvo(filiais, medico_id):
     """Mesma regra usada em toda tela "do médico": um médico sem
     perm_equipe só vê/edita os próprios dados; secretárias e médicos com
@@ -2305,16 +2026,14 @@ def medico_agenda_pessoal(medico_id=None):
         flash("Nenhum médico cadastrado ainda.", "danger")
         return redirect(url_for("medico.equipe_lista"))
 
-    # Só exames confirmados aparecem aqui — é a lista de trabalho do
-    # médico para o que já está confirmado com o paciente, não uma agenda
-    # geral (essa fica em "Agenda de exames", no Painel). Sem filtro de
-    # data: um exame de hoje que já passou do horário mas ainda não foi
-    # marcado como "realizado" continua precisando aparecer aqui.
+    # Lista de trabalho do médico — todos os exames agendados nas filiais
+    # atuais, sem filtro de status (não existe mais workflow de
+    # confirmação). Sem filtro de data: um exame de hoje que já passou do
+    # horário mas ainda não foi encerrado continua precisando aparecer aqui.
     proximos = (
         Agendamento.query.filter(
             Agendamento.clinica_id.in_([f.id for f in filiais]),
             Agendamento.medico_id == medico_alvo.id,
-            Agendamento.status == "confirmado",
         )
         .order_by(Agendamento.data_hora.asc())
         .all()
@@ -2333,116 +2052,23 @@ def medico_agenda_pessoal(medico_id=None):
 def minha_agenda_completa():
     """Agenda CONSOLIDADA do médico logado: os agendamentos dele em TODOS
     os locais em que atende - inclusive filiais de outras empresas. As
-    empresas não se enxergam entre si, mas a agenda do médico é uma só
-    (ver conflito_de_agenda em app/agendamento_otimizador.py): esta tela
-    é a visão dessa agenda única, um dos ganhos do médico multi-clínica
-    por código mestre. Só a própria pessoa logada vê a consolidação - a
-    secretária de cada clínica continua vendo apenas a agenda da clínica
-    dela."""
+    empresas não se enxergam entre si, mas a agenda do médico é uma só:
+    esta tela é a visão dessa agenda única, um dos ganhos do médico
+    multi-clínica por código mestre. Só a própria pessoa logada vê a
+    consolidação - a secretária de cada clínica continua vendo apenas a
+    agenda da clínica dela."""
     if not eh_medico():
         flash("Esta tela é a agenda pessoal consolidada de contas de médico.", "danger")
         return redirect(url_for("medico.dashboard"))
     agendamentos = (
         Agendamento.query.filter(
             Agendamento.medico_id == current_user.id,
-            Agendamento.status.in_(("solicitado", "agendado", "confirmado")),
             Agendamento.data_hora >= datetime.utcnow() - timedelta(days=1),
         )
         .order_by(Agendamento.data_hora.asc())
         .all()
     )
     return render_template("medico/minha_agenda_completa.html", agendamentos=agendamentos)
-
-
-# ---------- Bloqueio de agenda (compromisso próprio do médico) ----------
-
-@medico_bp.route("/medico-bloqueios", methods=["GET", "POST"])
-@medico_bp.route("/medico-bloqueios/<int:medico_id>", methods=["GET", "POST"])
-@login_required
-@staff_required
-def medico_bloqueios(medico_id=None):
-    filiais = filiais_atuais()
-    filial_ids = [f.id for f in filiais]
-    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(filiais, medico_id)
-    if not medico_alvo:
-        flash("Nenhum médico cadastrado ainda.", "danger")
-        return redirect(url_for("medico.equipe_lista"))
-
-    # O bloqueio é de um local específico (a agenda é por filial) — com mais
-    # de um local, a pessoa escolhe qual no próprio formulário.
-    locais_do_medico = [f for f in filiais if any(m.id == medico_alvo.id for m in f.medicos_e_secretarias)] or list(filiais)
-
-    if request.method == "POST":
-        filial_bloqueio = _filial_do_form(locais_do_medico)
-        if not filial_bloqueio:
-            flash("Escolha o local do bloqueio de agenda.", "danger")
-            return redirect(url_for("medico.medico_bloqueios", medico_id=medico_alvo.id))
-
-        dia_inteiro = request.form.get("dia_inteiro") == "on"
-        data_inicio_str = request.form.get("data_inicio", "").strip()
-        data_fim_str = request.form.get("data_fim", "").strip()
-        hora_inicio_str = request.form.get("hora_inicio", "").strip()
-        hora_fim_str = request.form.get("hora_fim", "").strip()
-        motivo = request.form.get("motivo", "").strip()
-
-        try:
-            if dia_inteiro:
-                data_inicio_dt = datetime.strptime(data_inicio_str, "%Y-%m-%d")
-                data_fim_dt = datetime.strptime(data_fim_str or data_inicio_str, "%Y-%m-%d") + timedelta(
-                    days=1, seconds=-1
-                )
-            else:
-                data_inicio_dt = datetime.strptime(f"{data_inicio_str} {hora_inicio_str}", "%Y-%m-%d %H:%M")
-                data_fim_dt = datetime.strptime(f"{data_fim_str} {hora_fim_str}", "%Y-%m-%d %H:%M")
-        except ValueError:
-            data_inicio_dt = data_fim_dt = None
-
-        if not data_inicio_dt or not data_fim_dt or data_fim_dt <= data_inicio_dt:
-            flash("Datas/horários inválidos — confira o período informado.", "danger")
-        else:
-            bloqueio = MedicoBloqueio(
-                clinica_id=filial_bloqueio.id, medico_id=medico_alvo.id,
-                data_inicio=data_inicio_dt, data_fim=data_fim_dt,
-                motivo=motivo or None, dia_inteiro=dia_inteiro,
-            )
-            db.session.add(bloqueio)
-            db.session.commit()
-            flash("Bloqueio de agenda cadastrado.", "success")
-        return redirect(url_for("medico.medico_bloqueios", medico_id=medico_alvo.id))
-
-    bloqueios = (
-        MedicoBloqueio.query.filter(
-            MedicoBloqueio.clinica_id.in_(filial_ids),
-            MedicoBloqueio.medico_id == medico_alvo.id,
-        )
-        .order_by(MedicoBloqueio.data_inicio.desc())
-        .all()
-    )
-    return render_template(
-        "medico/medico_bloqueios.html",
-        medico_alvo=medico_alvo,
-        medicos=(medicos_das_filiais(filiais) if pode_escolher_medico else []),
-        locais_do_medico=locais_do_medico,
-        bloqueios=bloqueios,
-    )
-
-
-@medico_bp.route("/medico-bloqueios/<int:bloqueio_id>/remover", methods=["POST"])
-@login_required
-@staff_required
-def medico_bloqueio_remover(bloqueio_id):
-    query = MedicoBloqueio.query.filter(
-        MedicoBloqueio.id == bloqueio_id,
-        MedicoBloqueio.clinica_id.in_(filiais_atuais_ids()),
-    )
-    if eh_medico() and not current_user.perm_equipe:
-        query = query.filter(MedicoBloqueio.medico_id == current_user.id)
-    bloqueio = query.first_or_404()
-    medico_id = bloqueio.medico_id
-    db.session.delete(bloqueio)
-    db.session.commit()
-    flash("Bloqueio removido.", "success")
-    return redirect(url_for("medico.medico_bloqueios", medico_id=medico_id))
 
 
 # ---------- Atendimento (continuidade/encerramento da consulta) ----------
@@ -2463,7 +2089,6 @@ def atendimento(agendamento_id):
         agendamento.notas_atendimento = request.form.get("notas_atendimento", "").strip() or None
         if request.form.get("encerrar") == "on":
             agendamento.encerrado_em = datetime.utcnow()
-            agendamento.status = "realizado"
             flash("Atendimento encerrado.", "success")
         else:
             flash("Observações da consulta salvas.", "success")

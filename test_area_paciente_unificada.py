@@ -5,7 +5,7 @@
 - Preparo e resultado de QUALQUER clínica abrem na mesma conta (é tudo
   dado do próprio paciente).
 - "Trocar de clínica" muda o cadastro ativo - usado pelas ações
-  endereçadas a uma clínica (solicitar agendamento).
+  endereçadas a uma clínica (tirar dúvida).
 - Segurança: outro paciente NÃO acessa preparo/resultado alheio.
 """
 from datetime import datetime, date
@@ -56,11 +56,11 @@ with app.app_context():
     db.session.flush()
 
     ag_grupo = Agendamento(clinica_id=centro.id, paciente_id=pac_grupo.id, exame_id=ex_grupo.id,
-                           medico_id=medico_grupo.id, data_hora=datetime(2026, 10, 1, 9, 0), status="agendado")
+                           medico_id=medico_grupo.id, data_hora=datetime(2026, 10, 1, 9, 0))
     ag_vit = Agendamento(clinica_id=vitoria.id, paciente_id=pac_vit.id, exame_id=ex_vit.id,
-                         medico_id=medico_vit.id, data_hora=datetime(2026, 10, 2, 10, 0), status="agendado")
+                         medico_id=medico_vit.id, data_hora=datetime(2026, 10, 2, 10, 0))
     ag_vit_passado = Agendamento(clinica_id=vitoria.id, paciente_id=pac_vit.id, exame_id=ex_vit.id,
-                                 medico_id=medico_vit.id, data_hora=datetime(2026, 6, 1, 10, 0), status="realizado")
+                                 medico_id=medico_vit.id, data_hora=datetime(2026, 6, 1, 10, 0))
     db.session.add_all([ag_grupo, ag_vit, ag_vit_passado])
     db.session.flush()
     db.session.add(ResultadoExame(agendamento_id=ag_vit_passado.id, nome_arquivo="resultado.pdf",
@@ -100,24 +100,22 @@ checar("Preparo do exame do Grupo abre", r.status_code == 200)
 r = client.get(f"/paciente/exame/{ag_vit_id}")
 checar("Preparo do exame da Vitória abre NA MESMA conta", r.status_code == 200)
 
-# ---------- Trocar de clínica muda o alvo do 'solicitar' ----------
+# ---------- Trocar de clínica muda o alvo das ações endereçadas (tirar dúvida) ----------
 
-r = client.get("/paciente/agendar")
+r = client.get("/paciente/chat")
 html = r.get_data(as_text=True)
-checar("Solicitar mostra a clínica ativa e o botão de trocar",
-       "Solicitando na clínica" in html and "Trocar de clínica" in html)
-checar("Exames ofertados são os da clínica ativa",
+checar("O exame oferecido no 'tirar dúvida' é o da clínica ativa",
        ("Exame Unificado Grupo" in html) != ("Exame Unificado Vitoria" in html))
 
 # Descobre a clínica ativa e troca pra outra.
 ativa_grupo = "Exame Unificado Grupo" in html
 destino_id = pac_vit_id if ativa_grupo else pac_grupo_id
 r = client.post("/paciente/trocar-clinica",
-                data={"paciente_id": str(destino_id), "proxima": "/paciente/agendar"},
+                data={"paciente_id": str(destino_id), "proxima": "/paciente/chat"},
                 follow_redirects=True)
 html2 = r.get_data(as_text=True)
 checar("Trocar de clínica funciona (flash de confirmação)", "Agora você está usando o app" in html2)
-checar("Depois da troca, os exames ofertados são da OUTRA clínica",
+checar("Depois da troca, o 'tirar dúvida' mostra o exame da OUTRA clínica",
        ("Exame Unificado Vitoria" in html2) == ativa_grupo)
 client.get("/logout")
 

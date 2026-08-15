@@ -12,13 +12,13 @@ plataforma multi-empresa / multi-filial:
 
 Rodar com: python seed.py
 """
-from datetime import date, datetime, timedelta, time
+from datetime import date, datetime, timedelta
 
 from app import create_app
 from app.extensions import db
 from app.db_utils import resetar_banco
 from app.models import (
-    Usuario, Empresa, Clinica, ClinicaMembro, MedicoHorario, MedicoBloqueio, Paciente,
+    Usuario, Empresa, Clinica, ClinicaMembro, Paciente,
     Exame, PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento,
     Agendamento, FaqItem, normalizar_telefone,
@@ -150,42 +150,6 @@ with app.app_context():
     ])
     db.session.commit()
 
-    # Horário de atendimento de exemplo, por médico (usado pelo otimizador
-    # de agenda para sugerir horários disponíveis ao paciente). Cada médico
-    # define o seu próprio horário — não existe mais um horário único por
-    # clínica.
-    def criar_horario_padrao(clinica_id, medico_id, hora_inicio=time(7, 0), hora_fim=time(18, 0),
-                              sabado=True, hora_fim_sabado=time(12, 0)):
-        for dia_idx in range(5):  # segunda a sexta
-            db.session.add(MedicoHorario(
-                clinica_id=clinica_id, medico_id=medico_id, dia_semana=dia_idx, ativo=True,
-                hora_inicio=hora_inicio, hora_fim=hora_fim,
-            ))
-        db.session.add(MedicoHorario(
-            clinica_id=clinica_id, medico_id=medico_id, dia_semana=5, ativo=sabado,  # sábado
-            hora_inicio=hora_inicio, hora_fim=hora_fim_sabado,
-        ))
-        db.session.add(MedicoHorario(clinica_id=clinica_id, medico_id=medico_id, dia_semana=6, ativo=False))  # domingo
-
-    # Dr. Carlos atende na Clínica Vitória seg-sex 7h-18h e sábado de manhã.
-    criar_horario_padrao(clinica_vitoria.id, medico_compartilhado.id)
-    # Dra. Fernanda, também na Vitória, com um horário mais restrito, pra
-    # mostrar que cada médico pode ter horários diferentes.
-    criar_horario_padrao(
-        clinica_vitoria.id, medica_vitoria2.id,
-        hora_inicio=time(13, 0), hora_fim=time(19, 0), sabado=False,
-    )
-    # Dr. Carlos também atende na São Paulo, mas ainda não cadastrou horário
-    # lá — pra mostrar que isso é opcional e pode ser preenchido depois.
-
-    # Bloqueio de agenda de exemplo: Dr. Carlos de férias num dia inteiro —
-    # o otimizador de agenda não deve sugerir horários nesse dia.
-    db.session.add(MedicoBloqueio(
-        clinica_id=clinica_vitoria.id, medico_id=medico_compartilhado.id,
-        data_inicio=datetime(2026, 12, 24, 0, 0), data_fim=datetime(2026, 12, 24, 23, 59, 59),
-        motivo="Férias", dia_inteiro=True,
-    ))
-    db.session.commit()
 
     # --- Catálogo de medicamentos (compartilhado pela plataforma) ---
     med_ozempic = Medicamento(nome="Ozempic, Mounjaro, Trulicity ou similares", dias_padrao_suspensao=14, categoria="medicamento para emagrecimento")
@@ -407,7 +371,6 @@ with app.app_context():
         # que já causou falhas de teste dependentes do horário real em
         # que o seed é executado.
         data_hora=datetime(2026, 8, 6, 10, 0),
-        status="agendado",
     ))
     db.session.add(Agendamento(
         clinica_id=clinica_vitoria.id,
@@ -415,7 +378,7 @@ with app.app_context():
         exame_id=glicemia_vitoria.id,
         medico_id=glicemia_vitoria.medico_id,
         data_hora=datetime.utcnow() - timedelta(days=10),
-        status="realizado",
+        encerrado_em=datetime.utcnow() - timedelta(days=10),
     ))
     db.session.add(Agendamento(
         clinica_id=clinica_vitoria.id,
@@ -423,7 +386,6 @@ with app.app_context():
         exame_id=hemograma_vitoria.id,
         medico_id=hemograma_vitoria.medico_id,
         data_hora=datetime.utcnow() + timedelta(days=2),
-        status="agendado",
     ))
     db.session.add(Agendamento(
         clinica_id=clinica_sp.id,
@@ -431,7 +393,6 @@ with app.app_context():
         exame_id=colonoscopia_sp.id,
         medico_id=colonoscopia_sp.medico_id,
         data_hora=datetime.utcnow() + timedelta(days=3),
-        status="agendado",
     ))
     db.session.commit()
 
