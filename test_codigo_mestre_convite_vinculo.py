@@ -81,7 +81,6 @@ client.get("/logout")
 r = client.post("/cadastro", data={
     "nome": "Dra. Nova Com Codigo", "papel": "medico",
     "cpf": "852.963.741-00", "crm_numero": "22222", "crm_uf": "ES",
-    "telefone_filial": "(27) 90000-0002",
     "email": "novamedica@gruposaude.com", "senha": "123456",
 }, follow_redirects=True)
 with app.app_context():

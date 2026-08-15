@@ -171,21 +171,20 @@ client.get("/logout")
 # ---------- Cadastro público cria nova empresa + 1ª filial, isoladas ----------
 
 r = client.post("/cadastro", data={
-    "nome_empresa": "Empresa Teste Automatizado",
     "nome": "Fulano Teste",
+    "cpf": "168.995.350-09",
     "email": "fulano@clinicateste.com",
     "senha": "senha123",
     "papel": "secretaria",
 }, follow_redirects=True)
 texto = r.get_data(as_text=True)
 checar("Cadastro público cria a empresa e loga automaticamente", "Painel" in texto)
-checar("Nome da empresa aparece na navbar", "Empresa Teste Automatizado" in texto)
-# O cadastro público (modo "empresa") não cria mais NENHUMA filial
-# automaticamente - isso é feito depois, ao entrar no app, em "Meus
-# Locais de Atendimento" (ver test_cadastro_empresa_sem_filial.py para o
-# fluxo completo).
+checar("Nome provisório da empresa (a partir do nome da pessoa) aparece na navbar", "Consultório de Fulano Teste" in texto)
+# O cadastro público não cria mais NENHUMA filial automaticamente - isso é
+# feito depois, ao entrar no app, em "Meus Locais de Atendimento" (ver
+# test_cadastro_empresa_sem_filial.py para o fluxo completo).
 with app.app_context():
-    empresa_nova = Empresa.query.filter_by(nome="Empresa Teste Automatizado").first()
+    empresa_nova = Empresa.query.filter_by(nome="Consultório de Fulano Teste").first()
     checar("Empresa nova foi criada", empresa_nova is not None)
     checar("NENHUMA filial foi criada automaticamente no cadastro", Clinica.query.filter_by(empresa_id=empresa_nova.id).first() is None)
     usuario_novo = Usuario.query.filter_by(email="fulano@clinicateste.com").first()
@@ -200,8 +199,9 @@ client.get("/logout")
 # ---------- quem cria a empresa recebe todas as permissões administrativas ----------
 
 r = client.post("/cadastro", data={
-    "nome_empresa": "Clínica Solo do Dr. Ricardo",
     "nome": "Dr. Ricardo Alves",
+    "cpf": "111.444.777-35",
+    "crm_numero": "88899", "crm_uf": "ES",
     "email": "ricardo@clinicasolo.com",
     "senha": "senha123",
     "papel": "medico",

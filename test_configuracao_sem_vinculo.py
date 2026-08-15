@@ -34,27 +34,24 @@ r = client.post("/cadastro", data={
     "email": "bruno.config@example.com",
     "senha": "123456",
     "papel": "medico",
-    "nome_filial": "Medical Gastro Sede",
-    "telefone_filial": "(27) 90000-0003",
-    "cnpj_filial": "12.345.604/0001-59",
 }, follow_redirects=True)
 checar("Cadastro da empresa responde 200", r.status_code == 200)
+client.post("/equipe/filiais/nova", data={"nome": "Medical Gastro Sede"}, follow_redirects=True)
 client.post("/equipe/filiais/nova", data={"nome": "Medical Gastro Centro"}, follow_redirects=True)
 client.post("/equipe/filiais/nova", data={"nome": "Medical Gastro Santa Lucia"}, follow_redirects=True)
 
 with app.app_context():
-    # Não existe mais um "nome da empresa" separado do nome do local - a
-    # empresa nasce com o mesmo nome informado pro primeiro local.
-    empresa = Empresa.query.filter_by(nome="Medical Gastro Sede").first()
+    # O cadastro não cria mais nenhum local de atendimento - a empresa
+    # nasce com um nome provisório a partir do nome da própria pessoa.
+    empresa = Empresa.query.filter_by(nome="Consultório de Bruno Config").first()
     bruno = Usuario.query.filter_by(email="bruno.config@example.com").first()
-    # O cadastro agora já cria e vincula o fundador ao primeiro local
-    # (Sede) - os outros 2, cadastrados depois em "Meus locais de
-    # atendimento", continuam SEM vínculo automático (regra que este
-    # teste verifica: configuração é da EMPRESA, não depende de vínculo).
-    checar("Empresa tem 3 locais (Sede do cadastro + 2 cadastrados depois)",
+    # Os 3 locais, cadastrados em "Meus locais de atendimento", continuam
+    # SEM vínculo automático (regra que este teste verifica: configuração
+    # é da EMPRESA, não depende de vínculo).
+    checar("Empresa tem os 3 locais cadastrados",
            Clinica.query.filter_by(empresa_id=empresa.id).count() == 3)
-    checar("Fundador está vinculado só ao primeiro local (Sede), não aos outros 2",
-           ClinicaMembro.query.filter_by(usuario_id=bruno.id).count() == 1)
+    checar("Fundador não está vinculado a nenhum dos 3 locais",
+           ClinicaMembro.query.filter_by(usuario_id=bruno.id).count() == 0)
     empresa_id = empresa.id
 
 # ---------- Salvar modelo de preparo SEM vínculo nenhum ----------

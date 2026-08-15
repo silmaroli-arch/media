@@ -17,7 +17,7 @@
             <input type="text" name="nome" id="nome" class="form-control" autocapitalize="words" required autofocus>
           </div>
           <div class="col-md-6">
-            <label class="form-label">CPF</label>
+            <label class="form-label">CPF (será seu login)</label>
             <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" required>
             <div class="invalid-feedback" id="cpf_status"></div>
           </div>
@@ -76,7 +76,7 @@
             <div class="invalid-feedback" id="telefone_status"></div>
           </div>
           <div class="col-md-6">
-            <label class="form-label">Seu e-mail (será seu login)</label>
+            <label class="form-label">Seu e-mail</label>
             <input type="email" name="email" class="form-control" required>
           </div>
           <div class="col-md-6">
@@ -119,62 +119,9 @@
           </div>
         </div>
 
-        <hr class="my-4">
-        <h6 class="mb-0">Seu local de atendimento</h6>
-        <div class="form-text mb-2">
-          Se você já atua numa clínica que tem CNPJ, informe-o abaixo — se ela já estiver
-          cadastrada na plataforma, sua conta entra vinculada direto a ela (com os dados já
-          preenchidos), sem precisar de convite de ninguém. Se não tiver CNPJ (ou for a primeira
-          pessoa a se cadastrar por ali), é só preencher os dados do local abaixo — sua própria
-          conta já nasce como responsável por ele.
-        </div>
-        <div class="row g-3 mt-0">
-          <div class="col-md-8">
-            <label class="form-label">Nome do local</label>
-            <input type="text" name="nome_filial" id="nome_filial" class="form-control" placeholder="ex.: Consultório, Clínica Centro" required>
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">CNPJ (opcional)</label>
-            <input type="text" inputmode="numeric" name="cnpj_filial" id="cnpj_filial" class="form-control" placeholder="00.000.000/0000-00">
-            <div class="invalid-feedback" id="cnpj_filial_status"></div>
-            <div class="form-text" id="cnpj_filial_encontrado"></div>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Telefone</label>
-            <input type="text" inputmode="numeric" name="telefone_filial" id="telefone_filial" class="form-control" placeholder="(27) 99999-9999" required>
-            <div class="invalid-feedback" id="telefone_filial_status"></div>
-          </div>
-        </div>
-        <div class="row g-3 mt-0">
-          <div class="col-md-3">
-            <label class="form-label">CEP</label>
-            <input type="text" inputmode="numeric" name="cep_filial" id="cep_filial" class="form-control" placeholder="00000-000">
-            <div class="form-text" id="cep_filial_status"></div>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Rua</label>
-            <input type="text" name="rua_filial" id="rua_filial" class="form-control bg-light" readonly>
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Número</label>
-            <input type="text" name="numero_filial" id="numero_filial" class="form-control">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Complemento</label>
-            <input type="text" name="complemento_filial" id="complemento_filial" class="form-control">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Bairro</label>
-            <input type="text" name="bairro_filial" id="bairro_filial" class="form-control bg-light" readonly>
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Cidade</label>
-            <input type="text" name="cidade_filial" id="cidade_filial" class="form-control bg-light" readonly>
-          </div>
-          <div class="col-md-1">
-            <label class="form-label">UF</label>
-            <input type="text" name="uf_filial" id="uf_filial" class="form-control bg-light" maxlength="2" readonly>
-          </div>
+        <div class="form-text mt-3">
+          Depois de criar sua conta, você cadastra seu(s) local(is) de atendimento em
+          "Meus Locais de Atendimento" — não precisa disso agora.
         </div>
 
         <button type="submit" class="btn btn-primary w-100 mt-4" id="btn-submit">Criar minha conta</button>
@@ -216,9 +163,6 @@ function aplicarMascaraFixa(campo, padrao) {
 aplicarMascaraFixa(document.getElementById('cpf'), '999.999.999-99');
 aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
 aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
-aplicarMascaraFixa(document.getElementById('cnpj_filial'), '99.999.999/9999-99');
-aplicarMascaraFixa(document.getElementById('telefone_filial'), '(99) 99999-9999');
-aplicarMascaraFixa(document.getElementById('cep_filial'), '99999-999');
 
 // ---------- Validação de CPF (dígitos verificadores) ----------
 function cpfValido(cpf) {
@@ -247,103 +191,6 @@ function marcarCpfValido() {
 }
 document.getElementById('cpf').addEventListener('blur', marcarCpfValido);
 
-// ---------- Validação de CNPJ (dígitos verificadores) + busca automática
-// de clínica já cadastrada com o mesmo CNPJ. O CNPJ é opcional aqui: só é
-// validado se a pessoa preencher algo ----------
-function cnpjValido(cnpj) {
-  var d = cnpj.replace(/\D/g, '');
-  if (d.length !== 14 || /^(\d)\1{13}$/.test(d)) return false;
-  function dv(nums, pesos) {
-    var soma = 0;
-    for (var i = 0; i < pesos.length; i++) soma += parseInt(nums[i]) * pesos[i];
-    var resto = soma % 11;
-    return resto < 2 ? '0' : String(11 - resto);
-  }
-  var pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-  var pesos2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-  var dv1 = dv(d.substring(0, 12), pesos1);
-  if (dv1 !== d[12]) return false;
-  var dv2 = dv(d.substring(0, 12) + dv1, pesos2);
-  return dv2 === d[13];
-}
-// Campos do local de atendimento que, quando o CNPJ já pertence a uma
-// clínica cadastrada, são preenchidos com os dados dela e travados (não
-// tem por que redigitar nem editar dados que já existem - o cadastro só
-// vai vincular a pessoa a essa clínica, não vai alterá-la).
-var CAMPOS_FILIAL_TRAVAVEIS = ['telefone_filial', 'cep_filial', 'rua_filial', 'numero_filial',
-  'complemento_filial', 'bairro_filial', 'cidade_filial', 'uf_filial'];
-
-function preencherClinicaEncontrada(dados) {
-  document.getElementById('telefone_filial').value = dados.telefone || '';
-  document.getElementById('cep_filial').value = dados.cep || '';
-  document.getElementById('rua_filial').value = dados.rua || '';
-  document.getElementById('numero_filial').value = dados.numero || '';
-  document.getElementById('complemento_filial').value = dados.complemento || '';
-  document.getElementById('bairro_filial').value = dados.bairro || '';
-  document.getElementById('cidade_filial').value = dados.cidade || '';
-  document.getElementById('uf_filial').value = dados.uf || '';
-  CAMPOS_FILIAL_TRAVAVEIS.forEach(function (id) {
-    var campo = document.getElementById(id);
-    campo.readOnly = true;
-    campo.classList.add('bg-light');
-    campo.classList.remove('is-invalid');
-  });
-  document.getElementById('telefone_filial_status').textContent = '';
-  document.getElementById('cep_filial_status').textContent = '';
-}
-
-function destravarCamposFilial() {
-  CAMPOS_FILIAL_TRAVAVEIS.forEach(function (id) {
-    var campo = document.getElementById(id);
-    // rua/bairro/cidade/uf continuam somente-leitura sempre (preenchidos
-    // pela busca de CEP) - só telefone/cep/número/complemento voltam a
-    // ser editáveis quando o CNPJ deixa de bater com uma clínica existente.
-    var sempreReadOnly = ['rua_filial', 'bairro_filial', 'cidade_filial', 'uf_filial'].indexOf(id) !== -1;
-    campo.readOnly = sempreReadOnly;
-    if (!sempreReadOnly) campo.classList.remove('bg-light');
-  });
-}
-
-document.getElementById('cnpj_filial').addEventListener('blur', function () {
-  var campo = document.getElementById('cnpj_filial');
-  var status = document.getElementById('cnpj_filial_status');
-  var encontrado = document.getElementById('cnpj_filial_encontrado');
-  encontrado.textContent = '';
-  var d = campo.value.replace(/\D/g, '');
-  if (!d) {
-    status.textContent = '';
-    campo.classList.remove('is-invalid');
-    destravarCamposFilial();
-    return;
-  }
-  if (!cnpjValido(campo.value)) {
-    status.textContent = 'CNPJ inválido — confira os números digitados.';
-    campo.classList.add('is-invalid');
-    destravarCamposFilial();
-    return;
-  }
-  campo.classList.remove('is-invalid');
-  status.textContent = '';
-  encontrado.textContent = 'Verificando se essa clínica já está cadastrada...';
-  fetch('/cadastro/verificar-cnpj?cnpj=' + encodeURIComponent(d))
-    .then(function (r) { return r.json(); })
-    .then(function (dados) {
-      if (dados.encontrada) {
-        encontrado.textContent = 'Encontramos "' + dados.nome + '" já cadastrada com esse CNPJ — ' +
-          'sua conta será criada já vinculada a ela.';
-        encontrado.classList.add('text-success');
-        preencherClinicaEncontrada(dados);
-      } else {
-        encontrado.textContent = 'Nenhuma clínica encontrada com esse CNPJ — ela será criada no seu cadastro.';
-        encontrado.classList.remove('text-success');
-        destravarCamposFilial();
-      }
-    })
-    .catch(function () {
-      encontrado.textContent = '';
-    });
-});
-
 // ---------- Validação de telefone completo (10 ou 11 dígitos) ----------
 function marcarTelefoneValido(idCampo, idStatus, obrigatorio) {
   var campo = document.getElementById(idCampo);
@@ -360,11 +207,8 @@ function marcarTelefoneValido(idCampo, idStatus, obrigatorio) {
 document.getElementById('telefone').addEventListener('blur', function () {
   marcarTelefoneValido('telefone', 'telefone_status', false);
 });
-document.getElementById('telefone_filial').addEventListener('blur', function () {
-  marcarTelefoneValido('telefone_filial', 'telefone_filial_status', true);
-});
 
-// ---------- Busca de endereço por CEP via ViaCEP (pessoal e da filial) ----------
+// ---------- Busca de endereço por CEP via ViaCEP ----------
 function configurarBuscaCep(idCep, idRua, idBairro, idCidade, idUf, idStatus) {
   var campo = document.getElementById(idCep);
   campo.addEventListener('blur', function () {
@@ -394,12 +238,10 @@ function configurarBuscaCep(idCep, idRua, idBairro, idCidade, idUf, idStatus) {
   });
 }
 configurarBuscaCep('cep', 'rua', 'bairro', 'cidade', 'uf', 'cep_status');
-configurarBuscaCep('cep_filial', 'rua_filial', 'bairro_filial', 'cidade_filial', 'uf_filial', 'cep_filial_status');
 
 document.querySelector('form').addEventListener('submit', function (evento) {
   var cpfOk = marcarCpfValido();
   var telefoneOk = marcarTelefoneValido('telefone', 'telefone_status', false);
-  var telefoneFilialOk = marcarTelefoneValido('telefone_filial', 'telefone_filial_status', true);
 
   function cepOk(idCampo, idStatus) {
     var campo = document.getElementById(idCampo);
@@ -412,24 +254,8 @@ document.querySelector('form').addEventListener('submit', function (evento) {
     return true;
   }
   var cepPessoalOk = cepOk('cep', 'cep_status');
-  var cepFilialOk = cepOk('cep_filial', 'cep_filial_status');
 
-  // CNPJ é opcional aqui - só valida se a pessoa preencheu algo.
-  var cnpjCampo = document.getElementById('cnpj_filial');
-  var cnpjOk = true;
-  if (cnpjCampo.value.replace(/\D/g, '')) {
-    var cnpjStatus = document.getElementById('cnpj_filial_status');
-    if (!cnpjValido(cnpjCampo.value)) {
-      cnpjCampo.classList.add('is-invalid');
-      cnpjStatus.textContent = 'CNPJ inválido — confira os números digitados.';
-      cnpjOk = false;
-    } else {
-      cnpjCampo.classList.remove('is-invalid');
-      cnpjStatus.textContent = '';
-    }
-  }
-
-  if (!cpfOk || !telefoneOk || !telefoneFilialOk || !cepPessoalOk || !cepFilialOk || !cnpjOk) {
+  if (!cpfOk || !telefoneOk || !cepPessoalOk) {
     evento.preventDefault();
     var primeiroInvalido = document.querySelector('.is-invalid');
     if (primeiroInvalido) primeiroInvalido.focus();

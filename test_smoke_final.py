@@ -183,23 +183,20 @@ r = client.post("/cadastro", data={
     "email": "fulano@clinicateste.com",
     "senha": "senha123",
     "papel": "secretaria",
-    "nome_filial": "Empresa Teste Automatizado - Sede",
-    "telefone_filial": "(27) 90000-0007",
-    "cnpj_filial": "12.345.601/0001-15",
 }, follow_redirects=True)
 texto = r.get_data(as_text=True)
 checar("Cadastro público cria a empresa e loga automaticamente", "Painel" in texto)
-checar("Nome da empresa aparece na navbar", "Empresa Teste Automatizado" in texto)
-# O cadastro público já cria o primeiro local de atendimento, completo, e
-# vincula quem se cadastrou a ele (ver test_cadastro_empresa_sem_filial.py
-# para o fluxo completo). Não existe mais um "nome da empresa" separado do
-# nome do local — a empresa nasce com o mesmo nome informado pro local.
+checar("Nome provisório da empresa (a partir do nome da pessoa) aparece na navbar", "Consultório de Fulano Teste" in texto)
+# O cadastro público não cria mais NENHUM local de atendimento
+# automaticamente - isso é feito depois, ao entrar no app, em "Meus
+# Locais de Atendimento" (ver test_cadastro_empresa_sem_filial.py para o
+# fluxo completo).
 with app.app_context():
-    empresa_nova = Empresa.query.filter_by(nome="Empresa Teste Automatizado - Sede").first()
+    empresa_nova = Empresa.query.filter_by(nome="Consultório de Fulano Teste").first()
     checar("Empresa nova foi criada", empresa_nova is not None)
     checar(
-        "O primeiro local de atendimento já foi criado automaticamente no cadastro",
-        Clinica.query.filter_by(empresa_id=empresa_nova.id, nome="Empresa Teste Automatizado - Sede").count() == 1,
+        "NENHUM local de atendimento foi criado automaticamente no cadastro",
+        Clinica.query.filter_by(empresa_id=empresa_nova.id).count() == 0,
     )
     usuario_novo = Usuario.query.filter_by(email="fulano@clinicateste.com").first()
     checar("Usuário fica vinculado à empresa via empresa_fundadora_id", usuario_novo.empresa_fundadora_id == empresa_nova.id)
@@ -214,13 +211,10 @@ client.get("/logout")
 
 r = client.post("/cadastro", data={
     "nome": "Dr. Ricardo Alves",
-    "cpf": "852.963.741-00", "crm_numero": "77777", "crm_uf": "ES",
+    "cpf": "111.444.777-35", "crm_numero": "77777", "crm_uf": "ES",
     "email": "ricardo@clinicasolo.com",
     "senha": "senha123",
     "papel": "medico",
-    "nome_filial": "Consultório do Dr. Ricardo",
-    "telefone_filial": "(27) 90000-0008",
-    "cnpj_filial": "12.345.602/0001-60",
 }, follow_redirects=True)
 checar("Cadastro público como médico também funciona", "Painel" in r.get_data(as_text=True))
 
@@ -231,19 +225,31 @@ with app.app_context():
         "Médico fundador recebe todas as permissões administrativas (não há secretária)",
         ricardo.perm_pacientes and ricardo.perm_equipe and ricardo.perm_filiais and ricardo.perm_dados_clinica,
     )
-    consultorio_ricardo = Clinica.query.filter_by(nome="Consultório do Dr. Ricardo").first()
-    checar("O primeiro local (Consultório) já foi criado pelo cadastro", consultorio_ricardo is not None)
-    checar("O médico fundador já fica vinculado a esse primeiro local",
-           ClinicaMembro.query.filter_by(clinica_id=consultorio_ricardo.id, usuario_id=ricardo.id).count() == 1)
+    checar("NENHUM local de atendimento foi criado automaticamente pelo cadastro",
+           Clinica.query.filter_by(empresa_id=ricardo.empresa_fundadora_id).count() == 0)
 
 r = client.get("/equipe/equipe-membros")
 checar("Médico fundador consegue acessar a tela de Equipe mesmo sendo médico", "Equipe da empresa" in r.get_data(as_text=True))
 r = client.get("/equipe/filiais")
-checar("Médico fundador consegue acessar a tela de Filiais (já com o local do cadastro)", "Consultório do Dr. Ricardo" in r.get_data(as_text=True))
+checar("Médico fundador consegue acessar a tela de Filiais (ainda vazia - nada é criado no cadastro)",
+       "Nenhum local de atendimento cadastrado" in r.get_data(as_text=True))
 r = client.get("/equipe/clinica/configuracoes", follow_redirects=True)
-checar("Médico fundador consegue acessar Dados da clínica normalmente (o local já existe)", r.status_code == 200)
+checar("Médico fundador consegue acessar Dados da clínica (com aviso, sem local ainda)", r.status_code == 200)
+r = client.get("/equipe/pacientes/novo", follow_redirects=True)
+checar(
+    "Sem nenhum local ainda, 'Novo paciente' avisa que é preciso cadastrar um local primeiro",
+    "Cadastre seu primeiro local de atendimento" in r.get_data(as_text=True),
+)
+
+# Cadastra o primeiro local e se vincula a ele - só assim "Novo paciente" passa a funcionar.
+client.post("/equipe/filiais/nova", data={"nome": "Consultório do Dr. Ricardo"}, follow_redirects=True)
+with app.app_context():
+    consultorio_ricardo = Clinica.query.filter_by(nome="Consultório do Dr. Ricardo").first()
+    consultorio_ricardo_id = consultorio_ricardo.id
+client.post(f"/equipe/filiais/{consultorio_ricardo_id}/vincular-me", follow_redirects=True)
+
 r = client.get("/equipe/pacientes/novo")
-checar("Com o local já criado e vinculado pelo cadastro, 'Novo paciente' já é acessível normalmente", r.status_code == 200)
+checar("Com o local criado e o vínculo feito deliberadamente, 'Novo paciente' já é acessível normalmente", r.status_code == 200)
 
 # ---------- Cadastro de paciente sem senha: login por telefone + data de nascimento ----------
 
@@ -1178,9 +1184,9 @@ with app.app_context():
     config = PlataformaConfig.obter()
     checar("Configuração de trial tem um valor padrão de dias", config.trial_dias > 0)
 
-    # Não existe mais um "nome da empresa" separado do nome do local - a
-    # empresa nasce com o mesmo nome informado pro local de atendimento.
-    empresa_teste = Empresa.query.filter_by(nome="Empresa Teste Automatizado - Sede").first()
+    # O cadastro não pede mais nenhum dado de clínica - a empresa nasce
+    # com um nome provisório a partir do nome da própria pessoa.
+    empresa_teste = Empresa.query.filter_by(nome="Consultório de Fulano Teste").first()
     checar("Empresa nova recebeu data de vencimento do trial", empresa_teste.data_vencimento is not None)
     checar("Empresa nova começa com status 'trial'", empresa_teste.status == "trial")
 
