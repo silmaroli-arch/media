@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block titulo %}Cadastrar/buscar paciente — {{ grupo.nome }}{% endblock %}
+{% block conteudo %}
+<p class="text-muted mb-1"><a href="{{ url_for('grupo.meus_grupos') }}">Meus grupos</a> &rsaquo; {{ grupo.nome }} &rsaquo;
+  <a href="{{ url_for('grupo.pacientes_lista', grupo_id=grupo.id) }}">Pacientes</a> &rsaquo; Novo</p>
+<h3 class="mb-3">Cadastro / busca de paciente</h3>
+
+{% macro seletor_grupos() %}
+  {% if meus_grupos|length > 1 %}
+  <div class="mb-3">
+    <label class="form-label">Associar aos grupos</label>
+    {% for g in meus_grupos %}
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="grupos_ids" value="{{ g.id }}" id="g{{ g.id }}"
+             {% if g.id == grupo.id %}checked{% endif %}>
+      <label class="form-check-label" for="g{{ g.id }}">{{ g.nome }}</label>
+    </div>
+    {% endfor %}
+    <div class="form-check mt-1">
+      <input class="form-check-input" type="checkbox" name="associar_todos" value="1" id="associarTodos">
+      <label class="form-check-label" for="associarTodos">Associar a todos os meus grupos</label>
+    </div>
+  </div>
+  {% else %}
+  <input type="hidden" name="grupos_ids" value="{{ grupo.id }}">
+  {% endif %}
+{% endmacro %}
+
+{% if paciente_encontrado %}
+<div class="card p-3 mb-3" style="max-width: 560px;">
+  <div class="alert alert-success mb-3">Paciente já cadastrado — os dados abaixo serão importados, sem duplicar o cadastro.</div>
+  <dl class="row mb-0">
+    <dt class="col-sm-4">Nome</dt><dd class="col-sm-8">{{ paciente_encontrado.nome }}</dd>
+    <dt class="col-sm-4">CPF</dt><dd class="col-sm-8">{{ paciente_encontrado.cpf }}</dd>
+    <dt class="col-sm-4">Data de nascimento</dt><dd class="col-sm-8">{{ paciente_encontrado.data_nascimento.strftime('%d/%m/%Y') if paciente_encontrado.data_nascimento else '-' }}</dd>
+  </dl>
+  <form method="post" class="mt-3">
+    <input type="hidden" name="etapa" value="salvar">
+    <input type="hidden" name="paciente_id" value="{{ paciente_encontrado.id }}">
+    {{ seletor_grupos() }}
+    <button type="submit" class="btn btn-primary">Associar ao(s) grupo(s)</button>
+    <a href="{{ url_for('grupo.pacientes_novo', grupo_id=grupo.id) }}" class="btn btn-outline-secondary">Buscar outro CPF</a>
+  </form>
+</div>
+
+{% elif cpf_nao_encontrado %}
+<div class="card p-3 mb-3" style="max-width: 640px;">
+  <div class="alert alert-info mb-3">Nenhum cadastro encontrado com este CPF — preencha os dados abaixo para cadastrar.</div>
+  <form method="post">
+    <input type="hidden" name="etapa" value="salvar">
+    <input type="hidden" name="cpf" value="{{ cpf_buscado }}">
+    <div class="row">
+      <div class="col-md-8 mb-3"><label class="form-label">Nome completo *</label><input type="text" name="nome" class="form-control" required></div>
+      <div class="col-md-4 mb-3"><label class="form-label">CPF</label><input type="text" class="form-control" value="{{ cpf_buscado }}" disabled></div>
+    </div>
+    <div class="row">
+      <div class="col-md-4 mb-3"><label class="form-label">Data de nascimento</label><input type="text" name="data_nascimento" class="form-control" placeholder="DD/MM/AAAA"></div>
+      <div class="col-md-4 mb-3"><label class="form-label">Telefone</label><input type="text" name="telefone" class="form-control" placeholder="(27) 99999-9999"></div>
+      <div class="col-md-4 mb-3"><label class="form-label">E-mail (opcional)</label><input type="email" name="email" class="form-control"></div>
+    </div>
+    <hr>
+    <p class="text-muted small">Endereço (obrigatório)</p>
+    <div class="row">
+      <div class="col-md-3 mb-3"><label class="form-label">CEP *</label><input type="text" name="cep" class="form-control" required></div>
+      <div class="col-md-6 mb-3"><label class="form-label">Rua *</label><input type="text" name="rua" class="form-control" required></div>
+      <div class="col-md-3 mb-3"><label class="form-label">Número *</label><input type="text" name="numero" class="form-control" required></div>
+    </div>
+    <div class="row">
+      <div class="col-md-4 mb-3"><label class="form-label">Complemento</label><input type="text" name="complemento" class="form-control"></div>
+      <div class="col-md-4 mb-3"><label class="form-label">Bairro *</label><input type="text" name="bairro" class="form-control" required></div>
+      <div class="col-md-2 mb-3"><label class="form-label">Cidade *</label><input type="text" name="cidade" class="form-control" required></div>
+      <div class="col-md-2 mb-3"><label class="form-label">UF *</label><input type="text" name="uf" class="form-control" maxlength="2" required></div>
+    </div>
+    {{ seletor_grupos() }}
+    <button type="submit" class="btn btn-primary">Salvar</button>
+    <a href="{{ url_for('grupo.pacientes_novo', grupo_id=grupo.id) }}" class="btn btn-outline-secondary">Buscar outro CPF</a>
+  </form>
+</div>
+
+{% else %}
+<div class="card p-3" style="max-width: 460px;">
+  <form method="post">
+    <input type="hidden" name="etapa" value="buscar">
+    <div class="mb-3">
+      <label class="form-label">Buscar paciente pelo CPF *</label>
+      <input type="text" name="cpf" class="form-control" placeholder="000.000.000-00" value="{{ cpf_buscado }}" required autofocus>
+      <div class="form-text">Se o paciente já existir na plataforma (cadastrado por qualquer usuário), os dados são importados na hora — só preencha o formulário completo se o CPF não for encontrado.</div>
+    </div>
+    <button type="submit" class="btn btn-primary">Buscar CPF</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

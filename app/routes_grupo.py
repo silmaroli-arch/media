@@ -1,8 +1,9 @@
-"""Trabalho compartilhado (grupo) — BBP MedIA, seção 5.1.4 a 5.1.7.
+"""Trabalho compartilhado (grupo) — BBP MedIA, seção 5.1.4 a 5.1.9.
 
-Primeira fatia (prova de conceito) da reformulação de escopo descrita no
-BBP: cadastro de usuário (já existente, auth.cadastro) -> login -> criar
-grupo -> convidar membro por CPF -> aprovar convite -> ver grupo na lista.
+Fatias (prova de conceito) da reformulação de escopo descrita no BBP:
+- cadastro de usuário (já existente, auth.cadastro) -> login -> criar
+  grupo -> convidar membro por CPF -> aprovar convite -> ver grupo na lista.
+- cadastro/busca de paciente por CPF associado ao(s) grupo(s) do usuário.
 Implementado como um blueprint novo, adicional ao modelo de Empresa/
 Clínica já existente (ver app/routes_medico.py e app/clinica_utils.py) —
 a migração completa do restante do sistema para o conceito de grupo é um
@@ -15,13 +16,27 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Usuario, Grupo, GrupoMembro, GrupoConvite
+from app.models import Usuario, Grupo, GrupoMembro, GrupoConvite, GrupoPaciente, Paciente, validar_cpf, cep_incompleto
 
 grupo_bp = Blueprint("grupo", __name__, url_prefix="/grupos")
 
 
 def _cpf_digitos(cpf):
     return re.sub(r"\D", "", cpf or "")
+
+
+def _buscar_paciente_global_por_cpf(cpf):
+    """Paciente "global" (cadastrado por este novo fluxo de grupo, sem
+    empresa_id — ver Paciente.empresa_id) com este CPF, se existir. Não
+    procura entre os cadastros antigos ligados a Empresa/Clínica — são
+    dados de um modelo diferente (por enquanto) e ficam fora desta busca."""
+    digitos = _cpf_digitos(cpf)
+    if len(digitos) != 11:
+        return None
+    for p in Paciente.query.filter_by(empresa_id=None).filter(Paciente.cpf.isnot(None)).all():
+        if _cpf_digitos(p.cpf) == digitos:
+            return p
+    return None
 
 
 def _grupo_ativo_id():
@@ -241,3 +256,146 @@ def responder_convite(convite_id):
         flash("Convite recusado.", "success")
 
     return redirect(url_for("grupo.meus_convites"))
+
+
+@grupo_bp.route("/<int:grupo_id>/pacientes")
+@login_required
+def pacientes_lista(grupo_id):
+    """Tela 5.1.9 — Lista de pacientes (associados ao grupo)."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+
+    vinculos = GrupoPaciente.query.filter_by(grupo_id=grupo_id).join(Paciente).order_by(Paciente.nome).all()
+    pacientes = [
+        {"paciente": v.paciente, "pode_remover": grupo.paciente_pode_ser_removido(v.paciente_id)}
+        for v in vinculos
+    ]
+    return render_template("grupo/pacientes_lista.html", grupo=grupo, pacientes=pacientes)
+
+
+@grupo_bp.route("/<int:grupo_id>/pacientes/novo", methods=["GET", "POST"])
+@login_required
+def pacientes_novo(grupo_id):
+    """Tela 5.1.8 — Cadastro/busca de paciente. Busca primeiro por CPF: se
+    já existir (cadastrado por qualquer usuário, em qualquer grupo), só
+    associa ao(s) grupo(s) escolhido(s) sem duplicar o cadastro; se não
+    existir, cria o cadastro (com endereço obrigatório, BBP seção 7) e já
+    associa. Quando o usuário participa de mais de um grupo, pode marcar a
+    quais grupos associar (ou "todos")."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+
+    meus_grupos = [m.grupo for m in GrupoMembro.query.filter_by(usuario_id=current_user.id, ativo=True).all()]
+
+    paciente_encontrado = None
+    cpf_buscado = ""
+
+    if request.method == "POST":
+        etapa = request.form.get("etapa", "buscar")
+        cpf_buscado = request.form.get("cpf", "")
+
+        if etapa == "buscar":
+            if not validar_cpf(cpf_buscado):
+                flash("Informe um CPF válido para buscar.", "danger")
+                return render_template("grupo/pacientes_novo.html", grupo=grupo, meus_grupos=meus_grupos,
+                                       paciente_encontrado=None, cpf_buscado=cpf_buscado)
+            paciente_encontrado = _buscar_paciente_global_por_cpf(cpf_buscado)
+            return render_template("grupo/pacientes_novo.html", grupo=grupo, meus_grupos=meus_grupos,
+                                    paciente_encontrado=paciente_encontrado, cpf_buscado=cpf_buscado,
+                                    cpf_nao_encontrado=(paciente_encontrado is None))
+
+        # etapa == "salvar": associa um paciente já encontrado, ou cadastra um novo.
+        grupos_escolhidos_ids = request.form.getlist("grupos_ids")
+        if request.form.get("associar_todos"):
+            grupos_escolhidos_ids = [str(g.id) for g in meus_grupos]
+        if not grupos_escolhidos_ids:
+            grupos_escolhidos_ids = [str(grupo.id)]
+
+        paciente_id = request.form.get("paciente_id")
+        if paciente_id:
+            paciente = Paciente.query.get(int(paciente_id))
+        else:
+            if not validar_cpf(cpf_buscado):
+                flash("Informe um CPF válido.", "danger")
+                return render_template("grupo/pacientes_novo.html", grupo=grupo, meus_grupos=meus_grupos,
+                                        paciente_encontrado=None, cpf_buscado=cpf_buscado)
+            nome = (request.form.get("nome") or "").strip()
+            cep = (request.form.get("cep") or "").strip()
+            rua = (request.form.get("rua") or "").strip()
+            numero = (request.form.get("numero") or "").strip()
+            bairro = (request.form.get("bairro") or "").strip()
+            cidade = (request.form.get("cidade") or "").strip()
+            uf = (request.form.get("uf") or "").strip()
+            if not nome:
+                flash("Informe o nome do paciente.", "danger")
+                return render_template("grupo/pacientes_novo.html", grupo=grupo, meus_grupos=meus_grupos,
+                                        paciente_encontrado=None, cpf_buscado=cpf_buscado)
+            if cep_incompleto(cep) or not all([cep, rua, numero, bairro, cidade, uf]):
+                flash("Endereço completo é obrigatório para o cadastro do paciente.", "danger")
+                return render_template("grupo/pacientes_novo.html", grupo=grupo, meus_grupos=meus_grupos,
+                                        paciente_encontrado=None, cpf_buscado=cpf_buscado)
+
+            data_nascimento = None
+            data_str = (request.form.get("data_nascimento") or "").strip()
+            if data_str:
+                try:
+                    data_nascimento = datetime.strptime(data_str, "%d/%m/%Y").date()
+                except ValueError:
+                    pass
+
+            paciente = Paciente(
+                empresa_id=None, clinica_id=None,
+                nome=nome, cpf=cpf_buscado, data_nascimento=data_nascimento,
+                telefone=(request.form.get("telefone") or "").strip(),
+                email=(request.form.get("email") or "").strip(),
+                cep=cep, rua=rua, numero=numero,
+                complemento=(request.form.get("complemento") or "").strip(),
+                bairro=bairro, cidade=cidade, uf=uf,
+            )
+            db.session.add(paciente)
+            db.session.flush()
+
+        criados = 0
+        for gid in grupos_escolhidos_ids:
+            gid = int(gid)
+            if not GrupoPaciente.query.filter_by(grupo_id=gid, paciente_id=paciente.id).first():
+                db.session.add(GrupoPaciente(grupo_id=gid, paciente_id=paciente.id))
+                criados += 1
+        db.session.commit()
+
+        if criados:
+            flash(f"{paciente.nome} associado(a) a {criados} grupo(s).", "success")
+        else:
+            flash(f"{paciente.nome} já estava associado(a) ao(s) grupo(s) selecionado(s).", "success")
+        return redirect(url_for("grupo.pacientes_lista", grupo_id=grupo.id))
+
+    return render_template("grupo/pacientes_novo.html", grupo=grupo, meus_grupos=meus_grupos,
+                            paciente_encontrado=None, cpf_buscado="")
+
+
+@grupo_bp.route("/<int:grupo_id>/pacientes/<int:paciente_id>/remover", methods=["POST"])
+@login_required
+def pacientes_remover(grupo_id, paciente_id):
+    """BBP seção 7: remove a associação do paciente com este grupo — só
+    permitido se o paciente nunca teve consulta agendada por um médico
+    deste grupo; caso contrário, a associação é definitiva."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+
+    vinculo = GrupoPaciente.query.filter_by(grupo_id=grupo_id, paciente_id=paciente_id).first()
+    if not vinculo:
+        flash("Este paciente não está associado a este grupo.", "danger")
+    elif not grupo.paciente_pode_ser_removido(paciente_id):
+        flash("Este paciente já teve consulta agendada neste grupo — a associação é definitiva e não pode ser removida.", "danger")
+    else:
+        db.session.delete(vinculo)
+        db.session.commit()
+        flash("Paciente removido do grupo.", "success")
+
+    return redirect(url_for("grupo.pacientes_lista", grupo_id=grupo_id))

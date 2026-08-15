@@ -686,6 +686,22 @@ class Grupo(db.Model):
         m = self.membro_ativo(usuario_id)
         return bool(m and m.papel in ("dono", "administrador"))
 
+    def paciente_pode_ser_removido(self, paciente_id):
+        """BBP seção 7: um paciente sem nenhuma consulta agendada neste
+        grupo pode ser removido normalmente; a partir da primeira consulta
+        agendada por um médico deste grupo, a associação é definitiva.
+        Considera médicos que JÁ foram membros do grupo (não só os ativos
+        hoje), já que o vínculo do paciente nasceu de um atendimento real
+        que aconteceu enquanto o médico era membro."""
+        medico_ids = [m.usuario_id for m in self.membros]
+        if not medico_ids:
+            return True
+        existe_agendamento = Agendamento.query.filter(
+            Agendamento.paciente_id == paciente_id,
+            Agendamento.medico_id.in_(medico_ids),
+        ).first()
+        return existe_agendamento is None
+
 
 class GrupoMembro(db.Model):
     """Vínculo de um usuário a um grupo de trabalho, com um papel: "dono"
@@ -726,6 +742,32 @@ class GrupoConvite(db.Model):
     grupo = db.relationship("Grupo", back_populates="convites")
     usuario_convidado = db.relationship("Usuario", foreign_keys=[usuario_convidado_id])
     convidado_por = db.relationship("Usuario", foreign_keys=[convidado_por_id])
+
+
+class GrupoPaciente(db.Model):
+    """Associação de um paciente (cadastro único no sistema, por CPF — BBP
+    seção 4.3 / tela 5.1.8) a um grupo de trabalho. Um mesmo paciente pode
+    estar associado a mais de um grupo; ao cadastrar, fica disponível para
+    ser importado (encontrado por CPF) por outros usuários do(s) grupo(s)
+    escolhido(s).
+
+    Regra de negócio (BBP seção 7, validada com o cliente): um paciente
+    sem nenhuma consulta agendada NESTE grupo pode ser removido dele
+    normalmente; a partir da primeira consulta agendada por um médico
+    deste grupo, a associação passa a ser definitiva (ver
+    Grupo.paciente_pode_ser_removido)."""
+    __tablename__ = "grupo_pacientes"
+    __table_args__ = (
+        db.UniqueConstraint("grupo_id", "paciente_id", name="uq_grupo_paciente"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=False)
+    paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
+    paciente = db.relationship("Paciente", foreign_keys=[paciente_id])
 
 
 class Paciente(db.Model):
