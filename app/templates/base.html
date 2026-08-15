@@ -37,7 +37,7 @@
 {% set eh_staff_logado = current_user.is_authenticated and current_user.is_staff %}
 <div class="d-flex">
   {% if eh_staff_logado %}
-  {% set grupo_medico = ['medico.medico_horarios', 'medico.medico_agenda_pessoal', 'medico.medico_bloqueios', 'medico.certificado_digital', 'medico.minha_agenda_completa'] %}
+  {% set grupo_medico = ['medico.medico_horarios', 'medico.medico_agenda_pessoal', 'medico.medico_bloqueios', 'medico.minha_agenda_completa'] %}
   {% set grupo_cadastro_geral = ['medico.pacientes_lista', 'medico.pacientes_novo', 'medico.pacientes_editar', 'medico.pacientes_detalhe',
                                   'medico.equipe_lista', 'medico.equipe_novo', 'medico.equipe_editar', 'medico.equipe_permissoes',
                                   'medico.filiais_lista', 'medico.filiais_nova',
@@ -126,9 +126,6 @@
             {% if current_user.tipo == 'medico' %}
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint == 'medico.minha_agenda_completa' %}active{% endif %}" href="{{ url_for('medico.minha_agenda_completa') }}">Minha agenda em todos os locais</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.certificado_digital' %}active{% endif %}" href="{{ url_for('medico.certificado_digital') }}">Meu certificado digital</a>
             </li>
             {% endif %}
           </ul>

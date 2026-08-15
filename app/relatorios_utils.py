@@ -111,8 +111,7 @@ def exportar_xlsx(base_nome, data_inicio, data_fim, titulo, cabecalho, linhas):
 
 def exportar_pdf(base_nome, data_inicio, data_fim, titulo, cabecalho, linhas, linhas_resumo=None):
     """Devolve uma resposta Flask com um PDF tabular pronto para download
-    (reportlab, já usado em app/nfse_nacional.py e app/prontuario_pdf.py).
-    `linhas_resumo`, se informado, é uma lista de strings mostrada acima da
+    (reportlab). `linhas_resumo`, se informado, é uma lista de strings mostrada acima da
     tabela (ex.: totais e médias) — pensado para impressão/anexo, não para
     reabrir e editar depois."""
     from reportlab.lib import colors

@@ -4,7 +4,6 @@ from datetime import datetime, date, timedelta
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.extensions import db
-from app.cripto_clinico import criptografar_texto, descriptografar_texto
 
 
 def normalizar_telefone(telefone):
@@ -343,18 +342,6 @@ class Usuario(db.Model, UserMixin):
     perm_equipe = db.Column(db.Boolean, nullable=False, default=False)
     perm_filiais = db.Column(db.Boolean, nullable=False, default=False)
     perm_dados_clinica = db.Column(db.Boolean, nullable=False, default=False)
-
-    # Certificado digital pessoal (e-CPF, ICP-Brasil) do médico, usado para
-    # assinar digitalmente as evoluções clínicas que ele registra (ver
-    # app/assinatura_clinica.py) — rumo ao NGS3 do CFM 1.821/2007. Guardado
-    # criptografado (ver app/cripto_clinico.py), igual ao certificado
-    # e-CNPJ da clínica usado na nota fiscal, mas por pessoa em vez de por
-    # clínica: cada médico assina com o próprio certificado, não o da
-    # empresa. Só faz sentido para tipo == "medico".
-    certificado_digital_pfx = db.Column(db.LargeBinary)
-    certificado_digital_senha_cripto = db.Column(db.LargeBinary)
-    certificado_digital_titular = db.Column(db.String(200))
-    certificado_digital_validade = db.Column(db.Date)
 
     # CPF e endereço PESSOAL de quem trabalha na plataforma (dono/médico/
     # secretária) - coletados no cadastro (auth.cadastro) e também no
@@ -1280,97 +1267,6 @@ class Agendamento(db.Model):
         return self.encerrado_em is not None
 
 
-class EvolucaoClinica(db.Model):
-    """Registro clínico de uma consulta/atendimento — o começo do que, no
-    futuro, deve se tornar um prontuário eletrônico de verdade (ver
-    conversa sobre CFM 1.821/2007 e os Níveis de Garantia de Segurança).
-
-    Por enquanto isto é conteúdo NGS1/NGS2 (sem assinatura digital
-    ICP-Brasil ainda — teria que ser por médico, com certificado próprio,
-    diferente do certificado e-CNPJ da clínica usado na nota fiscal), mas
-    já segue a regra mais importante de um registro clínico: é
-    IMUTÁVEL POR DESENHO. Não existe rota de editar nem de excluir uma
-    evolução já salva — uma consulta errada não se corrige apagando o
-    registro, se corrige com uma entrada nova. Isso é intencional e não
-    deve mudar sem repensar a arquitetura toda."""
-    __tablename__ = "evolucoes_clinicas"
-
-    id = db.Column(db.Integer, primary_key=True)
-    agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=False)
-    # Guardado também aqui (não só via agendamento.paciente_id) para poder
-    # trazer o histórico clínico completo do paciente com uma consulta
-    # direta, sem precisar sempre passar por Agendamento.
-    paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
-    autor_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
-
-    # Conteúdo cifrado (ver app/cripto_clinico.py) — nunca fica em texto
-    # puro no banco. Use a propriedade `texto` abaixo para ler/gravar; ela
-    # cuida de cifrar/decifrar automaticamente.
-    texto_cripto = db.Column(db.LargeBinary)
-
-    # Sinais vitais — todos opcionais, preenchidos só quando medidos nessa
-    # consulta.
-    peso_kg = db.Column(db.Numeric(5, 2))
-    altura_cm = db.Column(db.Integer)
-    pressao_arterial = db.Column(db.String(20))  # ex.: "120/80"
-    frequencia_cardiaca_bpm = db.Column(db.Integer)
-    temperatura_celsius = db.Column(db.Numeric(4, 1))
-
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-
-    # Assinatura digital ICP-Brasil do autor (ver app/assinatura_clinica.py)
-    # — preenchida automaticamente ao salvar, SE o autor for médico e tiver
-    # um certificado digital pessoal configurado (Usuario.certificado_digital_*).
-    # Fica None quando não há certificado disponível: a entrada continua
-    # válida (nível NGS2), só não tem validade de documento assinado (NGS3).
-    assinatura_base64 = db.Column(db.Text)
-    assinatura_certificado_titular = db.Column(db.String(200))
-    assinatura_certificado_serial = db.Column(db.String(80))
-    # Certificado público (PEM, não é sigiloso) usado nesta assinatura,
-    # guardado junto com o registro — permite verificar a assinatura no
-    # futuro mesmo que o médico troque de certificado depois.
-    assinatura_certificado_pem = db.Column(db.Text)
-    assinatura_hash_sha256 = db.Column(db.String(64))
-    assinado_em = db.Column(db.DateTime)
-
-    agendamento = db.relationship("Agendamento", backref=db.backref("evolucoes", order_by="EvolucaoClinica.criado_em"))
-    paciente = db.relationship("Paciente", backref=db.backref("evolucoes_clinicas", order_by="EvolucaoClinica.criado_em.desc()"))
-    autor = db.relationship("Usuario")
-
-    @property
-    def texto(self):
-        return descriptografar_texto(self.texto_cripto)
-
-    @texto.setter
-    def texto(self, valor):
-        self.texto_cripto = criptografar_texto(valor)
-
-    @property
-    def assinada(self):
-        return self.assinatura_base64 is not None
-
-
-class LogAcessoProntuario(db.Model):
-    """Trilha de auditoria de acesso ao prontuário — quem visualizou,
-    criou, assinou ou exportou o histórico clínico de qual paciente, e
-    quando (requisito técnico do CFM 1.821/2007 para os Níveis de Garantia
-    de Segurança NGS2/NGS3). Assim como EvolucaoClinica, é IMUTÁVEL por
-    desenho: só existe rota para criar um registro, nunca editar ou apagar
-    — ver app/auditoria_clinica.py."""
-    __tablename__ = "logs_acesso_prontuario"
-
-    id = db.Column(db.Integer, primary_key=True)
-    paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
-    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
-    # acao: "visualizar_prontuario", "criar_evolucao", "exportar_prontuario"
-    acao = db.Column(db.String(40), nullable=False)
-    detalhe = db.Column(db.Text)
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-
-    paciente = db.relationship("Paciente")
-    usuario = db.relationship("Usuario")
-
-
 class ChatMensagem(db.Model):
     """Registro de cada pergunta feita pelo paciente no chat do app (e a
     resposta obtida, seja pela FAQ curada, pela IA, pela correspondência
@@ -1413,86 +1309,6 @@ class ResultadoExame(db.Model):
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     agendamento = db.relationship("Agendamento", back_populates="resultado")
-
-
-class ProcedimentoGastro(db.Model):
-    """Registro clínico estruturado de um procedimento gastroenterológico
-    (colonoscopia, endoscopia, etc.) — achados, pólipos, sedação, complicações,
-    tempo de procedimento. Imutável por desenho (não admite edição, só criação
-    nova como correção, seguindo princípio de prontuário)."""
-    __tablename__ = "procedimentos_gastro"
-
-    id = db.Column(db.Integer, primary_key=True)
-    agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=False, unique=True)
-    paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
-    medico_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
-
-    # Preparo observado na hora — escala de Boston (0=inadequado até 3=excelente)
-    qualidade_preparo = db.Column(db.String(20))  # "excelente", "bom", "adequado", "insuficiente"
-
-    # Sedação/anestesia realizada
-    sedacao_realizada = db.Column(db.Boolean, default=False)
-    sedacao_tipo = db.Column(db.String(100))  # "propofol", "midazolam", "sem sedação", etc.
-    sedacao_dose = db.Column(db.String(100))  # "1.5mg/kg", "5mg", etc.
-
-    # Achados principais em texto
-    achados_texto = db.Column(db.Text)  # Descrição dos achados (ex.: "Íngreme colônica com infiltração mucosa")
-
-    # Resumo de procedimentos realizados
-    numero_polipos = db.Column(db.Integer, default=0)
-    polipos_removidos = db.Column(db.Integer, default=0)  # Quantos foram removidos
-    biopsias_coletadas = db.Column(db.Integer, default=0)
-    resseccao_endoscopica = db.Column(db.Boolean, default=False)
-    hemorragia_controlada = db.Column(db.Boolean, default=False)
-
-    # Complicações registradas durante/após
-    complicacoes = db.Column(db.Text)  # "sangramento leve controlado", etc.
-
-    # Duração do procedimento em minutos
-    tempo_procedimento_minutos = db.Column(db.Integer)
-
-    # Observações gerais do médico
-    observacoes = db.Column(db.Text)
-
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    assinado_em = db.Column(db.DateTime)
-
-    agendamento = db.relationship("Agendamento", backref=db.backref("procedimento_gastro", uselist=False))
-    paciente = db.relationship("Paciente")
-    medico = db.relationship("Usuario")
-    polipos = db.relationship("ProcedimentoPolipo", cascade="all, delete-orphan", backref="procedimento")
-
-    @property
-    def assinado(self):
-        return self.assinado_em is not None
-
-
-class ProcedimentoPolipo(db.Model):
-    """Cada pólipo encontrado durante um procedimento gastro — permite
-    registro individualizado de localização, tamanho, classificação,
-    ações tomadas (remoção, biópsia, marcação) e resultado histopatológico."""
-    __tablename__ = "procedimento_polipos"
-
-    id = db.Column(db.Integer, primary_key=True)
-    procedimento_gastro_id = db.Column(db.Integer, db.ForeignKey("procedimentos_gastro.id"), nullable=False)
-
-    # Localização anatômica
-    localizacao = db.Column(db.String(100))  # "ceco", "colon ascendente", "flexura hepática", "colon transverso", "flexura esplênica", "colon descendente", "sigmóide", "reto"
-
-    # Características do pólipo
-    tamanho_mm = db.Column(db.Integer)  # Tamanho em milímetros
-    classificacao_paris = db.Column(db.String(20))  # "1p" (pediculado), "2a", "2b", "2c" (sésseis), "3" (submerso), etc.
-
-    # Ação tomada
-    acoes = db.Column(db.String(255))  # "removido", "biopsiado", "marcado", "fotocoagulado"
-
-    # Resultado histopatológico (se biopsiado/removido)
-    histopatologia = db.Column(db.String(255))  # "adenoma tubular de baixo grau", "pólipo hiperplásico", "carcinoma", etc.
-
-    # Observações específicas do pólipo
-    observacoes = db.Column(db.Text)
-
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
 class FaqItem(db.Model):

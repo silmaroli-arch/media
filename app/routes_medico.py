@@ -20,8 +20,7 @@ from app.models import (
     PerguntaPendente, ClinicaMembro, MedicoHorario, MedicoBloqueio, Clinica,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
-    ChatMensagem, ResultadoExame, EvolucaoClinica,
-    ProcedimentoGastro, ProcedimentoPolipo,
+    ChatMensagem, ResultadoExame,
     ConviteVinculo, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto, validar_cpf,
 )
@@ -34,10 +33,6 @@ from app.pdf_preparo import extrair_sugestao_de_pdf, gerar_xlsx_da_sugestao
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.agendamento_otimizador import medico_tem_bloqueio, conflito_de_agenda
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
-from app.cripto_clinico import criptografar_bytes as criptografar_bytes_clinico, criptografar_texto as criptografar_texto_clinico
-from app.assinatura_clinica import assinar_evolucao_se_possivel, ErroAssinatura
-from app.auditoria_clinica import registrar_acesso
-from app.prontuario_pdf import gerar_pdf_prontuario
 from cryptography.hazmat.primitives.serialization import pkcs12
 
 # Dias da semana usados no formulário de horário de atendimento por médico.
@@ -874,41 +869,6 @@ def pacientes_detalhe(paciente_id):
             return redirect(url_for("medico.pacientes_lista"))
 
     return render_template("medico/pacientes_detalhe.html", paciente=paciente)
-
-
-@medico_bp.route("/pacientes/<int:paciente_id>/prontuario/exportar")
-@login_required
-@staff_required
-def pacientes_prontuario_exportar(paciente_id):
-    """Exporta o prontuário (histórico de evolução clínica) do paciente em
-    PDF — requisito técnico do processo sem papel (NGS2/NGS3, CFM
-    1.821/2007): o sistema precisa conseguir exportar num formato aberto.
-    Mesmas checagens de acesso de pacientes_detalhe(), e o próprio acesso
-    de exportação também fica registrado na trilha de auditoria."""
-    paciente = Paciente.query.filter(
-        Paciente.id == paciente_id, _filtro_pacientes_da_empresa()
-    ).first_or_404()
-
-    if eh_medico() and not current_user.perm_pacientes:
-        tem_vinculo = Agendamento.query.filter_by(
-            paciente_id=paciente.id, medico_id=current_user.id
-        ).first()
-        if not tem_vinculo:
-            flash("Este paciente não tem agendamentos com você.", "danger")
-            return redirect(url_for("medico.pacientes_lista"))
-
-    evolucoes = list(paciente.evolucoes_clinicas)
-    pdf_buffer = gerar_pdf_prontuario(paciente, evolucoes)
-
-    registrar_acesso(paciente.id, "exportar_prontuario", detalhe=f"total_evolucoes={len(evolucoes)}")
-
-    nome_arquivo = f"prontuario_{paciente.nome.replace(' ', '_')}.pdf"
-    return send_file(
-        pdf_buffer,
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name=nome_arquivo,
-    )
 
 
 # ---------- Exames e preparo ----------
@@ -2485,76 +2445,6 @@ def medico_bloqueio_remover(bloqueio_id):
     return redirect(url_for("medico.medico_bloqueios", medico_id=medico_id))
 
 
-# ---------- Certificado digital pessoal do médico (assinatura de evolução) ----------
-
-@medico_bp.route("/meu-certificado-digital", methods=["GET", "POST"])
-@login_required
-@staff_required
-def certificado_digital():
-    """Upload do certificado digital pessoal (e-CPF, ICP-Brasil) do
-    médico, usado para assinar digitalmente as evoluções clínicas que ele
-    registrar (ver app/assinatura_clinica.py). Só médicos têm essa tela —
-    é uma assinatura pessoal, não algo que uma secretária faça em nome de
-    outra pessoa."""
-    if current_user.tipo != "medico":
-        flash("Só médicos têm certificado digital pessoal para assinar evoluções.", "danger")
-        return redirect(url_for("medico.dashboard"))
-
-    if request.method == "POST":
-        arquivo = request.files.get("certificado_arquivo")
-        senha = request.form.get("certificado_senha", "")
-
-        if not arquivo or not arquivo.filename:
-            flash("Selecione o arquivo do certificado (.pfx) antes de enviar.", "danger")
-            return redirect(url_for("medico.certificado_digital"))
-        if not senha:
-            flash("Informe a senha do certificado.", "danger")
-            return redirect(url_for("medico.certificado_digital"))
-
-        conteudo = arquivo.read()
-        if len(conteudo) > 5 * 1024 * 1024:
-            flash("Arquivo muito grande para ser um certificado válido.", "danger")
-            return redirect(url_for("medico.certificado_digital"))
-
-        try:
-            _chave_privada, certificado, _cadeia = pkcs12.load_key_and_certificates(
-                conteudo, senha.encode("utf-8")
-            )
-        except Exception:
-            flash(
-                "Não foi possível abrir o certificado — verifique se o arquivo é um .pfx/.p12 "
-                "válido e se a senha está correta.",
-                "danger",
-            )
-            return redirect(url_for("medico.certificado_digital"))
-
-        if certificado is None:
-            flash("O arquivo enviado não contém um certificado válido.", "danger")
-            return redirect(url_for("medico.certificado_digital"))
-
-        titular_extraido = None
-        try:
-            titular_extraido = certificado.subject.rfc4514_string()
-        except Exception:
-            titular_extraido = None
-
-        if hasattr(certificado, "not_valid_after_utc"):
-            validade = certificado.not_valid_after_utc.date()
-        else:
-            validade = certificado.not_valid_after.date()
-
-        current_user.certificado_digital_pfx = criptografar_bytes_clinico(conteudo)
-        current_user.certificado_digital_senha_cripto = criptografar_texto_clinico(senha)
-        current_user.certificado_digital_titular = titular_extraido
-        current_user.certificado_digital_validade = validade
-        db.session.commit()
-
-        flash("Certificado digital validado e salvo com sucesso. Suas próximas evoluções já serão assinadas.", "success")
-        return redirect(url_for("medico.certificado_digital"))
-
-    return render_template("medico/certificado_digital.html")
-
-
 # ---------- Atendimento (continuidade/encerramento da consulta) ----------
 
 @medico_bp.route("/agenda/<int:agendamento_id>/atendimento", methods=["GET", "POST"])
@@ -2632,110 +2522,12 @@ def atendimento(agendamento_id):
         )
         atendimentos_anteriores.append((a, mensagens_da_consulta))
 
-    # Histórico clínico (evolução) completo do paciente, mais recente
-    # primeiro — inclui entradas de qualquer atendimento, não só deste.
-    evolucoes_paciente = (
-        EvolucaoClinica.query.filter_by(paciente_id=agendamento.paciente_id)
-        .order_by(EvolucaoClinica.criado_em.desc())
-        .all()
-    )
-
-    registrar_acesso(agendamento.paciente_id, "visualizar_prontuario", detalhe=f"agendamento_id={agendamento.id}")
-
     return render_template(
         "medico/atendimento.html",
         agendamento=agendamento,
         mensagens_chat=mensagens_chat,
         atendimentos_anteriores=atendimentos_anteriores,
-        evolucoes_paciente=evolucoes_paciente,
     )
-
-
-@medico_bp.route("/agenda/<int:agendamento_id>/evolucao/nova", methods=["POST"])
-@login_required
-@staff_required
-def atendimento_evolucao_nova(agendamento_id):
-    """Registra uma nova entrada de evolução clínica. Ver
-    app.models.EvolucaoClinica: é IMUTÁVEL por desenho — esta rota só cria,
-    nunca edita nem apaga uma entrada existente. Se algo foi anotado
-    errado, a correção é uma entrada nova, igual num prontuário de papel."""
-    query = Agendamento.query.filter(
-        Agendamento.id == agendamento_id,
-        Agendamento.clinica_id.in_(filiais_atuais_ids()),
-    )
-    if eh_medico():
-        query = query.filter(Agendamento.medico_id == current_user.id)
-    agendamento = query.first_or_404()
-
-    texto = request.form.get("texto", "").strip()
-    if not texto:
-        flash("Escreva alguma coisa na evolução antes de salvar.", "danger")
-        return redirect(url_for("medico.atendimento", agendamento_id=agendamento.id))
-
-    def _numero(campo, tipo=float):
-        valor = request.form.get(campo, "").strip().replace(",", ".")
-        if not valor:
-            return None
-        try:
-            return tipo(valor)
-        except ValueError:
-            return None
-
-    sinais_vitais = {
-        "peso_kg": _numero("peso_kg"),
-        "altura_cm": _numero("altura_cm", tipo=int),
-        "pressao_arterial": request.form.get("pressao_arterial", "").strip() or None,
-        "frequencia_cardiaca_bpm": _numero("frequencia_cardiaca_bpm", tipo=int),
-        "temperatura_celsius": _numero("temperatura_celsius"),
-    }
-    criado_em = datetime.utcnow()
-
-    evolucao = EvolucaoClinica(
-        agendamento_id=agendamento.id,
-        paciente_id=agendamento.paciente_id,
-        autor_id=current_user.id,
-        texto=texto,
-        criado_em=criado_em,
-        **sinais_vitais,
-    )
-
-    # Tenta assinar digitalmente com o certificado pessoal do autor (só
-    # médico com certificado configurado — ver app/assinatura_clinica.py).
-    # Se não houver certificado, a entrada é salva do mesmo jeito, só sem
-    # assinatura (nível NGS2 em vez de NGS3).
-    assinatura_ok = None
-    try:
-        assinatura_ok = assinar_evolucao_se_possivel(
-            current_user, texto, agendamento.paciente_id, agendamento.id, current_user.id, criado_em, sinais_vitais,
-        )
-    except ErroAssinatura as erro:
-        flash(str(erro), "warning")
-
-    if assinatura_ok:
-        evolucao.assinatura_base64 = assinatura_ok["assinatura_base64"]
-        evolucao.assinatura_certificado_titular = assinatura_ok["assinatura_certificado_titular"]
-        evolucao.assinatura_certificado_serial = assinatura_ok["assinatura_certificado_serial"]
-        evolucao.assinatura_certificado_pem = assinatura_ok["assinatura_certificado_pem"]
-        evolucao.assinatura_hash_sha256 = assinatura_ok["assinatura_hash_sha256"]
-        evolucao.assinado_em = assinatura_ok["assinado_em"]
-
-    db.session.add(evolucao)
-    db.session.commit()
-
-    registrar_acesso(
-        agendamento.paciente_id, "criar_evolucao",
-        detalhe=f"evolucao_id={evolucao.id} ({'assinada' if assinatura_ok else 'nao assinada'})",
-    )
-
-    if assinatura_ok:
-        flash("Evolução clínica registrada e assinada digitalmente.", "success")
-    else:
-        flash(
-            "Evolução clínica registrada (sem assinatura digital — configure seu certificado em "
-            '"Meu certificado digital", no menu Médico, para assinar automaticamente as próximas).',
-            "success",
-        )
-    return redirect(url_for("medico.atendimento", agendamento_id=agendamento.id))
 
 
 # ---------- Resultado de exame (upload de PDF) ----------
@@ -2790,109 +2582,6 @@ def resultado_upload(agendamento_id):
         return redirect(url_for("medico.agenda"))
 
     return render_template("medico/resultado_upload.html", agendamento=agendamento)
-
-
-# ---------- Achados do procedimento gastro ----------
-
-@medico_bp.route("/agenda/<int:agendamento_id>/procedimento-gastro", methods=["GET", "POST"])
-@login_required
-@staff_required
-def procedimento_gastro_salvar(agendamento_id):
-    """Registra os achados de um procedimento gastroenterológico (colonoscopia,
-    endoscopia, etc.) — qualidade de preparo, sedação, achados, pólipos,
-    complicações, tempo de duração."""
-    query = Agendamento.query.filter(
-        Agendamento.id == agendamento_id,
-        Agendamento.clinica_id.in_(filiais_atuais_ids()),
-    )
-    if eh_medico():
-        query = query.filter(Agendamento.medico_id == current_user.id)
-    agendamento = query.first_or_404()
-
-    procedimento = agendamento.procedimento_gastro
-
-    if request.method == "POST":
-        def _int_ou_none(campo):
-            valor = request.form.get(campo, "").strip()
-            if not valor:
-                return None
-            try:
-                return int(valor)
-            except ValueError:
-                return None
-
-        # Dados principais
-        qualidade_preparo = request.form.get("qualidade_preparo", "").strip() or None
-        sedacao_realizada = request.form.get("sedacao_realizada") == "true"
-        sedacao_tipo = request.form.get("sedacao_tipo", "").strip() or None
-        sedacao_dose = request.form.get("sedacao_dose", "").strip() or None
-        achados_texto = request.form.get("achados_texto", "").strip() or None
-        numero_polipos = _int_ou_none("numero_polipos") or 0
-        polipos_removidos = _int_ou_none("polipos_removidos") or 0
-        biopsias_coletadas = _int_ou_none("biopsias_coletadas") or 0
-        resseccao_endoscopica = request.form.get("resseccao_endoscopica") == "true"
-        hemorragia_controlada = request.form.get("hemorragia_controlada") == "true"
-        complicacoes = request.form.get("complicacoes", "").strip() or None
-        tempo_procedimento_minutos = _int_ou_none("tempo_procedimento_minutos")
-        observacoes = request.form.get("observacoes", "").strip() or None
-
-        if not procedimento:
-            procedimento = ProcedimentoGastro(
-                agendamento_id=agendamento.id,
-                paciente_id=agendamento.paciente_id,
-                medico_id=current_user.id,
-            )
-            db.session.add(procedimento)
-
-        # Remove pólipos antigos se for uma atualização
-        if procedimento.id:
-            for polipo in procedimento.polipos:
-                db.session.delete(polipo)
-
-        procedimento.qualidade_preparo = qualidade_preparo
-        procedimento.sedacao_realizada = sedacao_realizada
-        procedimento.sedacao_tipo = sedacao_tipo if sedacao_realizada else None
-        procedimento.sedacao_dose = sedacao_dose if sedacao_realizada else None
-        procedimento.achados_texto = achados_texto
-        procedimento.numero_polipos = numero_polipos
-        procedimento.polipos_removidos = polipos_removidos
-        procedimento.biopsias_coletadas = biopsias_coletadas
-        procedimento.resseccao_endoscopica = resseccao_endoscopica
-        procedimento.hemorragia_controlada = hemorragia_controlada
-        procedimento.complicacoes = complicacoes
-        procedimento.tempo_procedimento_minutos = tempo_procedimento_minutos
-        procedimento.observacoes = observacoes
-
-        # Processa os pólipos (arrays do form)
-        localizacoes = request.form.getlist("polipo_localizacao[]")
-        tamanhos = request.form.getlist("polipo_tamanho[]")
-        paris = request.form.getlist("polipo_paris[]")
-        acoes = request.form.getlist("polipo_acoes[]")
-        histopatologias = request.form.getlist("polipo_histopatologia[]")
-        obs_polipos = request.form.getlist("polipo_obs[]")
-
-        for i, loc in enumerate(localizacoes):
-            if loc:  # Só cria polipo se houver localização preenchida
-                polipo = ProcedimentoPolipo(
-                    localizacao=loc,
-                    tamanho_mm=int(tamanhos[i]) if i < len(tamanhos) and tamanhos[i] else None,
-                    classificacao_paris=paris[i] if i < len(paris) and paris[i] else None,
-                    acoes=acoes[i] if i < len(acoes) and acoes[i] else None,
-                    histopatologia=histopatologias[i] if i < len(histopatologias) and histopatologias[i] else None,
-                    observacoes=obs_polipos[i] if i < len(obs_polipos) and obs_polipos[i] else None,
-                )
-                procedimento.polipos.append(polipo)
-
-        db.session.commit()
-        flash("Achados do procedimento registrados com sucesso.", "success")
-        return redirect(url_for("medico.atendimento", agendamento_id=agendamento.id))
-
-    # GET: renderiza o form com dados existentes (se houver)
-    return render_template(
-        "medico/procedimento_gastro.html",
-        agendamento=agendamento,
-        procedimento=procedimento,
-    )
 
 
 # ---------- Perguntas pendentes (aprendizado da "IA") ----------

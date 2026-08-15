@@ -8,121 +8,17 @@
 </p>
 
 <div class="card p-4 mb-4">
-  <h5 class="mb-1">Evolução clínica</h5>
-  <p class="text-muted small mb-3">
-    Registro clínico do paciente — cada entrada fica salva permanentemente, com autor e data/hora.
-    Não é possível editar nem apagar uma entrada já salva: se precisar corrigir algo, registre uma
-    entrada nova explicando a correção, como em um prontuário de papel.
-  </p>
-
-  {% if evolucoes_paciente %}
-  <div class="mb-4" style="max-height: 420px; overflow-y: auto;">
-    {% for e in evolucoes_paciente %}
-    <div class="border-bottom py-2">
-      <div class="d-flex justify-content-between">
-        <span class="fw-semibold">{{ e.autor.nome }}</span>
-        <span class="text-muted small">
-          {{ e.criado_em.strftime('%d/%m/%Y %H:%M') }}
-          {% if e.agendamento_id != agendamento.id %}
-            <span class="badge bg-light text-dark border ms-1">{{ e.agendamento.exame.nome }} — {{ e.agendamento.data_hora.strftime('%d/%m/%Y') }}</span>
-          {% endif %}
-        </span>
-      </div>
-      <div style="white-space: pre-wrap;">{{ e.texto }}</div>
-      {% if e.peso_kg or e.altura_cm or e.pressao_arterial or e.frequencia_cardiaca_bpm or e.temperatura_celsius %}
-      <div class="text-muted small mt-1">
-        {% if e.peso_kg %}Peso: {{ e.peso_kg }} kg &nbsp;{% endif %}
-        {% if e.altura_cm %}Altura: {{ e.altura_cm }} cm &nbsp;{% endif %}
-        {% if e.pressao_arterial %}PA: {{ e.pressao_arterial }} mmHg &nbsp;{% endif %}
-        {% if e.frequencia_cardiaca_bpm %}FC: {{ e.frequencia_cardiaca_bpm }} bpm &nbsp;{% endif %}
-        {% if e.temperatura_celsius %}Temp.: {{ e.temperatura_celsius }} °C{% endif %}
-      </div>
-      {% endif %}
-      {% if e.assinada %}
-      <div class="small mt-1 text-success">
-        <i class="bi bi-patch-check-fill"></i> Assinado digitalmente
-        {% if e.assinatura_certificado_titular %}— {{ e.assinatura_certificado_titular }}{% endif %}
-        {% if e.assinado_em %}em {{ e.assinado_em.strftime('%d/%m/%Y %H:%M') }}{% endif %}
-      </div>
-      {% else %}
-      <div class="small mt-1 text-muted">
-        <i class="bi bi-dash-circle"></i> Sem assinatura digital (registro nível NGS2)
-      </div>
-      {% endif %}
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p class="text-muted">Nenhuma evolução registrada ainda para este paciente.</p>
-  {% endif %}
-
-  <hr>
-  <h6 class="mb-2">Nova entrada</h6>
-  <form method="post" action="{{ url_for('medico.atendimento_evolucao_nova', agendamento_id=agendamento.id) }}" id="form-nova-evolucao">
-    <textarea name="texto" class="form-control mb-3" rows="5" placeholder="Descreva a evolução desta consulta..." required></textarea>
-    <div class="row g-2 mb-3">
-      <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Peso (kg)</label>
-        <input type="text" inputmode="decimal" name="peso_kg" class="form-control form-control-sm">
-      </div>
-      <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Altura (cm)</label>
-        <input type="text" inputmode="numeric" name="altura_cm" class="form-control form-control-sm">
-      </div>
-      <div class="col-6 col-md-3">
-        <label class="form-label small mb-1">Pressão arterial</label>
-        <input type="text" name="pressao_arterial" class="form-control form-control-sm" placeholder="120/80">
-      </div>
-      <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">FC (bpm)</label>
-        <input type="text" inputmode="numeric" name="frequencia_cardiaca_bpm" class="form-control form-control-sm">
-      </div>
-      <div class="col-6 col-md-3">
-        <label class="form-label small mb-1">Temperatura (°C)</label>
-        <input type="text" inputmode="decimal" name="temperatura_celsius" class="form-control form-control-sm">
-      </div>
-    </div>
-    <button type="submit" class="btn btn-primary" id="btn-salvar-evolucao">Salvar evolução</button>
-  </form>
-  <script>
-    document.getElementById('form-nova-evolucao').addEventListener('submit', function () {
-      document.getElementById('btn-salvar-evolucao').disabled = true;
-    });
-  </script>
-</div>
-
-<div class="card p-4 mb-4">
   <h5 class="mb-3">Observações da consulta</h5>
   <form method="post">
     <textarea name="notas_atendimento" class="form-control mb-3" rows="8"
               placeholder="Anotações sobre a consulta — ficam salvas no histórico do paciente para consulta futura.">{{ agendamento.notas_atendimento or '' }}</textarea>
     <div class="form-check mb-3">
       <input type="checkbox" name="encerrar" id="encerrar" class="form-check-input" {% if agendamento.encerrada %}checked disabled{% endif %}>
-      <label class="form-check-label" for="encerrar">Encerrar este atendimento (marca o agendamento como "realizado")</label>
+      <label class="form-check-label" for="encerrar">Encerrar este atendimento</label>
     </div>
     <button type="submit" class="btn btn-primary">Salvar</button>
     <a href="{{ url_for('medico.agenda') }}" class="btn btn-link">Voltar para a agenda</a>
   </form>
-</div>
-
-<div class="card p-4 mb-4">
-  <h5 class="mb-3">Achados do Procedimento</h5>
-  <p class="text-muted small mb-3">
-    Registro estruturado dos achados do procedimento — qualidade de preparo, sedação, pólipos encontrados, biópsias, complicações, etc.
-  </p>
-  {% if agendamento.procedimento_gastro %}
-    <div class="alert alert-info mb-3">
-      <strong>Procedimento registrado em:</strong> {{ agendamento.procedimento_gastro.criado_em.strftime('%d/%m/%Y %H:%M') }} por {{ agendamento.procedimento_gastro.medico.nome }}
-      {% if agendamento.procedimento_gastro.numero_polipos %}
-        <br><strong>Pólipos encontrados:</strong> {{ agendamento.procedimento_gastro.numero_polipos }}
-        ({{ agendamento.procedimento_gastro.polipos_removidos }} removidos)
-      {% endif %}
-    </div>
-    <a href="{{ url_for('medico.procedimento_gastro_salvar', agendamento_id=agendamento.id) }}" class="btn btn-primary">Editar achados</a>
-  {% else %}
-    <p class="text-muted mb-3">Nenhum procedimento registrado ainda para este atendimento.</p>
-    <a href="{{ url_for('medico.procedimento_gastro_salvar', agendamento_id=agendamento.id) }}" class="btn btn-primary">Registrar achados do procedimento</a>
-  {% endif %}
 </div>
 
 <div class="accordion" id="accordionHistoricoPaciente">
