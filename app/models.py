@@ -648,6 +648,86 @@ class ConviteVinculo(db.Model):
     criado_por = db.relationship("Usuario", foreign_keys=[criado_por_id])
 
 
+class Grupo(db.Model):
+    """Trabalho compartilhado (BBP MedIA, seção 4.2 / 5.1.4): um grupo de
+    usuários — médicos e/ou administrativos — que trabalham juntos. Quem
+    cria o grupo é o seu DONO (GrupoMembro.papel == "dono"); o dono pode
+    conceder o papel de ADMINISTRADOR a outros membros (podem convidar e
+    remover membros), mas só ele concede esse papel. Um mesmo usuário pode
+    pertencer a mais de um grupo.
+
+    Implementado como uma camada nova, adicional ao modelo de
+    Empresa/Clínica já existente — esta é a primeira fatia (prova de
+    conceito) da reformulação descrita no BBP; a migração completa do
+    restante do sistema para este conceito é um trabalho futuro maior."""
+    __tablename__ = "grupos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(150), nullable=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    membros = db.relationship("GrupoMembro", back_populates="grupo", order_by="GrupoMembro.id")
+    convites = db.relationship("GrupoConvite", back_populates="grupo", order_by="GrupoConvite.id")
+
+    @property
+    def dono(self):
+        for m in self.membros:
+            if m.papel == "dono" and m.ativo:
+                return m.usuario
+        return None
+
+    def membro_ativo(self, usuario_id):
+        for m in self.membros:
+            if m.usuario_id == usuario_id and m.ativo:
+                return m
+        return None
+
+    def eh_administrador(self, usuario_id):
+        m = self.membro_ativo(usuario_id)
+        return bool(m and m.papel in ("dono", "administrador"))
+
+
+class GrupoMembro(db.Model):
+    """Vínculo de um usuário a um grupo de trabalho, com um papel: "dono"
+    (quem criou o grupo — único, imutável), "administrador" (pode
+    convidar/remover membros; o dono concede este papel) ou "membro"
+    (participação comum)."""
+    __tablename__ = "grupo_membros"
+    __table_args__ = (
+        db.UniqueConstraint("grupo_id", "usuario_id", name="uq_grupo_membro"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=False)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    papel = db.Column(db.String(20), nullable=False, default="membro")  # dono | administrador | membro
+    ativo = db.Column(db.Boolean, nullable=False, default=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    grupo = db.relationship("Grupo", back_populates="membros")
+    usuario = db.relationship("Usuario", foreign_keys=[usuario_id])
+
+
+class GrupoConvite(db.Model):
+    """Convite para um usuário (já cadastrado no sistema, tela 5.1.1)
+    entrar em um grupo de trabalho — enviado por CPF (tela 5.1.5). Só vira
+    membro (GrupoMembro) quando o convidado aprova (tela 5.1.6); não existe
+    cadastro de equipe nem criação de conta a partir deste convite."""
+    __tablename__ = "grupo_convites"
+
+    id = db.Column(db.Integer, primary_key=True)
+    grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=False)
+    usuario_convidado_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    convidado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
+    status = db.Column(db.String(20), nullable=False, default="pendente")  # pendente | aceito | recusado | cancelado
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    decidido_em = db.Column(db.DateTime, nullable=True)
+
+    grupo = db.relationship("Grupo", back_populates="convites")
+    usuario_convidado = db.relationship("Usuario", foreign_keys=[usuario_convidado_id])
+    convidado_por = db.relationship("Usuario", foreign_keys=[convidado_por_id])
+
+
 class Paciente(db.Model):
     __tablename__ = "pacientes"
     __table_args__ = (db.UniqueConstraint("empresa_id", "cpf", name="uq_empresa_cpf"),)

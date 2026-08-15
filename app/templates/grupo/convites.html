@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block titulo %}Meus convites{% endblock %}
+{% block conteudo %}
+<p class="text-muted mb-1"><a href="{{ url_for('grupo.meus_grupos') }}">Meus grupos</a> &rsaquo; Meus convites</p>
+<h3 class="mb-3">Meus convites</h3>
+<div class="card p-3">
+  <table class="table table-hover">
+    <thead><tr><th>Grupo</th><th>Convidado por</th><th></th></tr></thead>
+    <tbody>
+      {% for c in convites %}
+      <tr>
+        <td>{{ c.grupo.nome }}</td>
+        <td>{{ c.convidado_por.nome if c.convidado_por else '-' }}</td>
+        <td class="text-nowrap">
+          <form method="post" action="{{ url_for('grupo.responder_convite', convite_id=c.id) }}" class="d-inline">
+            <input type="hidden" name="decisao" value="aprovar">
+            <button type="submit" class="btn btn-sm btn-success">Aprovar</button>
+          </form>
+          <form method="post" action="{{ url_for('grupo.responder_convite', convite_id=c.id) }}" class="d-inline">
+            <input type="hidden" name="decisao" value="recusar">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Recusar</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-muted text-center">Nenhum convite pendente.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -72,6 +72,16 @@
         </a>
       </li>
 
+      {# Trabalho compartilhado (grupo) — BBP MedIA. Camada nova, adicional
+         ao modelo de Empresa/Clínica/"locais de atendimento" abaixo (ver
+         app/routes_grupo.py); a migração completa do restante do sistema
+         para este conceito ainda está pendente. #}
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('grupo.') %}active{% endif %}" href="{{ url_for('grupo.meus_grupos') }}">
+          <i class="bi bi-people me-2"></i>Grupos de trabalho
+        </a>
+      </li>
+
       <li class="nav-item mb-1">
         <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuCadastroGeral" role="button"
            aria-expanded="{{ 'true' if request.endpoint in grupo_cadastro_geral else 'false' }}">

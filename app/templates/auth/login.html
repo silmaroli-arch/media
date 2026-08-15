@@ -7,8 +7,9 @@
       <div class="text-center mb-3"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 52px;"></div>
       <form method="post">
         <div class="mb-3">
-          <label class="form-label">E-mail</label>
-          <input type="email" name="email" class="form-control" required autofocus>
+          <label class="form-label">CPF ou e-mail</label>
+          <input type="text" name="identificador" class="form-control" placeholder="000.000.000-00" required autofocus>
+          <div class="form-text">Conforme o BBP, o login do sistema principal passa a ser por CPF; o e-mail continua funcionando por compatibilidade com contas já existentes.</div>
         </div>
         <div class="mb-3">
           <label class="form-label">Senha</label>

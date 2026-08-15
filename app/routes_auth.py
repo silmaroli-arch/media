@@ -17,20 +17,35 @@ def login():
         return redirect(url_for("index"))
 
     if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
+        # BBP MedIA (tela 5.1.2): login do sistema principal por CPF +
+        # senha. O e-mail continua funcionando no mesmo campo por
+        # compatibilidade com contas já existentes (transição) — se o
+        # texto digitado tiver cara de CPF (só dígitos, 11 caracteres),
+        # busca por CPF; senão, cai no comportamento antigo (e-mail).
+        identificador = (request.form.get("identificador") or request.form.get("email") or "").strip()
         senha = request.form.get("senha", "")
-        usuario = Usuario.query.filter_by(email=email).first()
+        cpf_digitos = re.sub(r"\D", "", identificador)
+
+        usuario = None
+        if len(cpf_digitos) == 11:
+            for candidato in Usuario.query.filter(Usuario.cpf.isnot(None), Usuario.tipo != "paciente").all():
+                if re.sub(r"\D", "", candidato.cpf or "") == cpf_digitos:
+                    usuario = candidato
+                    break
+        if not usuario:
+            usuario = Usuario.query.filter_by(email=identificador.lower()).first()
 
         if usuario and usuario.ativo and usuario.checar_senha(senha):
-            # Remove qualquer seleção de clínica de uma sessão anterior —
-            # importante em computadores compartilhados (ex.: recepção da
-            # clínica), onde uma pessoa pode fazer logout e outra logar
-            # em seguida no mesmo navegador.
+            # Remove qualquer seleção de clínica/grupo de uma sessão
+            # anterior — importante em computadores compartilhados (ex.:
+            # recepção da clínica), onde uma pessoa pode fazer logout e
+            # outra logar em seguida no mesmo navegador.
             session.pop("clinica_id", None)
+            session.pop("grupo_ativo_id", None)
             login_user(usuario)
             return redirect(url_for("index"))
 
-        flash("E-mail ou senha inválidos.", "danger")
+        flash("CPF/e-mail ou senha inválidos.", "danger")
 
     return render_template("auth/login.html")
 

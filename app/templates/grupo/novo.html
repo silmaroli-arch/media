@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block titulo %}Criar trabalho compartilhado{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Criar trabalho compartilhado (grupo)</h3>
+<div class="card p-3" style="max-width: 520px;">
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label">Nome do grupo *</label>
+      <input type="text" name="nome" class="form-control" placeholder='Ex.: "Clínica Vitória"' required>
+    </div>
+    <button type="submit" class="btn btn-primary">Salvar</button>
+    <a href="{{ url_for('grupo.meus_grupos') }}" class="btn btn-outline-secondary">Cancelar</a>
+  </form>
+</div>
+<p class="text-muted small mt-3">
+  Quem cria o grupo se torna seu dono, com poder de convidar membros e conceder o papel de administrador a
+  outros — não existe cadastro de equipe aqui: cada pessoa cria sua própria conta (tela de cadastro) e depois
+  é convidada por CPF para participar de um ou mais grupos.
+</p>
+{% endblock %}

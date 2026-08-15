@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block titulo %}Convidar membros — {{ grupo.nome }}{% endblock %}
+{% block conteudo %}
+<p class="text-muted mb-1"><a href="{{ url_for('grupo.meus_grupos') }}">Meus grupos</a> &rsaquo; {{ grupo.nome }} &rsaquo; Membros</p>
+<h3 class="mb-3">Convidar membros para o grupo</h3>
+
+<div class="card p-3 mb-4" style="max-width: 520px;">
+  <form method="post">
+    <input type="hidden" name="acao" value="convidar">
+    <div class="mb-2">
+      <label class="form-label">CPF do usuário a convidar *</label>
+      <input type="text" name="cpf" class="form-control" placeholder="000.000.000-00" required>
+      <div class="form-text">O usuário precisa já ter uma conta cadastrada no sistema. Não é possível criar uma conta nova por aqui.</div>
+    </div>
+    <button type="submit" class="btn btn-primary">Enviar convite</button>
+  </form>
+</div>
+
+<h5>Membros e convites do grupo</h5>
+<div class="card p-3">
+  <table class="table table-hover">
+    <thead><tr><th>Nome</th><th>CPF</th><th>Papel</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for m in membros %}
+      <tr>
+        <td>{{ m.usuario.nome }}</td>
+        <td>{{ m.usuario.cpf or '-' }}</td>
+        <td>
+          {% if m.papel == 'dono' %}Dono (criador)
+          {% elif m.papel == 'administrador' %}Administrador
+          {% else %}Membro{% endif %}
+        </td>
+        <td><span class="badge bg-success">Ativo</span></td>
+        <td class="text-nowrap">
+          {% if sou_dono and m.papel == 'membro' %}
+          <form method="post" class="d-inline">
+            <input type="hidden" name="acao" value="tornar_administrador">
+            <input type="hidden" name="membro_id" value="{{ m.id }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Tornar administrador</button>
+          </form>
+          {% endif %}
+          {% if m.papel != 'dono' %}
+          <form method="post" class="d-inline" onsubmit="return confirm('Remover este membro do grupo?');">
+            <input type="hidden" name="acao" value="remover_membro">
+            <input type="hidden" name="membro_id" value="{{ m.id }}">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Remover</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% for c in convites_pendentes %}
+      <tr>
+        <td>{{ c.usuario_convidado.nome }}</td>
+        <td>{{ c.usuario_convidado.cpf or '-' }}</td>
+        <td>-</td>
+        <td><span class="badge bg-warning text-dark">Convite pendente</span></td>
+        <td>
+          <form method="post" class="d-inline">
+            <input type="hidden" name="acao" value="cancelar_convite">
+            <input type="hidden" name="convite_id" value="{{ c.id }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Cancelar convite</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="text-muted small mt-3">
+  Qualquer administrador pode convidar ou remover membros; só o dono do grupo pode conceder o papel de
+  administrador a alguém. Recomenda-se designar ao menos um administrador logo na criação do grupo, para que a
+  gestão continue caso o dono saia do sistema.
+</p>
+{% endblock %}
