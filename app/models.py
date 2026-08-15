@@ -932,7 +932,7 @@ class Exame(db.Model):
     # app.agendamento_otimizador).
     duracao_minutos = db.Column(db.Integer)
 
-    # Preço do procedimento — usado no registro de pagamento (ver Pagamento).
+    # Preço do procedimento — informativo (sem controle financeiro no sistema).
     preco = db.Column(db.Numeric(10, 2))
 
     # Se marcado, ao agendar esse exame o sistema exige/permite indicar
@@ -1274,9 +1274,6 @@ class Agendamento(db.Model):
     resultado = db.relationship(
         "ResultadoExame", back_populates="agendamento", uselist=False, cascade="all, delete-orphan"
     )
-    pagamento = db.relationship(
-        "Pagamento", back_populates="agendamento", uselist=False, cascade="all, delete-orphan"
-    )
 
     @property
     def encerrada(self):
@@ -1496,63 +1493,6 @@ class ProcedimentoPolipo(db.Model):
     observacoes = db.Column(db.Text)
 
     criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-
-
-class DescontoConfig(db.Model):
-    """Percentual de desconto pré-cadastrado, que pode ser aplicado ao
-    registrar o pagamento de uma consulta/procedimento (ex.: "Convênio X —
-    10%", "Desconto à vista — 5%")."""
-    __tablename__ = "descontos_config"
-
-    id = db.Column(db.Integer, primary_key=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
-    # DONO do modelo: quem o criou. Se foi um MÉDICO, só ele edita/remove
-    # (conteúdo clínico é do médico). NULL em modelos antigos - esses
-    # seguem editáveis pela equipe (comportamento antigo).
-    criado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
-    nome = db.Column(db.String(150), nullable=False)
-    percentual = db.Column(db.Numeric(5, 2), nullable=False)
-    ativo = db.Column(db.Boolean, nullable=False, default=True)
-
-    clinica = db.relationship("Clinica")
-
-
-class Pagamento(db.Model):
-    """Pagamento registrado para um agendamento — o valor precisa bater
-    com o preço cadastrado no exame (Exame.preco), podendo aplicar um dos
-    descontos percentuais cadastrados (ver DescontoConfig). Serve de base
-    para gerar um comprovante para impressão; a emissão de nota fiscal em
-    si não está implementada ainda."""
-    __tablename__ = "pagamentos"
-
-    id = db.Column(db.Integer, primary_key=True)
-    agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=False, unique=True)
-    valor_procedimento = db.Column(db.Numeric(10, 2), nullable=False)
-    desconto_id = db.Column(db.Integer, db.ForeignKey("descontos_config.id"), nullable=True)
-    # Guarda o nome/percentual do desconto no momento do pagamento — se o
-    # cadastro do desconto mudar ou for removido depois, o comprovante
-    # antigo continua correto.
-    desconto_nome = db.Column(db.String(150))
-    desconto_percentual = db.Column(db.Numeric(5, 2), default=0)
-    valor_final = db.Column(db.Numeric(10, 2), nullable=False)
-    forma_pagamento = db.Column(db.String(30))  # dinheiro, cartao, pix, outro
-    registrado_por = db.Column(db.String(150))
-    pago_em = db.Column(db.DateTime, default=datetime.utcnow)
-
-    # Emissão de NFS-e para este pagamento — ver app/nfse_nacional.py.
-    # status: nao_emitida, simulada (modo simulação, sem valor fiscal),
-    # assinada_pendente_envio (DPS assinado mas o envio automático ao
-    # Ambiente de Dados Nacional falhou/não foi confirmado), enviada.
-    nfse_status = db.Column(db.String(30), default="nao_emitida")
-    nfse_numero_dps = db.Column(db.Integer)
-    nfse_numero = db.Column(db.String(30))
-    nfse_codigo_verificacao = db.Column(db.String(60))
-    nfse_xml_assinado = db.Column(db.Text)
-    nfse_erro = db.Column(db.Text)
-    nfse_emitida_em = db.Column(db.DateTime)
-
-    agendamento = db.relationship("Agendamento", back_populates="pagamento")
-    desconto = db.relationship("DescontoConfig")
 
 
 class FaqItem(db.Model):

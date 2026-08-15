@@ -10,13 +10,6 @@
 <div class="row g-3">
   <div class="col-md-6 col-lg-3">
     <div class="card p-3 h-100">
-      <div class="text-muted small"><i class="bi bi-cash-coin me-1"></i>Receita no período</div>
-      <div class="fs-3 fw-bold">R$ {{ "%.2f"|format(receita_periodo)|replace(".", ",") }}</div>
-      <a href="{{ url_for('relatorios.financeiro') }}" class="small">Ver relatório financeiro &rarr;</a>
-    </div>
-  </div>
-  <div class="col-md-6 col-lg-3">
-    <div class="card p-3 h-100">
       <div class="text-muted small"><i class="bi bi-calendar-check me-1"></i>Agendamentos no período</div>
       <div class="fs-3 fw-bold">{{ total_agendamentos }}</div>
       <div class="small text-muted">{{ total_realizados }} realizados · {{ total_cancelados }} cancelados · {{ total_no_show }} não compareceu</div>
@@ -36,7 +29,7 @@
   <div class="col-md-6 col-lg-3">
     <div class="card p-3 h-100">
       <div class="text-muted small"><i class="bi bi-graph-up me-1"></i>Desempenho por médico</div>
-      <div class="fs-6 mt-1 mb-2 text-muted">Agendamentos e receita, lado a lado</div>
+      <div class="fs-6 mt-1 mb-2 text-muted">Agendamentos por médico, lado a lado</div>
       <a href="{{ url_for('relatorios.desempenho_medico') }}" class="small">Ver relatório de desempenho &rarr;</a>
     </div>
   </div>
