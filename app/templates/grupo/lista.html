@@ -34,6 +34,7 @@
           <a href="{{ url_for('grupo.preparo_modelos_lista', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-secondary">Modelos de preparo</a>
           <a href="{{ url_for('grupo.exames_lista', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-secondary">Exames</a>
           <a href="{{ url_for('grupo.agenda_lista', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-secondary">Agenda</a>
+          <a href="{{ url_for('grupo.perguntas_pendentes', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-secondary">Perguntas</a>
           {% if item.papel in ('dono', 'administrador') %}
           <a href="{{ url_for('grupo.convidar', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-primary">Ver membros / Convidar</a>
           {% endif %}

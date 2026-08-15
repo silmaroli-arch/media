@@ -110,8 +110,8 @@ checar("Sem exame cadastrado, a tela de agendar orienta a cadastrar um exame pri
 r = client_medico.post(f"/grupos/{grupo_id}/preparo-modelos/novo", data={
     "nome": "Preparo Agenda BBP",
     "instrucoes": "Chegar com 30 minutos de antecedência.",
-    "corte_descricao": ["Jejum de líquidos", "Jejum de sólidos"],
-    "corte_horas_antes": ["2", "8"],
+    "corte_descricao[]": ["Jejum de líquidos", "Jejum de sólidos"],
+    "corte_horas[]": ["2", "8"],
 }, follow_redirects=True)
 checar("Modelo de preparo com cortes cadastrado com sucesso", "cadastrado com sucesso" in r.get_data(as_text=True))
 

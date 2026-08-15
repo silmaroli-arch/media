@@ -5,7 +5,10 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h3>Modelos de preparo do grupo</h3>
   {% if current_user.tipo == 'medico' %}
-  <a href="{{ url_for('grupo.preparo_modelos_novo', grupo_id=grupo.id) }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo modelo de preparo</a>
+  <div>
+    <a href="{{ url_for('grupo.preparo_pdf_para_excel', grupo_id=grupo.id) }}" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-pdf"></i> Gerar Excel a partir de PDF</a>
+    <a href="{{ url_for('grupo.preparo_modelos_novo', grupo_id=grupo.id) }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo modelo de preparo</a>
+  </div>
   {% endif %}
 </div>
 <div class="card p-3">
@@ -34,7 +37,8 @@
   </table>
 </div>
 <p class="text-muted small mt-3">
-  A importação de modelo de preparo a partir de PDF/Excel está disponível apenas na versão web (principal) do sistema —
-  no aplicativo (app), o cadastro de modelo de preparo é sempre manual, como acima.
+  A importação de modelo de preparo a partir de PDF/Excel (botões acima e dentro do cadastro) está
+  disponível apenas na versão web (principal) do sistema — no aplicativo (app), o cadastro de modelo
+  de preparo é sempre manual.
 </p>
 {% endblock %}

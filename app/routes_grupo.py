@@ -13,14 +13,28 @@ trabalho futuro maior, fora do escopo desta primeira entrega.
 import re
 from datetime import datetime
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, session
+from flask import (
+    Blueprint, render_template, redirect, url_for, request, flash, session, send_file,
+)
 from flask_login import login_required, current_user
 
 from app.extensions import db
 from app.models import (
     Usuario, Grupo, GrupoMembro, GrupoConvite, GrupoPaciente, Paciente,
-    PreparoModelo, PreparoCorte, Exame, Agendamento, validar_cpf, cep_incompleto,
+    PreparoModelo, Exame, Agendamento, PerguntaPendente, FaqItem, Medicamento,
+    validar_cpf, cep_incompleto,
 )
+from app.pdf_preparo import extrair_sugestao_de_pdf, gerar_xlsx_da_sugestao
+from app.xlsx_preparo import extrair_sugestoes_de_xlsx
+# Reaproveita, sem duplicar, a lógica já existente e já testada do lado da
+# equipe (Empresa/Clínica) para: (a) salvar cortes/medicamentos/alimentos/
+# informações gerais/exames anteriores de um modelo de preparo a partir de
+# um formulário com os mesmos names (ver medico/preparo_modelo_form.html) —
+# nenhuma dessas funções depende de clínica/filial, então funcionam igual
+# para a clínica interna do grupo; e (b) a regra de quem pode ver/responder
+# uma PerguntaPendente quando o exame tem mais de um médico vinculado
+# (BBP seção 8, decisão nº 5: "qualquer um dos médicos pode aprovar").
+from app.routes_medico import _salvar_cortes_e_medicamentos, _restringir_perguntas_para_medico
 
 grupo_bp = Blueprint("grupo", __name__, url_prefix="/grupos")
 
@@ -441,19 +455,27 @@ def preparo_modelos_novo(grupo_id):
         flash("Somente usuários do tipo Médico podem cadastrar modelos de preparo.", "danger")
         return redirect(url_for("grupo.preparo_modelos_lista", grupo_id=grupo_id))
 
+    # Sugestão vinda da importação de Excel (ver preparo_modelos_importar_xlsx
+    # / preparo_modelos_importar_xlsx_escolher, mais abaixo) — mesmo padrão
+    # da tela equivalente da equipe (medico.preparo_modelos_novo): só fica
+    # disponível uma vez (pop), e nada é salvo até o Salvar desta tela.
+    sugestao = None
+    if request.method == "GET" and request.args.get("de_importacao"):
+        sugestao = session.pop("grupo_preparo_sugestao_importada", None)
+
     if request.method == "POST":
         nome = (request.form.get("nome") or "").strip()
         instrucoes = (request.form.get("instrucoes") or "").strip()
         if not nome:
             flash("Informe o nome do modelo.", "danger")
-            return render_template("grupo/preparo_modelo_form.html", grupo=grupo)
+            return render_template("grupo/preparo_modelo_form.html", grupo=grupo, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
         clinica_interna = grupo.clinica_interna()
         ja_existe = PreparoModelo.query.filter_by(clinica_id=clinica_interna.id, nome=nome).first()
         if ja_existe:
             flash(f'Já existe um modelo de preparo chamado "{nome}" neste grupo.', "danger")
             db.session.rollback()
-            return render_template("grupo/preparo_modelo_form.html", grupo=grupo)
+            return render_template("grupo/preparo_modelo_form.html", grupo=grupo, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
         modelo = PreparoModelo(
             clinica_id=clinica_interna.id, criado_por_id=current_user.id,
@@ -463,31 +485,150 @@ def preparo_modelos_novo(grupo_id):
         db.session.add(modelo)
         db.session.flush()
 
-        # Cortes de alimentação/líquido (tela 5.1.13, "cronograma" do
-        # preparo) — expressos em horas antes do horário do exame, para
-        # que o alerta mostrado ao paciente (e calculado no agendamento,
-        # 5.1.17-5.1.19) se ajuste sozinho ao horário de cada consulta,
-        # sem precisar recalcular nada manualmente a cada agendamento.
-        descricoes = request.form.getlist("corte_descricao")
-        horas = request.form.getlist("corte_horas_antes")
-        for descricao, horas_str in zip(descricoes, horas):
-            descricao = (descricao or "").strip()
-            horas_str = (horas_str or "").strip()
-            if not descricao or not horas_str:
-                continue
-            try:
-                horas_antes = int(horas_str)
-            except ValueError:
-                continue
-            db.session.add(PreparoCorte(
-                preparo_modelo_id=modelo.id, descricao=descricao, horas_antes=horas_antes,
-            ))
+        # Cortes de alimentação/líquido, medicamentos a suspender/mantidos,
+        # alimentos, informações gerais e exames anteriores proibidos — o
+        # "cronograma" do preparo (tela 5.1.13) é calculado automaticamente
+        # a partir daqui no momento do agendamento (5.1.17-5.1.19). Reaproveita
+        # a mesma função já usada pelo lado da equipe (app.routes_medico) —
+        # ela não depende de clínica/filial, só do modelo e do formulário.
+        _salvar_cortes_e_medicamentos(modelo, request.form)
 
         db.session.commit()
         flash(f'Modelo de preparo "{nome}" cadastrado com sucesso.', "success")
         return redirect(url_for("grupo.preparo_modelos_lista", grupo_id=grupo_id))
 
-    return render_template("grupo/preparo_modelo_form.html", grupo=grupo)
+    return render_template("grupo/preparo_modelo_form.html", grupo=grupo, sugestao=sugestao, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+
+
+@grupo_bp.route("/<int:grupo_id>/preparo-modelos/pdf-para-excel", methods=["GET", "POST"])
+@login_required
+def preparo_pdf_para_excel(grupo_id):
+    """Gera uma planilha Excel (.xlsx) pronta para revisão a partir de um PDF
+    de preparo (tela 5.1.10) — mesma ferramenta de extração já usada pela
+    equipe (app.pdf_preparo), só disponível também dentro do grupo. A pessoa
+    revisa/ajusta no Excel com calma e importa o resultado pelo botão
+    "Importar de um Excel" da tela de novo modelo de preparo (5.1.11/5.1.12).
+    Exclusivo da versão web (BBP seção 8, decisão nº 6) — não existe no app."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+    if current_user.tipo != "medico":
+        flash("Somente usuários do tipo Médico podem importar modelos de preparo.", "danger")
+        return redirect(url_for("grupo.preparo_modelos_lista", grupo_id=grupo_id))
+
+    if request.method == "POST":
+        arquivo = request.files.get("arquivo_pdf")
+        if not arquivo or not arquivo.filename:
+            flash("Selecione um arquivo PDF.", "danger")
+            return render_template("grupo/preparo_pdf_para_excel.html", grupo=grupo)
+
+        try:
+            sugestao = extrair_sugestao_de_pdf(arquivo.stream)
+            planilha_buffer = gerar_xlsx_da_sugestao(sugestao)
+        except Exception:
+            flash(
+                "Não foi possível ler esse PDF. Ele pode estar corrompido, protegido por senha, ou ser "
+                "uma imagem escaneada sem texto selecionável — nesse caso, cadastre o modelo manualmente.",
+                "danger",
+            )
+            return render_template("grupo/preparo_pdf_para_excel.html", grupo=grupo)
+
+        return send_file(
+            planilha_buffer,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="preparo-extraido-do-pdf.xlsx",
+        )
+
+    return render_template("grupo/preparo_pdf_para_excel.html", grupo=grupo)
+
+
+@grupo_bp.route("/<int:grupo_id>/preparo-modelos/importar-xlsx", methods=["GET", "POST"])
+@login_required
+def preparo_modelos_importar_xlsx(grupo_id):
+    """Tela 5.1.11 — importar um modelo de preparo a partir de um Excel
+    (gerado a partir de um PDF em preparo_pdf_para_excel, ou preenchido do
+    zero seguindo o mesmo formato)."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+    if current_user.tipo != "medico":
+        flash("Somente usuários do tipo Médico podem importar modelos de preparo.", "danger")
+        return redirect(url_for("grupo.preparo_modelos_lista", grupo_id=grupo_id))
+
+    if request.method == "POST":
+        arquivo = request.files.get("arquivo_xlsx")
+        if not arquivo or not arquivo.filename:
+            flash("Selecione um arquivo Excel (.xlsx).", "danger")
+            return render_template("grupo/preparo_modelo_importar_xlsx.html", grupo=grupo)
+
+        try:
+            sugestoes = extrair_sugestoes_de_xlsx(arquivo.stream)
+        except Exception:
+            flash(
+                "Não foi possível ler essa planilha. Confira se é um arquivo .xlsx válido e se segue o "
+                "formato com as colunas Tipo/Ação/Agrupador/Nome/Dias antes/Horas antes/Hora exata.",
+                "danger",
+            )
+            return render_template("grupo/preparo_modelo_importar_xlsx.html", grupo=grupo)
+
+        if not sugestoes:
+            flash("Essa planilha não tem nenhuma aba com dados.", "danger")
+            return render_template("grupo/preparo_modelo_importar_xlsx.html", grupo=grupo)
+
+        if len(sugestoes) == 1:
+            session["grupo_preparo_sugestao_importada"] = sugestoes[0]
+            flash(
+                "Dados extraídos da planilha. Revise com cuidado antes de salvar — a extração é "
+                "automática e pode ter interpretado algo errado.",
+                "warning",
+            )
+            return redirect(url_for("grupo.preparo_modelos_novo", grupo_id=grupo_id, de_importacao=1))
+
+        # Cada aba é o preparo de um exame diferente — guarda todas na sessão
+        # e deixa a pessoa escolher qual importar primeiro.
+        session["grupo_preparo_xlsx_sugestoes"] = sugestoes
+        return redirect(url_for("grupo.preparo_modelos_importar_xlsx_escolher", grupo_id=grupo_id))
+
+    return render_template("grupo/preparo_modelo_importar_xlsx.html", grupo=grupo)
+
+
+@grupo_bp.route("/<int:grupo_id>/preparo-modelos/importar-xlsx/escolher", methods=["GET", "POST"])
+@login_required
+def preparo_modelos_importar_xlsx_escolher(grupo_id):
+    """Tela 5.1.12 — quando a planilha importada tem mais de uma aba (mais
+    de um preparo), escolhe qual delas importar agora (as outras continuam
+    disponíveis para importar depois, uma de cada vez)."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+    if current_user.tipo != "medico":
+        flash("Somente usuários do tipo Médico podem importar modelos de preparo.", "danger")
+        return redirect(url_for("grupo.preparo_modelos_lista", grupo_id=grupo_id))
+
+    sugestoes = session.get("grupo_preparo_xlsx_sugestoes")
+    if not sugestoes:
+        flash("Nenhuma planilha importada ainda — envie o arquivo primeiro.", "danger")
+        return redirect(url_for("grupo.preparo_modelos_importar_xlsx", grupo_id=grupo_id))
+
+    if request.method == "POST":
+        indice = request.form.get("indice", type=int)
+        if indice is None or not (0 <= indice < len(sugestoes)):
+            flash("Selecione uma aba válida.", "danger")
+            return redirect(url_for("grupo.preparo_modelos_importar_xlsx_escolher", grupo_id=grupo_id))
+
+        session["grupo_preparo_sugestao_importada"] = sugestoes[indice]
+        flash(
+            "Dados extraídos da planilha. Revise com cuidado antes de salvar — a extração é automática "
+            "e pode ter interpretado algo errado.",
+            "warning",
+        )
+        return redirect(url_for("grupo.preparo_modelos_novo", grupo_id=grupo_id, de_importacao=1))
+
+    return render_template("grupo/preparo_modelo_importar_xlsx_escolher.html", grupo=grupo, sugestoes=sugestoes)
 
 
 # ===================== Exame (tela 5.1.15/5.1.16) =====================
@@ -661,3 +802,90 @@ def agenda_detalhe(grupo_id, agendamento_id):
         return redirect(url_for("grupo.meus_grupos"))
     agendamento = Agendamento.query.filter_by(id=agendamento_id, clinica_id=grupo.clinica_interna_id).first_or_404()
     return render_template("grupo/agenda_detalhe.html", grupo=grupo, agendamento=agendamento)
+
+
+# ===================== Perguntas dos pacientes (aprovação da IA) =====================
+#
+# BBP seção 8, decisão nº 5: quando um exame tem mais de um médico vinculado
+# (Exame.medico_id + Exame.medicos_extra), QUALQUER um deles pode aprovar a
+# resposta rascunhada pela IA antes dela ir para o paciente — essa regra já
+# está pronta em Exame.medico_pode_atender (usada por
+# _restringir_perguntas_para_medico, importada de app.routes_medico) e não
+# precisou de nenhuma mudança; só faltava uma tela que buscasse as perguntas
+# ancoradas na clínica interna do grupo, que a tela da equipe (que só olha
+# as clínicas em que o usuário tem vínculo formal) nunca alcança.
+
+@grupo_bp.route("/<int:grupo_id>/perguntas")
+@login_required
+def perguntas_pendentes(grupo_id):
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+
+    pendentes, aguardando, respondidas = [], [], []
+    if grupo.clinica_interna_id:
+        pendentes_q = PerguntaPendente.query.filter_by(clinica_id=grupo.clinica_interna_id, status="pendente")
+        aguardando_q = PerguntaPendente.query.filter_by(clinica_id=grupo.clinica_interna_id, status="aguardando_aprovacao")
+        respondidas_q = PerguntaPendente.query.filter_by(clinica_id=grupo.clinica_interna_id, status="respondida")
+
+        # Mesma regra da equipe: um médico só acompanha perguntas dos seus
+        # próprios exames (principal ou "extra"), mais as gerais (sem exame)
+        # se também administrar pacientes — uma secretaria do grupo vê tudo.
+        if current_user.tipo == "medico":
+            pendentes_q = _restringir_perguntas_para_medico(pendentes_q)
+            aguardando_q = _restringir_perguntas_para_medico(aguardando_q)
+            respondidas_q = _restringir_perguntas_para_medico(respondidas_q)
+
+        pendentes = pendentes_q.order_by(PerguntaPendente.criado_em.desc()).all()
+        aguardando = aguardando_q.order_by(PerguntaPendente.criado_em.desc()).all()
+        respondidas = respondidas_q.order_by(PerguntaPendente.respondida_em.desc()).limit(20).all()
+
+    return render_template(
+        "grupo/perguntas.html", grupo=grupo, pendentes=pendentes, aguardando=aguardando, respondidas=respondidas,
+    )
+
+
+@grupo_bp.route("/<int:grupo_id>/perguntas/<int:pergunta_id>/responder", methods=["POST"])
+@login_required
+def perguntas_responder(grupo_id, pergunta_id):
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+
+    pergunta = PerguntaPendente.query.filter_by(id=pergunta_id, clinica_id=grupo.clinica_interna_id).first_or_404()
+
+    # Qualquer médico vinculado ao exame (principal ou extra) pode aprovar —
+    # ver Exame.medico_pode_atender. Uma secretaria do grupo com permissão
+    # de administrar pacientes também pode responder perguntas gerais (sem
+    # exame associado).
+    if current_user.tipo == "medico":
+        exame_proprio = pergunta.exame is not None and pergunta.exame.medico_pode_atender(current_user.id)
+        geral_administravel = pergunta.exame is None and current_user.perm_pacientes
+        if not exame_proprio and not geral_administravel:
+            flash("Você só pode responder perguntas sobre os seus próprios exames.", "danger")
+            return redirect(url_for("grupo.perguntas_pendentes", grupo_id=grupo_id))
+
+    resposta = (request.form.get("resposta") or "").strip()
+    if not resposta:
+        flash("Digite uma resposta antes de salvar.", "danger")
+        return redirect(url_for("grupo.perguntas_pendentes", grupo_id=grupo_id))
+
+    pergunta.resposta = resposta
+    pergunta.status = "respondida"
+    pergunta.respondida_por = current_user.nome
+    pergunta.respondida_em = datetime.utcnow()
+
+    # "Aprendizado": a pergunta+resposta entra na base de FAQ do grupo para uso futuro.
+    db.session.add(FaqItem(
+        clinica_id=pergunta.clinica_id,
+        exame_id=pergunta.exame_id,
+        pergunta=pergunta.pergunta,
+        resposta=resposta,
+        criado_por=current_user.nome,
+    ))
+    db.session.commit()
+
+    flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
+    return redirect(url_for("grupo.perguntas_pendentes", grupo_id=grupo_id))
