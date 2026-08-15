@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block titulo %}Novo modelo de preparo — {{ grupo.nome }}{% endblock %}
+{% block conteudo %}
+<p class="text-muted mb-1"><a href="{{ url_for('grupo.meus_grupos') }}">Meus grupos</a> &rsaquo; {{ grupo.nome }} &rsaquo;
+  <a href="{{ url_for('grupo.preparo_modelos_lista', grupo_id=grupo.id) }}">Modelos de preparo</a> &rsaquo; Novo</p>
+<h3 class="mb-3">Cadastrar modelo de preparo</h3>
+<div class="card p-3" style="max-width: 640px;">
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label">Nome do modelo *</label>
+      <input type="text" name="nome" class="form-control" required autofocus>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Instruções de preparo</label>
+      <textarea name="instrucoes" class="form-control" rows="5"></textarea>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Observações sobre medicamentos</label>
+      <textarea name="observacoes_medicamentos" class="form-control" rows="3"></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Salvar modelo de preparo</button>
+    <a href="{{ url_for('grupo.preparo_modelos_lista', grupo_id=grupo.id) }}" class="btn btn-outline-secondary">Cancelar</a>
+  </form>
+</div>
+{% endblock %}

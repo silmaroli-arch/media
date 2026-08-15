@@ -1,9 +1,10 @@
-"""Trabalho compartilhado (grupo) — BBP MedIA, seção 5.1.4 a 5.1.9.
+"""Trabalho compartilhado (grupo) — BBP MedIA, seção 5.1.4 a 5.1.16.
 
 Fatias (prova de conceito) da reformulação de escopo descrita no BBP:
 - cadastro de usuário (já existente, auth.cadastro) -> login -> criar
   grupo -> convidar membro por CPF -> aprovar convite -> ver grupo na lista.
 - cadastro/busca de paciente por CPF associado ao(s) grupo(s) do usuário.
+- modelo de preparo e exame pertencentes ao médico, vinculados ao grupo.
 Implementado como um blueprint novo, adicional ao modelo de Empresa/
 Clínica já existente (ver app/routes_medico.py e app/clinica_utils.py) —
 a migração completa do restante do sistema para o conceito de grupo é um
@@ -16,7 +17,10 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Usuario, Grupo, GrupoMembro, GrupoConvite, GrupoPaciente, Paciente, validar_cpf, cep_incompleto
+from app.models import (
+    Usuario, Grupo, GrupoMembro, GrupoConvite, GrupoPaciente, Paciente,
+    PreparoModelo, Exame, validar_cpf, cep_incompleto,
+)
 
 grupo_bp = Blueprint("grupo", __name__, url_prefix="/grupos")
 
@@ -399,3 +403,141 @@ def pacientes_remover(grupo_id, paciente_id):
         flash("Paciente removido do grupo.", "success")
 
     return redirect(url_for("grupo.pacientes_lista", grupo_id=grupo_id))
+
+
+# ===================== Modelo de preparo (tela 5.1.13/5.1.14) =====================
+# BBP seção 4: "O modelo de preparo continuará pertencendo ao médico e
+# somente ele poderá alterar." Exame/PreparoModelo (modelo legado) exigem
+# uma Clinica de verdade — usamos a "clínica interna" do grupo (ver
+# Grupo.clinica_interna em app/models.py) como âncora técnica, sem alterar
+# o modelo antigo nem expor essa clínica em nenhuma tela do sistema atual.
+
+@grupo_bp.route("/<int:grupo_id>/preparo-modelos")
+@login_required
+def preparo_modelos_lista(grupo_id):
+    """Tela 5.1.14 — Lista de modelos de preparo do grupo."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+
+    modelos = []
+    if grupo.clinica_interna_id:
+        modelos = PreparoModelo.query.filter_by(clinica_id=grupo.clinica_interna_id).order_by(PreparoModelo.nome).all()
+    return render_template("grupo/preparo_modelos_lista.html", grupo=grupo, modelos=modelos)
+
+
+@grupo_bp.route("/<int:grupo_id>/preparo-modelos/novo", methods=["GET", "POST"])
+@login_required
+def preparo_modelos_novo(grupo_id):
+    """Tela 5.1.13 — Cadastro de modelo de preparo. Disponível apenas para
+    usuários do tipo Médico — o modelo pertence exclusivamente a quem o
+    criou (BBP seção 7: "somente ele poderá alterar")."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+    if current_user.tipo != "medico":
+        flash("Somente usuários do tipo Médico podem cadastrar modelos de preparo.", "danger")
+        return redirect(url_for("grupo.preparo_modelos_lista", grupo_id=grupo_id))
+
+    if request.method == "POST":
+        nome = (request.form.get("nome") or "").strip()
+        instrucoes = (request.form.get("instrucoes") or "").strip()
+        if not nome:
+            flash("Informe o nome do modelo.", "danger")
+            return render_template("grupo/preparo_modelo_form.html", grupo=grupo)
+
+        clinica_interna = grupo.clinica_interna()
+        ja_existe = PreparoModelo.query.filter_by(clinica_id=clinica_interna.id, nome=nome).first()
+        if ja_existe:
+            flash(f'Já existe um modelo de preparo chamado "{nome}" neste grupo.', "danger")
+            db.session.rollback()
+            return render_template("grupo/preparo_modelo_form.html", grupo=grupo)
+
+        modelo = PreparoModelo(
+            clinica_id=clinica_interna.id, criado_por_id=current_user.id,
+            nome=nome, instrucoes=instrucoes,
+            observacoes_medicamentos=(request.form.get("observacoes_medicamentos") or "").strip() or None,
+        )
+        db.session.add(modelo)
+        db.session.commit()
+        flash(f'Modelo de preparo "{nome}" cadastrado com sucesso.', "success")
+        return redirect(url_for("grupo.preparo_modelos_lista", grupo_id=grupo_id))
+
+    return render_template("grupo/preparo_modelo_form.html", grupo=grupo)
+
+
+# ===================== Exame (tela 5.1.15/5.1.16) =====================
+
+@grupo_bp.route("/<int:grupo_id>/exames")
+@login_required
+def exames_lista(grupo_id):
+    """Tela 5.1.16 — Lista de exames do grupo."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+
+    exames = []
+    if grupo.clinica_interna_id:
+        exames = Exame.query.filter_by(clinica_id=grupo.clinica_interna_id).order_by(Exame.nome).all()
+    return render_template("grupo/exames_lista.html", grupo=grupo, exames=exames)
+
+
+@grupo_bp.route("/<int:grupo_id>/exames/novo", methods=["GET", "POST"])
+@login_required
+def exames_novo(grupo_id):
+    """Tela 5.1.15 — Cadastro de exame, associado a um modelo de preparo
+    do próprio médico. Disponível apenas para usuários do tipo Médico —
+    "se o médico estiver no grupo de trabalho, os exames associados a ele
+    aparecerão para agendamento de consulta" (BBP seção 4)."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+    if current_user.tipo != "medico":
+        flash("Somente usuários do tipo Médico podem cadastrar exames.", "danger")
+        return redirect(url_for("grupo.exames_lista", grupo_id=grupo_id))
+
+    meus_modelos = []
+    if grupo.clinica_interna_id:
+        meus_modelos = PreparoModelo.query.filter_by(
+            clinica_id=grupo.clinica_interna_id, criado_por_id=current_user.id
+        ).order_by(PreparoModelo.nome).all()
+
+    if request.method == "POST":
+        if not meus_modelos:
+            flash("Cadastre ao menos um modelo de preparo seu antes de cadastrar um exame (tela 5.1.13).", "danger")
+            return redirect(url_for("grupo.preparo_modelos_novo", grupo_id=grupo_id))
+
+        nome = (request.form.get("nome") or "").strip()
+        preparo_modelo_id = request.form.get("preparo_modelo_id")
+        modelo_escolhido = next((m for m in meus_modelos if str(m.id) == preparo_modelo_id), None)
+
+        if not nome or not modelo_escolhido:
+            flash("Informe o nome do exame e escolha um modelo de preparo seu.", "danger")
+            return render_template("grupo/exame_form.html", grupo=grupo, meus_modelos=meus_modelos)
+
+        clinica_interna = grupo.clinica_interna()
+        if Exame.query.filter_by(clinica_id=clinica_interna.id, nome=nome).first():
+            flash(f'Já existe um exame chamado "{nome}" neste grupo.', "danger")
+            db.session.rollback()
+            return render_template("grupo/exame_form.html", grupo=grupo, meus_modelos=meus_modelos)
+
+        duracao = request.form.get("duracao_minutos") or None
+        preco = request.form.get("preco") or None
+        exame = Exame(
+            clinica_id=clinica_interna.id, criado_por_id=current_user.id, medico_id=current_user.id,
+            medico_confirmado=True, associado=True,
+            nome=nome, descricao=(request.form.get("descricao") or "").strip() or None,
+            preparo_modelo_id=modelo_escolhido.id,
+            duracao_minutos=int(duracao) if duracao else None,
+            preco=preco, precisa_acompanhante=bool(request.form.get("precisa_acompanhante")),
+        )
+        db.session.add(exame)
+        db.session.commit()
+        flash(f'Exame "{nome}" cadastrado com sucesso.', "success")
+        return redirect(url_for("grupo.exames_lista", grupo_id=grupo_id))
+
+    return render_template("grupo/exame_form.html", grupo=grupo, meus_modelos=meus_modelos)

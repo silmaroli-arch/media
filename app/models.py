@@ -666,8 +666,36 @@ class Grupo(db.Model):
     nome = db.Column(db.String(150), nullable=False)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # "Clínica interna" (junto de uma Empresa interna) criada por baixo dos
+    # panos, na primeira vez que o grupo precisa cadastrar um exame ou um
+    # modelo de preparo — Exame/PreparoModelo (modelo legado) exigem uma
+    # clinica_id de verdade (NOT NULL) e nunca foram desenhados para
+    # pertencer a um Grupo. Em vez de alterar esse modelo antigo (usado por
+    # financeiro, relatórios, fiscal etc. — arriscado demais nesta fatia),
+    # cada grupo ganha sua própria Empresa/Clínica "escondida" (nunca
+    # aparece em nenhuma tela do modelo antigo, porque nenhum ClinicaMembro
+    # é criado para ela) que serve só de âncora técnica. Isso é uma ponte
+    # temporária: a migração completa do restante do sistema para o
+    # conceito de grupo (item pendente do BBP) deve eventualmente
+    # eliminar essa necessidade.
+    clinica_interna_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
+    clinica_interna_rel = db.relationship("Clinica", foreign_keys=[clinica_interna_id])
+
     membros = db.relationship("GrupoMembro", back_populates="grupo", order_by="GrupoMembro.id")
     convites = db.relationship("GrupoConvite", back_populates="grupo", order_by="GrupoConvite.id")
+
+    def clinica_interna(self):
+        """Cria (na primeira vez) e devolve a clínica interna deste grupo."""
+        if self.clinica_interna_id:
+            return self.clinica_interna_rel
+        empresa = Empresa(nome=f"[grupo:{self.id}] {self.nome}", status="ativa")
+        db.session.add(empresa)
+        db.session.flush()
+        clinica = Clinica(nome=self.nome, empresa_id=empresa.id)
+        db.session.add(clinica)
+        db.session.flush()
+        self.clinica_interna_id = clinica.id
+        return clinica
 
     @property
     def dono(self):

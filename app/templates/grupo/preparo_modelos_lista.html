@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block titulo %}Modelos de preparo — {{ grupo.nome }}{% endblock %}
+{% block conteudo %}
+<p class="text-muted mb-1"><a href="{{ url_for('grupo.meus_grupos') }}">Meus grupos</a> &rsaquo; {{ grupo.nome }} &rsaquo; Modelos de preparo</p>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3>Modelos de preparo do grupo</h3>
+  {% if current_user.tipo == 'medico' %}
+  <a href="{{ url_for('grupo.preparo_modelos_novo', grupo_id=grupo.id) }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo modelo de preparo</a>
+  {% endif %}
+</div>
+<div class="card p-3">
+  <table class="table table-hover">
+    <thead><tr><th>Nome</th><th>Instruções</th><th>Observações sobre medicamentos</th></tr></thead>
+    <tbody>
+      {% for modelo in modelos %}
+      <tr>
+        <td>{{ modelo.nome }}</td>
+        <td>{{ modelo.instrucoes or '-' }}</td>
+        <td>{{ modelo.observacoes_medicamentos or '-' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-muted text-center">Nenhum modelo de preparo cadastrado neste grupo ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="text-muted small mt-3">
+  A importação de modelo de preparo a partir de PDF/Excel está disponível apenas na versão web (principal) do sistema —
+  no aplicativo (app), o cadastro de modelo de preparo é sempre manual, como acima.
+</p>
+{% endblock %}

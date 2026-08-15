@@ -31,6 +31,8 @@
         </td>
         <td class="text-nowrap">
           <a href="{{ url_for('grupo.pacientes_lista', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-secondary">Pacientes</a>
+          <a href="{{ url_for('grupo.preparo_modelos_lista', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-secondary">Modelos de preparo</a>
+          <a href="{{ url_for('grupo.exames_lista', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-secondary">Exames</a>
           {% if item.papel in ('dono', 'administrador') %}
           <a href="{{ url_for('grupo.convidar', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-primary">Ver membros / Convidar</a>
           {% endif %}
