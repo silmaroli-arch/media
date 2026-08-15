@@ -50,28 +50,25 @@ r = client.post("/cadastro", data={
     "email": "bruno.pavan@medicalgastro.com",
     "senha": "123456",
     "papel": "medico",
-    "nome_filial": "Medical Gastro - Matriz",
-    "telefone_filial": "(27) 90000-0001",
-    "cnpj_filial": "12.345.603/0001-04",
 }, follow_redirects=True)
 checar("Cadastro responde 200 e cai no assistente de configuração inicial", r.status_code == 200 and "Configuração inicial" in r.get_data(as_text=True))
 
 with app.app_context():
-    # Não existe mais um "nome da empresa" separado do nome do local - a
-    # empresa nasce com o mesmo nome informado pro local de atendimento.
-    empresa = Empresa.query.filter_by(nome="Medical Gastro - Matriz").first()
+    # O cadastro não pede mais nenhum dado de clínica/local de atendimento
+    # - a empresa nasce com um nome provisório a partir do nome da pessoa.
+    empresa = Empresa.query.filter_by(nome="Consultório de Bruno Pavan").first()
     checar("Empresa foi criada", empresa is not None)
     usuario = Usuario.query.filter_by(email="bruno.pavan@medicalgastro.com").first()
     checar("Usuário foi criado", usuario is not None)
     checar("Usuário recebeu todas as permissões administrativas", usuario.perm_filiais and usuario.perm_dados_clinica)
-    # Mudança de comportamento (pedido explícito do usuário): o cadastro
-    # agora já cria o primeiro local de atendimento completo (nome,
-    # telefone, endereço) e vincula quem se cadastrou a ele - não fica
-    # mais pra depois, em "Meus locais de atendimento".
-    checar("O primeiro local de atendimento JÁ foi criado, com os dados completos",
-           Clinica.query.filter_by(empresa_id=empresa.id, nome="Medical Gastro - Matriz").count() == 1)
-    checar("Quem se cadastrou JÁ fica vinculado a esse primeiro local",
-           ClinicaMembro.query.filter_by(usuario_id=usuario.id).count() == 1)
+    # Regra atual: o cadastro público cria SÓ a Empresa e o Usuario -
+    # nenhuma Clinica, nenhum ClinicaMembro. A pessoa só passa a ter um
+    # local de atendimento de verdade quando ela mesma cadastra um em
+    # "Meus Locais de Atendimento" (medico.filiais_nova).
+    checar("NENHUM local de atendimento foi criado no cadastro",
+           Clinica.query.filter_by(empresa_id=empresa.id).count() == 0)
+    checar("NENHUM ClinicaMembro foi criado no cadastro",
+           ClinicaMembro.query.filter_by(usuario_id=usuario.id).count() == 0)
     checar("Usuário fica vinculado à empresa via empresa_fundadora_id", usuario.empresa_fundadora_id == empresa.id)
     empresa_id = empresa.id
 
@@ -86,20 +83,47 @@ checar("Assistente de configuração inicial responde 200", r_onboarding.status_
 r_locais = client.get("/equipe/filiais")
 html_locais = r_locais.get_data(as_text=True)
 checar("'Meus locais de atendimento' responde 200", r_locais.status_code == 200)
-checar("O primeiro local (criado no cadastro) já aparece na lista", "Medical Gastro - Matriz" in html_locais)
+checar("Ainda não existe nenhum local de atendimento (nada foi criado no cadastro)",
+       "Medical Gastro" not in html_locais)
 
-# Acessar "Dados Cadastrais"/"Dados Fiscais" já funciona normalmente, pois
-# o primeiro local já existe.
+# Sem nenhum local ainda, "Dados Cadastrais"/"Dados Fiscais" avisam que é
+# preciso cadastrar o primeiro local antes.
 r_dados = client.get("/equipe/clinica/configuracoes", follow_redirects=True)
-checar("Dados Cadastrais funciona normalmente (o local já existe)", r_dados.status_code == 200)
+checar(
+    "Dados Cadastrais avisa que é preciso cadastrar o primeiro local antes",
+    "Cadastre seu primeiro local de atendimento" in r_dados.get_data(as_text=True),
+)
+
+# A pessoa cadastra o PRIMEIRO local de atendimento em "Meus locais de
+# atendimento" - isso NUNCA vincula ninguém automaticamente, nem quem
+# cadastrou (mesma regra vale pro primeiro local e para os seguintes).
+r_primeiro_local = client.post(
+    "/equipe/filiais/nova",
+    data={"nome": "Medical Gastro - Matriz", "vincular_a_mim": "on"},
+    follow_redirects=True,
+)
+checar("Cadastro do primeiro local responde 200", r_primeiro_local.status_code == 200)
+checar(
+    "A mensagem já avisa que cadastrar o local não vincula ninguém",
+    "não vincula ninguém" in r_primeiro_local.get_data(as_text=True),
+)
+
+with app.app_context():
+    primeira_filial = Clinica.query.filter_by(empresa_id=empresa_id, nome="Medical Gastro - Matriz").first()
+    checar("A primeira filial foi criada de verdade", primeira_filial is not None)
+    checar(
+        "NENHUM ClinicaMembro foi criado para a primeira filial (nem com campo extra no POST)",
+        ClinicaMembro.query.filter_by(clinica_id=primeira_filial.id).count() == 0,
+    )
+
+# Agora que existe um local, Dados Cadastrais/Dados Fiscais funcionam normalmente.
+r_dados_ok = client.get("/equipe/clinica/configuracoes", follow_redirects=True)
+checar("Dados Cadastrais funciona normalmente (o primeiro local já existe)", r_dados_ok.status_code == 200)
 
 r_fiscais = client.get("/equipe/clinica/dados-fiscais", follow_redirects=True)
-checar("Dados Fiscais funciona normalmente (o local já existe)", r_fiscais.status_code == 200)
+checar("Dados Fiscais funciona normalmente (o primeiro local já existe)", r_fiscais.status_code == 200)
 
-# Cadastrar um SEGUNDO local continua sem vincular ninguém a ele
-# automaticamente - essa regra (motivada por reclamações antigas do
-# usuário sobre um vínculo implícito indesejado) continua valendo para os
-# próximos locais, mesmo que o primeiro já venha vinculado pelo cadastro.
+# Cadastrar um SEGUNDO local também não vincula ninguém automaticamente.
 r_novo_local = client.post(
     "/equipe/filiais/nova",
     data={"nome": "Unidade Praia do Canto", "vincular_a_mim": "on"},
@@ -124,12 +148,10 @@ with app.app_context():
 r_locais_intermed = client.get("/equipe/filiais")
 html_locais_intermed = r_locais_intermed.get_data(as_text=True)
 checar("Filial cadastrada aparece na lista", "Unidade Praia do Canto" in html_locais_intermed)
-# O fundador já está vinculado ao primeiro local (Matriz, criado pelo
-# cadastro) - por isso já existe UM badge na lista. O local recém-criado
-# (segundo) não ganha um badge extra automaticamente, só o botão explícito.
+# Nenhum dos dois locais ganhou vínculo automático - nenhum badge ainda.
 checar(
-    "Só existe o badge do primeiro local (Matriz) - o recém-criado não ganhou badge automático",
-    html_locais_intermed.count('badge bg-primary ms-1">você atua aqui') == 1
+    "Nenhum badge de 'você atua aqui' aparece - nenhum vínculo é criado automaticamente",
+    html_locais_intermed.count('badge bg-primary ms-1">você atua aqui') == 0
     and "Marcar que você também atua aqui" in html_locais_intermed,
 )
 
@@ -142,12 +164,14 @@ with app.app_context():
         ClinicaMembro.query.filter_by(clinica_id=filial_id, usuario_id=usuario.id).count() == 1,
     )
 
-# Agora sim, "Meus locais de atendimento" mostra o badge nos DOIS locais -
-# porque a pessoa de fato marcou, deliberadamente, que atua no segundo também.
+# Agora sim, "Meus locais de atendimento" mostra o badge no local em que a
+# pessoa de fato marcou, deliberadamente, que atua (o segundo, "Praia do
+# Canto") - o primeiro ("Matriz") continua sem badge, pois nunca foi
+# marcado (nem ele foi criado com vínculo automático).
 r_locais2 = client.get("/equipe/filiais")
 html_locais2 = r_locais2.get_data(as_text=True)
-checar("Agora mostra 'você atua aqui' nos dois locais (foi uma escolha deliberada, pelo botão)",
-       html_locais2.count('badge bg-primary ms-1">você atua aqui') == 2)
+checar("Agora mostra 'você atua aqui' só no local que foi marcado deliberadamente",
+       html_locais2.count('badge bg-primary ms-1">você atua aqui') == 1)
 checar("Ao lado do badge existe a ação inversa ('desmarcar')", "desvincular-me" in html_locais2)
 
 # Dados Cadastrais agora funciona normalmente para essa filial.
@@ -172,8 +196,8 @@ with app.app_context():
     )
 r_locais3 = client.get("/equipe/filiais")
 checar(
-    "O badge do segundo local sumiu depois de desmarcar (só sobra o da Matriz)",
-    r_locais3.get_data(as_text=True).count('badge bg-primary ms-1">você atua aqui') == 1,
+    "O badge do segundo local sumiu depois de desmarcar (nenhum local tem badge agora)",
+    r_locais3.get_data(as_text=True).count('badge bg-primary ms-1">você atua aqui') == 0,
 )
 checar("Fundador continua com acesso normal ao painel", client.get("/equipe/").status_code == 200)
 

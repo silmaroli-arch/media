@@ -25,36 +25,27 @@ def checar(nome, condicao):
 
 
 # Cenário exato do usuário: fundador médico, empresa com 2 locais, zero
-# vínculos. O cadastro agora já cria e vincula o fundador ao primeiro
-# local (Sede) - para recriar o cenário original do bug (zero vínculos
-# ativos), o fundador se desvincula deliberadamente desse primeiro local
-# antes de cadastrar os outros dois.
+# vínculos. O cadastro público não cria nenhum local nem vínculo - é
+# exatamente o cenário do bug, sem precisar recriá-lo à mão.
 r = client.post("/cadastro", data={
     "nome": "Bruno Pavan",
     "cpf": "852.963.741-00", "crm_numero": "22222", "crm_uf": "ES",
     "email": "bruno.equipe@example.com",
     "senha": "123456",
     "papel": "medico",
-    "nome_filial": "MG Sede",
-    "telefone_filial": "(27) 90000-0002",
-    "cnpj_filial": "12.345.605/0001-01",
 }, follow_redirects=True)
 checar("Cadastro do fundador responde 200", r.status_code == 200)
 client.post("/equipe/filiais/nova", data={"nome": "MG Centro"}, follow_redirects=True)
 client.post("/equipe/filiais/nova", data={"nome": "MG Santa Lucia"}, follow_redirects=True)
 
 with app.app_context():
-    # Não existe mais um "nome da empresa" separado do nome do local - a
-    # empresa nasce com o mesmo nome informado pro primeiro local.
-    empresa = Empresa.query.filter_by(nome="MG Sede").first()
+    # O cadastro não cria mais nenhum local - a empresa nasce com um nome
+    # provisório a partir do nome da própria pessoa.
+    empresa = Empresa.query.filter_by(nome="Consultório de Bruno Pavan").first()
     bruno = Usuario.query.filter_by(email="bruno.equipe@example.com").first()
     bruno_id = bruno.id
     centro_id = Clinica.query.filter_by(empresa_id=empresa.id, nome="MG Centro").first().id
-    sede_id = Clinica.query.filter_by(empresa_id=empresa.id, nome="MG Sede").first().id
-
-client.post(f"/equipe/filiais/{sede_id}/desvincular-me", follow_redirects=True)
-with app.app_context():
-    checar("Fundador não tem vínculo nenhum (cenário do bug, recriado deliberadamente)",
+    checar("Fundador não tem vínculo nenhum (cenário do bug)",
            ClinicaMembro.query.filter_by(usuario_id=bruno_id, ativo=True).count() == 0)
 
 # ---------- O fundador aparece na lista da Equipe ----------
