@@ -18,8 +18,33 @@
       <label class="form-label">Observações sobre medicamentos</label>
       <textarea name="observacoes_medicamentos" class="form-control" rows="3"></textarea>
     </div>
-    <button type="submit" class="btn btn-primary">Salvar modelo de preparo</button>
-    <a href="{{ url_for('grupo.preparo_modelos_lista', grupo_id=grupo.id) }}" class="btn btn-outline-secondary">Cancelar</a>
+
+    <hr>
+    <p class="text-muted small mb-2">
+      Cortes de alimentação/líquido (ex.: "jejum de líquidos"), expressos em horas antes do horário
+      marcado do exame — o cronograma de cada agendamento é calculado automaticamente a partir daqui
+      (tela 5.1.17-5.1.19), sem precisar recalcular nada na hora de marcar a consulta.
+    </p>
+    <div id="cortes-linhas">
+      <div class="row corte-linha mb-2">
+        <div class="col-md-8"><input type="text" name="corte_descricao" class="form-control" placeholder="Ex.: Jejum de líquidos"></div>
+        <div class="col-md-4"><input type="number" name="corte_horas_antes" class="form-control" placeholder="Horas antes" min="0"></div>
+      </div>
+    </div>
+    <button type="button" id="add-corte" class="btn btn-sm btn-outline-secondary mb-3">+ Adicionar corte</button>
+
+    <div>
+      <button type="submit" class="btn btn-primary">Salvar modelo de preparo</button>
+      <a href="{{ url_for('grupo.preparo_modelos_lista', grupo_id=grupo.id) }}" class="btn btn-outline-secondary">Cancelar</a>
+    </div>
   </form>
 </div>
+<script>
+document.getElementById('add-corte').addEventListener('click', function () {
+  var container = document.getElementById('cortes-linhas');
+  var linha = container.querySelector('.corte-linha').cloneNode(true);
+  linha.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+  container.appendChild(linha);
+});
+</script>
 {% endblock %}

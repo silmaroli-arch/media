@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block titulo %}Consulta — {{ agendamento.exame.nome }}{% endblock %}
+{% block conteudo %}
+<p class="text-muted mb-1"><a href="{{ url_for('grupo.meus_grupos') }}">Meus grupos</a> &rsaquo; {{ grupo.nome }} &rsaquo;
+  <a href="{{ url_for('grupo.agenda_lista', grupo_id=grupo.id) }}">Agenda</a> &rsaquo; Consulta</p>
+<h3 class="mb-1">{{ agendamento.exame.nome }} — {{ agendamento.paciente.nome }}</h3>
+<p class="text-muted">{{ agendamento.data_hora.strftime('%d/%m/%Y às %H:%M') }} · com {{ agendamento.medico.nome if agendamento.medico else '-' }} · status: {{ agendamento.status }}</p>
+
+<div class="card p-4 mb-3">
+  <h5>Cronograma de preparo (calculado automaticamente)</h5>
+  {% if agendamento.exame.preparo %}
+    {% set preparo = agendamento.exame.preparo %}
+
+    {% if preparo.cortes %}
+    <div class="mb-3">
+      {% for corte in preparo.cortes %}
+      <div class="alert alert-info mb-2">
+        <strong>{{ corte.descricao }}:</strong> até
+        <strong>{{ corte.limite(agendamento.data_hora).strftime('%d/%m/%Y às %H:%M') }}</strong>
+        ({{ corte.horas_antes }} horas antes da consulta)
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+      <p class="text-muted">Este modelo de preparo não tem cortes de alimentação/líquido cadastrados.</p>
+    {% endif %}
+
+    {% if preparo.observacoes_medicamentos %}
+    <p class="small text-muted">{{ preparo.observacoes_medicamentos }}</p>
+    {% endif %}
+
+    <p style="white-space: pre-line">{{ preparo.instrucoes }}</p>
+  {% else %}
+    <p class="text-muted">Este exame não tem modelo de preparo vinculado — não há cronograma a calcular.</p>
+  {% endif %}
+</div>
+{% endblock %}

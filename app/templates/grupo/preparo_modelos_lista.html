@@ -10,16 +10,25 @@
 </div>
 <div class="card p-3">
   <table class="table table-hover">
-    <thead><tr><th>Nome</th><th>Instruções</th><th>Observações sobre medicamentos</th></tr></thead>
+    <thead><tr><th>Nome</th><th>Instruções</th><th>Cortes (cronograma)</th><th>Observações sobre medicamentos</th></tr></thead>
     <tbody>
       {% for modelo in modelos %}
       <tr>
         <td>{{ modelo.nome }}</td>
         <td>{{ modelo.instrucoes or '-' }}</td>
+        <td>
+          {% if modelo.cortes %}
+            {% for corte in modelo.cortes %}
+            <span class="badge bg-info text-dark">{{ corte.descricao }} — {{ corte.horas_antes }}h antes</span><br>
+            {% endfor %}
+          {% else %}
+            <span class="text-muted">Nenhum corte cadastrado</span>
+          {% endif %}
+        </td>
         <td>{{ modelo.observacoes_medicamentos or '-' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="3" class="text-muted text-center">Nenhum modelo de preparo cadastrado neste grupo ainda.</td></tr>
+      <tr><td colspan="4" class="text-muted text-center">Nenhum modelo de preparo cadastrado neste grupo ainda.</td></tr>
       {% endfor %}
     </tbody>
   </table>

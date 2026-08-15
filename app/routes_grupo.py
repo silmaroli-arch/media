@@ -19,7 +19,7 @@ from flask_login import login_required, current_user
 from app.extensions import db
 from app.models import (
     Usuario, Grupo, GrupoMembro, GrupoConvite, GrupoPaciente, Paciente,
-    PreparoModelo, Exame, validar_cpf, cep_incompleto,
+    PreparoModelo, PreparoCorte, Exame, Agendamento, validar_cpf, cep_incompleto,
 )
 
 grupo_bp = Blueprint("grupo", __name__, url_prefix="/grupos")
@@ -461,6 +461,28 @@ def preparo_modelos_novo(grupo_id):
             observacoes_medicamentos=(request.form.get("observacoes_medicamentos") or "").strip() or None,
         )
         db.session.add(modelo)
+        db.session.flush()
+
+        # Cortes de alimentação/líquido (tela 5.1.13, "cronograma" do
+        # preparo) — expressos em horas antes do horário do exame, para
+        # que o alerta mostrado ao paciente (e calculado no agendamento,
+        # 5.1.17-5.1.19) se ajuste sozinho ao horário de cada consulta,
+        # sem precisar recalcular nada manualmente a cada agendamento.
+        descricoes = request.form.getlist("corte_descricao")
+        horas = request.form.getlist("corte_horas_antes")
+        for descricao, horas_str in zip(descricoes, horas):
+            descricao = (descricao or "").strip()
+            horas_str = (horas_str or "").strip()
+            if not descricao or not horas_str:
+                continue
+            try:
+                horas_antes = int(horas_str)
+            except ValueError:
+                continue
+            db.session.add(PreparoCorte(
+                preparo_modelo_id=modelo.id, descricao=descricao, horas_antes=horas_antes,
+            ))
+
         db.session.commit()
         flash(f'Modelo de preparo "{nome}" cadastrado com sucesso.', "success")
         return redirect(url_for("grupo.preparo_modelos_lista", grupo_id=grupo_id))
@@ -541,3 +563,101 @@ def exames_novo(grupo_id):
         return redirect(url_for("grupo.exames_lista", grupo_id=grupo_id))
 
     return render_template("grupo/exame_form.html", grupo=grupo, meus_modelos=meus_modelos)
+
+
+# ===================== Agendamento de consulta (tela 5.1.17-5.1.19) =====================
+#
+# O cálculo do cronograma de preparo (cortes de alimentação/líquido,
+# medicamentos a suspender, alimentos proibidos, exames anteriores etc.) já
+# é feito automaticamente pelos próprios modelos (ver PreparoCorte.limite e
+# equivalentes em app/models.py) a partir de Agendamento.data_hora — nenhum
+# cálculo novo precisa ser feito aqui: basta criar o Agendamento vinculado
+# ao exame certo que o cronograma "aparece pronto" tanto para a equipe
+# (grupo.agenda_detalhe) quanto para o próprio paciente (a tela já existente
+# paciente.preparo_exame, que não precisou de nenhuma mudança).
+
+@grupo_bp.route("/<int:grupo_id>/agenda")
+@login_required
+def agenda_lista(grupo_id):
+    """Tela 5.1.19 — Agenda de consultas do grupo."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+
+    agendamentos = []
+    if grupo.clinica_interna_id:
+        agendamentos = (
+            Agendamento.query.filter_by(clinica_id=grupo.clinica_interna_id)
+            .order_by(Agendamento.data_hora).all()
+        )
+    return render_template("grupo/agenda_lista.html", grupo=grupo, agendamentos=agendamentos)
+
+
+@grupo_bp.route("/<int:grupo_id>/agenda/novo", methods=["GET", "POST"])
+@login_required
+def agenda_novo(grupo_id):
+    """Tela 5.1.17/5.1.18 — Agendar uma consulta para um paciente do grupo,
+    escolhendo um dos exames cadastrados no grupo. Qualquer membro ativo do
+    grupo (médico ou secretaria) pode agendar — é um trabalho compartilhado."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+
+    exames = []
+    if grupo.clinica_interna_id:
+        exames = Exame.query.filter_by(clinica_id=grupo.clinica_interna_id).order_by(Exame.nome).all()
+    pacientes = [
+        v.paciente for v in
+        GrupoPaciente.query.filter_by(grupo_id=grupo_id).join(Paciente).order_by(Paciente.nome).all()
+    ]
+
+    if request.method == "POST":
+        paciente_id = request.form.get("paciente_id", type=int)
+        exame_id = request.form.get("exame_id", type=int)
+        data_hora_str = request.form.get("data_hora")
+
+        paciente = next((p for p in pacientes if p.id == paciente_id), None)
+        exame = next((e for e in exames if e.id == exame_id), None)
+        if not paciente or not exame:
+            flash("Escolha um paciente e um exame válidos deste grupo.", "danger")
+            return render_template("grupo/agenda_form.html", grupo=grupo, pacientes=pacientes, exames=exames)
+
+        try:
+            data_hora = datetime.strptime(data_hora_str, "%Y-%m-%dT%H:%M")
+        except (ValueError, TypeError):
+            flash("Escolha uma data/hora válida para a consulta.", "danger")
+            return render_template("grupo/agenda_form.html", grupo=grupo, pacientes=pacientes, exames=exames)
+
+        agendamento = Agendamento(
+            clinica_id=grupo.clinica_interna_id,
+            paciente_id=paciente.id,
+            exame_id=exame.id,
+            medico_id=exame.medico_id,
+            data_hora=data_hora,
+            status="agendado",
+        )
+        db.session.add(agendamento)
+        db.session.commit()
+        flash(
+            f"Consulta de {paciente.nome} agendada para {data_hora.strftime('%d/%m/%Y às %H:%M')} — "
+            "o cronograma de preparo foi calculado automaticamente a partir deste horário.",
+            "success",
+        )
+        return redirect(url_for("grupo.agenda_lista", grupo_id=grupo_id))
+
+    return render_template("grupo/agenda_form.html", grupo=grupo, pacientes=pacientes, exames=exames)
+
+
+@grupo_bp.route("/<int:grupo_id>/agenda/<int:agendamento_id>")
+@login_required
+def agenda_detalhe(grupo_id, agendamento_id):
+    """Detalhe da consulta agendada, com o cronograma de preparo já
+    calculado (mesma lógica usada na tela do paciente, sem duplicação)."""
+    grupo = Grupo.query.get_or_404(grupo_id)
+    if not grupo.membro_ativo(current_user.id):
+        flash("Você não participa deste grupo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+    agendamento = Agendamento.query.filter_by(id=agendamento_id, clinica_id=grupo.clinica_interna_id).first_or_404()
+    return render_template("grupo/agenda_detalhe.html", grupo=grupo, agendamento=agendamento)

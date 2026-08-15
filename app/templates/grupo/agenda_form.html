@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block titulo %}Agendar consulta — {{ grupo.nome }}{% endblock %}
+{% block conteudo %}
+<p class="text-muted mb-1"><a href="{{ url_for('grupo.meus_grupos') }}">Meus grupos</a> &rsaquo; {{ grupo.nome }} &rsaquo;
+  <a href="{{ url_for('grupo.agenda_lista', grupo_id=grupo.id) }}">Agenda</a> &rsaquo; Nova consulta</p>
+<h3 class="mb-3">Agendar consulta</h3>
+
+{% if not pacientes %}
+<div class="alert alert-warning" style="max-width: 640px;">
+  Nenhum paciente associado a este grupo ainda.
+  <a href="{{ url_for('grupo.pacientes_novo', grupo_id=grupo.id) }}" class="alert-link">Cadastrar/associar paciente</a>
+</div>
+{% elif not exames %}
+<div class="alert alert-warning" style="max-width: 640px;">
+  Nenhum exame cadastrado neste grupo ainda.
+  <a href="{{ url_for('grupo.exames_novo', grupo_id=grupo.id) }}" class="alert-link">Cadastrar exame</a>
+</div>
+{% else %}
+<div class="card p-3" style="max-width: 640px;">
+  <form method="post">
+    <div class="mb-3">
+      <label class="form-label">Paciente *</label>
+      <select name="paciente_id" class="form-select" required>
+        <option value="">Selecione...</option>
+        {% for p in pacientes %}
+        <option value="{{ p.id }}">{{ p.nome }} — {{ p.cpf }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Exame *</label>
+      <select name="exame_id" class="form-select" required>
+        <option value="">Selecione...</option>
+        {% for e in exames %}
+        <option value="{{ e.id }}">{{ e.nome }}{% if e.medico %} — {{ e.medico.nome }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Data e hora *</label>
+      <input type="datetime-local" name="data_hora" class="form-control" required>
+      <div class="form-text">O cronograma de preparo (jejum, medicamentos, etc.) é calculado automaticamente a partir deste horário.</div>
+    </div>
+    <button type="submit" class="btn btn-primary">Agendar consulta</button>
+    <a href="{{ url_for('grupo.agenda_lista', grupo_id=grupo.id) }}" class="btn btn-outline-secondary">Cancelar</a>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

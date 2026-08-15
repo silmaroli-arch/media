@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titulo %}Agenda — {{ grupo.nome }}{% endblock %}
+{% block conteudo %}
+<p class="text-muted mb-1"><a href="{{ url_for('grupo.meus_grupos') }}">Meus grupos</a> &rsaquo; {{ grupo.nome }} &rsaquo; Agenda</p>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3>Agenda de consultas do grupo</h3>
+  <a href="{{ url_for('grupo.agenda_novo', grupo_id=grupo.id) }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Agendar consulta</a>
+</div>
+<div class="card p-3">
+  <table class="table table-hover">
+    <thead><tr><th>Data/hora</th><th>Paciente</th><th>Exame</th><th>Médico</th><th>Status</th><th>Próximo corte de preparo</th><th></th></tr></thead>
+    <tbody>
+      {% for ag in agendamentos %}
+      <tr>
+        <td>{{ ag.data_hora.strftime('%d/%m/%Y às %H:%M') }}</td>
+        <td>{{ ag.paciente.nome }}</td>
+        <td>{{ ag.exame.nome }}</td>
+        <td>{{ ag.medico.nome if ag.medico else '-' }}</td>
+        <td><span class="badge bg-secondary">{{ ag.status }}</span></td>
+        <td>
+          {% set preparo = ag.exame.preparo %}
+          {% if preparo and preparo.cortes %}
+            {{ preparo.cortes[0].descricao }} até {{ preparo.cortes[0].limite(ag.data_hora).strftime('%d/%m %H:%M') }}
+          {% else %}
+            <span class="text-muted">Sem cronograma cadastrado</span>
+          {% endif %}
+        </td>
+        <td><a href="{{ url_for('grupo.agenda_detalhe', grupo_id=grupo.id, agendamento_id=ag.id) }}" class="btn btn-sm btn-outline-secondary">Ver cronograma</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-muted text-center">Nenhuma consulta agendada neste grupo ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
