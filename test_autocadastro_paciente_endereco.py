@@ -3,8 +3,7 @@ agora aceita e salva endereço e contato de emergência, igual ao formulário
 que a equipe usa (medico.pacientes_novo) - antes só existiam os campos
 básicos (nome, CPF, telefone, data de nascimento, e-mail)."""
 from app import create_app
-from app.extensions import db
-from app.models import Paciente, Clinica
+from app.models import Paciente
 
 app = create_app()
 client = app.test_client()
@@ -15,15 +14,6 @@ def checar(nome, condicao):
     print(f"[{status}] {nome}")
     assert condicao, nome
 
-
-with app.app_context():
-    clinica = Clinica.query.filter_by(nome="Clínica Vitória").first()
-    codigo = clinica.codigo_cadastro_paciente
-    if not codigo:
-        import secrets
-        codigo = secrets.token_urlsafe(8)
-        clinica.codigo_cadastro_paciente = codigo
-        db.session.commit()
 
 r = client.post("/cadastro-paciente", data={
     "nome": "Paciente Endereco Teste", "cpf": "321.654.987-91",

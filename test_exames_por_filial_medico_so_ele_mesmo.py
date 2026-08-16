@@ -7,7 +7,7 @@ Exame.dono_medico / _dono_medico_do_exame). Usa a Clínica Vitória do seed,
 que tem dois médicos (Dr. Carlos Andrade e Dra. Fernanda Lima)."""
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Clinica, Exame, PreparoModelo
+from app.models import Usuario, Grupo, Exame, PreparoModelo
 
 app = create_app()
 client = app.test_client()
@@ -24,11 +24,11 @@ def login(email, senha):
 
 
 with app.app_context():
-    clinica_vitoria = Clinica.query.filter_by(nome="Clínica Vitória").first()
+    grupo_vitoria = Grupo.query.filter_by(nome="Clínica Vitória").first()
     carlos = Usuario.query.filter_by(email="medico@clinicavitoria.com").first()
     fernanda = Usuario.query.filter_by(email="medica2@clinicavitoria.com").first()
-    clinica_id, carlos_id, fernanda_id = clinica_vitoria.id, carlos.id, fernanda.id
-    modelo = PreparoModelo(clinica_id=clinica_id, nome="Preparo Teste Medico Filial", instrucoes="Jejum de 4 horas.")
+    clinica_id, carlos_id, fernanda_id = grupo_vitoria.id, carlos.id, fernanda.id
+    modelo = PreparoModelo(grupo_id=clinica_id, nome="Preparo Teste Medico Filial", instrucoes="Jejum de 4 horas.")
     db.session.add(modelo)
     db.session.commit()
     modelo_id = modelo.id
@@ -54,15 +54,14 @@ checar(
 
 # Associar escolhendo a si mesmo funciona normalmente.
 r2 = client.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Espirometria Teste", "clinica_destino_id": str(clinica_id),
-    "medico_id": str(carlos_id), "preco": "120,00",
+    "nome": "Espirometria Teste", "medico_id": str(carlos_id), "preco": "120,00",
 }, follow_redirects=True)
-checar("Associar escolhendo a si mesmo funciona", "associado à filial" in r2.get_data(as_text=True))
+checar("Associar escolhendo a si mesmo funciona", "associado com" in r2.get_data(as_text=True))
 
 # Tentar forçar outro médico via POST direto (contornando o HTML) é
 # bloqueado no servidor, não só escondido no dropdown.
 with app.app_context():
-    modelo2 = PreparoModelo(clinica_id=clinica_id, nome="Preparo Teste Medico Filial 2", instrucoes="Sem preparo.")
+    modelo2 = PreparoModelo(grupo_id=clinica_id, nome="Preparo Teste Medico Filial 2", instrucoes="Sem preparo.")
     db.session.add(modelo2)
     db.session.commit()
     modelo2_id = modelo2.id
@@ -71,8 +70,7 @@ client.post("/equipe/exames/novo", data={
     "preparo_modelo_id": str(modelo2_id),
 }, follow_redirects=True)
 r3 = client.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Espirometria Teste 2", "clinica_destino_id": str(clinica_id),
-    "medico_id": str(fernanda_id), "preco": "120,00",
+    "nome": "Espirometria Teste 2", "medico_id": str(fernanda_id), "preco": "120,00",
 }, follow_redirects=True)
 checar(
     "Servidor bloqueia médico tentando se associar como outro médico, mesmo via POST direto",
@@ -81,7 +79,7 @@ checar(
 with app.app_context():
     checar(
         "Exame NÃO foi associado com a Fernanda como responsável",
-        Exame.query.filter_by(clinica_id=clinica_id, nome="Espirometria Teste 2", associado=True).first() is None,
+        Exame.query.filter_by(grupo_id=clinica_id, nome="Espirometria Teste 2", associado=True).first() is None,
     )
 
 client.get("/logout")

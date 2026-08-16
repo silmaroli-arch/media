@@ -13,7 +13,7 @@ na plataforma ainda é dado como se fizesse o exame":
    medico_confirmado=True."""
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Clinica, Exame, PreparoModelo
+from app.models import Usuario, Grupo, Exame, PreparoModelo
 
 app = create_app()
 client = app.test_client()
@@ -32,8 +32,8 @@ def login(email, senha):
 login("secretaria@clinicavitoria.com", "123456")
 
 with app.app_context():
-    clinica_vitoria_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
-    modelo_id = PreparoModelo.query.filter_by(clinica_id=clinica_vitoria_id).first().id
+    grupo_vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
+    modelo_id = PreparoModelo.query.filter_by(grupo_id=grupo_vitoria_id).first().id
     dr_carlos = Usuario.query.filter_by(email="medico@clinicavitoria.com").first()
     dr_carlos_id = dr_carlos.id
 
