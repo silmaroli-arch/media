@@ -15,8 +15,7 @@ import io
 from openpyxl import Workbook
 
 from app import create_app
-from app.extensions import db
-from app.models import PreparoModelo
+from app.models import Grupo, PreparoModelo
 
 app = create_app()
 client = app.test_client()
@@ -29,6 +28,11 @@ def checar(nome, condicao):
 
 
 client.post("/login", data={"email": "secretaria@gruposaude.com", "senha": "123456"}, follow_redirects=True)
+# A secretária atua nos dois grupos "Saúde Total" - precisa escolher qual
+# está usando agora (Grupo é atômico - ver clinica_utils.py).
+with app.app_context():
+    centro_id = Grupo.query.filter_by(nome="Grupo Saúde Total - Centro").first().id
+client.post("/equipe/clinica", data={"clinica_id": str(centro_id)}, follow_redirects=True)
 
 # ---------- Lista: sem botão de importar; formulário: com ele (em modal) ----------
 

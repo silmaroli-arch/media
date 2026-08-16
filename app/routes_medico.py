@@ -1248,10 +1248,26 @@ def exames_por_filial_atualizar(exame_id):
         if not origem:
             flash("Exame não encontrado.", "danger")
             return redirect(url_for("medico.exames_por_filial", editar=exame.id))
-        exame.nome = origem.nome
-        exame.descricao = origem.descricao
-        exame.duracao_minutos = origem.duracao_minutos
-        exame.precisa_acompanhante = origem.precisa_acompanhante
+        nome_origem = origem.nome
+        descricao_origem = origem.descricao
+        duracao_origem = origem.duracao_minutos
+        acompanhante_origem = origem.precisa_acompanhante
+        # Fatia 5: `origem` e `exame` agora sempre vivem no MESMO Grupo (não
+        # existe mais outra filial pra abrigar cada um) - copiar o nome de
+        # `origem` para `exame` sem removê-lo violaria a constraint única
+        # (grupo_id, nome). `origem` só chega aqui como um item de
+        # catálogo ainda não associado (ja_existe já garantiu que nenhuma
+        # ASSOCIAÇÃO tem esse nome, e grupo_id+nome é único) - suas
+        # referências opcionais (perguntas/chat) só perdem o vínculo, igual
+        # à exclusão de associação (exames_por_filial_excluir).
+        PerguntaPendente.query.filter_by(exame_id=origem.id).update({"exame_id": None})
+        ChatMensagem.query.filter_by(exame_id=origem.id).update({"exame_id": None})
+        db.session.delete(origem)
+        db.session.flush()
+        exame.nome = nome_origem
+        exame.descricao = descricao_origem
+        exame.duracao_minutos = duracao_origem
+        exame.precisa_acompanhante = acompanhante_origem
         # O modelo de preparo era do exame antigo - com a associação
         # apontando pra outro exame, não vale mais; fica pra revisar.
         exame.preparo_modelo_id = None

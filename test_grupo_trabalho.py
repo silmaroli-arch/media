@@ -6,7 +6,7 @@ por CPF -> aprovar convite -> promover a administrador -> remover membro
 para rodar isolado."""
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Grupo, GrupoMembro, GrupoConvite, Empresa, Clinica, ClinicaMembro
+from app.models import Usuario, Grupo, GrupoMembro, GrupoConvite
 
 app = create_app()
 
@@ -47,25 +47,23 @@ with app.app_context():
     db.session.commit()
     dono_id, membro_id, terceiro_id = dono.id, membro.id, terceiro.id
 
-    # Vínculo mínimo com Empresa/Clínica (modelo legado, ainda usado pelo
-    # restante do sistema — ex.: medico.dashboard exige ao menos uma
-    # clínica ativa) só para os três conseguirem acessar o painel e
-    # exercitar o fluxo novo de grupo por cima dele. A reformulação
-    # completa (remover essa exigência do modelo antigo) é um trabalho
-    # futuro maior, fora do escopo desta primeira fatia do BBP.
-    empresa_teste = Empresa.query.filter_by(nome="Empresa Teste BBP").first()
-    if not empresa_teste:
-        empresa_teste = Empresa(nome="Empresa Teste BBP", status="ativa")
-        db.session.add(empresa_teste)
-        db.session.commit()
-    clinica_teste = Clinica.query.filter_by(nome="Clínica Teste BBP", empresa_id=empresa_teste.id).first()
-    if not clinica_teste:
-        clinica_teste = Clinica(nome="Clínica Teste BBP", empresa_id=empresa_teste.id)
-        db.session.add(clinica_teste)
-        db.session.commit()
-    for uid in (dono_id, membro_id, terceiro_id):
-        if not ClinicaMembro.query.filter_by(clinica_id=clinica_teste.id, usuario_id=uid).first():
-            db.session.add(ClinicaMembro(clinica_id=clinica_teste.id, usuario_id=uid))
+    # Cada um dos três já precisa ter ALGUM grupo próprio pra conseguir
+    # acessar o painel (medico.dashboard exige empresa_atual(), ver
+    # app/clinica_utils.py) - é exatamente o que o cadastro público
+    # (routes_auth.py:cadastro) faz na vida real (o Grupo nasce junto,
+    # com a própria pessoa como "dono"). Cada um recebe o SEU PRÓPRIO
+    # Grupo aqui, isolado do grupo "Clínica Vitória BBP" que o teste cria
+    # de propósito logo abaixo (5.1.4) para exercitar o fluxo novo.
+    for uid, nome_grupo in (
+        (dono_id, "Grupo Pessoal Dono BBP"),
+        (membro_id, "Grupo Pessoal Membro BBP"),
+        (terceiro_id, "Grupo Pessoal Terceiro BBP"),
+    ):
+        if not GrupoMembro.query.filter_by(usuario_id=uid).first():
+            grupo_pessoal = Grupo(nome=nome_grupo, status="ativa")
+            db.session.add(grupo_pessoal)
+            db.session.flush()
+            db.session.add(GrupoMembro(grupo_id=grupo_pessoal.id, usuario_id=uid, papel="dono", ativo=True))
     db.session.commit()
 
 
