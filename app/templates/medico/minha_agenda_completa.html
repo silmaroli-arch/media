@@ -18,8 +18,7 @@
       <tr>
         <td class="text-nowrap">{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
         <td>
-          {{ a.clinica.nome }}
-          <span class="text-muted small d-block">{{ a.clinica.empresa.nome }}</span>
+          {{ a.grupo.nome if a.grupo else (a.clinica.nome if a.clinica else '—') }}
         </td>
         <td>{{ a.exame.nome if a.exame else '—' }}</td>
         <td>{{ a.paciente.nome if a.paciente else '—' }}</td>

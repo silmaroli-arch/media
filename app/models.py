@@ -713,6 +713,14 @@ class Grupo(db.Model):
         return [m.usuario for m in self.membros if m.ativo and m.usuario.tipo == "medico"]
 
     @property
+    def medicos_e_secretarias(self):
+        """Fatia 5 (passo 4): equivalente a Clinica.medicos_e_secretarias -
+        todos os membros ativos (médico ou secretária), usado por
+        medico.medicos_da_clinica()/medicos_das_filiais() agora que essas
+        funções recebem Grupo em vez de Clinica."""
+        return [m.usuario for m in self.membros if m.ativo]
+
+    @property
     def valor_mensal_estimado(self):
         if self.valor_por_medico is None:
             return None

@@ -81,6 +81,9 @@
             <button type="submit" class="btn btn-sm btn-outline-secondary">Tornar administrador</button>
           </form>
           {% endif %}
+          {% if m.usuario.is_staff %}
+          <a href="{{ url_for('medico.equipe_permissoes', usuario_id=m.usuario.id) }}" class="btn btn-sm btn-outline-secondary">Permissões</a>
+          {% endif %}
           {% if m.papel != 'dono' %}
           <form method="post" class="d-inline" onsubmit="return confirm('Remover este membro do grupo?');">
             <input type="hidden" name="acao" value="remover_membro">

@@ -197,10 +197,12 @@ def create_app():
 
     @app.context_processor
     def injetar_contexto_clinica():
-        """Disponibiliza em todos os templates a EMPRESA atual (o que
-        delimita o que a pessoa vê), as filiais dela em que a pessoa atua e
-        as empresas do usuário — para a navbar mostrar a empresa e o link de
-        "trocar" (só quando há mais de uma empresa), e para as listas
+        """Disponibiliza em todos os templates o GRUPO atual (o que
+        delimita o que a pessoa vê - ver app/clinica_utils.py, Fatia 5), as
+        "filiais" dele (sempre 0 ou 1 elemento a partir desta fatia - não
+        existe mais "várias filiais numa empresa") e os grupos do usuário —
+        para a navbar mostrar o grupo e o link de "trocar" (só quando há
+        mais de um), e para as listas
         mostrarem a coluna "Filial" só quando faz diferença."""
         from flask_login import current_user
         if current_user.is_authenticated and current_user.is_staff:

@@ -6,9 +6,8 @@
   <a href="{{ url_for('medico.exames_lista') }}" class="btn btn-outline-secondary">Voltar para Exames</a>
 </div>
 <p class="text-muted">
-  Cada associação diz <strong>qual exame</strong> está disponível <strong>em qual filial</strong>, com
-  <strong>qual médico</strong> responsável e a <strong>qual preço</strong>. Clique em "Adicionar", preencha os
-  4 campos e salve — pronto.
+  Cada associação diz <strong>qual exame</strong> está disponível, com <strong>qual médico</strong>
+  responsável e a <strong>qual preço</strong>. Clique em "Adicionar", preencha os 3 campos e salve — pronto.
 </p>
 
 {# ---------- Formulário de ADICIONAR (aberto pelo botão) ---------- #}
@@ -29,29 +28,19 @@
         </div>
       </div>
       <div class="mb-2">
-        <label class="form-label">Filial</label>
-        <select name="clinica_destino_id" id="assoc-filial" class="form-select" required onchange="filtrarMedicos()">
-          <option value="">Selecione a filial...</option>
-          {% for f in filiais %}
-          <option value="{{ f.id }}">{{ f.nome }}</option>
+        <label class="form-label">Médico</label>
+        <select name="medico_id" class="form-select" required>
+          <option value="">Selecione o médico...</option>
+          {% for m in medicos_disponiveis %}
+          <option value="{{ m.id }}">{{ m.nome }}</option>
           {% endfor %}
         </select>
-      </div>
-      <div class="mb-2">
-        <label class="form-label">Médico</label>
-        {# As opções carregam TODOS os médicos (com a filial em que atuam
-           marcada em data-filial) e o JS abaixo mostra só os da filial
-           escolhida - o servidor valida de novo de qualquer forma. #}
-        <select name="medico_id" id="assoc-medico" class="form-select" required>
-          <option value="">Selecione a filial primeiro...</option>
-          {% for f in filiais %}{% for m in medicos_por_filial[f.id] %}
-          <option value="{{ m.id }}" data-filial="{{ f.id }}" hidden>{{ m.nome }}</option>
-          {% endfor %}{% endfor %}
-        </select>
-        <div class="form-text">Só aparecem os médicos que atuam na filial escolhida.</div>
+        {% if not medicos_disponiveis %}
+        <div class="form-text text-warning-emphasis">Nenhum médico disponível ainda (vincule pela tela Equipe).</div>
+        {% endif %}
       </div>
       <div class="mb-3">
-        <label class="form-label">Preço nesta filial (R$)</label>
+        <label class="form-label">Preço (R$)</label>
         <input type="text" name="preco" class="form-control" placeholder="Ex.: 250,00" required>
       </div>
       <button type="submit" class="btn btn-primary">Salvar</button>
@@ -66,7 +55,7 @@
   <h6 class="mb-2">Editar associação</h6>
   {% if tem_agendamentos %}
   <div class="alert alert-warning py-2 small">
-    Esta associação já tem agendamento(s) marcados — por isso o exame e a filial ficam travados
+    Esta associação já tem agendamento(s) marcados — por isso o exame fica travado
     (os agendamentos apontam pra ela). Médico e preço continuam editáveis.
   </div>
   {% endif %}
@@ -80,22 +69,12 @@
       </select>
     </div>
     <div class="mb-2">
-      <label class="form-label">Filial</label>
-      <select name="clinica_destino_id" id="editar-filial" class="form-select" required onchange="filtrarMedicosEditar()" {% if tem_agendamentos %}disabled{% endif %}>
-        {% for f in filiais %}
-        <option value="{{ f.id }}" {% if f.id == editar_exame.clinica_id %}selected{% endif %}>{{ f.nome }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="mb-2">
       <label class="form-label">Médico</label>
-      {# Todas as opções (com data-filial); o JS mostra só as da filial
-         escolhida - o servidor valida de novo de qualquer forma. #}
-      <select name="medico_id" id="editar-medico" class="form-select" required>
-        {% for f in filiais %}{% for m in medicos_por_filial[f.id] %}
-        <option value="{{ m.id }}" data-filial="{{ f.id }}"
-          {% if f.id != editar_exame.clinica_id %}hidden{% elif m.id == editar_exame.medico_id and editar_exame.medico_confirmado %}selected{% endif %}>{{ m.nome }}</option>
-        {% endfor %}{% endfor %}
+      <select name="medico_id" class="form-select" required>
+        {% for m in medicos_disponiveis %}
+        <option value="{{ m.id }}"
+          {% if m.id == editar_exame.medico_id and editar_exame.medico_confirmado %}selected{% endif %}>{{ m.nome }}</option>
+        {% endfor %}
       </select>
       {% if not editar_exame.medico_confirmado %}
       <div class="form-text text-warning-emphasis">
@@ -104,7 +83,7 @@
       {% endif %}
     </div>
     <div class="mb-3">
-      <label class="form-label">Preço nesta filial (R$)</label>
+      <label class="form-label">Preço (R$)</label>
       <input type="text" name="preco" class="form-control"
              value="{{ '%.2f'|format(editar_exame.preco)|replace('.', ',') if editar_exame.preco else '' }}" required>
     </div>
@@ -112,7 +91,7 @@
     <a href="{{ url_for('medico.exames_por_filial') }}" class="btn btn-link">Cancelar</a>
   </form>
   <form method="post" action="{{ url_for('medico.exames_por_filial_excluir', exame_id=editar_exame.id) }}" class="mt-2"
-        onsubmit="return confirm('Excluir a associação de {{ editar_exame.nome }} com a filial {{ editar_exame.clinica.nome }}?');">
+        onsubmit="return confirm('Excluir a associação de {{ editar_exame.nome }}?');">
     <button type="submit" class="btn btn-sm btn-outline-danger">Excluir esta associação</button>
   </form>
 </div>
@@ -121,12 +100,11 @@
 {# ---------- Lista das associações ---------- #}
 <div class="card p-3">
   <table class="table table-hover align-middle">
-    <thead><tr><th>Exame</th><th>Filial</th><th>Médico</th><th>Preço</th><th></th></tr></thead>
+    <thead><tr><th>Exame</th><th>Médico</th><th>Preço</th><th></th></tr></thead>
     <tbody>
       {% for e in associacoes %}
       <tr>
         <td>{{ e.nome }}</td>
-        <td>{{ e.clinica.nome }}</td>
         <td>
           {% if e.medico_confirmado %}
           {{ e.medico.nome }}
@@ -145,41 +123,9 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="text-muted text-center">Nenhuma associação ainda — clique em "Adicionar" acima.</td></tr>
+      <tr><td colspan="4" class="text-muted text-center">Nenhuma associação ainda — clique em "Adicionar" acima.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
-
-<script>
-  // Mostra no seletor de médico só quem atua na filial escolhida.
-  function filtrarMedicos() {
-    var filialId = document.getElementById('assoc-filial').value;
-    var selMedico = document.getElementById('assoc-medico');
-    var algum = false;
-    Array.prototype.forEach.call(selMedico.options, function (opt) {
-      if (!opt.value) {
-        opt.textContent = filialId ? 'Selecione o médico...' : 'Selecione a filial primeiro...';
-        return;
-      }
-      var mostra = filialId && opt.getAttribute('data-filial') === filialId;
-      opt.hidden = !mostra;
-      if (mostra) algum = true;
-    });
-    selMedico.value = '';
-    if (filialId && !algum) {
-      selMedico.options[0].textContent = 'Nenhum médico atua nesta filial ainda (vincule pela tela Equipe)';
-    }
-  }
-
-  // Mesmo filtro, para o formulário de EDITAR (quando a filial é trocada).
-  function filtrarMedicosEditar() {
-    var filialId = document.getElementById('editar-filial').value;
-    var selMedico = document.getElementById('editar-medico');
-    Array.prototype.forEach.call(selMedico.options, function (opt) {
-      opt.hidden = opt.getAttribute('data-filial') !== filialId;
-    });
-    selMedico.value = '';
-  }
-</script>
 {% endblock %}

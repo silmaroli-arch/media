@@ -16,23 +16,22 @@ from sqlalchemy import or_, and_, func
 
 from app.extensions import db
 from app.models import (
-    Paciente, Usuario, Exame, Agendamento, FaqItem, Empresa,
-    PerguntaPendente, ClinicaMembro, Clinica, GrupoPaciente,
+    Paciente, Usuario, Exame, Agendamento, FaqItem,
+    PerguntaPendente, GrupoPaciente, Grupo, GrupoMembro, GrupoConvite,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame,
-    ConviteVinculo, gerar_codigo_mestre_medico, encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
-    cep_incompleto, telefone_incompleto, validar_cpf,
+    encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
+    cep_incompleto, telefone_incompleto,
 )
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
     empresa_atual, empresas_do_usuario, selecionar_empresa,
-    filiais_atuais, filiais_atuais_ids, grupos_atuais_ids,
+    filiais_atuais, grupos_atuais_ids,
 )
 from app.pdf_preparo import extrair_sugestao_de_pdf, gerar_xlsx_da_sugestao
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
-from app.grupo_pareamento import sincronizar_grupo_membro_pareado
 from cryptography.hazmat.primitives.serialization import pkcs12
 
 medico_bp = Blueprint("medico", __name__, url_prefix="/equipe")
@@ -83,45 +82,22 @@ def _destino_pos_onboarding(endpoint_padrao, **kwargs):
     return redirect(url_for(endpoint_padrao, **kwargs))
 
 
-def _pessoa_da_empresa(usuario_id, empresa, filial_ids):
-    """O usuário faz parte desta empresa? Ou por vínculo de filial
-    (ClinicaMembro), ou por ser quem FUNDOU a empresa
-    (Usuario.empresa_fundadora_id) - o fundador faz parte da equipe desde
-    o cadastro público, mesmo antes de (ou sem nunca) se vincular a um
-    local de atendimento."""
-    if ClinicaMembro.query.filter(
-        ClinicaMembro.usuario_id == usuario_id, ClinicaMembro.clinica_id.in_(filial_ids),
-        ClinicaMembro.ativo.is_(True),
-    ).first():
-        return True
-    u = Usuario.query.get(usuario_id)
-    return bool(u and u.empresa_fundadora_id == empresa.id)
-
-
-def _agendamentos_futuros_do_vinculo(clinica_id, usuario_id):
-    """Agendamentos ainda por acontecer deste médico nesta filial - usados
-    como TRAVA antes de encerrar um vínculo: encerrar com consultas
-    marcadas deixaria pacientes com hora marcada e médico que "não existe
-    mais" ali. A equipe cancela/transfere primeiro, depois encerra."""
-    clinica = Clinica.query.get(clinica_id)
-    grupo_id = clinica.grupo_pareado().id if clinica else None
-    return Agendamento.query.filter(
-        Agendamento.grupo_id == grupo_id,
-        Agendamento.medico_id == usuario_id,
-        Agendamento.data_hora >= datetime.utcnow(),
-    ).count()
+def _pessoa_da_empresa(usuario_id, empresa):
+    """O usuário faz parte deste Grupo (tenant)? Fatia 5: checagem direta
+    via GrupoMembro ativo - substitui o antigo vínculo por filial
+    (ClinicaMembro) ou por ser quem fundou a Empresa (empresa_fundadora_id),
+    já que agora o dono do Grupo já nasce com um GrupoMembro (ver
+    Grupo.novo() em routes_grupo.py) - não existe mais o caso "fundador sem
+    vínculo nenhum ainda"."""
+    return GrupoMembro.query.filter_by(grupo_id=empresa.id, usuario_id=usuario_id, ativo=True).first() is not None
 
 
 def _filiais_da_empresa():
-    """TODAS as filiais da EMPRESA atual, independente de o usuário estar
-    vinculado a elas. Usado nas telas de CONFIGURAÇÃO (modelos de preparo,
-    exames), que são dados da empresa: quem está configurando o sistema
-    (ex.: o fundador, ou um "configurador") não precisa estar vinculado a
-    local de atendimento nenhum pra cadastrar esses dados - o vínculo
-    ("você atua aqui") só diz respeito a atuação/agenda, não à
-    configuração."""
-    empresa = empresa_atual()
-    return Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
+    """Fatia 5: TODAS as "filiais" da empresa atual - como não existe mais
+    o conceito de várias filiais dentro do mesmo tenant, isso é sempre uma
+    lista de 0 ou 1 elemento (o próprio Grupo atual). Mantida pelo nome só
+    por compatibilidade com o restante do arquivo."""
+    return filiais_atuais()
 
 
 def _filiais_da_empresa_ids():
@@ -129,64 +105,56 @@ def _filiais_da_empresa_ids():
 
 
 def _grupos_da_empresa_ids():
-    """Fatia 4: ids dos Grupos pareados de todas as filiais da empresa
-    atual - a chave real de escopo para Exame/PreparoModelo/Agendamento/
-    PerguntaPendente/FaqItem a partir desta fatia. Usa .grupo_pareado()
-    (não o id direto) para parear na hora qualquer filial que a migração/
-    backfill ainda não tenha coberto."""
-    return [f.grupo_pareado().id for f in _filiais_da_empresa()]
+    """Fatia 5: o Grupo atual JÁ é o grupo - não precisa mais de
+    .grupo_pareado() (só necessário enquanto Clinica era a unidade real)."""
+    return _filiais_da_empresa_ids()
 
 
 def _filtro_pacientes_da_empresa():
-    """Filtro SQLAlchemy para "pacientes da EMPRESA atual". Fatia 5: o
-    paciente passou a ser uma identidade global (ver Paciente em
-    app/models.py) e a associação canônica com a empresa é por
-    GrupoPaciente, no(s) Grupo(s) pareado(s) das filiais dela. Mas,
-    seguindo o mesmo padrão aditivo das fatias anteriores (dual-write/
-    bridge, nunca troca destrutiva), o filtro também cobre cadastros
-    legados que só têm Paciente.empresa_id/clinica_id preenchido e ainda
+    """Filtro SQLAlchemy para "pacientes do Grupo (tenant) atual". Fatia 5:
+    o paciente é uma identidade global (ver Paciente em app/models.py) e a
+    associação canônica é por GrupoPaciente. Cobre também cadastros
+    legados que só têm Paciente.empresa_id/clinica_id preenchido (dado o
+    modelo antigo de Empresa/Clinica, ainda não apagado do banco) e ainda
     não passaram por medico._associar_paciente_a_empresa ou por
-    migrar_paciente_para_grupo.py - sem isso, esses cadastros
-    desapareceriam das listas até a migração rodar."""
-    empresa = empresa_atual()
+    migrar_paciente_para_grupo.py - usa a Clinica pareada a este Grupo (se
+    houver - ver Grupo.clinica_pareada) para comparar com o
+    empresa_id/clinica_id ANTIGO de verdade, nunca com o id do Grupo (são
+    espaços de id diferentes - comparar direto seria um bug de isolamento
+    entre tenants)."""
+    grupo = empresa_atual()
     grupo_ids = _grupos_da_empresa_ids()
-    filiais_da_empresa = db.session.query(Clinica.id).filter(Clinica.empresa_id == empresa.id)
     paciente_ids_do_grupo = db.session.query(GrupoPaciente.paciente_id).filter(
         GrupoPaciente.grupo_id.in_(grupo_ids or [0])
     )
-    return or_(
-        Paciente.id.in_(paciente_ids_do_grupo),
-        Paciente.empresa_id == empresa.id,
-        Paciente.clinica_id.in_(filiais_da_empresa),
-    )
+    condicoes = [Paciente.id.in_(paciente_ids_do_grupo)]
+    clinica_pareada = grupo.clinica_pareada if grupo else None
+    if clinica_pareada:
+        condicoes.append(Paciente.clinica_id == clinica_pareada.id)
+        if clinica_pareada.empresa_id:
+            condicoes.append(Paciente.empresa_id == clinica_pareada.empresa_id)
+    return or_(*condicoes)
 
 
 def _associar_paciente_a_empresa(paciente, empresa):
-    """Cria os GrupoPaciente que faltarem para que este paciente passe a
-    ser visto por todas as filiais da empresa - equivalente ao antigo
-    "paciente é da empresa" (Paciente.empresa_id), agora feito via
-    associação em vez de campo direto na tabela (ver
-    _filtro_pacientes_da_empresa acima)."""
-    criados = 0
-    for clinica in Clinica.query.filter_by(empresa_id=empresa.id).all():
-        grupo = clinica.grupo_pareado()
-        if not GrupoPaciente.query.filter_by(grupo_id=grupo.id, paciente_id=paciente.id).first():
-            db.session.add(GrupoPaciente(grupo_id=grupo.id, paciente_id=paciente.id))
-            criados += 1
-    return criados
+    """Cria o GrupoPaciente que faltar para que este paciente passe a ser
+    visto pelo Grupo (tenant) atual - equivalente ao antigo "paciente é da
+    empresa" (Paciente.empresa_id), agora feito via associação em vez de
+    campo direto na tabela (ver _filtro_pacientes_da_empresa acima)."""
+    if GrupoPaciente.query.filter_by(grupo_id=empresa.id, paciente_id=paciente.id).first():
+        return 0
+    db.session.add(GrupoPaciente(grupo_id=empresa.id, paciente_id=paciente.id))
+    return 1
 
 
 def _gerar_codigo_cadastro_paciente():
     """Gera um código curto e único para o link público de auto-cadastro
-    de paciente (ver auth.cadastro_paciente). O código agora vive na
-    EMPRESA (o paciente é da empresa) - a checagem inclui também os
-    códigos legados por filial, que continuam válidos em links antigos."""
+    de paciente (ver auth.cadastro_paciente). Fatia 5: o código agora vive
+    no Grupo (Grupo.codigo_cadastro_paciente, mesma coluna que Empresa/
+    Clinica já tinham)."""
     for _ in range(10):
         codigo = secrets.token_urlsafe(6).replace("_", "").replace("-", "")[:8]
-        if (
-            not Empresa.query.filter_by(codigo_cadastro_paciente=codigo).first()
-            and not Clinica.query.filter_by(codigo_cadastro_paciente=codigo).first()
-        ):
+        if not Grupo.query.filter_by(codigo_cadastro_paciente=codigo).first():
             return codigo
     # Praticamente impossível de cair aqui (espaço de códigos é enorme),
     # mas por segurança nunca deixa a função sem devolver um código.
@@ -297,12 +265,15 @@ def status_configuracao_inicial(filiais):
     do assistente (medico.onboarding) quanto pelo aviso mostrado no Painel
     enquanto a configuração não estiver completa — por ser calculado a
     partir dos dados reais, permanece correto mesmo que a pessoa pule
-    etapas e preencha as coisas por fora do assistente, em outra ordem."""
-    filial_ids = [f.id for f in filiais]
-    grupo_ids = [f.grupo_pareado().id for f in filiais]
+    etapas e preencha as coisas por fora do assistente, em outra ordem.
+
+    Fatia 5: `filiais` é sempre uma lista de 0 ou 1 elemento (o próprio
+    Grupo atual - ver clinica_utils.filiais_atuais()) - não existe mais
+    "várias filiais da mesma empresa"."""
+    grupo_ids = [f.id for f in filiais]
     tem_mais_gente = (
-        db.session.query(ClinicaMembro.usuario_id)
-        .filter(ClinicaMembro.clinica_id.in_(filial_ids), ClinicaMembro.ativo.is_(True))
+        db.session.query(GrupoMembro.usuario_id)
+        .filter(GrupoMembro.grupo_id.in_(grupo_ids), GrupoMembro.ativo.is_(True))
         .distinct().count() > 1
     )
     tem_modelo_preparo = PreparoModelo.query.filter(PreparoModelo.grupo_id.in_(grupo_ids)).first() is not None
@@ -311,13 +282,10 @@ def status_configuracao_inicial(filiais):
     etapas = [
         {
             "id": "locais_atendimento",
-            "titulo": "Meus Locais de Atendimento",
-            "descricao": (
-                "Endereço, CNPJ e telefone/e-mail de contato da clínica — e, se atender em mais de um "
-                "endereço/consultório, cadastre cada local separadamente aqui também (opcional)."
-            ),
+            "titulo": "Dados da clínica",
+            "descricao": "Endereço, CNPJ e telefone/e-mail de contato da clínica.",
             "concluida": bool(filiais) and all(f.telefone and f.email_contato for f in filiais),
-            "endpoint": "medico.filiais_lista",
+            "endpoint": "medico.clinica_configuracoes",
             "permissao": "perm_filiais",
         },
         {
@@ -401,7 +369,7 @@ def escolher_clinica():
 @staff_required
 def dashboard():
     filiais = filiais_atuais()
-    grupo_ids = [f.grupo_pareado().id for f in filiais]
+    grupo_ids = [f.id for f in filiais]
 
     agendamentos_q = Agendamento.query.filter(Agendamento.grupo_id.in_(grupo_ids))
     # Médico logado com o próprio login vê no painel APENAS a agenda DELE -
@@ -456,20 +424,16 @@ def dashboard():
         empresa.codigo_cadastro_paciente = _gerar_codigo_cadastro_paciente()
         db.session.commit()
 
-    # Código mestre do médico (ver Usuario.codigo_mestre): contas de médico
-    # criadas antes do código ganham um na primeira visita ao painel.
-    convites_pendentes = []
-    if eh_medico():
-        if not current_user.codigo_mestre:
-            current_user.codigo_mestre = gerar_codigo_mestre_medico()
-            db.session.commit()
-        # Convites de clínicas querendo vincular este médico - ele decide
-        # aqui no painel (aceitar cria o vínculo, ver convite_decidir).
-        convites_pendentes = (
-            ConviteVinculo.query.filter_by(medico_id=current_user.id, status="pendente")
-            .order_by(ConviteVinculo.criado_em.asc())
-            .all()
-        )
+    # Fatia 5: convites de Grupo (GrupoConvite, por CPF - ver
+    # routes_grupo.py:convidar/responder_convite) pendentes para este
+    # usuário - substitui o antigo convite por código mestre
+    # (ConviteVinculo), que era só para médico; GrupoConvite vale para
+    # qualquer papel de equipe.
+    convites_pendentes = (
+        GrupoConvite.query.filter_by(usuario_convidado_id=current_user.id, status="pendente")
+        .order_by(GrupoConvite.criado_em.asc())
+        .all()
+    )
 
     proximos = (
         agendamentos_q.filter(Agendamento.data_hora >= datetime.utcnow())
@@ -528,7 +492,6 @@ def onboarding():
 @login_required
 @staff_required
 def pacientes_lista():
-    filial_ids = filiais_atuais_ids()
     if eh_medico() and not current_user.perm_pacientes:
         # Médico sem a permissão administrativa de pacientes: só vê quem já
         # tem algum agendamento com ele mesmo — "acompanhar somente os seus
@@ -557,7 +520,6 @@ def pacientes_solicitacoes():
     membro da equipe pode ver e decidir — não é restrito por perm_pacientes,
     já que aceitar/recusar um cadastro não é a mesma coisa que gerenciar o
     cadastro completo do paciente."""
-    filial_ids = filiais_atuais_ids()
     pendentes = (
         Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.status_cadastro == "pendente")
         .order_by(Paciente.criado_em.asc())
@@ -970,7 +932,8 @@ def exames_novo():
         # local de atendimento, em "Exames por filial" (mesmo esquema que já
         # vale pra médico e pra associar o exame a mais de uma filial).
         exame = Exame(
-            clinica_id=filial.id, grupo_id=filial.grupo_pareado().id,
+            clinica_id=filial.clinica_pareada.id if filial.clinica_pareada else None,
+            grupo_id=filial.id,
             medico_id=medico_id, nome=nome, descricao=descricao,
             preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos,
             precisa_acompanhante=precisa_acompanhante,
@@ -1024,9 +987,9 @@ def exames_editar(exame_id):
             "danger",
         )
         return redirect(url_for("medico.exames_lista"))
-    # Médico responsável é da filial DO EXAME, mas modelo de preparo é
+    # Médico responsável é do GRUPO do exame, mas modelo de preparo é
     # genérico - vale qualquer modelo acessível ao usuário na empresa.
-    medicos = medicos_da_clinica(exame.clinica)
+    medicos = medicos_da_clinica(exame.grupo)
     modelos = PreparoModelo.query.filter(PreparoModelo.grupo_id.in_(grupo_ids)).order_by(PreparoModelo.nome).all()
     if eh_medico():
         modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
@@ -1081,13 +1044,17 @@ def exames_editar(exame_id):
 @staff_required
 def exames_por_filial():
     """Tela "Associar exames" - um cadastro BÁSICO de associações. Uma
-    associação = um exame disponível numa filial, com um médico
-    responsável e um preço. A tela é uma lista simples (Exame, Filial,
-    Médico, Preço) com um botão "Adicionar" que abre um formulário só com
-    esses 4 campos: preencheu, salvou, pronto. Cada linha tem um "Editar"
-    que reaproveita o mesmo formulário pra trocar médico/preço daquela
-    associação. (As antigas grades "Exame × Filial"/"Exame × Médico" com
-    combobox de tipo foram substituídas por isso - não eram intuitivas.)
+    associação = um exame do catálogo do Grupo, com um médico responsável
+    e um preço. A tela é uma lista simples (Exame, Médico, Preço) com um
+    botão "Adicionar" que abre um formulário só com esses 3 campos:
+    preencheu, salvou, pronto. Cada linha tem um "Editar" que reaproveita
+    o mesmo formulário pra trocar médico/preço daquela associação.
+
+    Fatia 5 (passo 4): esta tela era "Exame × Filial" porque uma empresa
+    podia ter várias filiais e o mesmo exame precisava ser associado
+    filial a filial. Isso não existe mais - o Grupo atual já é a única
+    unidade (1 Grupo = 1 antiga filial), então "associar" deixou de
+    precisar escolher ONDE; só falta médico e preço.
 
     Não existe "médico principal": todo mundo (médico ou secretária)
     segue o mesmo fluxo, escolhendo o médico responsável numa lista.
@@ -1096,19 +1063,14 @@ def exames_por_filial():
     aviso de "não confirmado" - escolher e salvar o médico aqui é o que
     confirma."""
     empresa = empresa_atual()
-    filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
+    exames_do_grupo = Exame.query.filter(Exame.grupo_id == empresa.id).all() if empresa else []
 
     # A lista mostra só ASSOCIAÇÕES de verdade (associado=True) - o
     # cadastro genérico de exame cria só um item de catálogo
     # (associado=False), que não aparece aqui até alguém associar.
-    exames_da_empresa = (
-        Exame.query.join(Clinica, Exame.clinica_id == Clinica.id)
-        .filter(Clinica.empresa_id == empresa.id)
-        .all()
-    )
     associacoes = sorted(
-        (e for e in exames_da_empresa if e.associado),
-        key=lambda e: (e.nome.lower(), (e.clinica.nome or "").lower()),
+        (e for e in exames_do_grupo if e.associado),
+        key=lambda e: e.nome.lower(),
     )
 
     # O dropdown "Exame" do formulário lista os exames cadastrados
@@ -1123,49 +1085,45 @@ def exames_por_filial():
     # exame nenhum.
     if current_user.tipo == "medico":
         exames_visiveis = [
-            e for e in exames_da_empresa
+            e for e in exames_do_grupo
             if e.dono_medico is None or e.dono_medico.id == current_user.id
         ]
     else:
-        exames_visiveis = exames_da_empresa
+        exames_visiveis = exames_do_grupo
     nomes = sorted({e.nome for e in exames_visiveis})
+
     # O dropdown "Médico" segue a mesma lógica do "Exame" acima: quando
     # quem está logado é médico, só aparece ele mesmo — um médico só pode
     # ser o responsável pelos SEUS próprios exames (ver dono_medico), então
-    # listar os colegas da filial ali só confunde. Secretária/dono
+    # listar os colegas do grupo ali só confunde. Secretária/dono
     # continuam vendo todos, já que são quem de fato define qual médico
     # atende cada exame.
+    medicos_disponiveis = medicos_da_clinica(empresa) if empresa else []
     if current_user.tipo == "medico":
-        medicos_por_filial = {
-            f.id: [m for m in medicos_da_clinica(f) if m.id == current_user.id] for f in filiais
-        }
-    else:
-        medicos_por_filial = {f.id: medicos_da_clinica(f) for f in filiais}
+        medicos_disponiveis = [m for m in medicos_disponiveis if m.id == current_user.id]
 
     # "Editar" de uma linha reaproveita o mesmo formulário, pré-preenchido
-    # com a associação escolhida (exame+filial ficam fixos; só médico e
-    # preço são editáveis).
+    # com a associação escolhida (exame fica fixo; só médico e preço são
+    # editáveis).
     editar_id = request.args.get("editar", type=int)
     editar_exame = next((e for e in associacoes if e.id == editar_id), None)
 
     return render_template(
         "medico/exames_por_filial.html",
-        filiais=filiais,
         associacoes=associacoes,
         nomes=nomes,
-        medicos_por_filial=medicos_por_filial,
+        medicos_disponiveis=medicos_disponiveis,
         editar_exame=editar_exame,
     )
 
 
 def _dono_medico_do_exame(nome, empresa):
-    """O médico DONO do exame com esse nome na empresa - quem criou o
+    """O médico DONO do exame com esse nome no Grupo - quem criou o
     cadastro (ver Exame.criado_por_id). Um médico não pode ser associado
     a um exame do qual não é o dono. Retorna None quando o exame não tem
     dono médico registrado (cadastro antigo ou criado pela secretária) -
-    nesse caso vale o comportamento antigo (qualquer médico da filial)."""
-    filial_ids = db.session.query(Clinica.id).filter(Clinica.empresa_id == empresa.id)
-    for e in Exame.query.filter(Exame.clinica_id.in_(filial_ids), Exame.nome == nome).all():
+    nesse caso vale o comportamento antigo (qualquer médico do grupo)."""
+    for e in Exame.query.filter(Exame.grupo_id == empresa.id, Exame.nome == nome).all():
         dono = e.dono_medico
         if dono:
             return dono
@@ -1178,12 +1136,9 @@ def _dono_medico_do_exame(nome, empresa):
 def exames_por_filial_associar():
     empresa = empresa_atual()
     nome = request.form.get("nome", "").strip()
-    clinica_destino = Clinica.query.filter_by(
-        id=request.form.get("clinica_destino_id", type=int), empresa_id=empresa.id
-    ).first()
 
-    if not nome or not clinica_destino:
-        flash("Escolha um exame e uma filial válidos.", "danger")
+    if not nome or not empresa:
+        flash("Escolha um exame válido.", "danger")
         return redirect(url_for("medico.exames_por_filial"))
 
     # Reforço no servidor da mesma regra do dropdown (ver exames_por_filial
@@ -1207,108 +1162,58 @@ def exames_por_filial_associar():
         )
         return redirect(url_for("medico.exames_por_filial"))
 
-    existente = Exame.query.filter_by(clinica_id=clinica_destino.id, nome=nome).first()
-    if existente and existente.associado:
-        # A associação exame+filial já existe - mas um exame pode ter MAIS
-        # de um médico na mesma filial (o responsável + outros que também
-        # o atendem). Se o médico escolhido for novo, ele é ADICIONADO à
-        # associação existente como médico extra, em vez de rejeitar.
-        medico_novo_id = request.form.get("medico_id", type=int)
-        medicos_destino = medicos_da_clinica(clinica_destino)
-        medico_novo = next((m for m in medicos_destino if m.id == medico_novo_id), None)
+    existente = Exame.query.filter_by(grupo_id=empresa.id, nome=nome).first()
+    if not existente:
+        flash("Exame não encontrado.", "danger")
+        return redirect(url_for("medico.exames_por_filial"))
+
+    if existente.associado:
+        # A associação já existe - mas um exame pode ter MAIS de um médico
+        # (o responsável + outros que também o atendem). Se o médico
+        # escolhido for novo, ele é ADICIONADO à associação existente
+        # como médico extra, em vez de rejeitar.
+        medicos_disponiveis = medicos_da_clinica(empresa)
+        medico_novo = next((m for m in medicos_disponiveis if m.id == medico_escolhido_id), None)
         if not medico_novo:
-            flash("Escolha um médico válido, vinculado a essa filial.", "danger")
+            flash("Escolha um médico válido.", "danger")
             return redirect(url_for("medico.exames_por_filial"))
 
         if medico_novo.id == existente.medico_id or medico_novo in existente.medicos_extra:
-            flash(
-                f"\"{nome}\" já está associado à filial {clinica_destino.nome} com {medico_novo.nome}.",
-                "warning",
-            )
+            flash(f"\"{nome}\" já está associado com {medico_novo.nome}.", "warning")
             return redirect(url_for("medico.exames_por_filial"))
 
         existente.medicos_extra = list(existente.medicos_extra) + [medico_novo]
         db.session.commit()
         flash(
-            f"{medico_novo.nome} foi adicionado(a) como médico que também atende \"{nome}\" na filial "
-            f"{clinica_destino.nome} (responsável: {existente.medico.nome}). O preço continua o já "
-            "definido para essa associação — ajuste pelo Editar, se precisar.",
+            f"{medico_novo.nome} foi adicionado(a) como médico que também atende \"{nome}\" "
+            f"(responsável: {existente.medico.nome}). O preço continua o já definido para essa "
+            "associação — ajuste pelo Editar, se precisar.",
             "success",
         )
         return redirect(url_for("medico.exames_por_filial"))
 
-    origem = (
-        Exame.query.join(Clinica, Exame.clinica_id == Clinica.id)
-        .filter(Clinica.empresa_id == empresa.id, Exame.nome == nome)
-        .first()
-    )
-    if not origem:
-        flash("Exame não encontrado.", "danger")
+    medicos_disponiveis = medicos_da_clinica(empresa)
+    if not medico_escolhido_id or not any(m.id == medico_escolhido_id for m in medicos_disponiveis):
+        flash("Escolha um médico válido.", "danger")
         return redirect(url_for("medico.exames_por_filial"))
 
-    medicos_destino = medicos_da_clinica(clinica_destino)
-
-    # Não existe "médico principal" - médico e secretária seguem o mesmo
-    # fluxo aqui, escolhendo o médico responsável numa lista (que inclui
-    # o próprio médico logado, se ele atender nessa filial).
-    medico_id = request.form.get("medico_id", type=int)
-    if not medico_id or not any(m.id == medico_id for m in medicos_destino):
-        flash("Escolha um médico válido, vinculado a essa filial.", "danger")
-        return redirect(url_for("medico.exames_por_filial"))
-
-    # O preço é específico de cada filial (pode variar de local pra local)
-    # e por isso é informado aqui, na hora da associação — não vem mais
-    # copiado silenciosamente do exame de origem nem editável no cadastro
+    # O preço é informado aqui, na hora da associação — não vem mais
+    # copiado silenciosamente de outro registro nem editável no cadastro
     # do exame (ver exames_editar).
     preco = _parse_valor_decimal(request.form.get("preco", ""))
     if preco is None:
-        flash("Informe o preço deste exame nessa filial.", "danger")
+        flash("Informe o preço deste exame.", "danger")
         return redirect(url_for("medico.exames_por_filial"))
 
-    if existente:
-        # O exame já existia nessa filial como item de CATÁLOGO (cadastro
-        # genérico, sem associação) - a associação promove esse mesmo
-        # registro em vez de criar outro.
-        existente.medico_id = medico_id
-        existente.preco = preco
-        existente.medico_confirmado = True
-        existente.associado = True
-        existente.grupo_id = clinica_destino.grupo_pareado().id
-        db.session.commit()
-        flash(
-            f"\"{nome}\" associado à filial {clinica_destino.nome} com {existente.medico.nome} como responsável.",
-            "success",
-        )
-        return redirect(url_for("medico.exames_por_filial"))
-
-    novo_exame = Exame(
-        clinica_id=clinica_destino.id,
-        grupo_id=clinica_destino.grupo_pareado().id,
-        medico_id=medico_id,
-        nome=origem.nome,
-        descricao=origem.descricao,
-        duracao_minutos=origem.duracao_minutos,
-        preco=preco,
-        precisa_acompanhante=origem.precisa_acompanhante,
-        # O modelo de preparo é específico de cada filial (PreparoModelo é
-        # por clínica) - não dá pra copiar o id de uma filial pra outra,
-        # por isso fica em branco aqui, pra revisar/escolher depois na
-        # tela de editar o exame recém-criado.
-        preparo_modelo_id=None,
-        # Médico escolhido de propósito aqui, na tela de associação - vale
-        # como confirmado (diferente do valor técnico/provisório do
-        # cadastro genérico do exame, ver exames_novo).
-        medico_confirmado=True,
-        associado=True,
-    )
-    db.session.add(novo_exame)
+    # O exame já existia como item de CATÁLOGO (cadastro genérico, sem
+    # associação, ver exames_novo) - a associação promove esse mesmo
+    # registro em vez de criar outro.
+    existente.medico_id = medico_escolhido_id
+    existente.preco = preco
+    existente.medico_confirmado = True
+    existente.associado = True
     db.session.commit()
-
-    flash(
-        f"\"{nome}\" associado à filial {clinica_destino.nome} com {novo_exame.medico.nome} como responsável. "
-        "Revise a duração e o modelo de preparo dessa filial, se for diferente.",
-        "success",
-    )
+    flash(f"\"{nome}\" associado com {existente.medico.nome} como responsável.", "success")
     return redirect(url_for("medico.exames_por_filial"))
 
 
@@ -1316,77 +1221,53 @@ def exames_por_filial_associar():
 @login_required
 @staff_required
 def exames_por_filial_atualizar(exame_id):
-    """Atualiza uma associação já existente (um exame já criado numa
-    filial) - usada pelo "Editar" da tela de associações
-    (medico.exames_por_filial). TODOS os campos são editáveis: exame,
-    filial, médico e preço. Também aceita ajustar os médicos extras
-    quando o chamador manda atualizar_extras=1."""
-    empresa = empresa_atual()
-    exame = Exame.query.join(Clinica, Exame.clinica_id == Clinica.id).filter(
-        Exame.id == exame_id, Clinica.empresa_id == empresa.id,
-    ).first_or_404()
+    """Atualiza uma associação já existente - usada pelo "Editar" da tela
+    de associações (medico.exames_por_filial). Exame, médico e preço são
+    editáveis. Também aceita ajustar os médicos extras quando o chamador
+    manda atualizar_extras=1.
 
-    # Trocar o EXAME e/ou a FILIAL da associação: só quando esses campos
-    # vêm no formulário e mudaram de valor. Se a associação já tem
-    # agendamento marcado, exame/filial ficam travados (o agendamento
-    # aponta pra esta associação; mudar por baixo bagunçaria a agenda e o
-    # preparo dos pacientes) - médico e preço continuam editáveis.
+    Fatia 5 (passo 4): não existe mais "trocar de filial" (só há uma, o
+    Grupo atual) - só o exame associado pode mudar, e continua travado
+    quando já há agendamento marcado (mesmo motivo de antes)."""
+    empresa = empresa_atual()
+    exame = Exame.query.filter(Exame.id == exame_id, Exame.grupo_id == empresa.id).first_or_404()
+
     nome_novo = request.form.get("nome", "").strip() if "nome" in request.form else None
-    filial_nova_id = request.form.get("clinica_destino_id", type=int)
     mudou_exame = bool(nome_novo) and nome_novo != exame.nome
-    mudou_filial = bool(filial_nova_id) and filial_nova_id != exame.clinica_id
-    if mudou_exame or mudou_filial:
+    if mudou_exame:
         if exame.agendamentos:
             flash(
-                "Esta associação já tem agendamentos - não dá pra trocar o exame ou a filial dela. "
+                "Esta associação já tem agendamentos - não dá pra trocar o exame dela. "
                 "Troque só médico/preço, ou exclua a associação (após tratar os agendamentos) e crie outra.",
                 "danger",
             )
             return redirect(url_for("medico.exames_por_filial", editar=exame.id))
 
-        filial_destino = exame.clinica
-        if mudou_filial:
-            filial_destino = Clinica.query.filter_by(id=filial_nova_id, empresa_id=empresa.id).first()
-            if not filial_destino:
-                flash("Escolha uma filial válida.", "danger")
-                return redirect(url_for("medico.exames_por_filial", editar=exame.id))
-
-        nome_final = nome_novo if mudou_exame else exame.nome
         ja_existe = Exame.query.filter(
-            Exame.clinica_id == filial_destino.id, Exame.nome == nome_final,
+            Exame.grupo_id == empresa.id, Exame.nome == nome_novo,
             Exame.id != exame.id, Exame.associado.is_(True),
         ).first()
         if ja_existe:
-            flash(f"\"{nome_final}\" já está associado à filial {filial_destino.nome}.", "warning")
+            flash(f"\"{nome_novo}\" já está associado.", "warning")
             return redirect(url_for("medico.exames_por_filial", editar=exame.id))
 
-        if mudou_exame:
-            # Os dados do exame (descrição/duração/acompanhante) vêm do
-            # cadastro dele em outra filial da empresa - a associação passa
-            # a ser DESSE exame, não é só uma troca de rótulo.
-            origem = (
-                Exame.query.join(Clinica, Exame.clinica_id == Clinica.id)
-                .filter(Clinica.empresa_id == empresa.id, Exame.nome == nome_final, Exame.id != exame.id)
-                .first()
-            )
-            if not origem:
-                flash("Exame não encontrado.", "danger")
-                return redirect(url_for("medico.exames_por_filial", editar=exame.id))
-            exame.nome = origem.nome
-            exame.descricao = origem.descricao
-            exame.duracao_minutos = origem.duracao_minutos
-            exame.precisa_acompanhante = origem.precisa_acompanhante
-            # O modelo de preparo é por filial e por exame - com a
-            # associação apontando pra outro exame, o modelo antigo não
-            # vale mais; fica pra revisar na edição do exame.
-            exame.preparo_modelo_id = None
-
-        if mudou_filial:
-            exame.clinica_id = filial_destino.id
-            exame.grupo_id = filial_destino.grupo_pareado().id
-            # Modelo de preparo e médicos extras eram da filial antiga.
-            exame.preparo_modelo_id = None
-            exame.medicos_extra = []
+        # Os dados do exame (descrição/duração/acompanhante) vêm do
+        # cadastro dele no Grupo - a associação passa a ser DESSE exame,
+        # não é só uma troca de rótulo.
+        origem = Exame.query.filter(
+            Exame.grupo_id == empresa.id, Exame.nome == nome_novo, Exame.id != exame.id,
+        ).first()
+        if not origem:
+            flash("Exame não encontrado.", "danger")
+            return redirect(url_for("medico.exames_por_filial", editar=exame.id))
+        exame.nome = origem.nome
+        exame.descricao = origem.descricao
+        exame.duracao_minutos = origem.duracao_minutos
+        exame.precisa_acompanhante = origem.precisa_acompanhante
+        # O modelo de preparo era do exame antigo - com a associação
+        # apontando pra outro exame, não vale mais; fica pra revisar.
+        exame.preparo_modelo_id = None
+        exame.medicos_extra = []
 
     # Só valida/atualiza o preço quando ele veio no formulário - chamadas
     # que só mexem em médico/extras não mandam o campo.
@@ -1415,23 +1296,15 @@ def exames_por_filial_atualizar(exame_id):
         )
         db.session.rollback()
         return redirect(url_for("medico.exames_por_filial", editar=exame.id))
-    filial_do_exame = Clinica.query.get(exame.clinica_id)
-    medicos_da_filial = medicos_da_clinica(filial_do_exame)
-    if medico_id and any(m.id == medico_id for m in medicos_da_filial):
+    medicos_do_grupo = medicos_da_clinica(empresa)
+    if medico_id and any(m.id == medico_id for m in medicos_do_grupo):
         exame.medico_id = medico_id
         exame.medico_confirmado = True
-    elif not any(m.id == exame.medico_id for m in medicos_da_filial) and medicos_da_filial:
-        # A filial mudou e o médico antigo não atua nela - sem um médico
-        # válido escolhido, não dá pra salvar (medico_id é obrigatório).
-        flash("Escolha um médico que atue na filial escolhida.", "danger")
-        db.session.rollback()
-        return redirect(url_for("medico.exames_por_filial", editar=exame.id))
 
     if request.form.get("atualizar_extras") == "1":
         # Quem manda esse campo explicitamente pode ajustar os médicos
         # extras junto - as chamadas normais da tela de associação não
         # mandam, pra não mexer nos extras sem querer.
-        medicos_da_filial = medicos_da_clinica(exame.clinica)
         medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != exame.medico_id}
         if dono and medicos_extra_ids:
             # Exame com dono médico não aceita outros médicos associados.
@@ -1442,10 +1315,10 @@ def exames_por_filial_atualizar(exame_id):
             )
             db.session.rollback()
             return redirect(url_for("medico.exames_por_filial", editar=exame.id))
-        exame.medicos_extra = [m for m in medicos_da_filial if m.id in medicos_extra_ids]
+        exame.medicos_extra = [m for m in medicos_do_grupo if m.id in medicos_extra_ids]
 
     db.session.commit()
-    flash(f"\"{exame.nome}\" atualizado na filial {exame.clinica.nome}.", "success")
+    flash(f"\"{exame.nome}\" atualizado.", "success")
     return redirect(url_for("medico.exames_por_filial"))
 
 
@@ -1453,20 +1326,18 @@ def exames_por_filial_atualizar(exame_id):
 @login_required
 @staff_required
 def exames_por_filial_excluir(exame_id):
-    """Exclui uma associação (o exame naquela filial) - botão "Excluir"
-    do Editar na tela de associações. Associação com agendamento marcado
-    não pode ser excluída (o agendamento aponta pra ela); trate os
-    agendamentos primeiro. Perguntas e mensagens de chat antigas que
-    citavam este exame são mantidas, só perdem o vínculo com ele."""
+    """Exclui uma associação - botão "Excluir" do Editar na tela de
+    associações. Associação com agendamento marcado não pode ser excluída
+    (o agendamento aponta pra ela); trate os agendamentos primeiro.
+    Perguntas e mensagens de chat antigas que citavam este exame são
+    mantidas, só perdem o vínculo com ele."""
     empresa = empresa_atual()
-    exame = Exame.query.join(Clinica, Exame.clinica_id == Clinica.id).filter(
-        Exame.id == exame_id, Clinica.empresa_id == empresa.id,
-    ).first_or_404()
+    exame = Exame.query.filter(Exame.id == exame_id, Exame.grupo_id == empresa.id).first_or_404()
 
     if exame.agendamentos:
         flash(
-            f"\"{exame.nome}\" tem agendamento(s) na filial {exame.clinica.nome} - "
-            "cancele/realize esses agendamentos antes de excluir a associação.",
+            f"\"{exame.nome}\" tem agendamento(s) - cancele/realize esses agendamentos antes de "
+            "excluir a associação.",
             "danger",
         )
         return redirect(url_for("medico.exames_por_filial", editar=exame.id))
@@ -1475,10 +1346,10 @@ def exames_por_filial_excluir(exame_id):
     PerguntaPendente.query.filter_by(exame_id=exame.id).update({"exame_id": None})
     ChatMensagem.query.filter_by(exame_id=exame.id).update({"exame_id": None})
 
-    nome, filial_nome = exame.nome, exame.clinica.nome
+    nome = exame.nome
     db.session.delete(exame)
     db.session.commit()
-    flash(f"Associação de \"{nome}\" com a filial {filial_nome} excluída.", "success")
+    flash(f"Associação de \"{nome}\" excluída.", "success")
     return redirect(url_for("medico.exames_por_filial"))
 
 
@@ -1703,7 +1574,8 @@ def preparo_modelos_novo():
             return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
         modelo = PreparoModelo(
-            clinica_id=filial.id, grupo_id=filial.grupo_pareado().id,
+            clinica_id=filial.clinica_pareada.id if filial.clinica_pareada else None,
+            grupo_id=filial.id,
             nome=nome, instrucoes=instrucoes,
             observacoes_medicamentos=observacoes_medicamentos or None,
             # DONO do modelo: quem criou. Se for um médico, só ele
@@ -1941,7 +1813,7 @@ def agenda_novo():
         paciente = Paciente.query.filter(Paciente.id == paciente_id, _filtro_pacientes_da_empresa()).first()
         # Só exame ASSOCIADO à filial pode ser agendado (item de catálogo
         # sem associação não é ofertado em lugar nenhum).
-        exame_query = Exame.query.filter_by(id=exame_id, clinica_id=filial.id, associado=True)
+        exame_query = Exame.query.filter_by(id=exame_id, grupo_id=filial.id, associado=True)
         if eh_medico():
             exame_query = exame_query.filter(
                 or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -1977,8 +1849,8 @@ def agenda_novo():
             return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
 
         agendamento = Agendamento(
-            clinica_id=filial.id,
-            grupo_id=filial.grupo_pareado().id,
+            clinica_id=filial.clinica_pareada.id if filial.clinica_pareada else None,
+            grupo_id=filial.id,
             paciente_id=paciente.id,
             exame_id=exame.id,
             medico_id=medico_atende_id,
@@ -2015,7 +1887,7 @@ def agenda_novo():
     # (a filial vale só para o exame e para onde o atendimento acontece).
     pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).order_by(Paciente.nome).all()
 
-    exames_query = Exame.query.filter_by(clinica_id=filial_selecionada.id, associado=True)
+    exames_query = Exame.query.filter_by(grupo_id=filial_selecionada.id, associado=True)
     if eh_medico():
         exames_query = exames_query.filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -2075,7 +1947,7 @@ def medico_agenda_pessoal(medico_id=None):
     # horário mas ainda não foi encerrado continua precisando aparecer aqui.
     proximos = (
         Agendamento.query.filter(
-            Agendamento.grupo_id.in_([f.grupo_pareado().id for f in filiais]),
+            Agendamento.grupo_id.in_([f.id for f in filiais]),
             Agendamento.medico_id == medico_alvo.id,
         )
         .order_by(Agendamento.data_hora.asc())
@@ -2367,9 +2239,9 @@ def faq_novo():
     if request.method == "POST":
         exame_id = request.form.get("exame_id", type=int)
         exame_escolhido = next((e for e in exames if e.id == exame_id), None)
-        # Item vinculado a um exame nasce na filial DESSE exame; item geral
-        # (sem exame) usa a filial escolhida no formulário.
-        filial = exame_escolhido.clinica if exame_escolhido else _filial_do_form(filiais)
+        # Item vinculado a um exame nasce no Grupo DESSE exame; item geral
+        # (sem exame) usa o Grupo escolhido no formulário.
+        filial = exame_escolhido.grupo if exame_escolhido else _filial_do_form(filiais)
 
         if eh_medico():
             # O médico só pode criar itens de FAQ vinculados a um dos
@@ -2391,8 +2263,8 @@ def faq_novo():
             return render_template("medico/faq_form.html", exames=exames)
 
         item = FaqItem(
-            clinica_id=filial.id,
-            grupo_id=filial.grupo_pareado().id,
+            clinica_id=filial.clinica_pareada.id if filial.clinica_pareada else None,
+            grupo_id=filial.id,
             exame_id=exame_id,
             pergunta=pergunta,
             resposta=resposta,
@@ -2414,19 +2286,17 @@ def faq_novo():
 @staff_required
 @permissao_required("perm_dados_clinica")
 def clinica_configuracoes(filial_id=None):
-    empresa = empresa_atual()
-    if filial_id:
-        # Permite editar qualquer filial da mesma empresa — usado a partir da
-        # tela "Meus locais de atendimento".
-        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
-    else:
-        clinica = clinica_atual()
+    # Fatia 5 (passo 4): não existe mais "várias filiais da mesma empresa"
+    # para escolher via `filial_id` — o Grupo atual já É a única unidade.
+    # O parâmetro de URL é ignorado (mantido só para não quebrar links/
+    # favoritos antigos que ainda apontam para "/clinica/configuracoes/<id>").
+    clinica = empresa_atual()
 
     if not clinica:
-        # Empresa recém-criada, ainda sem nenhum local de atendimento
-        # cadastrado (isso agora é feito depois do cadastro público, ao
-        # entrar no app - não mais automaticamente no cadastro).
-        flash("Cadastre seu primeiro local de atendimento antes de preencher os dados dele.", "info")
+        # Conta recém-criada, ainda sem nenhum Grupo (isso agora é feito
+        # depois do cadastro público, ao entrar no app - não mais
+        # automaticamente no cadastro).
+        flash("Cadastre seu primeiro grupo antes de preencher os dados dele.", "info")
         return redirect(url_for("medico.filiais_lista"))
 
     if request.method == "POST":
@@ -2484,15 +2354,14 @@ def clinica_dados_fiscais(filial_id=None):
     eventual nota fiscal: inscrição estadual, regime tributário, CNAE e a
     configuração de emissão de NFS-e. O código IBGE do município continua
     sendo mostrado aqui (só leitura), mas é preenchido em "Dados Cadastrais"
-    a partir do CEP do endereço — não é um dado fiscal digitado à mão."""
-    empresa = empresa_atual()
-    if filial_id:
-        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
-    else:
-        clinica = clinica_atual()
+    a partir do CEP do endereço — não é um dado fiscal digitado à mão.
+
+    Fatia 5 (passo 4): `filial_id` é ignorado (ver clinica_configuracoes
+    acima) — o Grupo atual já é a única unidade a configurar."""
+    clinica = empresa_atual()
 
     if not clinica:
-        flash("Cadastre seu primeiro local de atendimento antes de preencher os dados fiscais dele.", "info")
+        flash("Cadastre seu primeiro grupo antes de preencher os dados fiscais dele.", "info")
         return redirect(url_for("medico.filiais_lista"))
 
     if request.method == "POST":
@@ -2523,12 +2392,11 @@ def clinica_emissao_fiscal(filial_id=None):
     do RPS) — separado do formulário de "Dados fiscais" (inscrição
     estadual/regime/CNAE) porque fica em outro <form> na mesma página (ver
     medico/clinica_dados_fiscais.html). O upload do certificado digital em
-    si tem sua própria rota, `clinica_certificado_upload`, abaixo."""
-    empresa = empresa_atual()
-    if filial_id:
-        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
-    else:
-        clinica = clinica_atual()
+    si tem sua própria rota, `clinica_certificado_upload`, abaixo.
+
+    Fatia 5 (passo 4): `filial_id` é ignorado — o Grupo atual já é a única
+    unidade a configurar."""
+    clinica = empresa_atual()
 
     clinica.fiscal_ambiente = request.form.get("fiscal_ambiente", "homologacao").strip() or "homologacao"
     clinica.fiscal_modo_simulacao = request.form.get("fiscal_modo_simulacao") == "on"
@@ -2573,12 +2441,11 @@ def clinica_certificado_upload(filial_id=None):
     valida que o arquivo realmente abre com essa senha (usando a biblioteca
     `cryptography`) e só então salva — o arquivo e a senha ficam
     criptografados no banco (ver app/cripto_fiscal.py), nunca em texto
-    puro nem em disco."""
-    empresa = empresa_atual()
-    if filial_id:
-        clinica = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
-    else:
-        clinica = clinica_atual()
+    puro nem em disco.
+
+    Fatia 5 (passo 4): `filial_id` é ignorado — o Grupo atual já é a única
+    unidade a configurar."""
+    clinica = empresa_atual()
 
     arquivo = request.files.get("certificado_arquivo")
     senha = request.form.get("certificado_senha", "")
@@ -2645,157 +2512,26 @@ def clinica_certificado_upload(filial_id=None):
     return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
 
 
-# ---------- Filiais da empresa ----------
+# ---------- "Meus Locais de Atendimento" -> "Meus Grupos" ----------
+#
+# Fatia 5: não existe mais "várias filiais dentro de uma empresa" - cada
+# Grupo já é sua própria unidade completa. Criar um novo local de
+# atendimento, entrar/sair de um, e ver a lista dos seus, é exatamente o
+# que routes_grupo.py (novo/meus_grupos/selecionar/sair) já faz - em vez
+# de duplicar essa lógica aqui, os endpoints antigos (usados em vários
+# links/redirects deste arquivo e templates) viram redirecionamentos pra
+# lá, preservando as URLs/nomes de rota já em uso.
 
 @medico_bp.route("/filiais")
 @login_required
-@staff_required
 def filiais_lista():
-    """Tela "Meus locais de atendimento" - além de listar/trocar de filial
-    (perm_filiais), também é a porta de entrada para editar os dados de
-    cada filial (Dados Cadastrais e Dados Fiscais, que não têm mais item
-    próprio no menu lateral), então continua acessível a quem só tem
-    perm_dados_clinica, mesmo sem perm_filiais."""
-    if not (current_user.perm_filiais or current_user.perm_dados_clinica):
-        flash(
-            "Você não tem permissão para acessar essa área. Fale com "
-            "quem administra sua clínica.",
-            "danger",
-        )
-        return redirect(url_for("medico.dashboard"))
-
-    empresa = empresa_atual()
-    filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
-    # Não existe mais "local atual": os dados de todos os locais em que a
-    # pessoa atua aparecem juntos. Aqui só marcamos quais são os locais dela.
-    meus_ids = set(filiais_atuais_ids())
-    return render_template(
-        "medico/filiais_lista.html", filiais=filiais, empresa=empresa, meus_filiais_ids=meus_ids
-    )
-
-
-@medico_bp.route("/filiais/<int:filial_id>/vincular-me", methods=["POST"])
-@login_required
-@staff_required
-def filiais_vincular_me(filial_id):
-    """Ação explícita de "eu também atuo neste local" - cadastrar um local
-    (medico.filiais_nova) não vincula ninguém a ele, então este botão é o
-    caminho para a PRÓPRIA pessoa logada se vincular deliberadamente. Para
-    vincular outra pessoa, o caminho é a tela "Equipe" (medico.equipe_novo /
-    medico.equipe_associar_filial)."""
-    empresa = empresa_atual()
-    filial = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
-
-    vinculo = ClinicaMembro.query.filter_by(clinica_id=filial.id, usuario_id=current_user.id).first()
-    if vinculo and vinculo.ativo:
-        flash("Você já está vinculado(a) a este local.", "warning")
-        return redirect(url_for("medico.filiais_lista"))
-
-    if vinculo:
-        vinculo.reativar()  # já atuou aqui antes: reativa o histórico
-    else:
-        db.session.add(ClinicaMembro(clinica_id=filial.id, usuario_id=current_user.id, ativo=True))
-    sincronizar_grupo_membro_pareado(filial)
-    db.session.commit()
-    flash(f"Você agora está vinculado(a) ao local '{filial.nome}'.", "success")
-    return redirect(url_for("medico.filiais_lista"))
-
-
-@medico_bp.route("/filiais/<int:filial_id>/desvincular-me", methods=["POST"])
-@login_required
-@staff_required
-def filiais_desvincular_me(filial_id):
-    """Ação inversa de filiais_vincular_me: remove o vínculo da PRÓPRIA
-    pessoa logada com o local - para desfazer um vínculo que não deveria
-    existir (ex.: criado automaticamente por versões antigas do cadastro
-    de local, antes de o vínculo virar uma ação explícita e separada).
-
-    Guarda importante: quem NÃO é fundador(a) da empresa
-    (Usuario.empresa_fundadora_id) resolve seu acesso ao sistema
-    exclusivamente pelos vínculos de filial (ver empresas_do_usuario em
-    app/clinica_utils.py) - remover o último vínculo dessa pessoa a
-    deixaria trancada fora da própria conta, então nesse caso bloqueamos
-    e orientamos a usar a tela "Equipe" (onde outra pessoa com permissão
-    gerencia os vínculos dela)."""
-    empresa = empresa_atual()
-    filial = Clinica.query.filter_by(id=filial_id, empresa_id=empresa.id).first_or_404()
-
-    vinculo = ClinicaMembro.query.filter_by(
-        clinica_id=filial.id, usuario_id=current_user.id, ativo=True
-    ).first()
-    if not vinculo:
-        flash("Você já não está vinculado(a) a este local.", "warning")
-        return redirect(url_for("medico.filiais_lista"))
-
-    total_vinculos = ClinicaMembro.query.filter_by(usuario_id=current_user.id, ativo=True).count()
-    if total_vinculos <= 1 and not getattr(current_user, "empresa_fundadora_id", None):
-        flash(
-            "Este é seu único vínculo de local — removê-lo deixaria sua conta sem acesso a nenhuma "
-            "clínica. Peça a quem administra a equipe para ajustar seus vínculos na tela \"Equipe\".",
-            "danger",
-        )
-        return redirect(url_for("medico.filiais_lista"))
-
-    futuros = _agendamentos_futuros_do_vinculo(filial.id, current_user.id)
-    if futuros:
-        flash(
-            f"Você ainda tem {futuros} agendamento(s) futuro(s) neste local. "
-            "Cancele ou transfira esses agendamentos antes de se desvincular.",
-            "danger",
-        )
-        return redirect(url_for("medico.filiais_lista"))
-
-    # ENCERRA o vínculo (não apaga): o histórico de atuação e os
-    # agendamentos já realizados ali continuam intactos - ver
-    # ClinicaMembro.encerrado_em em app/models.py.
-    vinculo.encerrar()
-    sincronizar_grupo_membro_pareado(filial)
-    db.session.commit()
-    flash(f"Pronto — você não está mais marcado(a) como atuando no local '{filial.nome}'.", "success")
-    return redirect(url_for("medico.filiais_lista"))
+    return redirect(url_for("grupo.meus_grupos"))
 
 
 @medico_bp.route("/filiais/nova", methods=["GET", "POST"])
 @login_required
-@staff_required
-@permissao_required("perm_filiais")
 def filiais_nova():
-    empresa = empresa_atual()
-
-    if request.method == "POST":
-        nome = request.form.get("nome", "").strip()
-        if not nome:
-            flash("Informe o nome do novo local de atendimento.", "danger")
-            return render_template("medico/filiais_form.html")
-
-        if Clinica.query.filter_by(empresa_id=empresa.id, nome=nome).first():
-            flash("Já existe um local de atendimento com esse nome nesta empresa.", "danger")
-            return render_template("medico/filiais_form.html")
-
-        nova_filial = Clinica(empresa_id=empresa.id, nome=nome)
-        db.session.add(nova_filial)
-        db.session.flush()
-        nova_filial.grupo_pareado()  # Fatia 4: pareia já na criação da filial
-        db.session.commit()
-
-        # Cadastrar a estrutura de um local (nome, endereço, dados fiscais)
-        # NÃO vincula ninguém a ele - nem quem cadastrou. "Quem atua em qual
-        # local" é sempre uma associação separada, deliberada e explícita
-        # (mesmo princípio de "não existe médico principal" por trás de
-        # Exame.medico_confirmado e do cadastro público sem filial): pelo
-        # botão "Marcar que você também atua aqui" em "Meus Locais de
-        # Atendimento" (medico.filiais_vincular_me) para a própria pessoa,
-        # ou pela tela "Equipe" para qualquer pessoa. Nenhum vínculo nasce
-        # como efeito colateral de outro cadastro.
-        flash(
-            f"Local '{nova_filial.nome}' cadastrado com sucesso. Isso ainda não vincula ninguém a ele: "
-            "se VOCÊ for atuar neste local, use o botão \"Marcar que você também atua aqui\" na lista "
-            "abaixo; para vincular outras pessoas, use a tela \"Equipe\".",
-            "success",
-        )
-        return _destino_pos_onboarding("medico.filiais_lista")
-
-    return render_template("medico/filiais_form.html")
+    return redirect(url_for("grupo.novo"))
 
 
 # ---------- Equipe (médicos e secretárias da clínica atual) ----------
@@ -2805,60 +2541,17 @@ def filiais_nova():
 @staff_required
 @permissao_required("perm_equipe")
 def equipe_lista():
-    """Mostra uma linha por PESSOA (não por vínculo) - uma pessoa que atua
-    em mais de uma filial da empresa continua sendo uma única conta
-    (Usuario), só com mais de um vínculo (ClinicaMembro); antes a tela
-    repetia a linha inteira por filial, o que parecia (incorretamente) um
-    cadastro duplicado."""
+    """Fatia 5 (passo 4): a tela de equipe (listar membros, convidar por
+    CPF, criar conta nova, remover, promover a administrador) passou a
+    ser routes_grupo.py:convidar() - ela já cobre tudo isso pelo modelo
+    Grupo/GrupoMembro/GrupoConvite (ver "Achado principal" no plano da
+    Fatia 5). Esta rota só existe pra não quebrar os vários links/menus
+    antigos que ainda apontam pra cá."""
     empresa = empresa_atual()
-    filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
-    filial_ids = [f.id for f in filiais]
-    membros = (
-        ClinicaMembro.query.filter(
-            ClinicaMembro.clinica_id.in_(filial_ids), ClinicaMembro.ativo.is_(True)
-        )
-        .order_by(ClinicaMembro.clinica_id)
-        .all()
-    )
-
-    pessoas = {}
-    for m in membros:
-        pessoa = pessoas.setdefault(m.usuario_id, {"usuario": m.usuario, "vinculos": []})
-        pessoa["vinculos"].append(m)
-
-    # Quem FUNDOU a empresa faz parte da equipe desde o cadastro público,
-    # mesmo sem vínculo com local nenhum (cadastrar local não vincula
-    # ninguém automaticamente) - sem isso, o fundador não aparecia em
-    # lugar nenhum da tela de Equipe.
-    for u in Usuario.query.filter_by(empresa_fundadora_id=empresa.id).all():
-        if u.is_staff and u.ativo:
-            pessoas.setdefault(u.id, {"usuario": u, "vinculos": []})
-
-    pessoas = sorted(pessoas.values(), key=lambda p: p["usuario"].nome)
-
-    # Para cada pessoa, quais filiais da empresa ela ainda NÃO integra —
-    # usado pelo pequeno formulário "+ Associar a outra filial" da tela,
-    # que vincula direto sem precisar passar pelo formulário completo de
-    # "Adicionar médico/secretária" de novo.
-    for pessoa in pessoas:
-        ja_vinculadas_ids = {v.clinica_id for v in pessoa["vinculos"]}
-        pessoa["filiais_disponiveis"] = [f for f in filiais if f.id not in ja_vinculadas_ids]
-
-    # Convites de vínculo por código mestre ainda aguardando o médico
-    # decidir (ver equipe_vincular_por_codigo) - mostrados na tela pra
-    # equipe acompanhar (e poder cancelar).
-    convites_enviados = (
-        ConviteVinculo.query.filter(
-            ConviteVinculo.clinica_id.in_(filial_ids), ConviteVinculo.status == "pendente"
-        )
-        .order_by(ConviteVinculo.criado_em.asc())
-        .all()
-    )
-
-    return render_template(
-        "medico/equipe_lista.html", pessoas=pessoas, filiais=filiais,
-        convites_enviados=convites_enviados,
-    )
+    if not empresa:
+        flash("Cadastre seu primeiro grupo antes de gerenciar a equipe.", "info")
+        return redirect(url_for("medico.filiais_lista"))
+    return redirect(url_for("grupo.convidar", grupo_id=empresa.id))
 
 
 @medico_bp.route("/equipe-membros/novo", methods=["GET", "POST"])
@@ -2866,446 +2559,7 @@ def equipe_lista():
 @staff_required
 @permissao_required("perm_equipe")
 def equipe_novo():
-    empresa = empresa_atual()
-    filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
-
-    if request.method == "POST":
-        nome = request.form.get("nome", "").strip()
-        email = request.form.get("email", "").strip().lower()
-        # A clínica NÃO cria médico: médico é uma entidade própria da
-        # plataforma - ele cria a própria conta (cadastro público) e a
-        # clínica o traz pra equipe SÓ pelo código mestre dele, com o
-        # aceite dele (ver equipe_vincular_por_codigo/convite_decidir).
-        # Este formulário cadastra apenas secretárias.
-        papel = "secretaria"
-        if request.form.get("papel") == "medico":
-            flash(
-                "Médico não é cadastrado pela clínica: ele cria a própria conta na plataforma e "
-                "você o traz pra equipe pelo código dele, em \"Vincular médico por código\" - o "
-                "vínculo vale depois que ele aceitar o convite.",
-                "danger",
-            )
-            return redirect(url_for("medico.equipe_lista"))
-        senha = request.form.get("senha", "").strip()
-        # Uma pessoa pode atuar em mais de uma filial da empresa desde já,
-        # marcando todas de uma vez aqui — antes só dava pra escolher uma,
-        # e para as demais era preciso cadastrar a mesma pessoa de novo do
-        # zero (ver medico.equipe_associar_filial para o atalho equivalente
-        # feito depois, direto na tela "Equipe").
-        filial_ids_selecionadas = request.form.getlist("filial_ids", type=int)
-        filiais_selecionadas = [f for f in filiais if f.id in filial_ids_selecionadas]
-        if not filiais_selecionadas:
-            flash("Escolha em qual(is) filial(is) essa pessoa vai atuar.", "danger")
-            return render_template("medico/equipe_form.html", filiais=filiais)
-
-        if not email:
-            flash("Preencha o e-mail da secretária.", "danger")
-            return render_template("medico/equipe_form.html", filiais=filiais)
-
-        usuario_existente = Usuario.query.filter_by(email=email).first()
-
-        if usuario_existente and usuario_existente.tipo == "medico":
-            # Vincular um médico existente também passa pelo código dele
-            # (e pelo aceite) - não por e-mail digitado pela clínica.
-            flash(
-                "Esse e-mail é de uma conta de MÉDICO. Peça o código de médico a ele e use "
-                "\"Vincular médico por código\" - o vínculo vale depois que ele aceitar o convite.",
-                "danger",
-            )
-            return redirect(url_for("medico.equipe_lista"))
-
-        if usuario_existente:
-            # A conta já existe na plataforma (pode ser de outra clínica) —
-            # só criamos os vínculos dela com as filiais marcadas, sem
-            # duplicar a conta.
-            if not usuario_existente.is_staff:
-                flash("Esse e-mail já está cadastrado, mas não é uma conta de médico/secretária.", "danger")
-                return render_template("medico/equipe_form.html", filiais=filiais)
-
-            if usuario_existente.tipo != papel:
-                flash(
-                    f"Esse e-mail já está cadastrado como '{usuario_existente.tipo}' em outra clínica. "
-                    "Não é possível vinculá-lo com um papel diferente.",
-                    "danger",
-                )
-                return render_template("medico/equipe_form.html", filiais=filiais)
-
-            vinculos_existentes = {
-                m.clinica_id: m
-                for m in ClinicaMembro.query.filter_by(usuario_id=usuario_existente.id).all()
-            }
-            filiais_novas = [
-                f for f in filiais_selecionadas
-                if f.id not in vinculos_existentes or not vinculos_existentes[f.id].ativo
-            ]
-            if not filiais_novas:
-                flash("Esse usuário já faz parte de todas as filiais marcadas.", "warning")
-                return _destino_pos_onboarding("medico.equipe_lista")
-
-            for f in filiais_novas:
-                vinculo_antigo = vinculos_existentes.get(f.id)
-                if vinculo_antigo:
-                    vinculo_antigo.reativar()  # já atuou aqui: reativa o histórico
-                else:
-                    db.session.add(ClinicaMembro(clinica_id=f.id, usuario_id=usuario_existente.id, ativo=True))
-                sincronizar_grupo_membro_pareado(f)
-            db.session.commit()
-            nomes_filiais = ", ".join(f.nome for f in filiais_novas)
-            flash(f"{usuario_existente.nome} foi vinculado(a) à(s) filial(is) '{nomes_filiais}'.", "success")
-            return _destino_pos_onboarding("medico.equipe_lista")
-
-        # Conta nova
-        if not nome:
-            flash("Informe o nome da pessoa.", "danger")
-            return render_template("medico/equipe_form.html", filiais=filiais)
-
-        cpf = request.form.get("cpf", "").strip()
-        if cpf and not validar_cpf(cpf):
-            flash("CPF inválido — confira os números digitados.", "danger")
-            return render_template("medico/equipe_form.html", filiais=filiais)
-        if cep_incompleto(request.form.get("cep", "")):
-            flash("CEP incompleto — digite os 8 números.", "danger")
-            return render_template("medico/equipe_form.html", filiais=filiais)
-
-        senha_final = senha or "123456"
-        usuario = Usuario(nome=nome, email=email, tipo=papel, cpf=cpf or None)
-        usuario.set_senha(senha_final)
-        usuario.cep = request.form.get("cep", "").strip()
-        usuario.rua = request.form.get("rua", "").strip()
-        usuario.numero = request.form.get("numero", "").strip()
-        usuario.complemento = request.form.get("complemento", "").strip()
-        usuario.bairro = request.form.get("bairro", "").strip()
-        usuario.cidade = request.form.get("cidade", "").strip()
-        usuario.uf = request.form.get("uf", "").strip().upper() or None
-        # As permissões administrativas (pacientes, equipe, filiais, dados
-        # da clínica) vêm dos checkboxes do formulário — nem toda clínica
-        # tem secretária, então quem cadastra escolhe explicitamente quais
-        # telas administrativas essa pessoa vai poder acessar.
-        usuario.perm_pacientes = request.form.get("perm_pacientes") == "on"
-        usuario.perm_equipe = request.form.get("perm_equipe") == "on"
-        usuario.perm_filiais = request.form.get("perm_filiais") == "on"
-        usuario.perm_dados_clinica = request.form.get("perm_dados_clinica") == "on"
-        if papel == "medico":
-            # Todo médico nasce com seu código mestre (ver
-            # Usuario.codigo_mestre) - identidade portátil dele na
-            # plataforma, usada por outras clínicas pra convidá-lo.
-            usuario.codigo_mestre = gerar_codigo_mestre_medico()
-        db.session.add(usuario)
-        db.session.flush()
-
-        for f in filiais_selecionadas:
-            db.session.add(ClinicaMembro(clinica_id=f.id, usuario_id=usuario.id, ativo=True))
-            sincronizar_grupo_membro_pareado(f)
-        db.session.commit()
-
-        nomes_filiais = ", ".join(f.nome for f in filiais_selecionadas)
-        flash(
-            f"{nome} cadastrado(a) como {papel} na(s) filial(is) '{nomes_filiais}'. "
-            f"Senha de acesso inicial: {senha_final}",
-            "success",
-        )
-        return _destino_pos_onboarding("medico.equipe_lista")
-
-    return render_template("medico/equipe_form.html", filiais=filiais)
-
-
-@medico_bp.route("/equipe-membros/<int:usuario_id>/associar-filial", methods=["POST"])
-@login_required
-@staff_required
-@permissao_required("perm_equipe")
-def equipe_associar_filial(usuario_id):
-    """Vincula uma pessoa que já faz parte da equipe (em pelo menos uma
-    filial da empresa) a mais uma filial da mesma empresa - atalho direto
-    na tela "Equipe" para o mesmo caso de "e-mail já cadastrado" tratado em
-    equipe_novo, sem precisar passar pelo formulário completo de novo."""
-    empresa = empresa_atual()
-    filiais = Clinica.query.filter_by(empresa_id=empresa.id).all()
-    filial_ids = {f.id for f in filiais}
-
-    # A pessoa precisa já fazer parte desta empresa (por vínculo de
-    # filial, ou por ser quem fundou a empresa - ver _pessoa_da_empresa).
-    # Senão, isso não é "associar a mais uma filial", é criar do zero
-    # (fluxo de medico.equipe_novo).
-    if not _pessoa_da_empresa(usuario_id, empresa, filial_ids):
-        flash("Pessoa não encontrada na equipe desta empresa.", "danger")
-        return redirect(url_for("medico.equipe_lista"))
-    usuario_alvo = Usuario.query.get(usuario_id)
-
-    filial_destino = next((f for f in filiais if f.id == request.form.get("filial_id", type=int)), None)
-    if not filial_destino:
-        flash("Escolha uma filial válida.", "danger")
-        return redirect(url_for("medico.equipe_lista"))
-
-    vinculo_existente = ClinicaMembro.query.filter_by(
-        clinica_id=filial_destino.id, usuario_id=usuario_id
-    ).first()
-    if vinculo_existente and vinculo_existente.ativo:
-        flash("Essa pessoa já faz parte dessa filial.", "warning")
-        return redirect(url_for("medico.equipe_lista"))
-
-    if vinculo_existente:
-        vinculo_existente.reativar()  # já atuou aqui: reativa o histórico
-    else:
-        db.session.add(ClinicaMembro(clinica_id=filial_destino.id, usuario_id=usuario_id, ativo=True))
-    sincronizar_grupo_membro_pareado(filial_destino)
-    db.session.commit()
-    flash(f"{usuario_alvo.nome} foi vinculado(a) à filial '{filial_destino.nome}'.", "success")
     return redirect(url_for("medico.equipe_lista"))
-
-
-# ---------- Vincular médico por código mestre (convite + aceite) ----------
-
-@medico_bp.route("/equipe-membros/vincular-por-codigo", methods=["POST"])
-@login_required
-@staff_required
-@permissao_required("perm_equipe")
-def equipe_vincular_por_codigo():
-    """A clínica digita o código mestre de um médico (ver
-    Usuario.codigo_mestre) para convidá-lo a atender nas filiais marcadas.
-    NÃO vincula na hora: cria um ConviteVinculo pendente por filial, que o
-    médico aceita ou recusa no painel dele (ver convite_decidir) -
-    consentimento nas duas pontas."""
-    empresa = empresa_atual()
-    filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
-
-    codigo = request.form.get("codigo_mestre", "").strip().upper()
-    filial_ids_selecionadas = request.form.getlist("filial_ids", type=int)
-    filiais_selecionadas = [f for f in filiais if f.id in filial_ids_selecionadas]
-
-    if not codigo:
-        flash("Digite o código do médico (ex.: MED-7K2F9).", "danger")
-        return redirect(url_for("medico.equipe_lista"))
-    if not filiais_selecionadas:
-        flash("Marque em qual(is) filial(is) o médico vai atender.", "danger")
-        return redirect(url_for("medico.equipe_lista"))
-
-    medico = Usuario.query.filter_by(codigo_mestre=codigo, tipo="medico").first()
-    if not medico or not medico.ativo:
-        flash("Nenhum médico encontrado com esse código. Confira com ele o código atual (ele pode ter regenerado).", "danger")
-        return redirect(url_for("medico.equipe_lista"))
-
-    convidadas, ja_vinculadas, ja_convidadas = [], [], []
-    for f in filiais_selecionadas:
-        vinculo = ClinicaMembro.query.filter_by(clinica_id=f.id, usuario_id=medico.id).first()
-        if vinculo and vinculo.ativo:
-            ja_vinculadas.append(f.nome)
-            continue
-        if ConviteVinculo.query.filter_by(clinica_id=f.id, medico_id=medico.id, status="pendente").first():
-            ja_convidadas.append(f.nome)
-            continue
-        db.session.add(ConviteVinculo(
-            clinica_id=f.id, medico_id=medico.id, criado_por_id=current_user.id,
-        ))
-        convidadas.append(f.nome)
-    db.session.commit()
-
-    if convidadas:
-        flash(
-            f"Convite enviado para {medico.nome} atender em: {', '.join(convidadas)}. "
-            "O vínculo só vale depois que o médico aceitar no painel dele.",
-            "success",
-        )
-    if ja_vinculadas:
-        flash(f"{medico.nome} já atende em: {', '.join(ja_vinculadas)}.", "warning")
-    if ja_convidadas:
-        flash(f"Já existe convite pendente para: {', '.join(ja_convidadas)}.", "warning")
-    return redirect(url_for("medico.equipe_lista"))
-
-
-@medico_bp.route("/equipe-membros/convites/<int:convite_id>/cancelar", methods=["POST"])
-@login_required
-@staff_required
-@permissao_required("perm_equipe")
-def equipe_convite_cancelar(convite_id):
-    """A clínica desiste de um convite que o médico ainda não decidiu. O
-    convite não é apagado (fica como histórico), só marcado 'cancelado'."""
-    convite = ConviteVinculo.query.filter(
-        ConviteVinculo.id == convite_id,
-        ConviteVinculo.clinica_id.in_([f.id for f in _filiais_da_empresa()]),
-        ConviteVinculo.status == "pendente",
-    ).first_or_404()
-    convite.status = "cancelado"
-    convite.decidido_em = datetime.utcnow()
-    db.session.commit()
-    flash(f"Convite para {convite.medico.nome} cancelado.", "success")
-    return redirect(url_for("medico.equipe_lista"))
-
-
-@medico_bp.route("/convites/<int:convite_id>/decidir", methods=["POST"])
-@login_required
-@staff_required
-def convite_decidir(convite_id):
-    """O MÉDICO aceita ou recusa um convite de vínculo endereçado a ele
-    (mostrado no painel). Aceitar cria o ClinicaMembro (ou reativa um
-    vínculo antigo encerrado) - é aqui, e só aqui, que o vínculo nasce."""
-    convite = ConviteVinculo.query.filter_by(
-        id=convite_id, medico_id=current_user.id, status="pendente"
-    ).first_or_404()
-    acao = request.form.get("acao")
-    convite.decidido_em = datetime.utcnow()
-    if acao == "recusar":
-        convite.status = "recusado"
-        db.session.commit()
-        flash(f"Convite de '{convite.clinica.nome}' recusado.", "success")
-        return redirect(url_for("medico.dashboard"))
-
-    convite.status = "aceito"
-    vinculo = ClinicaMembro.query.filter_by(
-        clinica_id=convite.clinica_id, usuario_id=current_user.id
-    ).first()
-    if vinculo:
-        vinculo.ativo = True  # revinculação: reativa o histórico, não duplica
-    else:
-        db.session.add(ClinicaMembro(
-            clinica_id=convite.clinica_id, usuario_id=current_user.id, ativo=True,
-        ))
-    sincronizar_grupo_membro_pareado(convite.clinica)
-    db.session.commit()
-    flash(f"Você agora atende em '{convite.clinica.nome}'.", "success")
-    return redirect(url_for("medico.dashboard"))
-
-
-@medico_bp.route("/meu-codigo/regenerar", methods=["POST"])
-@login_required
-@staff_required
-def medico_codigo_regenerar():
-    """O médico troca o próprio código mestre (ex.: se vazou). Convites já
-    criados não mudam - só os usos futuros do código antigo param de
-    funcionar."""
-    if not eh_medico():
-        flash("Só contas de médico têm código mestre.", "danger")
-        return redirect(url_for("medico.dashboard"))
-    current_user.codigo_mestre = gerar_codigo_mestre_medico()
-    db.session.commit()
-    flash(f"Novo código gerado: {current_user.codigo_mestre}. O código antigo deixou de valer.", "success")
-    return redirect(url_for("medico.dashboard"))
-
-
-@medico_bp.route("/equipe-membros/<int:usuario_id>/editar", methods=["GET", "POST"])
-@login_required
-@staff_required
-@permissao_required("perm_equipe")
-def equipe_editar(usuario_id):
-    """Tela de edição de uma pessoa da equipe: o nome e, principalmente,
-    em quais filiais da empresa ela atua — marcando/desmarcando várias de
-    uma vez, ao invés de precisar do atalho "+ Associar a outra filial"
-    (uma filial por vez) ou reabrir "Adicionar médico/secretária" com o
-    mesmo e-mail para vincular mais filiais. Só mexe nos vínculos desta
-    empresa - se a pessoa também atuar em outra empresa (outro médico
-    multiempresa), aquele vínculo não aparece nem é afetado aqui. O papel
-    (médico/secretária) não é editável nesta tela: trocar o tipo de conta
-    tem implicações demais (permissões padrão, agenda, etc.) para ser só
-    mais um campo de formulário."""
-    empresa = empresa_atual()
-    filiais = Clinica.query.filter_by(empresa_id=empresa.id).order_by(Clinica.nome).all()
-    filial_ids = {f.id for f in filiais}
-
-    usuario = Usuario.query.filter_by(id=usuario_id).first_or_404()
-    # Traz TODOS os vínculos desta empresa, inclusive os encerrados
-    # (ativo=False) - re-marcar uma filial de onde a pessoa já saiu REATIVA
-    # o vínculo antigo (histórico preservado) em vez de criar outro.
-    vinculos_desta_empresa = ClinicaMembro.query.filter(
-        ClinicaMembro.usuario_id == usuario_id, ClinicaMembro.clinica_id.in_(filial_ids)
-    ).all()
-    vinculos_ativos = [v for v in vinculos_desta_empresa if v.ativo]
-    eh_fundador_desta_empresa = usuario.empresa_fundadora_id == empresa.id
-    if not vinculos_ativos and not eh_fundador_desta_empresa:
-        flash("Pessoa não encontrada na equipe desta empresa.", "danger")
-        return redirect(url_for("medico.equipe_lista"))
-
-    filial_ids_atuais = {v.clinica_id for v in vinculos_ativos}
-
-    if request.method == "POST":
-        nome = request.form.get("nome", "").strip()
-        filial_ids_selecionadas = set(request.form.getlist("filial_ids", type=int)) & filial_ids
-
-        if not nome:
-            flash("Informe o nome da pessoa.", "danger")
-            return render_template(
-                "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
-                filial_ids_atuais=filial_ids_atuais,
-            )
-        if not filial_ids_selecionadas and not eh_fundador_desta_empresa:
-            # O fundador pode ficar sem vínculo nenhum (o acesso dele vem
-            # de empresa_fundadora_id) - as demais pessoas precisam de
-            # pelo menos um vínculo, senão perdem o acesso à empresa.
-            flash("Marque pelo menos uma filial em que essa pessoa atua.", "danger")
-            return render_template(
-                "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
-                filial_ids_atuais=filial_ids_atuais,
-            )
-
-        # Desmarcar uma filial ENCERRA o vínculo (não apaga - ver
-        # ClinicaMembro.encerrado_em); com agendamentos futuros do médico
-        # naquela filial, o encerramento é bloqueado até a equipe
-        # cancelar/transferir as consultas marcadas.
-        for v in vinculos_ativos:
-            if v.clinica_id not in filial_ids_selecionadas:
-                futuros = _agendamentos_futuros_do_vinculo(v.clinica_id, usuario.id)
-                if futuros:
-                    flash(
-                        f"{usuario.nome} ainda tem {futuros} agendamento(s) futuro(s) na filial "
-                        f"'{v.clinica.nome}'. Cancele ou transfira esses agendamentos antes de "
-                        "encerrar a atuação ali.",
-                        "danger",
-                    )
-                    return render_template(
-                        "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
-                        filial_ids_atuais=filial_ids_atuais,
-                    )
-
-        cpf = request.form.get("cpf", "").strip()
-        if cpf and not validar_cpf(cpf):
-            flash("CPF inválido — confira os números digitados.", "danger")
-            return render_template(
-                "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
-                filial_ids_atuais=filial_ids_atuais,
-            )
-        if cep_incompleto(request.form.get("cep", "")):
-            flash("CEP incompleto — digite os 8 números.", "danger")
-            return render_template(
-                "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
-                filial_ids_atuais=filial_ids_atuais,
-            )
-
-        usuario.nome = nome
-        usuario.cpf = cpf or None
-        usuario.cep = request.form.get("cep", "").strip()
-        usuario.rua = request.form.get("rua", "").strip()
-        usuario.numero = request.form.get("numero", "").strip()
-        usuario.complemento = request.form.get("complemento", "").strip()
-        usuario.bairro = request.form.get("bairro", "").strip()
-        usuario.cidade = request.form.get("cidade", "").strip()
-        usuario.uf = request.form.get("uf", "").strip().upper() or None
-        if usuario.tipo == "medico":
-            usuario.crm_numero = request.form.get("crm_numero", "").strip() or None
-            usuario.crm_uf = request.form.get("crm_uf", "").strip().upper() or None
-
-        vinculos_por_filial = {v.clinica_id: v for v in vinculos_desta_empresa}
-        filiais_tocadas = set()
-        for f in filiais:
-            if f.id in filial_ids_selecionadas and f.id not in filial_ids_atuais:
-                vinculo_antigo = vinculos_por_filial.get(f.id)
-                if vinculo_antigo:
-                    vinculo_antigo.reativar()
-                else:
-                    db.session.add(ClinicaMembro(clinica_id=f.id, usuario_id=usuario.id, ativo=True))
-                filiais_tocadas.add(f)
-        for v in vinculos_ativos:
-            if v.clinica_id not in filial_ids_selecionadas:
-                v.encerrar()
-                filiais_tocadas.add(v.clinica)
-        for f in filiais_tocadas:
-            sincronizar_grupo_membro_pareado(f)
-
-        db.session.commit()
-        flash(f"Dados de {usuario.nome} atualizados.", "success")
-        return redirect(url_for("medico.equipe_lista"))
-
-    return render_template(
-        "medico/equipe_editar.html", usuario=usuario, filiais=filiais,
-        filial_ids_atuais=filial_ids_atuais,
-    )
 
 
 @medico_bp.route("/equipe-membros/<int:usuario_id>/permissoes", methods=["GET", "POST"])
@@ -3314,12 +2568,15 @@ def equipe_editar(usuario_id):
 @permissao_required("perm_equipe")
 def equipe_permissoes(usuario_id):
     """Ajusta quais telas administrativas uma pessoa da equipe pode
-    acessar. É uma permissão da conta (vale em todas as filiais em que a
-    pessoa atua), não só desta filial."""
+    acessar. É uma permissão da conta - vale em qualquer Grupo em que a
+    pessoa atue, não só neste.
+
+    Fatia 5 (passo 4): a checagem de "essa pessoa faz parte da equipe
+    deste tenant" passou a usar GrupoMembro (era ClinicaMembro) - ver
+    _pessoa_da_empresa."""
     empresa = empresa_atual()
-    filial_ids = [f.id for f in Clinica.query.filter_by(empresa_id=empresa.id).all()]
-    if not _pessoa_da_empresa(usuario_id, empresa, filial_ids):
-        flash("Pessoa não encontrada na equipe desta empresa.", "danger")
+    if not empresa or not _pessoa_da_empresa(usuario_id, empresa):
+        flash("Pessoa não encontrada na equipe deste grupo.", "danger")
         return redirect(url_for("medico.equipe_lista"))
     usuario_alvo = Usuario.query.get_or_404(usuario_id)
 
@@ -3333,38 +2590,3 @@ def equipe_permissoes(usuario_id):
         return redirect(url_for("medico.equipe_lista"))
 
     return render_template("medico/equipe_permissoes.html", usuario_alvo=usuario_alvo)
-
-
-@medico_bp.route("/equipe-membros/<int:membro_id>/remover", methods=["POST"])
-@login_required
-@staff_required
-@permissao_required("perm_equipe")
-def equipe_remover(membro_id):
-    empresa = empresa_atual()
-    filial_ids = [f.id for f in Clinica.query.filter_by(empresa_id=empresa.id).all()]
-    membro = ClinicaMembro.query.filter(
-        ClinicaMembro.id == membro_id, ClinicaMembro.clinica_id.in_(filial_ids),
-        ClinicaMembro.ativo.is_(True),
-    ).first_or_404()
-
-    if membro.usuario_id == current_user.id:
-        flash("Você não pode remover a si mesmo da clínica.", "danger")
-        return redirect(url_for("medico.equipe_lista"))
-
-    futuros = _agendamentos_futuros_do_vinculo(membro.clinica_id, membro.usuario_id)
-    if futuros:
-        flash(
-            f"{membro.usuario.nome} ainda tem {futuros} agendamento(s) futuro(s) nesta filial. "
-            "Cancele ou transfira esses agendamentos antes de encerrar a atuação.",
-            "danger",
-        )
-        return redirect(url_for("medico.equipe_lista"))
-
-    # ENCERRA o vínculo em vez de apagar (ver ClinicaMembro.encerrado_em):
-    # o histórico de atuação e os atendimentos já feitos continuam - e se a
-    # pessoa voltar um dia, o mesmo vínculo é reativado.
-    membro.encerrar()
-    sincronizar_grupo_membro_pareado(membro.clinica)
-    db.session.commit()
-    flash(f"{membro.usuario.nome} não atua mais na filial '{membro.clinica.nome}'. O histórico foi preservado.", "success")
-    return redirect(url_for("medico.equipe_lista"))

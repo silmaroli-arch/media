@@ -1,18 +1,29 @@
 """Utilitários para trabalhar com o contexto (tenant) do usuário da equipe
 (médico/secretária) durante a sessão.
 
-O que delimita o que a pessoa vê é a EMPRESA (o cliente/tenant da
-plataforma), não mais uma "clínica atual". Um usuário vinculado a duas
-filiais (Clinica) da mesma empresa vê os dados das DUAS juntos, com a
-filial indicada em cada registro — quem determina onde o médico está é o
-agendamento/consulta que ele vai atender, não uma troca manual de local.
+Fatia 5 (passo 4): o tenant passou a ser o GRUPO, não mais a Empresa - cada
+Grupo já é sua própria unidade completa (cobrança, fiscal, endereço - ver
+Fatia 5 passo 1), então não existe mais o conceito de "várias filiais
+dentro de uma mesma empresa". Uma pessoa com vínculo em mais de um Grupo
+simplesmente pertence a vários Grupos independentes; se for só um, ele é
+escolhido automaticamente (nenhuma tela de escolha aparece) - se for mais
+de um, precisa escolher explicitamente (ver medico.escolher_clinica).
 
-A empresa ativa fica guardada na sessão Flask (session['empresa_id']) e só
-precisa ser escolhida à mão no caso raro de a pessoa ter vínculo em mais de
-uma EMPRESA (tenants diferentes) — ver medico.escolher_clinica.
+As funções com nome "empresa"/"clinica"/"filial" são mantidas por
+compatibilidade com o código existente em routes_medico.py/routes_
+relatorios.py/routes_paciente.py/routes_dono.py (evita reescrever cada
+chamada de uma vez só) - mas todas operam sobre Grupo agora, não mais
+sobre Empresa/Clinica. `filiais_atuais()` sempre devolve uma lista de 0 ou
+1 elemento (o próprio Grupo atual) - não existe mais "a empresa tem várias
+filiais". `Grupo` foi desenhado (Fatia 5 passo 1) para espelhar os mesmos
+nomes de campo que Empresa/Clinica tinham (nome, razao_social, cnpj,
+endereço, fiscal_*, status, bloqueada, valor_mensal_estimado,
+codigo_cadastro_paciente) - é por isso que essa troca é segura sem
+reescrever os templates que leem esses campos.
 
-session['clinica_id'] continua existindo, mas SÓ como "filial padrão"
-(pré-seleção de campo em formulário). Ela não filtra mais nada.
+A sessão guarda o Grupo ativo em session['empresa_id'] (nome antigo,
+mantido só pra não invalidar sessões já abertas). session['clinica_id']
+não é mais usado (não existe mais "filial padrão" distinta do Grupo).
 """
 from flask import session
 from flask_login import current_user
@@ -21,59 +32,56 @@ from app.extensions import db
 from app.models import GrupoMembro
 
 
-def verificar_vencimento_empresa(empresa):
-    """Atualiza (e salva) o status da empresa para 'inadimplente' se o
-    trial já venceu. Não bloqueia por conta própria — isso continua sendo
-    uma decisão manual do dono da plataforma."""
-    if empresa.verificar_vencimento_trial():
+def verificar_vencimento_empresa(grupo):
+    """Atualiza (e salva) o status do Grupo para 'inadimplente' se o
+    trial já venceu (ver Grupo.verificar_vencimento_trial()). Não bloqueia
+    por conta própria — isso continua sendo uma decisão manual do dono da
+    plataforma."""
+    if grupo.verificar_vencimento_trial():
         db.session.commit()
 
 
-def verificar_vencimento(clinica):
-    """Mesma verificação acima, mas a partir de uma filial (Clinica) —
-    o controle de pagamento/trial vive na empresa dona da filial."""
-    verificar_vencimento_empresa(clinica.empresa)
+# Alias explícito com o nome novo - mesma função, dois nomes durante a
+# transição (routes_paciente.py já usa o nome novo desde a Fatia 5 passo 3).
+verificar_vencimento_grupo = verificar_vencimento_empresa
+
+
+def verificar_vencimento(grupo):
+    """Antes recebia uma Clinica e delegava pra empresa dela; agora o
+    Grupo já É o tenant, então é a mesma verificação direto."""
+    verificar_vencimento_empresa(grupo)
 
 
 def clinicas_do_usuario():
-    """Lista de clínicas ativas (vínculo ativo e não bloqueadas) do usuário logado."""
+    """Grupos em que o usuário logado tem vínculo ATIVO. Na esmagadora
+    maioria dos casos é um só."""
     if not current_user.is_authenticated or not current_user.is_staff:
         return []
-    clinicas = current_user.clinicas_ativas
-    for c in clinicas:
-        verificar_vencimento(c)
-    return clinicas
+    grupos = [
+        gm.grupo for gm in GrupoMembro.query.filter_by(usuario_id=current_user.id, ativo=True).all()
+    ]
+    for g in grupos:
+        verificar_vencimento_empresa(g)
+    return sorted(grupos, key=lambda g: (g.nome or "").lower())
+
+
+# Nome novo, mesma função - ver docstring do módulo.
+grupos_do_usuario = clinicas_do_usuario
 
 
 def empresas_do_usuario():
-    """Empresas distintas (tenants) em que o usuário tem vínculo ativo.
-    Na esmagadora maioria dos casos é uma só.
-
-    Também inclui a empresa que a pessoa criou no cadastro público (ver
-    Usuario.empresa_fundadora_id), mesmo que ela ainda não tenha nenhuma
-    filial/ClinicaMembro - o cadastro público não cria mais a primeira
-    filial automaticamente (isso é feito depois, ao entrar no app, em
-    "Meus Locais de Atendimento"), então por um tempo a pessoa não tem
-    nenhum vínculo de filial ainda, e sem este fallback ela ficaria sem
-    empresa nenhuma (empresa_atual() retornaria None) logo após criar a
-    conta."""
-    empresas = {}
-    for c in clinicas_do_usuario():
-        empresas.setdefault(c.empresa_id, c.empresa)
-    if (
-        current_user.is_authenticated
-        and getattr(current_user, "empresa_fundadora_id", None)
-        and current_user.empresa_fundadora_id not in empresas
-    ):
-        empresas[current_user.empresa_fundadora_id] = current_user.empresa_fundadora
-    return sorted(empresas.values(), key=lambda e: (e.nome or "").lower())
+    """Tenants (Grupos) distintos em que o usuário tem vínculo ativo.
+    Antes da Fatia 5 isso agregava várias Clinica sob uma mesma Empresa;
+    como cada Grupo já é uma unidade completa, é a mesma lista de
+    clinicas_do_usuario() acima."""
+    return clinicas_do_usuario()
 
 
 def empresa_atual():
-    """Empresa (tenant) ativa da sessão — é ELA que delimita tudo o que o
-    usuário vê. Se o usuário só tem vínculo em uma empresa, é selecionada
+    """Grupo (tenant) ativo da sessão — é ELE que delimita tudo o que o
+    usuário vê. Se o usuário só tem vínculo em um Grupo, é selecionado
     automaticamente (nenhuma tela de escolha aparece). Se tiver vínculo em
-    mais de uma empresa, precisa escolher explicitamente (ver
+    mais de um, precisa escolher explicitamente (ver
     medico.escolher_clinica)."""
     empresas = empresas_do_usuario()
     if not empresas:
@@ -84,7 +92,7 @@ def empresa_atual():
         for e in empresas:
             if e.id == empresa_id:
                 return e
-        # a empresa salva na sessão não é mais válida para esse usuário
+        # o grupo salvo na sessão não é mais válido para esse usuário
         session.pop("empresa_id", None)
         session.pop("clinica_id", None)
 
@@ -95,143 +103,67 @@ def empresa_atual():
     return None
 
 
+# Nome novo, mesma função - ver docstring do módulo.
+grupo_atual = empresa_atual
+
+
 def selecionar_empresa(empresa_id):
-    """Define a empresa atual na sessão, validando que o usuário tem
-    vínculo com ela."""
+    """Define o Grupo atual na sessão, validando que o usuário tem
+    vínculo com ele."""
     if any(e.id == empresa_id for e in empresas_do_usuario()):
         if session.get("empresa_id") != empresa_id:
-            # a filial padrão pré-selecionada era de outra empresa
             session.pop("clinica_id", None)
         session["empresa_id"] = empresa_id
         return True
     return False
 
 
+selecionar_grupo = selecionar_empresa
+
+
 def filiais_atuais():
-    """Filiais (Clinica) da empresa atual com as quais o usuário tem
-    vínculo ativo. Pode ser uma ou várias — os dados de todas elas são
-    mostrados juntos, com a filial indicada em cada registro."""
+    """Fatia 5: não existe mais "várias filiais dentro da empresa atual" -
+    o Grupo atual JÁ é a única unidade. Devolve uma lista de 0 ou 1
+    elemento só para não obrigar a reescrever todo o código que ainda
+    itera filiais_atuais() em routes_medico.py - ver clinica_atual() logo
+    abaixo, que é o jeito direto de pegar esse único elemento."""
     empresa = empresa_atual()
-    if not empresa:
-        return []
-    filiais = [c for c in clinicas_do_usuario() if c.empresa_id == empresa.id]
-    return sorted(filiais, key=lambda c: (c.nome or "").lower())
+    return [empresa] if empresa else []
 
 
 def filiais_atuais_ids():
     """Só os ids de filiais_atuais() — o filtro usado em toda consulta
-    (`Model.clinica_id.in_(...)`) e também a fronteira de acesso."""
+    (`Model.grupo_id.in_(...)`) e também a fronteira de acesso."""
     return [f.id for f in filiais_atuais()]
 
 
 def grupos_atuais_ids():
-    """Ids dos Grupos pareados (Fatia 4) das filiais_atuais() — a chave real
-    de escopo para Exame/PreparoModelo/Agendamento/PerguntaPendente/FaqItem
-    a partir desta fatia. Usa .grupo_pareado() (não o id direto) para parear
-    na hora qualquer filial que a migração/backfill ainda não tenha
-    coberto."""
-    return [f.grupo_pareado().id for f in filiais_atuais()]
+    """Fatia 5: o Grupo atual JÁ é o grupo - não precisa mais de
+    .grupo_pareado() (essa ponte só existia enquanto Clinica era a
+    unidade real e Grupo, a sombra dela)."""
+    return filiais_atuais_ids()
 
 
 def clinica_atual():
-    """Uma filial "padrão" do usuário dentro da empresa atual.
-
-    ATENÇÃO: só serve para casos em que uma única filial é genuinamente
-    necessária (ex.: pré-selecionar um valor num <select>, ou os dados
-    cadastrais/fiscais de um local). NÃO usar para filtrar/escopar o que
-    o usuário pode ver — para isso use filiais_atuais_ids()."""
+    """Fatia 5: não existe mais uma filial "padrão" distinta do Grupo -
+    esta função devolve o próprio Grupo atual. Mantida pelo nome por
+    compatibilidade com o código existente (dados cadastrais/fiscais,
+    formulários que pré-selecionam uma "filial")."""
     filiais = filiais_atuais()
-    if not filiais:
-        return None
-
-    clinica_id = session.get("clinica_id")
-    if clinica_id:
-        for c in filiais:
-            if c.id == clinica_id:
-                return c
-        session.pop("clinica_id", None)
-
-    return filiais[0]
+    return filiais[0] if filiais else None
 
 
 def selecionar_clinica(clinica_id):
-    """Define a filial PADRÃO na sessão (pré-seleção de formulário),
-    validando que o usuário tem vínculo ativo com ela. Não afeta mais o
-    que é visível — isso é definido pela empresa atual."""
-    clinicas = clinicas_do_usuario()
-    escolhida = next((c for c in clinicas if c.id == clinica_id), None)
-    if not escolhida:
+    """Fatia 5: não existe mais filial distinta do Grupo - selecionar uma
+    "clínica" agora é o mesmo que selecionar o Grupo em si. Mantida pelo
+    nome só por compatibilidade."""
+    grupos = clinicas_do_usuario()
+    escolhido = next((g for g in grupos if g.id == clinica_id), None)
+    if not escolhido:
         return False
-    session["empresa_id"] = escolhida.empresa_id
-    session["clinica_id"] = escolhida.id
+    session["empresa_id"] = escolhido.id
+    session.pop("clinica_id", None)
     return True
-
-
-# ---------- Fatia 5 (passo 3): resolução de tenant contra Grupo/GrupoMembro ----------
-#
-# As funções abaixo são a base para reescrever routes_medico.py (passo 4)
-# em cima de Grupo/GrupoMembro em vez de Empresa/Clinica/ClinicaMembro -
-# são aditivas e nenhum código ainda as chama (routes_grupo.py continua
-# usando Grupo.query.get_or_404(grupo_id) direto no path da URL, que
-# continua funcionando igual). Cada Grupo já é sua própria unidade
-# completa (cobrança, fiscal, endereço - ver Fatia 5 passo 1) - não existe
-# mais o conceito de "várias filiais dentro de uma empresa": uma pessoa
-# com vínculo em mais de um Grupo simplesmente pertence a vários Grupos
-# independentes, escolhendo qual está ativo do mesmo jeito que
-# empresa_atual() escolhe a empresa hoje.
-
-def grupos_do_usuario():
-    """Grupos (de trabalho) em que o usuário logado tem vínculo ATIVO -
-    substitui empresas_do_usuario() quando routes_medico.py migrar pra
-    Grupo (passo 4). Cada Grupo já é uma unidade completa (não existe mais
-    "filiais dentro da mesma empresa" - ver Fatia 5)."""
-    if not current_user.is_authenticated or not current_user.is_staff:
-        return []
-    grupos = [
-        gm.grupo for gm in GrupoMembro.query.filter_by(usuario_id=current_user.id, ativo=True).all()
-    ]
-    for g in grupos:
-        verificar_vencimento_grupo(g)
-    return sorted(grupos, key=lambda g: (g.nome or "").lower())
-
-
-def verificar_vencimento_grupo(grupo):
-    """Equivalente a verificar_vencimento_empresa(), mas pro Grupo - ver
-    Grupo.verificar_vencimento_trial() (Fatia 5 passo 1)."""
-    if grupo.verificar_vencimento_trial():
-        db.session.commit()
-
-
-def grupo_atual():
-    """Grupo ativo da sessão - equivalente a empresa_atual(), mas contra o
-    modelo novo. Se o usuário só tem vínculo em um Grupo, é selecionado
-    automaticamente (nenhuma tela de escolha aparece); com mais de um,
-    precisa escolher explicitamente (ver selecionar_grupo)."""
-    grupos = grupos_do_usuario()
-    if not grupos:
-        return None
-
-    grupo_id = session.get("grupo_atual_id")
-    if grupo_id:
-        for g in grupos:
-            if g.id == grupo_id:
-                return g
-        session.pop("grupo_atual_id", None)
-
-    if len(grupos) == 1:
-        session["grupo_atual_id"] = grupos[0].id
-        return grupos[0]
-
-    return None
-
-
-def selecionar_grupo(grupo_id):
-    """Define o Grupo atual na sessão, validando que o usuário tem
-    vínculo ativo com ele."""
-    if any(g.id == grupo_id for g in grupos_do_usuario()):
-        session["grupo_atual_id"] = grupo_id
-        return True
-    return False
 
 
 def papel_no_grupo_atual():
