@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_user, logout_user, login_required, current_user
 
 from app.extensions import db
-from app.models import Usuario, Empresa, Paciente, PlataformaConfig, normalizar_telefone, gerar_codigo_mestre_medico, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.models import Usuario, Grupo, GrupoMembro, Paciente, PlataformaConfig, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -208,14 +208,24 @@ def cadastro():
     cadastrando (nome, CPF — que agora é o login, ver auth.login —,
     e-mail, senha, endereço pessoal).
 
-    O cadastro cria SÓ a Empresa (o novo tenant, do qual a pessoa é
-    fundadora) e o Usuario — nenhuma Clinica, nenhum ClinicaMembro. A
-    pessoa só passa a ter um local de atendimento de verdade quando ela
-    mesma cadastra um em "Meus Locais de Atendimento" (ver
-    medico.filiais_nova), depois de entrar no app pela primeira vez (o
-    assistente de configuração inicial, medico.onboarding, sugere esse
-    passo). Isso evita o formulário de cadastro ficar pedindo dados de
-    clínica (nome, CNPJ, endereço, telefone) que muita gente ainda não
+    Fatia 5 (passo 4, gap fechado depois): o cadastro cria um GRUPO (não
+    mais uma Empresa) do qual a pessoa é a dona (GrupoMembro papel="dono")
+    e o Usuario — nenhuma Clinica, nenhum ClinicaMembro. O Grupo nasce
+    sempre, mas é um detalhe invisível pra quem se cadastra: o médico ou
+    secretário(a) que trabalha sozinho(a) nunca precisa ver a palavra
+    "Grupo" nem convidar ninguém — ele só existe por baixo porque é a
+    unidade de cobrança/dados fiscais/escopo de dados que todo o resto do
+    app já usa (ver app/clinica_utils.py). "Grupo" só vira um conceito
+    visível de verdade se essa pessoa decidir convidar alguém pra
+    trabalhar junto (tela "Equipe", que por baixo é
+    routes_grupo.py:convidar()).
+
+    A pessoa só passa a ter os dados da clínica preenchidos de verdade
+    quando ela mesma os cadastra em "Dados da clínica" (ver
+    medico.clinica_configuracoes), depois de entrar no app pela primeira
+    vez (o assistente de configuração inicial, medico.onboarding, sugere
+    esse passo). Isso evita o formulário de cadastro ficar pedindo dados
+    de clínica (nome, CNPJ, endereço, telefone) que muita gente ainda não
     tem em mãos nesse momento, e que fazem mais sentido preenchidos com
     calma depois de já estar dentro do app.
 
@@ -224,13 +234,13 @@ def cadastro():
     (evitando empresas duplicadas para colegas da mesma clínica). Esse
     mecanismo foi removido junto com o resto do formulário de clínica —
     pessoas da mesma clínica que se cadastrarem separadamente agora
-    ficam, cada uma, na sua própria empresa, e se juntam depois
-    manualmente (convite pela tela "Equipe", ou vínculo de filial).
+    ficam, cada uma, no seu próprio Grupo, e se juntam depois manualmente
+    (convite pela tela "Equipe", por CPF).
 
     A pessoa escolhe se é médico(a) ou secretário(a) (isso só muda a
-    exigência de CRM). Quem se cadastra é sempre quem FUNDA a nova
-    empresa, então recebe todas as permissões administrativas
-    automaticamente (conceder_todas_permissoes)."""
+    exigência de CRM). Quem se cadastra é sempre quem FUNDA o novo Grupo,
+    então recebe todas as permissões administrativas automaticamente
+    (conceder_todas_permissoes)."""
     if current_user.is_authenticated:
         return redirect(url_for("index"))
 
@@ -291,39 +301,39 @@ def cadastro():
         usuario.uf = request.form.get("uf", "").strip().upper() or None
         usuario.crm_numero = crm_numero
         usuario.crm_uf = crm_uf
-        if papel == "medico":
-            # Todo médico nasce com seu código mestre (ver
-            # Usuario.codigo_mestre em app/models.py).
-            usuario.codigo_mestre = gerar_codigo_mestre_medico()
+
+        db.session.add(usuario)
+        db.session.flush()  # garante usuario.id antes de criar o Grupo/GrupoMembro
 
         trial_dias = PlataformaConfig.obter().trial_dias
-        empresa = Empresa(
+        grupo = Grupo(
             # Sem "local de atendimento" coletado no cadastro, não temos
-            # mais um nome de clínica pra usar aqui - a empresa nasce com
-            # um nome provisório a partir do nome da própria pessoa, e
-            # pode ser ajustado depois (ex.: ao cadastrar o primeiro local
-            # de atendimento de verdade em "Meus Locais de Atendimento").
+            # mais um nome de clínica pra usar aqui - o Grupo nasce com um
+            # nome provisório a partir do nome da própria pessoa, e pode
+            # ser ajustado depois (ex.: ao preencher "Dados da clínica").
             nome=f"Consultório de {nome}",
             email_contato=email,
             status="trial",
             data_vencimento=date.today() + timedelta(days=trial_dias),
         )
-        db.session.add(empresa)
+        db.session.add(grupo)
         db.session.flush()
-        usuario.empresa_fundadora_id = empresa.id
-        # Quem funda a empresa é a administradora inicial — recebe todas as
+        # Quem se cadastra é sempre o DONO do Grupo novo - mesmo alguém
+        # que nunca vai convidar ninguém precisa desse vínculo, porque é
+        # ele (GrupoMembro) que dá acesso ao Grupo (ver
+        # app/clinica_utils.py:empresa_atual()). Pra essa pessoa, "Grupo"
+        # nunca aparece na tela - só entra em jogo se ela convidar alguém.
+        db.session.add(GrupoMembro(grupo_id=grupo.id, usuario_id=usuario.id, papel="dono", ativo=True))
+        # Quem funda o Grupo é a administradora inicial — recebe todas as
         # permissões administrativas independentemente de ser médico(a) ou
-        # secretário(a), já que a clínica pode não ter uma secretária. Isso
-        # inclui perm_filiais, essencial pro médico independente poder
-        # cadastrar novos locais de atendimento sozinho depois.
+        # secretário(a), já que a clínica pode não ter uma secretária.
         usuario.conceder_todas_permissoes()
-        db.session.add(usuario)
         db.session.commit()
         login_user(usuario)
 
         flash(
-            f"Conta criada com sucesso, {usuario.nome}! Cadastre agora seu(s) local(is) de "
-            "atendimento em \"Meus Locais de Atendimento\" pra deixar tudo pronto pra uso.",
+            f"Conta criada com sucesso, {usuario.nome}! Cadastre agora os dados da sua clínica "
+            "pra deixar tudo pronto pra uso.",
             "success",
         )
         return redirect(url_for("medico.onboarding"))
