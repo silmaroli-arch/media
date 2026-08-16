@@ -421,26 +421,35 @@ conn.execute(
     "ON usuarios (email) WHERE tipo <> 'paciente'"
 )
 
-# O CPF do paciente agora é único por EMPRESA, não mais por filial (o
-# paciente é da empresa - ver Paciente.empresa_id e o bloco de ALTERs de
-# "pacientes" no SQL acima). Antes de criar o índice único novo, confere
-# se a base migrada não tem a mesma pessoa cadastrada em duas filiais da
-# mesma empresa (era possível no modelo antigo): se tiver, o índice não é
-# criado (a unicidade fica garantida só pela aplicação, ver
-# medico.pacientes_novo) e o deploy segue normalmente - unificar esses
-# cadastros duplicados é uma tarefa manual, avisada no log.
-duplicados = conn.execute(
-    "SELECT empresa_id, cpf, COUNT(*) FROM pacientes "
-    "WHERE empresa_id IS NOT NULL GROUP BY empresa_id, cpf HAVING COUNT(*) > 1"
+# Fatia 5: o paciente deixou de ser "da empresa" e virou uma identidade
+# GLOBAL única por CPF (ver Paciente em app/models.py - empresa_id/
+# clinica_id agora são só campos legados/de exibição; a associação real
+# com cada clínica é por GrupoPaciente, ver app/models.py e
+# migrar_paciente_para_grupo.py). O índice antigo por-empresa
+# (uq_empresa_cpf) não impedia duplicidade nenhuma pra cadastros globais
+# (empresa_id NULL não colide consigo mesmo num índice único), então sai
+# de cena - substituído pelo índice único por CPF sozinho.
+conn.execute("DROP INDEX IF EXISTS uq_empresa_cpf")
+_remover_constraint_unica(conn, "pacientes", "cpf")
+
+# Mesmo padrão de cautela do índice antigo: só cria a unicidade nova se a
+# base já não tiver o mesmo CPF em cadastros (Paciente) diferentes - o que
+# é esperado em toda base que ainda não rodou migrar_paciente_para_grupo.py
+# (o script que deduplica por CPF, reaponta agendamentos/perguntas/chat pro
+# cadastro sobrevivente e cria os GrupoPaciente que faltarem). Enquanto
+# isso não roda, a checagem de unicidade fica só na aplicação (ver
+# medico.pacientes_novo/pacientes_importar) e o deploy segue normalmente.
+duplicados_cpf = conn.execute(
+    "SELECT cpf, COUNT(*) FROM pacientes GROUP BY cpf HAVING COUNT(*) > 1"
 ).fetchall()
-if duplicados:
+if duplicados_cpf:
     print(
-        f"AVISO: {len(duplicados)} CPF(s) aparecem em mais de um cadastro na mesma empresa "
-        "(paciente repetido entre filiais, do modelo antigo). O índice único uq_empresa_cpf "
-        "NÃO foi criado - unifique esses cadastros e rode a migração de novo."
+        f"AVISO: {len(duplicados_cpf)} CPF(s) aparecem em mais de um cadastro de paciente "
+        "(modelo antigo, por empresa). O índice único uq_pacientes_cpf NÃO foi criado - rode "
+        "migrar_paciente_para_grupo.py para unificar esses cadastros e rode a migração de novo."
     )
 else:
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_empresa_cpf ON pacientes (empresa_id, cpf)")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_pacientes_cpf ON pacientes (cpf)")
 
 # O código de auto-cadastro da empresa é único (em bases novas o
 # db.create_all() já cria isso pelo unique=True do modelo - aqui é para as

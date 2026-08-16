@@ -825,23 +825,25 @@ class GrupoPaciente(db.Model):
 
 class Paciente(db.Model):
     __tablename__ = "pacientes"
-    __table_args__ = (db.UniqueConstraint("empresa_id", "cpf", name="uq_empresa_cpf"),)
+    # Fatia 5: o paciente é uma identidade ÚNICA E GLOBAL na plataforma -
+    # um cadastro (Paciente) por CPF, ponto. A associação com cada
+    # clínica/grupo de trabalho é feita por GrupoPaciente (ver a classe
+    # acima), não mais por empresa_id/clinica_id nesta tabela.
+    __table_args__ = (db.UniqueConstraint("cpf", name="uq_pacientes_cpf"),)
 
     id = db.Column(db.Integer, primary_key=True)
-    # O paciente pertence à EMPRESA, não a uma filial - "o cliente é só
-    # cliente". A filial só entra em cena na hora de marcar a consulta:
-    # cada Agendamento tem sua própria clinica_id (a filial escolhida
-    # naquele agendamento), escolhida pela equipe (medico.agenda_novo).
+    # LEGADO (Fatia 4/5): antes o paciente era amarrado a uma filial e
+    # depois a uma empresa no cadastro. Os dois campos ficam só para dados
+    # históricos/exibição em registros antigos - código novo não deve ler
+    # nem gravar empresa_id/clinica_id em pacientes; a associação real com
+    # uma clínica/grupo é sempre via GrupoPaciente (ver
+    # medico._filtro_pacientes_da_empresa e migrar_paciente_para_grupo.py).
     empresa_id = db.Column(db.Integer, db.ForeignKey("empresas.id"), nullable=True)
-    # LEGADO: antes o paciente era amarrado a uma filial no cadastro. O
-    # campo fica só para dados históricos (a migração copia
-    # clinicas.empresa_id para empresa_id) - código novo não deve ler nem
-    # gravar clinica_id em pacientes.
     clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
-    # NÃO é mais unique: com a CONTA ÚNICA do paciente, a mesma conta
-    # (Usuario) tem um cadastro (Paciente) por empresa que a pessoa
-    # frequenta - a unicidade que vale é (empresa_id, cpf), acima. Ver
-    # encontrar_conta_paciente e a migração que remove a constraint em
+    # NÃO é mais unique por si só: com a CONTA ÚNICA do paciente, a mesma
+    # conta (Usuario) pode ter agendamentos em várias clínicas/grupos - a
+    # unicidade que vale agora é só o CPF (acima), globalmente. Ver
+    # encontrar_conta_paciente e a migração que troca a constraint em
     # bases antigas (migrar_banco.py).
     usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"))
     nome = db.Column(db.String(150), nullable=False)

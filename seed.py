@@ -18,7 +18,7 @@ from app import create_app
 from app.extensions import db
 from app.db_utils import resetar_banco
 from app.models import (
-    Usuario, Empresa, Clinica, ClinicaMembro, Paciente,
+    Usuario, Empresa, Clinica, ClinicaMembro, Paciente, GrupoPaciente,
     Exame, PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento,
     Agendamento, FaqItem, normalizar_telefone,
@@ -369,6 +369,15 @@ with app.app_context():
         email="pedro@paciente.com",
     )
     db.session.add(pedro)
+    db.session.commit()
+
+    # Fatia 5: paciente é uma identidade global - a visibilidade "é
+    # paciente desta empresa" (medico._filtro_pacientes_da_empresa) passa
+    # a vir de GrupoPaciente, não mais do campo Paciente.empresa_id acima
+    # (que continua sendo escrito só como dado legado/de exibição).
+    db.session.add(GrupoPaciente(grupo_id=clinica_vitoria.grupo_pareado().id, paciente_id=joao.id))
+    db.session.add(GrupoPaciente(grupo_id=clinica_sp.grupo_pareado().id, paciente_id=maria.id))
+    db.session.add(GrupoPaciente(grupo_id=clinica_vitoria.grupo_pareado().id, paciente_id=pedro.id))
     db.session.commit()
 
     # --- Agendamentos (cada um tem um médico responsável, herdado do exame) ---

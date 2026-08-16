@@ -17,7 +17,7 @@ from sqlalchemy import or_, and_, func
 from app.extensions import db
 from app.models import (
     Paciente, Usuario, Exame, Agendamento, FaqItem, Empresa,
-    PerguntaPendente, ClinicaMembro, Clinica,
+    PerguntaPendente, ClinicaMembro, Clinica, GrupoPaciente,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame,
@@ -138,18 +138,42 @@ def _grupos_da_empresa_ids():
 
 
 def _filtro_pacientes_da_empresa():
-    """Filtro SQLAlchemy para "pacientes da EMPRESA atual". O paciente
-    pertence à empresa, não a uma filial ("o cliente é só cliente" - a
-    filial só é escolhida na hora de marcar cada consulta, ver
-    Agendamento.clinica_id). Cobre também cadastros antigos, de antes
-    dessa mudança, que só têm a filial legada (Paciente.clinica_id) e
-    ainda não passaram pela migração que preenche empresa_id."""
+    """Filtro SQLAlchemy para "pacientes da EMPRESA atual". Fatia 5: o
+    paciente passou a ser uma identidade global (ver Paciente em
+    app/models.py) e a associação canônica com a empresa é por
+    GrupoPaciente, no(s) Grupo(s) pareado(s) das filiais dela. Mas,
+    seguindo o mesmo padrão aditivo das fatias anteriores (dual-write/
+    bridge, nunca troca destrutiva), o filtro também cobre cadastros
+    legados que só têm Paciente.empresa_id/clinica_id preenchido e ainda
+    não passaram por medico._associar_paciente_a_empresa ou por
+    migrar_paciente_para_grupo.py - sem isso, esses cadastros
+    desapareceriam das listas até a migração rodar."""
     empresa = empresa_atual()
+    grupo_ids = _grupos_da_empresa_ids()
     filiais_da_empresa = db.session.query(Clinica.id).filter(Clinica.empresa_id == empresa.id)
+    paciente_ids_do_grupo = db.session.query(GrupoPaciente.paciente_id).filter(
+        GrupoPaciente.grupo_id.in_(grupo_ids or [0])
+    )
     return or_(
+        Paciente.id.in_(paciente_ids_do_grupo),
         Paciente.empresa_id == empresa.id,
         Paciente.clinica_id.in_(filiais_da_empresa),
     )
+
+
+def _associar_paciente_a_empresa(paciente, empresa):
+    """Cria os GrupoPaciente que faltarem para que este paciente passe a
+    ser visto por todas as filiais da empresa - equivalente ao antigo
+    "paciente é da empresa" (Paciente.empresa_id), agora feito via
+    associação em vez de campo direto na tabela (ver
+    _filtro_pacientes_da_empresa acima)."""
+    criados = 0
+    for clinica in Clinica.query.filter_by(empresa_id=empresa.id).all():
+        grupo = clinica.grupo_pareado()
+        if not GrupoPaciente.query.filter_by(grupo_id=grupo.id, paciente_id=paciente.id).first():
+            db.session.add(GrupoPaciente(grupo_id=grupo.id, paciente_id=paciente.id))
+            criados += 1
+    return criados
 
 
 def _gerar_codigo_cadastro_paciente():
@@ -629,9 +653,7 @@ def pacientes_novo():
         busca_feita = True
         encontrado = _buscar_paciente_por_cpf_plataforma(cpf_busca)
         if encontrado and Paciente.query.filter(
-            _filtro_pacientes_da_empresa(), Paciente.id.in_(
-                [pp.id for pp in Paciente.query.filter(Paciente.cpf == encontrado.cpf).all()]
-            )
+            _filtro_pacientes_da_empresa(), Paciente.id == encontrado.id
         ).first():
             flash(f"{encontrado.nome} já é paciente desta empresa.", "warning")
             return redirect(url_for("medico.pacientes_lista"))
@@ -711,8 +733,21 @@ def pacientes_novo():
             flash("Já existe um paciente com esse e-mail nesta empresa.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
-        if Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.cpf == cpf).first():
-            flash("Já existe um paciente com esse CPF nesta empresa.", "danger")
+        # Fatia 5: o cadastro (Paciente) é único e GLOBAL por CPF - não dá
+        # mais para criar um cadastro novo se o CPF já existe em QUALQUER
+        # empresa (violaria a unicidade do banco). Se já existe cadastro
+        # com este CPF, a secretária precisa usar "Buscar por CPF"/
+        # medico.pacientes_importar em vez de preencher o form de novo.
+        existente_global = _buscar_paciente_por_cpf_plataforma(cpf)
+        if existente_global:
+            if Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.id == existente_global.id).first():
+                flash("Já existe um paciente com esse CPF nesta empresa.", "danger")
+            else:
+                flash(
+                    f"{existente_global.nome} já tem cadastro na plataforma (outra clínica) — use "
+                    "\"Buscar por CPF\" no topo desta página para importá-lo.",
+                    "warning",
+                )
             return render_template("medico/pacientes_form.html", paciente=None)
 
         # Paciente não usa e-mail/senha para entrar — o acesso é feito
@@ -727,8 +762,12 @@ def pacientes_novo():
             db.session.add(usuario)
             db.session.flush()
 
+        # Fatia 5: cadastro GLOBAL (sem empresa_id) - a visibilidade para
+        # esta empresa (e suas filiais) é dada pela associação
+        # GrupoPaciente, criada logo abaixo, não mais por um campo direto
+        # na tabela Paciente.
         paciente = Paciente(
-            empresa_id=empresa.id,
+            empresa_id=None,
             usuario_id=usuario.id,
             nome=nome,
             cpf=cpf,
@@ -738,6 +777,8 @@ def pacientes_novo():
         )
         _preencher_endereco_emergencia(paciente, request.form)
         db.session.add(paciente)
+        db.session.flush()
+        _associar_paciente_a_empresa(paciente, empresa)
         db.session.commit()
 
         flash(
@@ -758,47 +799,30 @@ def pacientes_novo():
 @staff_required
 @permissao_required("perm_pacientes")
 def pacientes_importar():
-    """Importa pra ESTA empresa um paciente que já existe na plataforma
+    """Associa a ESTA empresa um paciente que já existe na plataforma
     (cadastro global ou de outra clínica), achado pelo CPF em
-    pacientes_novo. Cria o cadastro (Paciente) desta empresa copiando os
-    dados do cadastro mais recente - a conta de login é a MESMA (conta
-    única), então o paciente passa a ver esta clínica no app dele. Os
-    dados clínicos de outras clínicas NÃO vêm junto (cada clínica só vê
-    o que é dela)."""
+    pacientes_novo. Fatia 5: o cadastro (Paciente) é único e global - não
+    cria uma cópia, só uma associação (GrupoPaciente) nova, então os dados
+    de contato/endereço e o histórico em outras clínicas continuam sendo
+    exatamente o mesmo cadastro (cada clínica ainda só vê os próprios
+    agendamentos/perguntas, isso não muda)."""
     empresa = empresa_atual()
     origem = _buscar_paciente_por_cpf_plataforma(request.form.get("cpf", ""))
     if not origem:
         flash("CPF não encontrado na plataforma.", "danger")
         return redirect(url_for("medico.pacientes_novo"))
 
-    ja_daqui = Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.cpf == origem.cpf).first()
+    ja_daqui = Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.id == origem.id).first()
     if ja_daqui:
         flash(f"{origem.nome} já é paciente desta empresa.", "warning")
         return redirect(url_for("medico.pacientes_lista"))
 
-    novo = Paciente(
-        empresa_id=empresa.id,
-        usuario_id=origem.usuario_id,
-        nome=origem.nome,
-        cpf=origem.cpf,
-        data_nascimento=origem.data_nascimento,
-        email=origem.email,
-        telefone=origem.telefone,
-        # Importado pela própria equipe = aceito por definição (não passa
-        # pela fila de "cadastros pendentes").
-        status_cadastro="aprovado",
-        cep=origem.cep, rua=origem.rua, numero=origem.numero,
-        complemento=origem.complemento, bairro=origem.bairro,
-        cidade=origem.cidade, uf=origem.uf,
-        contato_emergencia_nome=origem.contato_emergencia_nome,
-        contato_emergencia_telefone=origem.contato_emergencia_telefone,
-    )
-    db.session.add(novo)
+    _associar_paciente_a_empresa(origem, empresa)
     db.session.commit()
     flash(
-        f"{origem.nome} foi importado(a) da plataforma para esta empresa - dados de contato e "
-        "endereço vieram junto; o histórico dele(a) em outras clínicas continua lá (cada clínica "
-        "vê só o que é dela).",
+        f"{origem.nome} foi importado(a) da plataforma para esta empresa - o cadastro (contato/"
+        "endereço) é o mesmo de sempre; o histórico dele(a) em outras clínicas continua lá (cada "
+        "clínica vê só o que é dela).",
         "success",
     )
     return redirect(url_for("medico.pacientes_lista"))

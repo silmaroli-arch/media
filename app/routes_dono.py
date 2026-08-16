@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Empresa, ClinicaMembro, Paciente, Agendamento, PlataformaConfig
+from app.models import Empresa, ClinicaMembro, Agendamento, PlataformaConfig, GrupoPaciente
 from app.clinica_utils import verificar_vencimento_empresa
 
 dono_bp = Blueprint("dono", __name__, url_prefix="/dono")
@@ -72,11 +72,16 @@ def empresa_detalhe(empresa_id):
     verificar_vencimento_empresa(empresa)
 
     filial_ids = [f.id for f in empresa.filiais]
-    # Pacientes são da EMPRESA (Paciente.empresa_id); a comparação com a
-    # filial legada cobre cadastros de antes dessa mudança.
-    total_pacientes = Paciente.query.filter(
-        (Paciente.empresa_id == empresa.id) | (Paciente.clinica_id.in_(filial_ids or [0]))
-    ).count()
+    # Fatia 5: paciente é uma identidade global (ver Paciente em
+    # app/models.py) - a contagem "desta empresa" passa a ser por
+    # GrupoPaciente, nos Grupos pareados das filiais dela.
+    grupo_ids = [f.grupo_pareado().id for f in empresa.filiais]
+    total_pacientes = (
+        db.session.query(GrupoPaciente.paciente_id)
+        .filter(GrupoPaciente.grupo_id.in_(grupo_ids or [0]))
+        .distinct()
+        .count()
+    )
     total_agendamentos = Agendamento.query.filter(Agendamento.clinica_id.in_(filial_ids)).count() if filial_ids else 0
     membros_por_filial = {
         f.id: ClinicaMembro.query.filter_by(clinica_id=f.id).all() for f in empresa.filiais
