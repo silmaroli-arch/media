@@ -113,27 +113,16 @@ def _grupos_da_empresa_ids():
 def _filtro_pacientes_da_empresa():
     """Filtro SQLAlchemy para "pacientes do Grupo (tenant) atual". Fatia 5:
     o paciente é uma identidade global (ver Paciente em app/models.py) e a
-    associação canônica é por GrupoPaciente. Cobre também cadastros
-    legados que só têm Paciente.empresa_id/clinica_id preenchido (dado o
-    modelo antigo de Empresa/Clinica, ainda não apagado do banco) e ainda
-    não passaram por medico._associar_paciente_a_empresa ou por
-    migrar_paciente_para_grupo.py - usa a Clinica pareada a este Grupo (se
-    houver - ver Grupo.clinica_pareada) para comparar com o
-    empresa_id/clinica_id ANTIGO de verdade, nunca com o id do Grupo (são
-    espaços de id diferentes - comparar direto seria um bug de isolamento
-    entre tenants)."""
-    grupo = empresa_atual()
+    associação canônica é 100% por GrupoPaciente - Empresa/Clinica não
+    existem mais, então não há mais um fallback legado de
+    Paciente.empresa_id/clinica_id pra cobrir aqui (cadastros antigos já
+    foram migrados por migrar_paciente_para_grupo.py, que criou o
+    GrupoPaciente que faltava pra cada um)."""
     grupo_ids = _grupos_da_empresa_ids()
     paciente_ids_do_grupo = db.session.query(GrupoPaciente.paciente_id).filter(
         GrupoPaciente.grupo_id.in_(grupo_ids or [0])
     )
-    condicoes = [Paciente.id.in_(paciente_ids_do_grupo)]
-    clinica_pareada = grupo.clinica_pareada if grupo else None
-    if clinica_pareada:
-        condicoes.append(Paciente.clinica_id == clinica_pareada.id)
-        if clinica_pareada.empresa_id:
-            condicoes.append(Paciente.empresa_id == clinica_pareada.empresa_id)
-    return or_(*condicoes)
+    return Paciente.id.in_(paciente_ids_do_grupo)
 
 
 def _associar_paciente_a_empresa(paciente, empresa):
@@ -932,7 +921,6 @@ def exames_novo():
         # local de atendimento, em "Exames por filial" (mesmo esquema que já
         # vale pra médico e pra associar o exame a mais de uma filial).
         exame = Exame(
-            clinica_id=filial.clinica_pareada.id if filial.clinica_pareada else None,
             grupo_id=filial.id,
             medico_id=medico_id, nome=nome, descricao=descricao,
             preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos,
@@ -1574,7 +1562,6 @@ def preparo_modelos_novo():
             return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
         modelo = PreparoModelo(
-            clinica_id=filial.clinica_pareada.id if filial.clinica_pareada else None,
             grupo_id=filial.id,
             nome=nome, instrucoes=instrucoes,
             observacoes_medicamentos=observacoes_medicamentos or None,
@@ -1849,7 +1836,6 @@ def agenda_novo():
             return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
 
         agendamento = Agendamento(
-            clinica_id=filial.clinica_pareada.id if filial.clinica_pareada else None,
             grupo_id=filial.id,
             paciente_id=paciente.id,
             exame_id=exame.id,
@@ -2263,7 +2249,6 @@ def faq_novo():
             return render_template("medico/faq_form.html", exames=exames)
 
         item = FaqItem(
-            clinica_id=filial.clinica_pareada.id if filial.clinica_pareada else None,
             grupo_id=filial.id,
             exame_id=exame_id,
             pergunta=pergunta,

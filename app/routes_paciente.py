@@ -10,7 +10,7 @@ from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, Grupo, GrupoPaciente, normalizar_telefone, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, GrupoPaciente, normalizar_telefone, formatar_nome_proprio, cep_incompleto, telefone_incompleto
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.ia_preparo import responder_com_ia
 from app.clinica_utils import verificar_vencimento_grupo
@@ -23,11 +23,7 @@ def _resolver_ancora(paciente, exame=None, agendamento=None):
     questão, senão o do exame em questão, senão o do agendamento mais
     recente do paciente, senão a primeira associação (GrupoPaciente) do
     próprio paciente. É só um endereçamento para a equipe certa ver a
-    pergunta - não é um vínculo de acesso do paciente.
-
-    Retorna (grupo_id, clinica_id) - clinica_id é só o espelho legado
-    (Grupo.clinica_pareada), mantido pra quem ainda lê esse campo direto
-    em telas antigas; não é mais usado pra controle de acesso."""
+    pergunta - não é um vínculo de acesso do paciente."""
     grupo_id = None
     if agendamento is not None:
         grupo_id = agendamento.grupo_id
@@ -47,12 +43,7 @@ def _resolver_ancora(paciente, exame=None, agendamento=None):
         if grupos:
             grupo_id = grupos[0].id
 
-    clinica_id = None
-    if grupo_id:
-        grupo = Grupo.query.get(grupo_id)
-        if grupo and grupo.clinica_pareada:
-            clinica_id = grupo.clinica_pareada.id
-    return grupo_id, clinica_id
+    return grupo_id
 
 
 def _meus_cadastros_ids():
@@ -245,12 +236,11 @@ def chat():
             # pergunta continua sendo encaminhada à IA de novo, mesmo que
             # pareça repetida — não há atalho pela FAQ aqui.
             resultado_ia = responder_com_ia(pergunta_enviada, exame_selecionado) if exame_selecionado else None
-            grupo_id_ancora, clinica_id_ancora = _resolver_ancora(paciente, exame_selecionado, agendamento_selecionado)
+            grupo_id_ancora = _resolver_ancora(paciente, exame_selecionado, agendamento_selecionado)
 
             if resultado_ia and resultado_ia["final"]:
                 origem = "ia_aguardando"
                 pendente = PerguntaPendente(
-                    clinica_id=clinica_id_ancora,
                     grupo_id=grupo_id_ancora,
                     paciente_id=paciente.id,
                     exame_id=exame_selecionado.id,
@@ -296,7 +286,6 @@ def chat():
                     origem = "medicamento"
                 else:
                     pendente = PerguntaPendente(
-                        clinica_id=clinica_id_ancora,
                         grupo_id=grupo_id_ancora,
                         paciente_id=paciente.id,
                         exame_id=exame_id_selecionado,

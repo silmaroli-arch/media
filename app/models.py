@@ -16,176 +16,6 @@ def normalizar_telefone(telefone):
     return digitos or None
 
 
-class Empresa(db.Model):
-    """Uma empresa cadastrada na plataforma. Uma empresa pode ter uma ou
-    mais filiais (Clinica) — ex.: uma rede de clínicas com várias unidades.
-    O controle de pagamento/trial/bloqueio é feito no nível da EMPRESA:
-    bloquear a empresa bloqueia o acesso de todas as suas filiais de uma vez.
-    """
-    __tablename__ = "empresas"
-
-    id = db.Column(db.Integer, primary_key=True)
-    nome = db.Column(db.String(150), nullable=False)
-    cnpj = db.Column(db.String(20))
-    email_contato = db.Column(db.String(150))
-    telefone = db.Column(db.String(30))
-
-    # status: 'trial', 'ativa', 'inadimplente', 'bloqueada'
-    status = db.Column(db.String(20), nullable=False, default="trial")
-    data_vencimento = db.Column(db.Date)
-    observacoes_pagamento = db.Column(db.Text)
-
-    # Cobrança: valor mensal por médico vinculado a qualquer filial desta
-    # empresa (cada médico conta uma única vez, mesmo atuando em mais de
-    # uma filial da mesma empresa). Negociado individualmente por empresa.
-    # O controle de cobrança continua manual — isso só ajuda o dono a saber
-    # quanto cobrar; não existe emissão automática de fatura.
-    valor_por_medico = db.Column(db.Numeric(10, 2))
-
-    # Código público do link de auto-cadastro de paciente (ver
-    # auth.cadastro_paciente). O paciente é da EMPRESA, então o link
-    # também é - um só por empresa, mostrado no Painel. (O campo homônimo
-    # em Clinica virou legado: links antigos por filial continuam
-    # funcionando, mas o cadastro resultante sempre entra na empresa.)
-    codigo_cadastro_paciente = db.Column(db.String(20), unique=True, nullable=True)
-
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
-
-    filiais = db.relationship("Clinica", back_populates="empresa", cascade="all, delete-orphan")
-
-    @property
-    def bloqueada(self):
-        return self.status == "bloqueada"
-
-    @property
-    def medicos_distintos(self):
-        """Usuários médicos distintos vinculados (vínculo ativo) a qualquer
-        filial desta empresa — usado para calcular a cobrança mensal."""
-        vistos = {}
-        for filial in self.filiais:
-            for m in filial.medicos_e_secretarias:
-                if m.tipo == "medico":
-                    vistos[m.id] = m
-        return list(vistos.values())
-
-    @property
-    def valor_mensal_estimado(self):
-        if self.valor_por_medico is None:
-            return None
-        return self.valor_por_medico * len(self.medicos_distintos)
-
-    def verificar_vencimento_trial(self):
-        """Se a empresa está em trial e a data de vencimento já passou,
-        marca automaticamente como 'inadimplente' (não bloqueia por conta
-        própria — quem decide bloquear de fato é o dono da plataforma, no
-        painel dele). Não faz commit; quem chamar decide quando salvar.
-        Retorna True se o status foi alterado."""
-        if self.status == "trial" and self.data_vencimento and self.data_vencimento < date.today():
-            self.status = "inadimplente"
-            return True
-        return False
-
-
-class Clinica(db.Model):
-    """Uma filial de uma empresa cadastrada na plataforma. Pacientes,
-    exames, agenda e perguntas continuam isolados por filial — só o
-    controle de pagamento/bloqueio é feito no nível da empresa."""
-    __tablename__ = "clinicas"
-
-    id = db.Column(db.Integer, primary_key=True)
-    empresa_id = db.Column(db.Integer, db.ForeignKey("empresas.id"), nullable=False)
-    nome = db.Column(db.String(150), nullable=False)
-    razao_social = db.Column(db.String(200))
-    cnpj = db.Column(db.String(20))
-    email_contato = db.Column(db.String(150))
-    telefone = db.Column(db.String(30))
-    logo_url = db.Column(db.String(300))
-
-    # Endereço — usado tanto para exibição quanto como base para a nota fiscal.
-    cep = db.Column(db.String(10))
-    rua = db.Column(db.String(200))
-    numero = db.Column(db.String(20))
-    complemento = db.Column(db.String(100))
-    bairro = db.Column(db.String(100))
-    cidade = db.Column(db.String(100))
-    uf = db.Column(db.String(2))
-
-    # Dados fiscais — guardados para uma futura emissão de nota fiscal ao
-    # cliente/paciente. Por ora só armazenamos os dados; a emissão real
-    # (integração com a SEFAZ, certificado digital etc.) não está implementada.
-    inscricao_estadual = db.Column(db.String(30))
-    regime_tributario = db.Column(db.String(50))
-    cnae = db.Column(db.String(20))
-    codigo_ibge_municipio = db.Column(db.String(10))
-
-    # Código público usado no link de auto-cadastro do paciente pelo
-    # app (ver auth.cadastro_paciente) — cada filial tem o seu, gerado
-    # sob demanda na tela "Dados Cadastrais" (ver
-    # medico.clinica_configuracoes / _gerar_codigo_cadastro_paciente).
-    codigo_cadastro_paciente = db.Column(db.String(20), unique=True, nullable=True)
-
-    # Emissão fiscal (NFS-e Nacional — ADN/Serpro) — ver app/cripto_fiscal.py
-    # para a criptografia da senha do certificado e do token do provedor.
-    # Nenhum dos dois é guardado em texto puro. NFS-e (serviço, ISS
-    # municipal) é o padrão correto para exames médicos — NFC-e é venda de
-    # produto (ICMS estadual) e não se aplica aqui.
-    fiscal_ambiente = db.Column(db.String(20), nullable=False, default="homologacao")
-    fiscal_modo_simulacao = db.Column(db.Boolean, nullable=False, default=False)
-    fiscal_simular_falha_conexao = db.Column(db.Boolean, nullable=False, default=False)
-
-    fiscal_certificado_pfx = db.Column(db.LargeBinary)
-    fiscal_certificado_senha_cripto = db.Column(db.LargeBinary)
-    fiscal_certificado_cnpj = db.Column(db.String(20))
-    fiscal_certificado_validade = db.Column(db.Date)
-
-    fiscal_provedor_emissao = db.Column(db.String(50), nullable=False, default="nenhum")
-    fiscal_provedor_token_cripto = db.Column(db.LargeBinary)
-
-    # Dados específicos da NFS-e (nota fiscal de serviço eletrônica).
-    fiscal_inscricao_municipal = db.Column(db.String(30))
-    fiscal_codigo_servico = db.Column(db.String(20))
-    fiscal_aliquota_iss = db.Column(db.Numeric(5, 2))
-    fiscal_rps_serie = db.Column(db.String(10))
-    fiscal_rps_proximo_numero = db.Column(db.Integer)
-
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
-
-    # Grupo pareado (Fatia 4 da migração para Grupo) — âncora técnica que dá
-    # a esta filial legada um grupo_id real para Exame/PreparoModelo/
-    # Agendamento/PerguntaPendente/FaqItem, sem expor nenhuma tela de Grupo
-    # para quem usa o modelo antigo. Use sempre grupo_pareado(), não o id
-    # direto, pra garantir o pareamento lazy.
-    grupo_pareado_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True, unique=True)
-    grupo_pareado_rel = db.relationship("Grupo", foreign_keys=[grupo_pareado_id])
-
-    empresa = db.relationship("Empresa", back_populates="filiais")
-    membros = db.relationship("ClinicaMembro", back_populates="clinica", cascade="all, delete-orphan")
-    pacientes = db.relationship("Paciente", back_populates="clinica", cascade="all, delete-orphan")
-    exames = db.relationship("Exame", back_populates="clinica", cascade="all, delete-orphan")
-
-    @property
-    def bloqueada(self):
-        """O bloqueio é sempre decidido no nível da empresa."""
-        return self.empresa.bloqueada
-
-    @property
-    def medicos_e_secretarias(self):
-        return [m.usuario for m in self.membros if m.ativo]
-
-    def grupo_pareado(self):
-        """Cria (na primeira vez) e devolve o Grupo pareado a esta filial."""
-        from app.grupo_pareamento import sincronizar_grupo_membro_pareado
-
-        if self.grupo_pareado_id:
-            return self.grupo_pareado_rel
-        grupo = Grupo(nome=self.nome)
-        db.session.add(grupo)
-        db.session.flush()
-        self.grupo_pareado_id = grupo.id
-        sincronizar_grupo_membro_pareado(self)
-        return grupo
-
-
 class PlataformaConfig(db.Model):
     """Configurações globais da plataforma, controladas pelo dono.
     Sempre existe (no máximo) uma única linha nesta tabela — use
@@ -204,39 +34,6 @@ class PlataformaConfig(db.Model):
             db.session.add(config)
             db.session.commit()
         return config
-
-
-class ClinicaMembro(db.Model):
-    """Vínculo entre um usuário da equipe (médico/secretária) e uma clínica.
-    Um mesmo usuário pode estar vinculado a várias clínicas."""
-    __tablename__ = "clinica_membros"
-    __table_args__ = (db.UniqueConstraint("clinica_id", "usuario_id", name="uq_clinica_usuario"),)
-
-    id = db.Column(db.Integer, primary_key=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
-    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
-    ativo = db.Column(db.Boolean, default=True)
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
-    # Vínculo nunca é APAGADO - é ENCERRADO (ativo=False + encerrado_em):
-    # o histórico de "quem atendeu onde, de quando a quando" é permanente,
-    # e uma revinculação futura REATIVA este mesmo registro (ver
-    # medico.convite_decidir/equipe_associar_filial), sem duplicar. Uma
-    # pessoa com o vínculo encerrado perde o acesso àquela clínica
-    # normalmente (todo o acesso passa por ativo=True, ver
-    # Usuario.clinicas_ativas), mas os agendamentos/registros feitos por
-    # ela continuam intactos.
-    encerrado_em = db.Column(db.DateTime, nullable=True)
-
-    clinica = db.relationship("Clinica", back_populates="membros")
-    usuario = db.relationship("Usuario", back_populates="vinculos_clinica")
-
-    def encerrar(self):
-        self.ativo = False
-        self.encerrado_em = datetime.utcnow()
-
-    def reativar(self):
-        self.ativo = True
-        self.encerrado_em = None
 
 
 class Usuario(db.Model, UserMixin):
@@ -292,21 +89,6 @@ class Usuario(db.Model, UserMixin):
     # criados não são afetados, só os futuros usos do código antigo.
     codigo_mestre = db.Column(db.String(20), unique=True, nullable=True)
 
-    # Empresa que esta pessoa CRIOU no cadastro público (auth.cadastro,
-    # modo "empresa"), usado só como âncora ANTES de ela ter qualquer
-    # filial/ClinicaMembro - o cadastro público não cria mais a primeira
-    # filial automaticamente (isso agora é feito depois, ao entrar no
-    # app, em "Meus Locais de Atendimento"), então por um tempinho a
-    # pessoa não tem nenhum vínculo de filial ainda. Sem esta âncora,
-    # empresa_atual() (ver app/clinica_utils.py) não teria como saber a
-    # qual empresa ela pertence, e ela cairia fora do sistema até
-    # cadastrar o primeiro local. Uma vez que a primeira filial é
-    # cadastrada (com o ClinicaMembro correspondente), o vínculo normal
-    # passa a resolver tudo e este campo vira só um resquício histórico -
-    # não precisa ser limpo.
-    empresa_fundadora_id = db.Column(db.Integer, db.ForeignKey("empresas.id"), nullable=True)
-    empresa_fundadora = db.relationship("Empresa", foreign_keys=[empresa_fundadora_id])
-
     # Permissões administrativas (só fazem sentido para médico/secretária).
     # Como nem toda clínica tem uma secretária, essas permissões não são
     # amarradas ao papel ('tipo') — quem administra a equipe decide quais
@@ -347,7 +129,6 @@ class Usuario(db.Model, UserMixin):
     pacientes = db.relationship(
         "Paciente", back_populates="usuario", order_by="Paciente.id"
     )
-    vinculos_clinica = db.relationship("ClinicaMembro", back_populates="usuario", cascade="all, delete-orphan")
     # Exames e agendamentos pelos quais este usuário é o médico responsável
     # (só se aplica quando tipo == 'medico').
     exames_medico = db.relationship("Exame", back_populates="medico", foreign_keys="Exame.medico_id")
@@ -414,15 +195,6 @@ class Usuario(db.Model, UserMixin):
     @property
     def is_dono(self):
         return self.tipo == "dono"
-
-    @property
-    def clinicas_ativas(self):
-        """Clínicas às quais este usuário está vinculado (vínculo ativo) e
-        que não estão bloqueadas pelo dono da plataforma."""
-        return [
-            v.clinica for v in self.vinculos_clinica
-            if v.ativo and not v.clinica.bloqueada
-        ]
 
 
 def formatar_nome_proprio(nome):
@@ -505,21 +277,6 @@ def validar_cnpj(cnpj):
     return dv2 == digitos[13]
 
 
-def encontrar_clinica_por_cnpj(cnpj):
-    """Procura uma Clinica já cadastrada na plataforma com o mesmo CNPJ,
-    comparando só os dígitos (o campo pode ter sido salvo com ou sem
-    pontuação). Usado no cadastro público: se duas pessoas da mesma
-    clínica se cadastram sem uma saber da outra, a segunda encontra a
-    clínica já existente pelo CNPJ em vez de criar uma empresa duplicada."""
-    digitos = re.sub(r"\D", "", cnpj or "")
-    if not digitos:
-        return None
-    for clinica in Clinica.query.filter(Clinica.cnpj.isnot(None)).all():
-        if re.sub(r"\D", "", clinica.cnpj or "") == digitos:
-            return clinica
-    return None
-
-
 def cep_incompleto(cep):
     """True se o CEP foi digitado mas ficou incompleto (nem todos os 8
     dígitos) - sem isso, o cadastro deixava salvar um CEP pela metade
@@ -579,34 +336,6 @@ def gerar_codigo_mestre_medico():
     # Espaço de ~28 milhões de códigos - na prática nunca chega aqui; o
     # fallback só garante que a função sempre devolve algo único.
     return "MED-" + secrets.token_hex(5).upper()
-
-
-class ConviteVinculo(db.Model):
-    """Convite de uma CLÍNICA (filial) para um MÉDICO passar a atender lá,
-    criado quando a equipe digita o código mestre do médico (ver
-    Usuario.codigo_mestre) em "Vincular médico por código". O vínculo
-    (ClinicaMembro) só nasce quando o MÉDICO aceita o convite no painel
-    dele - consentimento nas duas pontas: saber o código de alguém não
-    basta pra vinculá-lo (e pra clínica ter a agenda dele gerida pelas
-    secretárias) sem que ele concorde."""
-    __tablename__ = "convites_vinculo"
-
-    id = db.Column(db.Integer, primary_key=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
-    medico_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
-    # Quem criou o convite (alguém da equipe com perm_equipe) - fica no
-    # histórico pra auditoria ("quem convidou o Dr. Bruno?").
-    criado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
-    # status: 'pendente' (aguardando o médico), 'aceito', 'recusado',
-    # 'cancelado' (a clínica desistiu antes do médico decidir). Convites
-    # nunca são apagados - são o histórico de como cada vínculo nasceu.
-    status = db.Column(db.String(20), nullable=False, default="pendente")
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
-    decidido_em = db.Column(db.DateTime, nullable=True)
-
-    clinica = db.relationship("Clinica", foreign_keys=[clinica_id])
-    medico = db.relationship("Usuario", foreign_keys=[medico_id])
-    criado_por = db.relationship("Usuario", foreign_keys=[criado_por_id])
 
 
 class Grupo(db.Model):
@@ -740,13 +469,6 @@ class Grupo(db.Model):
                 return m
         return None
 
-    @property
-    def clinica_pareada(self):
-        """Fatia 4: busca reversa de Clinica.grupo_pareado() — só preenchida
-        quando este grupo é a âncora técnica de uma filial legada, não para
-        grupos criados de verdade em app/routes_grupo.py."""
-        return Clinica.query.filter_by(grupo_pareado_id=self.id).first()
-
     def paciente_pode_ser_removido(self, paciente_id):
         """BBP seção 7: um paciente sem nenhuma consulta agendada neste
         grupo pode ser removido normalmente; a partir da primeira consulta
@@ -840,14 +562,16 @@ class Paciente(db.Model):
     __table_args__ = (db.UniqueConstraint("cpf", name="uq_pacientes_cpf"),)
 
     id = db.Column(db.Integer, primary_key=True)
-    # LEGADO (Fatia 4/5): antes o paciente era amarrado a uma filial e
-    # depois a uma empresa no cadastro. Os dois campos ficam só para dados
-    # históricos/exibição em registros antigos - código novo não deve ler
-    # nem gravar empresa_id/clinica_id em pacientes; a associação real com
-    # uma clínica/grupo é sempre via GrupoPaciente (ver
-    # medico._filtro_pacientes_da_empresa e migrar_paciente_para_grupo.py).
-    empresa_id = db.Column(db.Integer, db.ForeignKey("empresas.id"), nullable=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
+    # LEGADO (Fatia 5): antes o paciente era amarrado a uma filial e depois
+    # a uma empresa no cadastro. As classes Empresa/Clinica foram removidas
+    # nesta fatia - os dois campos ficam só como dado histórico/de exibição
+    # em registros antigos, sem mais FK (as tabelas empresas/clinicas não
+    # existem mais) - código novo não deve ler nem gravar
+    # empresa_id/clinica_id em pacientes; a associação real com um grupo de
+    # trabalho é sempre via GrupoPaciente (ver medico._filtro_pacientes_da_empresa,
+    # Paciente.grupos abaixo, e migrar_paciente_para_grupo.py).
+    empresa_id = db.Column(db.Integer, nullable=True)
+    clinica_id = db.Column(db.Integer, nullable=True)
     # NÃO é mais unique por si só: com a CONTA ÚNICA do paciente, a mesma
     # conta (Usuario) pode ter agendamentos em várias clínicas/grupos - a
     # unicidade que vale agora é só o CPF (acima), globalmente. Ver
@@ -881,18 +605,14 @@ class Paciente(db.Model):
     # clínica aceitar) ou 'rejeitado'.
     status_cadastro = db.Column(db.String(20), nullable=False, default="aprovado")
 
-    empresa = db.relationship("Empresa", foreign_keys=[empresa_id])
-    clinica = db.relationship("Clinica", back_populates="pacientes")
+    usuario = db.relationship("Usuario", back_populates="pacientes")
 
     @property
-    def empresa_efetiva(self):
-        """Empresa do paciente, cobrindo também registros antigos que só
-        têm a filial legada (clinica_id) e ainda não passaram pela
-        migração que preenche empresa_id."""
-        if self.empresa is not None:
-            return self.empresa
-        return self.clinica.empresa if self.clinica else None
-    usuario = db.relationship("Usuario", back_populates="pacientes")
+    def grupos(self):
+        """Grupos de trabalho aos quais este cadastro está associado (ver
+        GrupoPaciente) - fonte de verdade da associação clínica/grupo desde
+        a Fatia 5 (Empresa/Clinica não existem mais)."""
+        return [gp.grupo for gp in GrupoPaciente.query.filter_by(paciente_id=self.id).all()]
     agendamentos = db.relationship("Agendamento", back_populates="paciente", cascade="all, delete-orphan")
     perguntas_pendentes = db.relationship("PerguntaPendente", back_populates="paciente", cascade="all, delete-orphan")
     mensagens_chat = db.relationship("ChatMensagem", back_populates="paciente", cascade="all, delete-orphan")
@@ -921,7 +641,7 @@ class Exame(db.Model):
     # escopo/isolamento a partir daqui. Toda escrita da aplicação continua
     # preenchendo os dois (ver Clinica.grupo_pareado()), então clinica_id
     # nunca fica desatualizado para os registros legados.
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
+    clinica_id = db.Column(db.Integer, nullable=True)
     grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True)
     # DONO do exame: quem criou o cadastro. Se foi um MÉDICO, o exame é
     # dele - só ele pode editar o cadastro, e só ele pode ser associado a
@@ -981,7 +701,6 @@ class Exame(db.Model):
     # quem vai acompanhar o paciente no dia (ver Agendamento.acompanhante_nome).
     precisa_acompanhante = db.Column(db.Boolean, nullable=False, default=False)
 
-    clinica = db.relationship("Clinica", back_populates="exames")
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     medico = db.relationship("Usuario", back_populates="exames_medico", foreign_keys=[medico_id])
     medicos_extra = db.relationship(
@@ -1070,7 +789,7 @@ class PreparoModelo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     # Fatia 4: clinica_id vira legado/exibição (nullable); grupo_id é a
     # chave real de escopo — ver mesmo comentário em Exame.clinica_id.
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
+    clinica_id = db.Column(db.Integer, nullable=True)
     grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True)
     # DONO do modelo: quem o criou. Se foi um MÉDICO, só ele edita/remove
     # (conteúdo clínico é do médico). NULL em modelos antigos - esses
@@ -1087,7 +806,6 @@ class PreparoModelo(db.Model):
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    clinica = db.relationship("Clinica")
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     exames = db.relationship("Exame", back_populates="preparo_modelo")
     cortes = db.relationship(
@@ -1288,7 +1006,7 @@ class Agendamento(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     # Fatia 4: clinica_id vira legado/exibição (nullable); grupo_id é a
     # chave real de escopo — ver mesmo comentário em Exame.clinica_id.
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
+    clinica_id = db.Column(db.Integer, nullable=True)
     grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True)
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=False)
@@ -1314,7 +1032,6 @@ class Agendamento(db.Model):
 
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
-    clinica = db.relationship("Clinica")
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     paciente = db.relationship("Paciente", back_populates="agendamentos")
     exame = db.relationship("Exame", back_populates="agendamentos")
@@ -1378,7 +1095,7 @@ class FaqItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     # Fatia 4: clinica_id vira legado/exibição (nullable); grupo_id é a
     # chave real de escopo — ver mesmo comentário em Exame.clinica_id.
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
+    clinica_id = db.Column(db.Integer, nullable=True)
     grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=True)  # None = pergunta geral
     pergunta = db.Column(db.Text, nullable=False)
@@ -1387,7 +1104,6 @@ class FaqItem(db.Model):
     vezes_utilizada = db.Column(db.Integer, default=0)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
-    clinica = db.relationship("Clinica")
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     exame = db.relationship("Exame", back_populates="faqs")
 
@@ -1398,7 +1114,7 @@ class PerguntaPendente(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     # Fatia 4: clinica_id vira legado/exibição (nullable); grupo_id é a
     # chave real de escopo — ver mesmo comentário em Exame.clinica_id.
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
+    clinica_id = db.Column(db.Integer, nullable=True)
     grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True)
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=True)
@@ -1426,7 +1142,6 @@ class PerguntaPendente(db.Model):
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     respondida_em = db.Column(db.DateTime)
 
-    clinica = db.relationship("Clinica")
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     paciente = db.relationship("Paciente", back_populates="perguntas_pendentes")
     exame = db.relationship("Exame")
@@ -1470,44 +1185,3 @@ def _preparo_dono_medico(self):
 
 PreparoModelo.pode_ser_editado_por = _preparo_pode_ser_editado_por
 PreparoModelo.dono_medico = property(_preparo_dono_medico)
-
-
-# ---------- Fatia 4: dual-write automático de grupo_id ----------
-# Rede de segurança do dual-write clinica_id/grupo_id (ver Decisão 2 do
-# plano da Fatia 4): toda escrita da aplicação já grava os dois campos
-# explicitamente nas rotas, mas fixtures de teste (e qualquer ponto que a
-# migração tenha esquecido) costumam só gravar clinica_id, do jeito que já
-# funcionava antes desta fatia. Este listener preenche grupo_id sozinho, a
-# partir de Clinica.grupo_pareado(), sempre que alguém cria um desses 5
-# modelos só com clinica_id - sem isso, esses registros ficariam invisíveis
-# para as telas que agora filtram por grupo_id.
-from sqlalchemy import event as _event  # noqa: E402
-
-_MODELOS_COM_GRUPO_ID = (Exame, PreparoModelo, Agendamento, PerguntaPendente, FaqItem)
-
-
-def _preencher_grupo_id_automaticamente(session, flush_context, instances):
-    for obj in list(session.new):
-        if (
-            isinstance(obj, _MODELOS_COM_GRUPO_ID)
-            and obj.clinica_id is not None
-            and obj.grupo_id is None
-        ):
-            clinica = Clinica.query.get(obj.clinica_id)
-            # Só usamos o pareamento se a Clinica JÁ tem um Grupo pareado
-            # (caso comum: filial vinda do seed/produção, já pareada há
-            # tempo). Se ainda não tiver, Clinica.grupo_pareado() criaria um
-            # Grupo novo agora, o que exige um db.session.flush() interno -
-            # e como este listener já roda DENTRO de um flush em andamento
-            # (before_flush), esse flush aninhado seria rejeitado pelo
-            # SQLAlchemy ("Session is already flushing"). Nesse caso raro
-            # (ex.: uma Clinica criada na hora por um teste), deixamos
-            # grupo_id em branco - o pareamento de verdade acontece
-            # normalmente na próxima vez que essa clínica for usada fora de
-            # um flush aninhado (ex.: seed.py, migrar_grupo_por_clinica.py,
-            # ou o dual-write explícito das rotas).
-            if clinica and clinica.grupo_pareado_id:
-                obj.grupo_id = clinica.grupo_pareado_rel.id
-
-
-_event.listen(db.session, "before_flush", _preencher_grupo_id_automaticamente)

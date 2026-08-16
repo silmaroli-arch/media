@@ -5,7 +5,7 @@
 
 {# Conta ÚNICA: avisos de cadastro por clínica (um cadastro por empresa). #}
 {% for c in cadastros %}
-  {% set nome_clinica = c.empresa_efetiva.nome if c.empresa_efetiva else (c.clinica.nome if c.clinica else 'clínica') %}
+  {% set nome_clinica = c.grupos[0].nome if c.grupos else 'clínica' %}
   {% if c.status_cadastro == 'pendente' %}
   <div class="alert alert-warning">
     <strong>Seu cadastro em {{ nome_clinica }} está em análise.</strong> Assim que a clínica
@@ -33,7 +33,7 @@
       <select name="paciente_id" class="form-select form-select-sm" style="width:auto;">
         {% for c in cadastros %}
         <option value="{{ c.id }}" {% if c.id == current_user.paciente.id %}selected{% endif %}>
-          {{ c.empresa_efetiva.nome if c.empresa_efetiva else (c.clinica.nome if c.clinica else '-') }}
+          {{ c.grupos[0].nome if c.grupos else '-' }}
         </option>
         {% endfor %}
       </select>
