@@ -10,55 +10,49 @@ from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, Clinica, GrupoPaciente, normalizar_telefone, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, Grupo, GrupoPaciente, normalizar_telefone, formatar_nome_proprio, cep_incompleto, telefone_incompleto
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.ia_preparo import responder_com_ia
-from app.clinica_utils import verificar_vencimento_empresa, verificar_vencimento_grupo
+from app.clinica_utils import verificar_vencimento_grupo
 
 paciente_bp = Blueprint("paciente", __name__, url_prefix="/paciente")
 
 
-def _clinica_ancora(paciente, exame=None, agendamento=None):
-    """Filial usada para ROTEAR registros do paciente que ainda são por
-    filial no banco (PerguntaPendente/FAQ): a do agendamento em questão,
-    senão a do exame em questão, senão a do agendamento mais recente do
-    paciente, senão a primeira filial da empresa. É só um endereçamento
-    para a equipe certa ver a pergunta - não é um vínculo do paciente."""
+def _resolver_ancora(paciente, exame=None, agendamento=None):
+    """Grupo usado para ROTEAR PerguntaPendente/FAQ: o do agendamento em
+    questão, senão o do exame em questão, senão o do agendamento mais
+    recente do paciente, senão a primeira associação (GrupoPaciente) do
+    próprio paciente. É só um endereçamento para a equipe certa ver a
+    pergunta - não é um vínculo de acesso do paciente.
+
+    Retorna (grupo_id, clinica_id) - clinica_id é só o espelho legado
+    (Grupo.clinica_pareada), mantido pra quem ainda lê esse campo direto
+    em telas antigas; não é mais usado pra controle de acesso."""
+    grupo_id = None
     if agendamento is not None:
-        return agendamento.clinica_id
-    if exame is not None:
-        return exame.clinica_id
-    ultimo = (
-        Agendamento.query.filter_by(paciente_id=paciente.id)
-        .order_by(Agendamento.data_hora.desc())
-        .first()
-    )
-    if ultimo:
-        return ultimo.clinica_id
-    empresa = paciente.empresa_efetiva
-    if empresa and empresa.filiais:
-        return empresa.filiais[0].id
-    return paciente.clinica_id
+        grupo_id = agendamento.grupo_id
+    elif exame is not None:
+        grupo_id = exame.grupo_id
+    else:
+        ultimo = (
+            Agendamento.query.filter_by(paciente_id=paciente.id)
+            .order_by(Agendamento.data_hora.desc())
+            .first()
+        )
+        if ultimo:
+            grupo_id = ultimo.grupo_id
 
-
-def _grupo_ancora(clinica_id_ancora, paciente=None):
-    """Fatia 4 - dual-write: Grupo pareado (ver Clinica.grupo_pareado())
-    correspondente ao clinica_id resolvido por _clinica_ancora acima. Vira
-    a chave de escopo real (grupo_id); clinica_id continua sendo gravado
-    junto, só por compatibilidade com o que já lê esse campo direto.
-
-    Fatia 5: cadastros globais (sem filial legada nenhuma - _clinica_ancora
-    retornou None) não têm mais uma Clinica pra parear - nesse caso o
-    grupo é resolvido direto pelas associações (GrupoPaciente) do próprio
-    paciente, sem passar por Clinica nenhuma."""
-    if clinica_id_ancora:
-        clinica = Clinica.query.get(clinica_id_ancora)
-        return clinica.grupo_pareado().id if clinica else None
-    if paciente is not None:
+    if grupo_id is None:
         grupos = _grupos_do_paciente(paciente)
         if grupos:
-            return grupos[0].id
-    return None
+            grupo_id = grupos[0].id
+
+    clinica_id = None
+    if grupo_id:
+        grupo = Grupo.query.get(grupo_id)
+        if grupo and grupo.clinica_pareada:
+            clinica_id = grupo.clinica_pareada.id
+    return grupo_id, clinica_id
 
 
 def _meus_cadastros_ids():
@@ -90,17 +84,12 @@ def paciente_required(f):
             return redirect(url_for("auth.login"))
 
         paciente = current_user.paciente
-        empresa = paciente.empresa_efetiva if paciente else None
         bloqueado = False
-        if empresa:
-            verificar_vencimento_empresa(empresa)
-            bloqueado = empresa.bloqueada
-        elif paciente:
-            # Fatia 5: cadastro global, sem empresa legada - o bloqueio
-            # por inadimplência é checado nos Grupos associados
+        if paciente:
+            # O bloqueio por inadimplência é checado nos Grupos associados
             # (GrupoPaciente). Basta UM grupo bloqueado pra barrar o
-            # acesso (mesmo critério conservador do modelo antigo, que
-            # bloqueava a conta inteira daquela empresa).
+            # acesso (mesmo critério conservador de sempre: qualquer
+            # clínica/grupo em atraso barra o app pra aquela conta).
             grupos = _grupos_do_paciente(paciente)
             for g in grupos:
                 verificar_vencimento_grupo(g)
@@ -165,17 +154,12 @@ def trocar_clinica():
     if paciente_id in _meus_cadastros_ids():
         session["paciente_id"] = paciente_id
         p = Paciente.query.get(paciente_id)
-        empresa = p.empresa_efetiva
-        # Fatia 5: cadastro global não tem empresa/clínica legada nenhuma -
-        # nesse caso identifica pelo nome do próprio cadastro (não há mais
-        # "qual clínica" nele, já que a associação real é por
-        # GrupoPaciente, potencialmente com vários grupos ao mesmo tempo).
-        if empresa:
-            nome_contexto = empresa.nome
-        elif p.clinica:
-            nome_contexto = p.clinica.nome
-        else:
-            nome_contexto = p.nome
+        # Identifica pelo(s) Grupo(s) associados (GrupoPaciente) - um
+        # cadastro pode estar em mais de um grupo ao mesmo tempo; usa o
+        # primeiro pra compor a mensagem, com o nome do cadastro como
+        # fallback caso não haja nenhuma associação ainda.
+        grupos = _grupos_do_paciente(p)
+        nome_contexto = grupos[0].nome if grupos else p.nome
         flash(f"Agora você está usando o app como paciente de '{nome_contexto}'.", "success")
     else:
         flash("Escolha inválida.", "danger")
@@ -261,8 +245,7 @@ def chat():
             # pergunta continua sendo encaminhada à IA de novo, mesmo que
             # pareça repetida — não há atalho pela FAQ aqui.
             resultado_ia = responder_com_ia(pergunta_enviada, exame_selecionado) if exame_selecionado else None
-            clinica_id_ancora = _clinica_ancora(paciente, exame_selecionado, agendamento_selecionado)
-            grupo_id_ancora = _grupo_ancora(clinica_id_ancora, paciente)
+            grupo_id_ancora, clinica_id_ancora = _resolver_ancora(paciente, exame_selecionado, agendamento_selecionado)
 
             if resultado_ia and resultado_ia["final"]:
                 origem = "ia_aguardando"
