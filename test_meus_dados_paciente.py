@@ -1,18 +1,24 @@
-"""Testa a fase 3 da conta única: o paciente edita os PRÓPRIOS dados
-("Meus dados") e a mudança vale em TODAS as clínicas que ele frequenta.
+"""Testa "Meus dados": o paciente edita os PRÓPRIOS dados ("Meus dados")
+e a mudança vale em TODOS os grupos/clínicas que ele frequenta.
 
-- Telefone, e-mail, endereço e contato de emergência são atualizados em
-  todos os cadastros da conta de uma vez (são dados da pessoa).
+- Telefone, e-mail, endereço e contato de emergência são atualizados no
+  cadastro da conta de uma vez (são dados da pessoa).
 - Nome/CPF/data de nascimento não são editáveis pela tela (identidade
   verificada pela clínica).
 - O login é por CPF + data de nascimento (o CPF não muda): trocar o
   telefone é livre e NÃO afeta o acesso.
-"""
+
+Fatia 5: o cadastro (Paciente) é único e GLOBAL por CPF
+(`uq_pacientes_cpf`) - uma mesma pessoa frequentando duas clínicas tem UM
+só registro Paciente, associado aos dois Grupos via GrupoPaciente (não
+mais dois registros com o mesmo CPF, como no modelo anterior de "conta
+única"). Como só existe UM registro para atualizar, "vale em todas as
+clínicas" passou a ser garantido automaticamente por essa unificação."""
 from datetime import date
 
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Clinica, Paciente, normalizar_telefone
+from app.models import Usuario, Grupo, GrupoPaciente, Paciente, normalizar_telefone
 
 app = create_app()
 client = app.test_client()
@@ -24,34 +30,34 @@ def checar(nome, condicao):
     assert condicao, nome
 
 
-# Cenário: Carla com cadastros em DUAS empresas (conta única) + uma outra
-# conta ("Rival") pra testar a colisão de telefone.
+# Cenário: Carla com UM cadastro associado a DUAS clínicas (conta/cadastro
+# único) + uma outra conta ("Rival") pra testar a colisão de telefone.
 with app.app_context():
-    centro = Clinica.query.filter_by(nome="Grupo Saúde Total - Centro").first()
-    vitoria = Clinica.query.filter_by(nome="Clínica Vitória").first()
+    centro = Grupo.query.filter_by(nome="Grupo Saúde Total - Centro").first()
+    vitoria = Grupo.query.filter_by(nome="Clínica Vitória").first()
 
     tel = normalizar_telefone("(27) 96060-0001")
     conta = Usuario(nome="Carla Dados", telefone=tel, tipo="paciente")
     db.session.add(conta)
     db.session.flush()
-    p1 = Paciente(empresa_id=centro.empresa_id, usuario_id=conta.id, nome="Carla Dados",
-                  cpf="930.140.250-06", data_nascimento=date(1992, 2, 2), telefone=tel,
-                  status_cadastro="aprovado")
-    p2 = Paciente(empresa_id=vitoria.empresa_id, usuario_id=conta.id, nome="Carla Dados",
-                  cpf="930.140.250-06", data_nascimento=date(1992, 2, 2), telefone=tel,
-                  status_cadastro="aprovado")
-    db.session.add_all([p1, p2])
+    carla = Paciente(usuario_id=conta.id, nome="Carla Dados",
+                      cpf="930.140.250-06", data_nascimento=date(1992, 2, 2), telefone=tel,
+                      status_cadastro="aprovado")
+    db.session.add(carla)
+    db.session.flush()
+    db.session.add(GrupoPaciente(grupo_id=centro.id, paciente_id=carla.id))
+    db.session.add(GrupoPaciente(grupo_id=vitoria.id, paciente_id=carla.id))
 
     tel_rival = normalizar_telefone("(27) 96060-0999")
     rival = Usuario(nome="Rival Mesma Data", telefone=tel_rival, tipo="paciente")
     db.session.add(rival)
     db.session.flush()
-    p_rival = Paciente(empresa_id=centro.empresa_id, usuario_id=rival.id, nome="Rival Mesma Data",
+    p_rival = Paciente(usuario_id=rival.id, nome="Rival Mesma Data",
                        cpf="930.140.250-17", data_nascimento=date(1992, 2, 2), telefone=tel_rival,
                        status_cadastro="aprovado")
     db.session.add(p_rival)
     db.session.commit()
-    conta_id, p1_id, p2_id = conta.id, p1.id, p2.id
+    conta_id, carla_id = conta.id, carla.id
 
 client.post("/login-paciente", data={"cpf": "930.140.250-06", "data_nascimento": "02/02/1992"},
             follow_redirects=True)
@@ -67,7 +73,7 @@ checar("CPF e nascimento não são campos editáveis",
        'name="cpf"' not in html and 'name="data_nascimento"' not in html)
 checar("O link 'Meus dados' está no menu do paciente", "Meus dados" in html)
 
-# ---------- Salvar atualiza TODOS os cadastros ----------
+# ---------- Salvar atualiza o cadastro (vale nos dois grupos) ----------
 
 r = client.post("/paciente/meus-dados", data={
     "telefone_original": normalizar_telefone("(27) 96060-0001"),
@@ -82,17 +88,16 @@ checar("Salvar confirma a atualização em todas as clínicas",
 
 with app.app_context():
     conta = Usuario.query.get(conta_id)
-    p1 = Paciente.query.get(p1_id)
-    p2 = Paciente.query.get(p2_id)
+    carla = Paciente.query.get(carla_id)
     tel_novo = normalizar_telefone("(27) 96060-0002")
     checar("A conta (login) ficou com o telefone novo", conta.telefone == tel_novo)
-    checar("O cadastro da 1ª clínica foi atualizado (telefone, e-mail, endereço)",
-           p1.telefone == tel_novo and p1.email == "carla@exemplo.com" and p1.rua == "Rua Nova")
-    checar("O cadastro da 2ª clínica TAMBÉM foi atualizado",
-           p2.telefone == tel_novo and p2.email == "carla@exemplo.com"
-           and p2.cidade == "Vitória" and p2.uf == "ES")
-    checar("Contato de emergência salvo nos dois",
-           p1.contato_emergencia_nome == "Mario Dados" and p2.contato_emergencia_nome == "Mario Dados")
+    checar("O cadastro foi atualizado (telefone, e-mail, endereço)",
+           carla.telefone == tel_novo and carla.email == "carla@exemplo.com" and carla.rua == "Rua Nova")
+    checar("A cidade/UF do cadastro também foram atualizadas",
+           carla.cidade == "Vitória" and carla.uf == "ES")
+    checar("Contato de emergência salvo", carla.contato_emergencia_nome == "Mario Dados")
+    checar("O único cadastro continua associado aos DOIS grupos (não duplicou nada)",
+           len(carla.grupos) == 2)
 
 # ---------- O login é por CPF: trocar telefone não afeta o acesso ----------
 
@@ -124,7 +129,7 @@ r = client.post("/paciente/meus-dados", data={
 }, follow_redirects=True)
 checar("CEP incompleto é rejeitado", "CEP incompleto" in r.get_data(as_text=True))
 with app.app_context():
-    checar("O endereço não foi salvo pela metade", Paciente.query.get(p1_id).rua == "Rua Nova")
+    checar("O endereço não foi salvo pela metade", Paciente.query.get(carla_id).rua == "Rua Nova")
 
 client.get("/logout")
 print("\nTodos os testes de 'Meus dados' do paciente passaram.")

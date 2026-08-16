@@ -26,7 +26,7 @@ def login_paciente(cpf, dn):
     return client.post("/login-paciente", data={"cpf": cpf, "data_nascimento": dn}, follow_redirects=True)
 
 
-from app.models import Clinica
+from app.models import Grupo
 
 with app.app_context():
     # Dr. Carlos Andrade passa a ser o médico-administrador da clínica
@@ -34,9 +34,9 @@ with app.app_context():
     medico = Usuario.query.filter_by(email="medico@clinicavitoria.com").first()
     medico.perm_pacientes = True
     db.session.commit()
-    # Dr. Carlos atende em mais de uma clínica (ver seed.py) - precisa
+    # Dr. Carlos atende em mais de um grupo (ver seed.py) - precisa
     # escolher a Clínica Vitória explicitamente após o login.
-    clinica_vitoria_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
+    clinica_vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
 
 # Paciente faz uma pergunta geral (sem selecionar nenhum exame/agendamento).
 login_paciente("123.456.789-00", "12/04/1985")

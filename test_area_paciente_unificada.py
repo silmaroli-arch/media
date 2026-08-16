@@ -1,19 +1,28 @@
-"""Testa a ÁREA DO PACIENTE UNIFICADA (fase 2 da conta única):
+"""Testa a ÁREA DO PACIENTE UNIFICADA:
 
-- O painel do paciente mostra os exames de TODAS as clínicas que ele
-  frequenta, juntos, com o local identificado em cada linha.
+- O painel do paciente mostra os exames de TODOS os grupos/clínicas que
+  ele frequenta, juntos, com o local identificado em cada linha.
 - Preparo e resultado de QUALQUER clínica abrem na mesma conta (é tudo
   dado do próprio paciente).
-- "Trocar de clínica" muda o cadastro ativo - usado pelas ações
-  endereçadas a uma clínica (tirar dúvida).
 - Segurança: outro paciente NÃO acessa preparo/resultado alheio.
-"""
+
+Fatia 5 (nota importante): o cadastro (Paciente) passou a ser único e
+GLOBAL por CPF (`uq_pacientes_cpf` em app/models.py) - uma mesma pessoa
+NÃO pode mais ter dois registros Paciente (um por clínica) como no modelo
+anterior de "conta única, fase 2/3"; agora a "unificação entre clínicas"
+já é o padrão: um único cadastro Paciente é associado a quantos Grupos
+forem necessários via GrupoPaciente. Por isso o cenário abaixo usa UM
+cadastro ligado a DOIS grupos (não mais dois cadastros por CPF) - e o
+"trocar de clínica"/seletor de múltiplos cadastros (baseado em
+Usuario.pacientes, que agora só tem 1 elemento pra uma pessoa real) não é
+mais exercitável nesse fluxo; não é testado aqui (ver
+app/routes_paciente.py:trocar_clinica)."""
 from datetime import datetime, date
 
 from app import create_app
 from app.extensions import db
 from app.models import (
-    Usuario, Clinica, Paciente, Exame, Agendamento, ResultadoExame, normalizar_telefone,
+    Usuario, Grupo, GrupoPaciente, Paciente, Exame, Agendamento, ResultadoExame, normalizar_telefone,
 )
 
 app = create_app()
@@ -26,18 +35,18 @@ def checar(nome, condicao):
     assert condicao, nome
 
 
-# Cenário: Bia frequenta o Grupo Saúde Total E a Clínica Vitória (uma
-# conta, dois cadastros), com um exame futuro em cada e um resultado na
-# Vitória.
+# Cenário: Bia frequenta o Grupo Saúde Total (Centro) E a Clínica Vitória
+# (UM cadastro global, associado aos dois grupos), com um exame futuro em
+# cada e um resultado na Vitória.
 with app.app_context():
-    centro = Clinica.query.filter_by(nome="Grupo Saúde Total - Centro").first()
-    vitoria = Clinica.query.filter_by(nome="Clínica Vitória").first()
+    centro = Grupo.query.filter_by(nome="Grupo Saúde Total - Centro").first()
+    vitoria = Grupo.query.filter_by(nome="Clínica Vitória").first()
     medico_grupo = Usuario.query.filter_by(email="medico@gruposaude.com").first()
     medico_vit = Usuario.query.filter_by(email="medico@clinicavitoria.com").first()
 
-    ex_grupo = Exame(clinica_id=centro.id, medico_id=medico_grupo.id, nome="Exame Unificado Grupo",
+    ex_grupo = Exame(grupo_id=centro.id, medico_id=medico_grupo.id, nome="Exame Unificado Grupo",
                      descricao="", duracao_minutos=30, medico_confirmado=True, associado=True)
-    ex_vit = Exame(clinica_id=vitoria.id, medico_id=medico_vit.id, nome="Exame Unificado Vitoria",
+    ex_vit = Exame(grupo_id=vitoria.id, medico_id=medico_vit.id, nome="Exame Unificado Vitoria",
                    descricao="", duracao_minutos=30, medico_confirmado=True, associado=True)
     db.session.add_all([ex_grupo, ex_vit])
     db.session.flush()
@@ -46,20 +55,24 @@ with app.app_context():
     conta = Usuario(nome="Bia Unificada", telefone=tel, tipo="paciente")
     db.session.add(conta)
     db.session.flush()
-    pac_grupo = Paciente(empresa_id=centro.empresa_id, usuario_id=conta.id, nome="Bia Unificada",
-                         cpf="820.930.140-05", data_nascimento=date(1988, 8, 8), telefone=tel,
-                         status_cadastro="aprovado")
-    pac_vit = Paciente(empresa_id=vitoria.empresa_id, usuario_id=conta.id, nome="Bia Unificada",
-                       cpf="820.930.140-05", data_nascimento=date(1988, 8, 8), telefone=tel,
-                       status_cadastro="aprovado")
-    db.session.add_all([pac_grupo, pac_vit])
+    bia = Paciente(usuario_id=conta.id, nome="Bia Unificada",
+                   cpf="820.930.140-05", data_nascimento=date(1988, 8, 8), telefone=tel,
+                   status_cadastro="aprovado")
+    db.session.add(bia)
     db.session.flush()
 
-    ag_grupo = Agendamento(clinica_id=centro.id, paciente_id=pac_grupo.id, exame_id=ex_grupo.id,
+    # A associação de fato (visibilidade "é paciente deste grupo") é 100%
+    # via GrupoPaciente - o MESMO cadastro global pode estar em vários
+    # grupos ao mesmo tempo (Fatia 5).
+    db.session.add(GrupoPaciente(grupo_id=centro.id, paciente_id=bia.id))
+    db.session.add(GrupoPaciente(grupo_id=vitoria.id, paciente_id=bia.id))
+    db.session.commit()
+
+    ag_grupo = Agendamento(grupo_id=centro.id, paciente_id=bia.id, exame_id=ex_grupo.id,
                            medico_id=medico_grupo.id, data_hora=datetime(2026, 10, 1, 9, 0))
-    ag_vit = Agendamento(clinica_id=vitoria.id, paciente_id=pac_vit.id, exame_id=ex_vit.id,
+    ag_vit = Agendamento(grupo_id=vitoria.id, paciente_id=bia.id, exame_id=ex_vit.id,
                          medico_id=medico_vit.id, data_hora=datetime(2026, 10, 2, 10, 0))
-    ag_vit_passado = Agendamento(clinica_id=vitoria.id, paciente_id=pac_vit.id, exame_id=ex_vit.id,
+    ag_vit_passado = Agendamento(grupo_id=vitoria.id, paciente_id=bia.id, exame_id=ex_vit.id,
                                  medico_id=medico_vit.id, data_hora=datetime(2026, 6, 1, 10, 0))
     db.session.add_all([ag_grupo, ag_vit, ag_vit_passado])
     db.session.flush()
@@ -71,13 +84,14 @@ with app.app_context():
     outro_u = Usuario(nome="Outro Paciente", telefone=tel2, tipo="paciente")
     db.session.add(outro_u)
     db.session.flush()
-    outro_p = Paciente(empresa_id=centro.empresa_id, usuario_id=outro_u.id, nome="Outro Paciente",
+    outro_p = Paciente(usuario_id=outro_u.id, nome="Outro Paciente",
                        cpf="820.930.140-16", data_nascimento=date(1970, 1, 1), telefone=tel2,
                        status_cadastro="aprovado")
     db.session.add(outro_p)
+    db.session.flush()
+    db.session.add(GrupoPaciente(grupo_id=centro.id, paciente_id=outro_p.id))
     db.session.commit()
     ag_grupo_id, ag_vit_id, ag_vit_passado_id = ag_grupo.id, ag_vit.id, ag_vit_passado.id
-    pac_grupo_id, pac_vit_id = pac_grupo.id, pac_vit.id
 
 # ---------- Painel unificado ----------
 
@@ -85,38 +99,24 @@ r = client.post("/login-paciente", data={"cpf": "820.930.140-05", "data_nascimen
                 follow_redirects=True)
 html = r.get_data(as_text=True)
 checar("Login entra direto no painel unificado", "Olá, Bia Unificada" in html)
-checar("Painel mostra os exames das DUAS clínicas juntos",
+checar("Painel mostra os exames dos DOIS grupos juntos",
        "Exame Unificado Grupo" in html and "Exame Unificado Vitoria" in html)
 checar("Cada linha identifica o local",
        "Grupo Saúde Total - Centro" in html and "Clínica Vitória" in html)
-checar("O seletor 'paciente em 2 clínicas' aparece", "paciente em 2 clínicas" in html)
 checar("O histórico da Vitória também aparece (exame realizado)", "realizado" in html)
 checar("O botão de baixar resultado aparece no histórico", "Baixar resultado" in html)
 
-# ---------- Preparo/resultado de qualquer clínica ----------
+# ---------- Preparo/resultado de qualquer clínica (mesma conta) ----------
 
 r = client.get(f"/paciente/exame/{ag_grupo_id}")
 checar("Preparo do exame do Grupo abre", r.status_code == 200)
 r = client.get(f"/paciente/exame/{ag_vit_id}")
 checar("Preparo do exame da Vitória abre NA MESMA conta", r.status_code == 200)
 
-# ---------- Trocar de clínica muda o alvo das ações endereçadas (tirar dúvida) ----------
+# ---------- Tirar dúvida continua acessível com vínculo em 2 grupos ----------
 
 r = client.get("/paciente/chat")
-html = r.get_data(as_text=True)
-checar("O exame oferecido no 'tirar dúvida' é o da clínica ativa",
-       ("Exame Unificado Grupo" in html) != ("Exame Unificado Vitoria" in html))
-
-# Descobre a clínica ativa e troca pra outra.
-ativa_grupo = "Exame Unificado Grupo" in html
-destino_id = pac_vit_id if ativa_grupo else pac_grupo_id
-r = client.post("/paciente/trocar-clinica",
-                data={"paciente_id": str(destino_id), "proxima": "/paciente/chat"},
-                follow_redirects=True)
-html2 = r.get_data(as_text=True)
-checar("Trocar de clínica funciona (flash de confirmação)", "Agora você está usando o app" in html2)
-checar("Depois da troca, o 'tirar dúvida' mostra o exame da OUTRA clínica",
-       ("Exame Unificado Vitoria" in html2) == ativa_grupo)
+checar("Tela de tirar dúvida abre normalmente com vínculo em 2 grupos", r.status_code == 200)
 client.get("/logout")
 
 # ---------- Segurança entre contas ----------

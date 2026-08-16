@@ -8,7 +8,7 @@ pessoa pode digitar o endereço à mão a qualquer momento, e o POST salva
 o que foi enviado independentemente de a busca de CEP ter funcionado."""
 from app import create_app
 from app.extensions import db
-from app.models import Clinica
+from app.models import Grupo
 
 app = create_app()
 client = app.test_client()
@@ -44,7 +44,7 @@ r1 = client.post("/equipe/clinica/configuracoes", data={
 checar("Salvar com endereço digitado manualmente responde 200", r1.status_code == 200)
 checar("Mensagem de sucesso aparece", "atualizados com sucesso" in r1.get_data(as_text=True))
 with app.app_context():
-    clinica = Clinica.query.filter_by(nome="Clínica Vitória").first()
+    clinica = Grupo.query.filter_by(nome="Clínica Vitória").first()
     checar("Rua digitada manualmente foi salva", clinica.rua == "Rua Digitada à Mão")
     checar("Bairro digitado manualmente foi salvo", clinica.bairro == "Centro")
     checar("Cidade digitada manualmente foi salva", clinica.cidade == "Vitória")

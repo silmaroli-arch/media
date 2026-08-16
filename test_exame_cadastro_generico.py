@@ -5,7 +5,7 @@ específicos passa a acontecer só na tela "Exames por filial" (ou depois, ao
 editar o exame). Cobre tanto secretária quanto médico cadastrando."""
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Exame, Clinica, PreparoModelo
+from app.models import Usuario, Exame, Grupo, PreparoModelo
 
 app = create_app()
 client = app.test_client()
@@ -34,8 +34,8 @@ checar("Não mostra 'Outros médicos'", "Outros médicos que também atendem" no
 checar("Explica que a associação por filial vem depois", "Exames por filial" in html0)
 
 with app.app_context():
-    clinica_vitoria_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
-    modelo_vitoria_id = PreparoModelo.query.filter_by(clinica_id=clinica_vitoria_id).first().id
+    clinica_vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
+    modelo_vitoria_id = PreparoModelo.query.filter_by(grupo_id=clinica_vitoria_id).first().id
 
 r1 = client.post("/equipe/exames/novo", data={
     "nome": "Exame genérico de teste",
@@ -58,7 +58,7 @@ client.get("/logout")
 # --- Médico cadastrando (vira responsável automaticamente, sem perguntar) ---
 login("medico@clinicavitoria.com", "123456")
 with app.app_context():
-    clinica_vitoria_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
+    clinica_vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
 client.post("/equipe/clinica", data={"clinica_id": str(clinica_vitoria_id)}, follow_redirects=True)
 
 r2 = client.get("/equipe/exames/novo")

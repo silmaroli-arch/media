@@ -8,7 +8,7 @@ responsável por aquele exame (ver Exame.medico_pode_atender). Usa a
 Clínica Vitória do seed (Dr. Carlos Andrade e Dra. Fernanda Lima)."""
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Clinica, Paciente, Exame, PerguntaPendente
+from app.models import Usuario, Grupo, Paciente, Exame, PerguntaPendente
 
 app = create_app()
 client = app.test_client()
@@ -25,7 +25,7 @@ def login(email, senha):
 
 
 with app.app_context():
-    clinica_vitoria = Clinica.query.filter_by(nome="Clínica Vitória").first()
+    clinica_vitoria = Grupo.query.filter_by(nome="Clínica Vitória").first()
     carlos = Usuario.query.filter_by(email="medico@clinicavitoria.com").first()
     fernanda = Usuario.query.filter_by(email="medica2@clinicavitoria.com").first()
     paciente = Paciente.query.filter_by(cpf="123.456.789-00").first()
@@ -36,26 +36,26 @@ with app.app_context():
     carlos.perm_pacientes = True
 
     exame_carlos = Exame(
-        clinica_id=clinica_id, medico_id=carlos_id, nome="Exame do Carlos Teste",
+        grupo_id=clinica_id, medico_id=carlos_id, nome="Exame do Carlos Teste",
         preco=100, associado=True, medico_confirmado=True,
     )
     exame_fernanda = Exame(
-        clinica_id=clinica_id, medico_id=fernanda_id, nome="Exame da Fernanda Teste",
+        grupo_id=clinica_id, medico_id=fernanda_id, nome="Exame da Fernanda Teste",
         preco=100, associado=True, medico_confirmado=True,
     )
     db.session.add_all([exame_carlos, exame_fernanda])
     db.session.commit()
 
     pergunta_do_carlos = PerguntaPendente(
-        clinica_id=clinica_id, paciente_id=paciente_id, exame_id=exame_carlos.id,
+        grupo_id=clinica_id, paciente_id=paciente_id, exame_id=exame_carlos.id,
         pergunta="Posso comer antes do exame do Carlos?", status="pendente",
     )
     pergunta_da_fernanda = PerguntaPendente(
-        clinica_id=clinica_id, paciente_id=paciente_id, exame_id=exame_fernanda.id,
+        grupo_id=clinica_id, paciente_id=paciente_id, exame_id=exame_fernanda.id,
         pergunta="Posso comer antes do exame da Fernanda?", status="pendente",
     )
     pergunta_geral = PerguntaPendente(
-        clinica_id=clinica_id, paciente_id=paciente_id, exame_id=None,
+        grupo_id=clinica_id, paciente_id=paciente_id, exame_id=None,
         pergunta="Qual o horário de funcionamento da clínica?", status="pendente",
     )
     db.session.add_all([pergunta_do_carlos, pergunta_da_fernanda, pergunta_geral])

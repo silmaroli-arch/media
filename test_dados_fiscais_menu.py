@@ -7,7 +7,7 @@ CEP em "Dados Cadastrais" (é derivado do endereço), só que agora é mostrado
 como leitura em "Dados Fiscais"."""
 from app import create_app
 from app.extensions import db
-from app.models import Clinica
+from app.models import Grupo
 
 app = create_app()
 client = app.test_client()
@@ -34,7 +34,7 @@ checar("Não tem mais o campo de Inscrição estadual", 'name="inscricao_estadua
 checar("Não tem mais o campo de CNAE", 'name="cnae"' not in html1)
 checar("Não tem mais a seção 'Emissão de NFS-e'", "Emissão de NFS-e" not in html1)
 with app.app_context():
-    _clinica_vitoria_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
+    _clinica_vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
 checar(
     "Tem um link apontando para a nova tela de Dados Fiscais",
     f'href="/equipe/clinica/dados-fiscais/{_clinica_vitoria_id}"' in html1,
@@ -67,7 +67,7 @@ html3b = client.get("/equipe/clinica/dados-fiscais").get_data(as_text=True)
 checar("Inscrição estadual salva aparece ao reabrir a tela", "111.222.333" in html3b)
 
 with app.app_context():
-    clinica = Clinica.query.filter_by(nome="Clínica Vitória").first()
+    clinica = Grupo.query.filter_by(nome="Clínica Vitória").first()
     checar("Inscrição estadual foi salva no banco", clinica.inscricao_estadual == "111.222.333")
     checar("Regime tributário foi salvo no banco", clinica.regime_tributario == "Simples Nacional")
     checar("CNAE foi salvo no banco", clinica.cnae == "8630-5/03")
@@ -83,7 +83,7 @@ r4 = client.post("/equipe/clinica/configuracoes", data={
 checar("Salvar Dados Cadastrais com CEP responde 200", r4.status_code == 200)
 
 with app.app_context():
-    clinica = Clinica.query.filter_by(nome="Clínica Vitória").first()
+    clinica = Grupo.query.filter_by(nome="Clínica Vitória").first()
     checar("Código IBGE foi salvo a partir de Dados Cadastrais", clinica.codigo_ibge_municipio == "3205309")
 
 r5 = client.get("/equipe/clinica/dados-fiscais")

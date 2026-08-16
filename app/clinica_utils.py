@@ -53,12 +53,14 @@ def verificar_vencimento(grupo):
 
 
 def clinicas_do_usuario():
-    """Grupos em que o usuário logado tem vínculo ATIVO. Na esmagadora
+    """Grupos em que o usuário logado tem vínculo ATIVO e que não estão
+    bloqueados pelo dono da plataforma (Grupo.bloqueada). Na esmagadora
     maioria dos casos é um só."""
     if not current_user.is_authenticated or not current_user.is_staff:
         return []
     grupos = [
         gm.grupo for gm in GrupoMembro.query.filter_by(usuario_id=current_user.id, ativo=True).all()
+        if not gm.grupo.bloqueada
     ]
     for g in grupos:
         verificar_vencimento_empresa(g)
