@@ -638,6 +638,60 @@ class Grupo(db.Model):
     # Flask-Migrate neste projeto; ver nota de limpeza manual no relatório
     # da fatia).
 
+    # ---------- Fatia 5: cobrança, endereço e fiscal (por Grupo) ----------
+    # Antes da Fatia 5 isso vivia em Empresa (cobrança) e Clinica (endereço/
+    # fiscal). Como cada Grupo já corresponde a uma filial de hoje (1 Grupo
+    # por Clinica, ver Fatia 4), a cobrança deixa de ser "por empresa com
+    # várias filiais" e passa a ser POR GRUPO — decisão de negócio tomada
+    # nesta fatia (cada Grupo é sua própria unidade de cobrança agora).
+    razao_social = db.Column(db.String(200))
+    cnpj = db.Column(db.String(20))
+    email_contato = db.Column(db.String(150))
+    telefone = db.Column(db.String(30))
+    logo_url = db.Column(db.String(300))
+
+    cep = db.Column(db.String(10))
+    rua = db.Column(db.String(200))
+    numero = db.Column(db.String(20))
+    complemento = db.Column(db.String(100))
+    bairro = db.Column(db.String(100))
+    cidade = db.Column(db.String(100))
+    uf = db.Column(db.String(2))
+
+    # status: 'trial', 'ativa', 'inadimplente', 'bloqueada' — mesmo
+    # vocabulário de Empresa.status.
+    status = db.Column(db.String(20), nullable=False, default="trial")
+    data_vencimento = db.Column(db.Date)
+    observacoes_pagamento = db.Column(db.Text)
+    # Cobrança: valor mensal por médico com vínculo ativo neste Grupo (ver
+    # medicos_distintos abaixo) — cada Grupo negocia o seu, controle manual
+    # (sem emissão automática de fatura), igual valia para Empresa.
+    valor_por_medico = db.Column(db.Numeric(10, 2))
+    codigo_cadastro_paciente = db.Column(db.String(20), unique=True, nullable=True)
+
+    inscricao_estadual = db.Column(db.String(30))
+    regime_tributario = db.Column(db.String(50))
+    cnae = db.Column(db.String(20))
+    codigo_ibge_municipio = db.Column(db.String(10))
+
+    fiscal_ambiente = db.Column(db.String(20), nullable=False, default="homologacao")
+    fiscal_modo_simulacao = db.Column(db.Boolean, nullable=False, default=False)
+    fiscal_simular_falha_conexao = db.Column(db.Boolean, nullable=False, default=False)
+
+    fiscal_certificado_pfx = db.Column(db.LargeBinary)
+    fiscal_certificado_senha_cripto = db.Column(db.LargeBinary)
+    fiscal_certificado_cnpj = db.Column(db.String(20))
+    fiscal_certificado_validade = db.Column(db.Date)
+
+    fiscal_provedor_emissao = db.Column(db.String(50), nullable=False, default="nenhum")
+    fiscal_provedor_token_cripto = db.Column(db.LargeBinary)
+
+    fiscal_inscricao_municipal = db.Column(db.String(30))
+    fiscal_codigo_servico = db.Column(db.String(20))
+    fiscal_aliquota_iss = db.Column(db.Numeric(5, 2))
+    fiscal_rps_serie = db.Column(db.String(10))
+    fiscal_rps_proximo_numero = db.Column(db.Integer)
+
     membros = db.relationship("GrupoMembro", back_populates="grupo", order_by="GrupoMembro.id")
     convites = db.relationship("GrupoConvite", back_populates="grupo", order_by="GrupoConvite.id")
 
@@ -647,6 +701,30 @@ class Grupo(db.Model):
             if m.papel == "dono" and m.ativo:
                 return m.usuario
         return None
+
+    @property
+    def bloqueada(self):
+        return self.status == "bloqueada"
+
+    @property
+    def medicos_distintos(self):
+        """Usuários médicos com vínculo ativo neste Grupo — usado para
+        calcular a cobrança mensal (ver valor_mensal_estimado)."""
+        return [m.usuario for m in self.membros if m.ativo and m.usuario.tipo == "medico"]
+
+    @property
+    def valor_mensal_estimado(self):
+        if self.valor_por_medico is None:
+            return None
+        return self.valor_por_medico * len(self.medicos_distintos)
+
+    def verificar_vencimento_trial(self):
+        """Mesma regra de Empresa.verificar_vencimento_trial() — não faz
+        commit, quem chamar decide quando salvar. Retorna True se mudou."""
+        if self.status == "trial" and self.data_vencimento and self.data_vencimento < date.today():
+            self.status = "inadimplente"
+            return True
+        return False
 
     def membro_ativo(self, usuario_id):
         for m in self.membros:

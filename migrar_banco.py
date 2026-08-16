@@ -312,6 +312,48 @@ ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS grupo_id INTEGER REFERE
 
 ALTER TABLE faq_itens ALTER COLUMN clinica_id DROP NOT NULL;
 ALTER TABLE faq_itens ADD COLUMN IF NOT EXISTS grupo_id INTEGER REFERENCES grupos(id);
+
+-- Fatia 5 da migração para Grupo: cobrança/endereço/fiscal deixam de ser
+-- de Empresa/Clinica e passam a ser POR GRUPO (cada Grupo já é uma unidade
+-- autônoma desde a Fatia 4 - 1 Grupo por Clinica/filial). Só o schema;
+-- a cópia dos dados de Empresa/Clinica existentes para o Grupo pareado é
+-- feita à parte, manualmente, por migrar_empresa_para_grupo.py.
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS razao_social VARCHAR(200);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS cnpj VARCHAR(20);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS email_contato VARCHAR(150);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS telefone VARCHAR(30);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS logo_url VARCHAR(300);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS cep VARCHAR(10);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS rua VARCHAR(200);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS numero VARCHAR(20);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS complemento VARCHAR(100);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS bairro VARCHAR(100);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS cidade VARCHAR(100);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS uf VARCHAR(2);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'trial';
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS data_vencimento DATE;
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS observacoes_pagamento TEXT;
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS valor_por_medico NUMERIC(10, 2);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS codigo_cadastro_paciente VARCHAR(20);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_grupos_codigo_cadastro_paciente ON grupos (codigo_cadastro_paciente);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS inscricao_estadual VARCHAR(30);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS regime_tributario VARCHAR(50);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS cnae VARCHAR(20);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS codigo_ibge_municipio VARCHAR(10);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_ambiente VARCHAR(20) NOT NULL DEFAULT 'homologacao';
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_modo_simulacao BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_simular_falha_conexao BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_certificado_pfx BYTEA;
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_certificado_senha_cripto BYTEA;
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_certificado_cnpj VARCHAR(20);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_certificado_validade DATE;
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_provedor_emissao VARCHAR(50) NOT NULL DEFAULT 'nenhum';
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_provedor_token_cripto BYTEA;
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_inscricao_municipal VARCHAR(30);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_codigo_servico VARCHAR(20);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_aliquota_iss NUMERIC(5, 2);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_rps_serie VARCHAR(10);
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_rps_proximo_numero INTEGER;
 """
 
 # Trilha de auditoria de acesso ao prontuario (ver LogAcessoProntuario em
