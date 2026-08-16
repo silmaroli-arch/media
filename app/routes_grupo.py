@@ -143,20 +143,83 @@ def sair(grupo_id):
     return redirect(url_for("grupo.meus_grupos"))
 
 
+def _usuario_por_cpf(cpf_alvo, tipos=("medico", "secretaria", "dono")):
+    """Acha uma conta (Usuario) de STAFF com este CPF - usada tanto para
+    convidar (candidato precisa já ter conta) quanto para decidir, na tela
+    de convite, se mostra o botão "enviar convite" ou o formulário de
+    "criar conta nova" (ver convidar() abaixo)."""
+    for u in Usuario.query.filter(Usuario.cpf.isnot(None)).all():
+        if _cpf_digitos(u.cpf) == cpf_alvo and u.tipo in tipos:
+            return u
+    return None
+
+
 @grupo_bp.route("/<int:grupo_id>/convidar", methods=["GET", "POST"])
 @login_required
 def convidar(grupo_id):
-    """Tela 5.1.5 — Convidar membros para o grupo. Convite só por CPF de
-    um usuário já cadastrado (tela 5.1.1) — não existe cadastro de equipe
-    aqui: não é possível criar uma conta nova a partir desta tela."""
+    """Tela 5.1.5 — Convidar membros para o grupo, por CPF. Fatia 5: se o
+    CPF buscado não pertence a nenhuma conta existente, a própria tela
+    permite criar a conta nova na hora (mesma capacidade que
+    medico.equipe_novo tinha no modelo antigo - só que aqui a pessoa já
+    entra ATIVA no grupo, sem passar por convite/aceite, já que quem está
+    cadastrando é o próprio administrador do grupo)."""
     grupo = Grupo.query.get_or_404(grupo_id)
     membro_atual = grupo.membro_ativo(current_user.id)
     if not membro_atual or membro_atual.papel not in ("dono", "administrador"):
         flash("Somente um administrador do grupo pode convidar membros.", "danger")
         return redirect(url_for("grupo.meus_grupos"))
 
+    cpf_busca = request.args.get("cpf_busca", "").strip()
+    encontrado = None
+    busca_feita = False
+    if request.method == "GET" and cpf_busca:
+        busca_feita = True
+        cpf_alvo = _cpf_digitos(cpf_busca)
+        if not cpf_alvo:
+            flash("Informe um CPF válido para buscar.", "danger")
+        else:
+            encontrado = _usuario_por_cpf(cpf_alvo)
+
     if request.method == "POST":
         acao = request.form.get("acao", "convidar")
+
+        if acao == "criar_conta":
+            nome = request.form.get("nome", "").strip()
+            email = request.form.get("email", "").strip().lower()
+            cpf = request.form.get("cpf", "").strip()
+            papel_conta = request.form.get("papel_conta", "secretaria")
+            papel_grupo = request.form.get("papel_grupo", "membro")
+
+            if papel_conta not in ("secretaria", "medico"):
+                papel_conta = "secretaria"
+            if papel_grupo not in ("administrador", "membro"):
+                papel_grupo = "membro"
+
+            if not nome or not email:
+                flash("Nome e e-mail são obrigatórios para criar a conta.", "danger")
+                return redirect(url_for("grupo.convidar", grupo_id=grupo.id, cpf_busca=cpf))
+            if cpf and not validar_cpf(cpf):
+                flash("CPF inválido — confira os números digitados.", "danger")
+                return redirect(url_for("grupo.convidar", grupo_id=grupo.id))
+            if cpf and _usuario_por_cpf(_cpf_digitos(cpf), tipos=("medico", "secretaria", "dono", "paciente")):
+                flash("Já existe uma conta cadastrada com esse CPF.", "danger")
+                return redirect(url_for("grupo.convidar", grupo_id=grupo.id))
+            if Usuario.query.filter_by(email=email).first():
+                flash("Já existe uma conta cadastrada com esse e-mail.", "danger")
+                return redirect(url_for("grupo.convidar", grupo_id=grupo.id))
+
+            senha_final = request.form.get("senha", "").strip() or "123456"
+            usuario = Usuario(nome=nome, email=email, tipo=papel_conta, cpf=cpf or None)
+            usuario.set_senha(senha_final)
+            db.session.add(usuario)
+            db.session.flush()
+            db.session.add(GrupoMembro(grupo_id=grupo.id, usuario_id=usuario.id, papel=papel_grupo, ativo=True))
+            db.session.commit()
+            flash(
+                f"{nome} cadastrado(a) e já faz parte do grupo. Senha de acesso inicial: {senha_final}",
+                "success",
+            )
+            return redirect(url_for("grupo.convidar", grupo_id=grupo.id))
 
         if acao == "cancelar_convite":
             convite = GrupoConvite.query.get(request.form.get("convite_id"))
@@ -192,15 +255,15 @@ def convidar(grupo_id):
             flash("Informe o CPF do usuário a convidar.", "danger")
             return redirect(url_for("grupo.convidar", grupo_id=grupo.id))
 
-        candidato = None
-        for u in Usuario.query.filter(Usuario.cpf.isnot(None)).all():
-            if _cpf_digitos(u.cpf) == cpf_alvo and u.tipo in ("medico", "secretaria", "dono"):
-                candidato = u
-                break
+        candidato = _usuario_por_cpf(cpf_alvo)
 
         if not candidato:
-            flash("Nenhum usuário cadastrado foi encontrado com esse CPF. O usuário precisa criar sua conta antes (tela de cadastro).", "danger")
-            return redirect(url_for("grupo.convidar", grupo_id=grupo.id))
+            flash(
+                "Nenhum usuário cadastrado foi encontrado com esse CPF — use \"criar conta nova\" "
+                "abaixo da busca para cadastrá-lo direto no grupo.",
+                "danger",
+            )
+            return redirect(url_for("grupo.convidar", grupo_id=grupo.id, cpf_busca=request.form.get("cpf", "")))
 
         if grupo.membro_ativo(candidato.id):
             flash(f"{candidato.nome} já é membro deste grupo.", "danger")
@@ -230,6 +293,9 @@ def convidar(grupo_id):
         membros=membros,
         convites_pendentes=convites_pendentes,
         sou_dono=membro_atual.papel == "dono",
+        cpf_busca=cpf_busca,
+        encontrado=encontrado,
+        busca_feita=busca_feita,
     )
 
 

@@ -4,17 +4,59 @@
 <p class="text-muted mb-1"><a href="{{ url_for('grupo.meus_grupos') }}">Meus grupos</a> &rsaquo; {{ grupo.nome }} &rsaquo; Membros</p>
 <h3 class="mb-3">Convidar membros para o grupo</h3>
 
+<div class="card p-3 mb-3" style="max-width: 560px;">
+  <form method="get">
+    <div class="mb-2">
+      <label class="form-label">Buscar por CPF</label>
+      <input type="text" name="cpf_busca" class="form-control" placeholder="000.000.000-00" value="{{ cpf_busca }}">
+      <div class="form-text">Busca uma conta já cadastrada na plataforma - se não encontrar, você pode criar a conta na hora, logo abaixo.</div>
+    </div>
+    <button type="submit" class="btn btn-outline-primary">Buscar</button>
+  </form>
+</div>
+
+{% if encontrado %}
 <div class="card p-3 mb-4" style="max-width: 520px;">
+  <div class="alert alert-success mb-3">Conta encontrada: <strong>{{ encontrado.nome }}</strong> ({{ encontrado.tipo }}).</div>
   <form method="post">
     <input type="hidden" name="acao" value="convidar">
-    <div class="mb-2">
-      <label class="form-label">CPF do usuário a convidar *</label>
-      <input type="text" name="cpf" class="form-control" placeholder="000.000.000-00" required>
-      <div class="form-text">O usuário precisa já ter uma conta cadastrada no sistema. Não é possível criar uma conta nova por aqui.</div>
-    </div>
+    <input type="hidden" name="cpf" value="{{ encontrado.cpf }}">
     <button type="submit" class="btn btn-primary">Enviar convite</button>
   </form>
 </div>
+{% elif busca_feita %}
+<div class="card p-3 mb-4" style="max-width: 560px;">
+  <div class="alert alert-info mb-3">Nenhuma conta encontrada com esse CPF — preencha os dados abaixo para criar uma conta nova e já adicioná-la ao grupo.</div>
+  <form method="post">
+    <input type="hidden" name="acao" value="criar_conta">
+    <div class="row">
+      <div class="col-md-8 mb-2"><label class="form-label">Nome completo *</label><input type="text" name="nome" class="form-control" required></div>
+      <div class="col-md-4 mb-2"><label class="form-label">CPF</label><input type="text" name="cpf" class="form-control" value="{{ cpf_busca }}"></div>
+    </div>
+    <div class="row">
+      <div class="col-md-6 mb-2"><label class="form-label">E-mail *</label><input type="email" name="email" class="form-control" required></div>
+      <div class="col-md-6 mb-2"><label class="form-label">Senha inicial (opcional)</label><input type="password" name="senha" class="form-control" placeholder="Padrão: 123456"></div>
+    </div>
+    <div class="row">
+      <div class="col-md-6 mb-2">
+        <label class="form-label">Tipo de conta</label>
+        <select name="papel_conta" class="form-select">
+          <option value="secretaria">Secretária</option>
+          <option value="medico">Médico</option>
+        </select>
+      </div>
+      <div class="col-md-6 mb-2">
+        <label class="form-label">Papel neste grupo</label>
+        <select name="papel_grupo" class="form-select">
+          <option value="membro">Membro</option>
+          <option value="administrador">Administrador</option>
+        </select>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary mt-2">Criar conta e adicionar ao grupo</button>
+  </form>
+</div>
+{% endif %}
 
 <h5>Membros e convites do grupo</h5>
 <div class="card p-3">

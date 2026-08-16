@@ -18,6 +18,7 @@ from flask import session
 from flask_login import current_user
 
 from app.extensions import db
+from app.models import GrupoMembro
 
 
 def verificar_vencimento_empresa(empresa):
@@ -164,3 +165,80 @@ def selecionar_clinica(clinica_id):
     session["empresa_id"] = escolhida.empresa_id
     session["clinica_id"] = escolhida.id
     return True
+
+
+# ---------- Fatia 5 (passo 3): resolução de tenant contra Grupo/GrupoMembro ----------
+#
+# As funções abaixo são a base para reescrever routes_medico.py (passo 4)
+# em cima de Grupo/GrupoMembro em vez de Empresa/Clinica/ClinicaMembro -
+# são aditivas e nenhum código ainda as chama (routes_grupo.py continua
+# usando Grupo.query.get_or_404(grupo_id) direto no path da URL, que
+# continua funcionando igual). Cada Grupo já é sua própria unidade
+# completa (cobrança, fiscal, endereço - ver Fatia 5 passo 1) - não existe
+# mais o conceito de "várias filiais dentro de uma empresa": uma pessoa
+# com vínculo em mais de um Grupo simplesmente pertence a vários Grupos
+# independentes, escolhendo qual está ativo do mesmo jeito que
+# empresa_atual() escolhe a empresa hoje.
+
+def grupos_do_usuario():
+    """Grupos (de trabalho) em que o usuário logado tem vínculo ATIVO -
+    substitui empresas_do_usuario() quando routes_medico.py migrar pra
+    Grupo (passo 4). Cada Grupo já é uma unidade completa (não existe mais
+    "filiais dentro da mesma empresa" - ver Fatia 5)."""
+    if not current_user.is_authenticated or not current_user.is_staff:
+        return []
+    grupos = [
+        gm.grupo for gm in GrupoMembro.query.filter_by(usuario_id=current_user.id, ativo=True).all()
+    ]
+    for g in grupos:
+        verificar_vencimento_grupo(g)
+    return sorted(grupos, key=lambda g: (g.nome or "").lower())
+
+
+def verificar_vencimento_grupo(grupo):
+    """Equivalente a verificar_vencimento_empresa(), mas pro Grupo - ver
+    Grupo.verificar_vencimento_trial() (Fatia 5 passo 1)."""
+    if grupo.verificar_vencimento_trial():
+        db.session.commit()
+
+
+def grupo_atual():
+    """Grupo ativo da sessão - equivalente a empresa_atual(), mas contra o
+    modelo novo. Se o usuário só tem vínculo em um Grupo, é selecionado
+    automaticamente (nenhuma tela de escolha aparece); com mais de um,
+    precisa escolher explicitamente (ver selecionar_grupo)."""
+    grupos = grupos_do_usuario()
+    if not grupos:
+        return None
+
+    grupo_id = session.get("grupo_atual_id")
+    if grupo_id:
+        for g in grupos:
+            if g.id == grupo_id:
+                return g
+        session.pop("grupo_atual_id", None)
+
+    if len(grupos) == 1:
+        session["grupo_atual_id"] = grupos[0].id
+        return grupos[0]
+
+    return None
+
+
+def selecionar_grupo(grupo_id):
+    """Define o Grupo atual na sessão, validando que o usuário tem
+    vínculo ativo com ele."""
+    if any(g.id == grupo_id for g in grupos_do_usuario()):
+        session["grupo_atual_id"] = grupo_id
+        return True
+    return False
+
+
+def papel_no_grupo_atual():
+    """Papel (dono/administrador/membro) do usuário logado no Grupo
+    atual, ou None se não houver Grupo atual/vínculo."""
+    grupo = grupo_atual()
+    if not grupo:
+        return None
+    membro = GrupoMembro.query.filter_by(grupo_id=grupo.id, usuario_id=current_user.id, ativo=True).first()
+    return membro.papel if membro else None
