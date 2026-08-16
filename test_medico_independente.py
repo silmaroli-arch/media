@@ -1,12 +1,16 @@
 """Testa o cadastro público UNIFICADO: não existe mais "modo" escolhido
-por botão ("empresa" x "independente") e, desde a remoção do formulário de
-"local de atendimento" do cadastro, também não existe mais nenhum campo de
+por botão ("empresa" x "independente") e não existe nenhum campo de
 clínica ali (nem nome, nem CNPJ, nem endereço) - o cadastro pede só os
-dados PESSOAIS de quem está se cadastrando. A empresa nasce com um nome
-provisório a partir do nome da pessoa, e o(s) local(is) de atendimento são
-cadastrados depois em "Meus Locais de Atendimento"
-(/equipe/filiais/nova) - ver test_cadastro_empresa_sem_filial.py para o
-fluxo completo desse cadastro de local sem vínculo automático.
+dados PESSOAIS de quem está se cadastrando.
+
+Fatia 5: o cadastro cria um GRUPO (não mais uma Empresa) do qual a pessoa
+é a dona (GrupoMembro papel="dono") - o Grupo nasce sempre, mas com só um
+membro ele fica invisível pro dia a dia de quem trabalha sozinho(a): é
+escolhido automaticamente (nenhuma tela/termo "Grupo" aparece) e só passa
+a ser um conceito de verdade se essa pessoa decidir "criar um novo grupo
+de trabalho" ou convidar alguém pra Equipe (ver app/clinica_utils.py e
+routes_grupo.py). Isso é exatamente o cenário do médico/secretário(a)
+independente: a conta funciona 100% sem nunca precisar pensar em "grupo".
 
 Roda contra SQLite local (não usa a DATABASE_URL do .env) e reseta esse banco de
 teste no início — não toca no banco real. Para rodar:
@@ -15,7 +19,7 @@ teste no início — não toca no banco real. Para rodar:
 from app import create_app
 from app.extensions import db
 from app.db_utils import resetar_banco
-from app.models import Usuario, Empresa, Clinica
+from app.models import Usuario, Grupo, GrupoMembro
 
 app = create_app()
 client = app.test_client()
@@ -62,29 +66,57 @@ with app.app_context():
     usuario = Usuario.query.filter_by(email="joao.autonomo@example.com").first()
     checar("Usuário foi criado", usuario is not None)
     checar("Papel escolhido (médico) foi respeitado", usuario.tipo == "medico")
-    checar("Usuário recebeu perm_filiais (pode cadastrar novos locais sozinho)", usuario.perm_filiais is True)
+    checar("Usuário recebeu todas as permissões administrativas (é dono do próprio Grupo)",
+           usuario.perm_filiais is True and usuario.perm_equipe is True and usuario.perm_dados_clinica is True)
 
-    empresa = Empresa.query.filter_by(email_contato="joao.autonomo@example.com").first()
-    checar("Empresa (pessoal) foi criada", empresa is not None)
-    checar("Nome provisório da empresa vem do nome da pessoa (não há mais local de atendimento no cadastro)",
-           empresa.nome == "Consultório de Dr. João Autônomo")
-
-    checar("NENHUM local de atendimento é criado automaticamente no cadastro",
-           Clinica.query.filter_by(empresa_id=empresa.id).count() == 0)
+    grupo = Grupo.query.filter_by(email_contato="joao.autonomo@example.com").first()
+    checar("Um Grupo (não mais uma Empresa) foi criado para a pessoa", grupo is not None)
+    checar("Nome provisório do Grupo vem do nome da pessoa (não há campo de clínica no cadastro)",
+           grupo.nome == "Consultório de Dr. João Autônomo")
+    checar(
+        "A pessoa é a DONA do Grupo (GrupoMembro papel='dono', ativo)",
+        GrupoMembro.query.filter_by(grupo_id=grupo.id, usuario_id=usuario.id, papel="dono", ativo=True).count() == 1,
+    )
+    checar("O Grupo nasce em trial", grupo.status == "trial")
+    grupo1_id = grupo.id
 
 checar("Login automático após cadastro (cai direto no onboarding, não na tela de login)",
        "/login" not in r.request.path if hasattr(r, "request") else True)
 
-# ---------- Médico cadastra seu primeiro local sozinho, depois um segundo ----------
-r = client.post("/equipe/filiais/nova", data={"nome": "Consultório do Dr. João"}, follow_redirects=True)
-checar("Médico consegue cadastrar seu primeiro local (perm_filiais já vem habilitada)",
-       "cadastrado com sucesso" in r.get_data(as_text=True).lower())
-r = client.post("/equipe/filiais/nova", data={"nome": "Consultório - Praia"}, follow_redirects=True)
-checar("Médico consegue cadastrar um segundo local", "cadastrado com sucesso" in r.get_data(as_text=True).lower())
+# Com um único Grupo, ele é escolhido automaticamente - nenhuma tela de
+# escolha aparece, "Grupo" nunca precisa ser mencionado pro médico
+# independente.
+r_dash = client.get("/equipe/")
+checar("Painel do médico independente carrega direto (Grupo único = automático)", r_dash.status_code == 200)
+
+# ---------- "Meus Locais de Atendimento" -> hoje é só um redirect pra "Meus Grupos" ----------
+# Fatia 5: não existe mais "cadastrar uma segunda filial da mesma
+# empresa" - cadastrar um "novo local" (medico.filiais_nova) é, por
+# baixo, criar um GRUPO NOVO E INDEPENDENTE (grupo.novo), do qual a
+# pessoa também é dona. Isso é justamente o caso de "vínculo em mais de
+# um Grupo" descrito em app/clinica_utils.py - precisa escolher qual está
+# usando no momento.
+r_filiais_nova = client.get("/equipe/filiais/nova", follow_redirects=False)
+checar(
+    "medico.filiais_nova é hoje só um redirect para grupo.novo (não existe mais 'filial de uma empresa')",
+    r_filiais_nova.status_code in (301, 302) and "/grupos/novo" in r_filiais_nova.headers.get("Location", ""),
+)
+
+r_novo_grupo = client.post("/grupos/novo", data={"nome": "Consultório - Praia"}, follow_redirects=True)
+checar("Criar um segundo Grupo responde 200", r_novo_grupo.status_code == 200)
 
 with app.app_context():
-    total_filiais = Clinica.query.filter_by(empresa_id=empresa.id).count()
-    checar("Agora existem 2 locais de atendimento na mesma empresa", total_filiais == 2)
+    vinculos = GrupoMembro.query.filter_by(usuario_id=usuario.id, ativo=True).all()
+    checar("Agora o médico tem vínculo ATIVO em DOIS grupos independentes", len(vinculos) == 2)
+    grupo2 = Grupo.query.filter_by(nome="Consultório - Praia").first()
+    checar("O segundo Grupo foi criado (não é uma filial do primeiro - são unidades separadas)",
+           grupo2 is not None and grupo2.id != grupo1_id)
+
+# Com vínculo em mais de um Grupo, a escolha deixa de ser automática -
+# ver empresa_atual()/escolher_clinica em app/clinica_utils.py e
+# routes_medico.py.
+r_escolher = client.get("/equipe/clinica")
+checar("Com 2 grupos, a tela de escolha aparece (não seleciona sozinho)", r_escolher.status_code == 200)
 
 client.get("/logout")
 
@@ -100,16 +132,19 @@ checar("Cadastro como secretária responde 200", r.status_code == 200)
 with app.app_context():
     secretaria_autonoma = Usuario.query.filter_by(email="secretaria.autonoma@example.com").first()
     checar("Secretária foi criada com o papel certo", secretaria_autonoma is not None and secretaria_autonoma.tipo == "secretaria")
-    checar("Secretária não recebeu código mestre (isso é só de médico)", secretaria_autonoma.codigo_mestre is None)
-    checar("Secretária também recebeu todas as permissões (é fundadora da própria conta)",
+    checar("Secretária não recebeu código mestre (mecanismo removido, não é mais gerado por ninguém)",
+           secretaria_autonoma.codigo_mestre is None)
+    checar("Secretária também recebeu todas as permissões (é dona do próprio Grupo)",
            secretaria_autonoma.perm_filiais is True)
+    grupo_secretaria = Grupo.query.filter_by(email_contato="secretaria.autonoma@example.com").first()
+    checar("Grupo da secretária também foi criado, com ela como dona", grupo_secretaria is not None)
 client.get("/logout")
 
 # ---------- Validação: cadastro sem nome/email/senha é rejeitado ----------
 r = client.post("/cadastro", data={"nome": "", "email": "", "senha": ""})
 checar("Cadastro sem dados obrigatórios é rejeitado", r.status_code == 200 and "Preencha todos os campos" in r.get_data(as_text=True))
 
-# ---------- Duas contas com nomes iguais/parecidos não colidem no nome da empresa ----------
+# ---------- Duas contas com nomes iguais/parecidos não colidem no nome do Grupo ----------
 client.get("/logout")
 r = client.post("/cadastro", data={
     "nome": "Bruno Pavan",
@@ -120,9 +155,11 @@ r = client.post("/cadastro", data={
 }, follow_redirects=True)
 checar("Cadastro responde 200", r.status_code == 200)
 with app.app_context():
-    empresa3 = Empresa.query.filter_by(nome="Consultório de Bruno Pavan").first()
-    checar("Empresa foi criada com o nome provisório baseado no nome da pessoa", empresa3 is not None)
-    checar("NENHUM local de atendimento foi criado automaticamente",
-           Clinica.query.filter_by(empresa_id=empresa3.id).count() == 0)
+    grupo3 = Grupo.query.filter_by(nome="Consultório de Bruno Pavan").first()
+    checar("Grupo foi criado com o nome provisório baseado no nome da pessoa", grupo3 is not None)
+    checar(
+        "É um Grupo à parte, dono só do próprio Bruno",
+        GrupoMembro.query.filter_by(grupo_id=grupo3.id).count() == 1,
+    )
 
-print("\nTodos os testes do fluxo de cadastro público unificado passaram.")
+print("\nTodos os testes do fluxo de cadastro público unificado (sobre Grupo) passaram.")

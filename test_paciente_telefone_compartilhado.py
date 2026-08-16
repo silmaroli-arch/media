@@ -7,8 +7,7 @@ Continua bloqueando o caso real de duplicata: mesmo telefone E mesma data de
 nascimento na mesma clínica (a própria pessoa tentando se cadastrar de novo).
 """
 from app import create_app
-from app.extensions import db
-from app.models import Usuario, Paciente, Clinica
+from app.models import Usuario, Paciente
 
 app = create_app()
 client = app.test_client()

@@ -7,7 +7,7 @@ registrado, legado/criado pela secretária) - mesmo padrão já usado em
 quanto no dropdown de escolher modelo ao cadastrar/editar um exame."""
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Clinica, ClinicaMembro, PreparoModelo
+from app.models import Usuario, Grupo, GrupoMembro, PreparoModelo
 
 app = create_app()
 client = app.test_client()
@@ -19,12 +19,15 @@ def checar(nome, condicao):
     assert condicao, nome
 
 
-def login(email, senha="123456"):
-    return client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
+def login(email, senha="123456", grupo_id=None):
+    r = client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
+    if grupo_id is not None:
+        r = client.post("/equipe/clinica", data={"empresa_id": str(grupo_id)}, follow_redirects=True)
+    return r
 
 
 with app.app_context():
-    centro = Clinica.query.filter_by(nome="Grupo Saúde Total - Centro").first()
+    centro = Grupo.query.filter_by(nome="Grupo Saúde Total - Centro").first()
     centro_id = centro.id
     eduardo = Usuario.query.filter_by(email="medico@gruposaude.com").first()
     eduardo_id = eduardo.id
@@ -34,21 +37,21 @@ with app.app_context():
     gilda.definir_permissoes_padrao()
     db.session.add(gilda)
     db.session.flush()
-    db.session.add(ClinicaMembro(clinica_id=centro_id, usuario_id=gilda.id))
+    db.session.add(GrupoMembro(grupo_id=centro_id, usuario_id=gilda.id, papel="membro", ativo=True))
     db.session.commit()
     gilda_id = gilda.id
 
     modelo_eduardo = PreparoModelo(
-        clinica_id=centro_id, nome="Preparo Privado Do Eduardo", instrucoes="Jejum de 8 horas.",
+        grupo_id=centro_id, nome="Preparo Privado Do Eduardo", instrucoes="Jejum de 8 horas.",
         criado_por_id=eduardo_id,
     )
     modelo_legado = PreparoModelo(
-        clinica_id=centro_id, nome="Preparo Legado Sem Dono", instrucoes="Sem restrições.",
+        grupo_id=centro_id, nome="Preparo Legado Sem Dono", instrucoes="Sem restrições.",
     )
     db.session.add_all([modelo_eduardo, modelo_legado])
     db.session.commit()
 
-login("medico@gruposaude.com")
+login("medico@gruposaude.com", grupo_id=centro_id)
 r = client.get("/equipe/preparo-modelos")
 html = r.get_data(as_text=True)
 checar("Eduardo vê o próprio modelo na lista", "Preparo Privado Do Eduardo" in html)
@@ -69,7 +72,7 @@ checar(
 )
 client.get("/logout")
 
-login("secretaria@gruposaude.com")
+login("secretaria@gruposaude.com", grupo_id=centro_id)
 r3 = client.get("/equipe/preparo-modelos")
 html3 = r3.get_data(as_text=True)
 checar(

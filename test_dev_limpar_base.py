@@ -4,10 +4,13 @@ rapidamente todos os dados de teste sem mexer no banco na mão. Como é
 acessível sem estar logado, a única proteção é exigir a frase de
 confirmação exata "APAGAR TUDO" antes de apagar qualquer coisa. A config
 global da plataforma e o histórico de deploy NÃO são apagados (não são
-"dados de teste")."""
+"dados de teste").
+
+Fatia 5: Empresa/Clinica foram substituídas por Grupo (unidade atômica) -
+o teste passa a checar que todos os Grupos são apagados."""
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Clinica, Empresa, PlataformaConfig, HistoricoDeploy, Paciente
+from app.models import Usuario, Grupo, PlataformaConfig, HistoricoDeploy, Paciente
 
 app = create_app()
 client = app.test_client()
@@ -24,11 +27,10 @@ with app.app_context():
     db.session.add(HistoricoDeploy(commit="0123456789abcdef", commit_curto="0123456", branch="dev", mensagem="teste"))
     db.session.commit()
     total_usuarios_antes = Usuario.query.count()
-    total_clinicas_antes = Clinica.query.count()
-    total_empresas_antes = Empresa.query.count()
+    total_grupos_antes = Grupo.query.count()
     total_pacientes_antes = Paciente.query.count()
-    checar("Seed populou usuários/clínicas/empresas/pacientes (pré-condição)",
-           total_usuarios_antes > 0 and total_clinicas_antes > 0 and total_empresas_antes > 0 and total_pacientes_antes > 0)
+    checar("Seed populou usuários/grupos/pacientes (pré-condição)",
+           total_usuarios_antes > 0 and total_grupos_antes > 0 and total_pacientes_antes > 0)
 
 # O link aparece na tela de login, mesmo sem estar logado.
 r0 = client.get("/login")
@@ -61,8 +63,7 @@ with app.app_context():
     checar("Só a conta do dono sobrevive entre os usuários",
            Usuario.query.count() == Usuario.query.filter_by(tipo="dono").count()
            and Usuario.query.filter_by(tipo="dono").count() >= 1)
-    checar("Todas as clínicas foram apagadas", Clinica.query.count() == 0)
-    checar("Todas as empresas foram apagadas", Empresa.query.count() == 0)
+    checar("Todos os grupos foram apagados", Grupo.query.count() == 0)
     checar("Todos os pacientes foram apagados", Paciente.query.count() == 0)
     checar("A configuração global da plataforma NÃO foi apagada", PlataformaConfig.query.count() == 1)
     checar("O histórico de deploy NÃO foi apagado", HistoricoDeploy.query.count() == 1)

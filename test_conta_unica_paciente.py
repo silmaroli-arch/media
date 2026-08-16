@@ -1,22 +1,24 @@
-"""Testa a CONTA ÚNICA do paciente (fase 1):
+"""Testa a IDENTIDADE ÚNICA E GLOBAL do paciente (Fatia 5):
 
 A base de pacientes vale para o aplicativo todo no sentido de PESSOA: a
-mesma pessoa (telefone + data de nascimento) tem UMA conta de login, com
-um CADASTRO (Paciente) por empresa que frequenta.
+mesma pessoa (CPF) tem UM ÚNICO cadastro (Paciente) na plataforma inteira
+- não é mais "um cadastro por empresa" (Paciente.cpf agora tem UNIQUE
+CONSTRAINT no banco). O vínculo com cada grupo de trabalho é feito por
+GrupoPaciente (associação, não cópia de cadastro):
 
-- Cadastrar a mesma pessoa numa segunda empresa (pela equipe ou pelo link
-  de auto-cadastro) NÃO cria outra conta: reaproveita a existente, criando
-  só o cadastro daquela empresa.
+- Cadastrar a mesma pessoa (mesmo CPF) numa segunda empresa/grupo pela
+  equipe NÃO cria outro cadastro nem outra conta: é bloqueado, orientando
+  a equipe a usar "Buscar por CPF" (medico.pacientes_importar), que cria
+  só a associação (GrupoPaciente) nova com o grupo atual.
 - Telefone compartilhado (família) com data de nascimento DIFERENTE
-  continua criando contas separadas - são pessoas diferentes.
-- No login, a pessoa escolhe qual clínica quer acessar agora (um cadastro
-  por empresa) e a área do paciente usa o cadastro escolhido.
-- PRIVACIDADE (LGPD): cada clínica continua vendo SÓ o cadastro dela -
-  a conta é global só para o próprio paciente.
+  continua criando CPF/conta/cadastro separados - são pessoas diferentes.
+- No login (CPF + data de nascimento), a pessoa entra direto - com CPF
+  globalmente único só existe UM cadastro correspondente.
+- PRIVACIDADE (LGPD): cada grupo só vê pacientes que tenham GrupoPaciente
+  com ele - importar não expõe o histórico de outra clínica.
 """
 from app import create_app
-from app.extensions import db
-from app.models import Usuario, Empresa, Clinica, Paciente, Exame, normalizar_telefone
+from app.models import Usuario, Grupo, Paciente, GrupoPaciente, normalizar_telefone
 
 app = create_app()
 client = app.test_client()
@@ -28,137 +30,127 @@ def checar(nome, condicao):
     assert condicao, nome
 
 
-def login_equipe(email, senha="123456"):
-    return client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
+def login_equipe(email, senha="123456", grupo_id=None):
+    r = client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
+    if grupo_id is not None:
+        r = client.post("/equipe/clinica", data={"empresa_id": str(grupo_id)}, follow_redirects=True)
+    return r
 
 
 TEL = "(27) 98888-7001"
 TEL_NORM = normalizar_telefone(TEL)
+CPF_ANA = "710.820.930-04"
+CPF_FILHO = "710.820.930-15"
 
 with app.app_context():
-    grupo = Empresa.query.filter_by(nome="Grupo Saúde Total").first()
-    vitoria_emp = Clinica.query.filter_by(nome="Clínica Vitória").first().empresa
-    sp_emp = Clinica.query.filter_by(nome="Clínica São Paulo").first().empresa
-    grupo_id, vitoria_emp_id, sp_emp_id = grupo.id, vitoria_emp.id, sp_emp.id
-    # Garante um código de auto-cadastro pra Clínica SP (o link é por empresa).
-    if not sp_emp.codigo_cadastro_paciente:
-        sp_emp.codigo_cadastro_paciente = "TESTESP1"
-        db.session.commit()
-    codigo_sp = sp_emp.codigo_cadastro_paciente
-    centro = Clinica.query.filter_by(nome="Grupo Saúde Total - Centro").first()
-    medico_grupo = Usuario.query.filter_by(email="medico@gruposaude.com").first()
-    exame_grupo = Exame(clinica_id=centro.id, medico_id=medico_grupo.id, nome="Exame Conta Unica Grupo",
-                        descricao="", duracao_minutos=30, medico_confirmado=True, associado=True)
-    db.session.add(exame_grupo)
-    db.session.commit()
+    grupo_centro = Grupo.query.filter_by(nome="Grupo Saúde Total - Centro").first()
+    grupo_vitoria = Grupo.query.filter_by(nome="Clínica Vitória").first()
+    grupo_sp = Grupo.query.filter_by(nome="Clínica São Paulo").first()
+    centro_id, vitoria_id, sp_id = grupo_centro.id, grupo_vitoria.id, grupo_sp.id
 
-# ---------- 1ª empresa: cria a conta ----------
+# ---------- 1º grupo: cria a conta e o cadastro ----------
 
-login_equipe("secretaria@gruposaude.com")
+login_equipe("secretaria@gruposaude.com", grupo_id=centro_id)
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Ana Portatil", "cpf": "710.820.930-04", "email": "",
+    "nome": "Ana Portatil", "cpf": CPF_ANA, "email": "",
     "telefone": TEL, "data_nascimento": "1991-04-15",
 }, follow_redirects=True)
-checar("Cadastro na 1ª empresa funciona", "cadastrado" in r.get_data(as_text=True).lower())
+checar("Cadastro no 1º grupo funciona", "cadastrado" in r.get_data(as_text=True).lower())
 client.get("/logout")
 
 with app.app_context():
     contas = Usuario.query.filter_by(telefone=TEL_NORM, tipo="paciente").all()
     checar("Uma conta criada", len(contas) == 1)
     conta_id = contas[0].id
+    pacientes_ana = Paciente.query.filter_by(cpf=CPF_ANA).all()
+    checar("Um único cadastro (Paciente) criado para esse CPF", len(pacientes_ana) == 1)
+    ana_paciente_id = pacientes_ana[0].id
+    checar(
+        "O cadastro já está associado ao grupo em que foi criado",
+        GrupoPaciente.query.filter_by(grupo_id=centro_id, paciente_id=ana_paciente_id).count() == 1,
+    )
 
-# ---------- 2ª empresa (pela equipe): REUSA a conta ----------
+# ---------- 2º grupo: cadastrar de novo com o MESMO CPF é bloqueado ----------
+# (o cadastro é global e único por CPF - não dá pra criar uma cópia).
 
 login_equipe("secretaria@clinicavitoria.com")
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Ana Portatil", "cpf": "710.820.930-04", "email": "",
+    "nome": "Ana Portatil", "cpf": CPF_ANA, "email": "",
     "telefone": TEL, "data_nascimento": "1991-04-15",
 }, follow_redirects=True)
-checar("Cadastro na 2ª empresa funciona", "cadastrado" in r.get_data(as_text=True).lower())
+checar(
+    "Cadastrar de novo com o mesmo CPF em outro grupo é barrado, orientando a importar",
+    "já tem cadastro na plataforma" in r.get_data(as_text=True) and "Buscar por CPF" in r.get_data(as_text=True),
+)
+with app.app_context():
+    checar("NÃO duplicou o cadastro (Paciente) da Ana", Paciente.query.filter_by(cpf=CPF_ANA).count() == 1)
+    checar("NÃO criou conta nova para a Ana", Usuario.query.filter_by(telefone=TEL_NORM, tipo="paciente").count() == 1)
+
+# ---------- 2º grupo: IMPORTAR pelo CPF cria só a associação (GrupoPaciente) ----------
+
+r = client.post("/equipe/pacientes/importar", data={"cpf": CPF_ANA}, follow_redirects=True)
+checar("Importar pelo CPF no 2º grupo funciona", "importado" in r.get_data(as_text=True).lower())
 
 with app.app_context():
-    contas = Usuario.query.filter_by(telefone=TEL_NORM, tipo="paciente").all()
-    checar("CONTINUA uma conta só (não criou outra)", len(contas) == 1 and contas[0].id == conta_id)
-    conta = contas[0]
-    checar("A conta agora tem DOIS cadastros (um por empresa)",
-           len(conta.pacientes) == 2
-           and {p.empresa_id for p in conta.pacientes} == {grupo_id, vitoria_emp_id})
+    checar("CONTINUA um único cadastro (Paciente) para a Ana", Paciente.query.filter_by(cpf=CPF_ANA).count() == 1)
+    checar(
+        "Agora a Ana está associada a DOIS grupos",
+        GrupoPaciente.query.filter_by(paciente_id=ana_paciente_id).count() == 2
+        and {gp.grupo_id for gp in GrupoPaciente.query.filter_by(paciente_id=ana_paciente_id).all()}
+        == {centro_id, vitoria_id},
+    )
 
-# PRIVACIDADE: cada equipe vê só o cadastro dela.
+# PRIVACIDADE: cada equipe vê só quem está associado ao grupo dela.
 r = client.get("/equipe/pacientes")
-checar("Clínica Vitória vê a Ana (cadastro dela)", "Ana Portatil" in r.get_data(as_text=True))
+checar("Clínica Vitória vê a Ana (já importada)", "Ana Portatil" in r.get_data(as_text=True))
 client.get("/logout")
 login_equipe("secretaria@clinicasp.com")
 r = client.get("/equipe/pacientes")
-checar("Clínica SP NÃO vê a Ana (ainda não é paciente lá)", "Ana Portatil" not in r.get_data(as_text=True))
+checar("Clínica SP NÃO vê a Ana (ainda não foi importada lá)", "Ana Portatil" not in r.get_data(as_text=True))
+
+# ---------- 3º grupo (importação pelo CPF) ----------
+
+r = client.post("/equipe/pacientes/importar", data={"cpf": CPF_ANA}, follow_redirects=True)
+checar("Importar pelo CPF no 3º grupo funciona", "importado" in r.get_data(as_text=True).lower())
 client.get("/logout")
 
-# ---------- 3ª empresa (importação pelo CPF): também reusa ----------
-
-# O link de auto-cadastro por clínica foi desativado: agora a SECRETÁRIA
-# da 3ª empresa importa a Ana pelo CPF (ver medico.pacientes_importar).
-login_equipe("secretaria@clinicasp.com")
-r = client.post("/equipe/pacientes/importar", data={"cpf": "710.820.930-04"},
-                follow_redirects=True)
-checar("Importar pelo CPF na 3ª empresa funciona", "importado(a) da plataforma" in r.get_data(as_text=True))
-client.get("/logout")
 with app.app_context():
-    contas = Usuario.query.filter_by(telefone=TEL_NORM, tipo="paciente").all()
-    checar("A importação também NÃO criou outra conta", len(contas) == 1)
-    checar("Agora são TRÊS cadastros na mesma conta",
-           len(contas[0].pacientes) == 3)
-    pac_sp = next(p for p in contas[0].pacientes if p.empresa_id == sp_emp_id)
-    checar("O cadastro importado pela equipe já entra aprovado",
-           pac_sp.status_cadastro == "aprovado")
+    checar("CONTINUA um único cadastro (Paciente) para a Ana", Paciente.query.filter_by(cpf=CPF_ANA).count() == 1)
+    checar(
+        "Agora a Ana está associada a TRÊS grupos",
+        GrupoPaciente.query.filter_by(paciente_id=ana_paciente_id).count() == 3,
+    )
+    ana = Paciente.query.get(ana_paciente_id)
+    checar("O cadastro importado pela equipe continua aprovado", ana.status_cadastro == "aprovado")
 
-# ---------- Família: mesmo telefone, nascimento diferente = OUTRA conta ----------
+# ---------- Família: mesmo telefone, nascimento diferente = OUTRO CPF/conta/cadastro ----------
 
-login_equipe("secretaria@gruposaude.com")
+login_equipe("secretaria@gruposaude.com", grupo_id=centro_id)
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Filho Da Ana", "cpf": "710.820.930-15", "email": "",
+    "nome": "Filho Da Ana", "cpf": CPF_FILHO, "email": "",
     "telefone": TEL, "data_nascimento": "2015-10-20",
 }, follow_redirects=True)
 checar("Familiar com o mesmo telefone e OUTRO nascimento é cadastrado", "cadastrado" in r.get_data(as_text=True).lower())
 client.get("/logout")
 with app.app_context():
     contas = Usuario.query.filter_by(telefone=TEL_NORM, tipo="paciente").all()
-    checar("Pessoa diferente = conta separada (agora 2 contas no telefone)",
-           len(contas) == 2)
+    checar("Pessoa diferente = conta separada (agora 2 contas no telefone)", len(contas) == 2)
+    checar("Pessoa diferente = cadastro (Paciente) separado", Paciente.query.filter_by(cpf=CPF_FILHO).count() == 1)
 
-# ---------- Login: uma conta, escolha do cadastro (empresa) ----------
+# ---------- Login: CPF único -> entra direto (não existe mais "escolher clínica") ----------
 
-with app.app_context():
-    conta = Usuario.query.get(conta_id)
-    pac_grupo = next(p for p in conta.pacientes if p.empresa_id == grupo_id)
-    # Aprova o cadastro do Grupo pra área liberar o agendamento.
-    pac_grupo.status_cadastro = "aprovado"
-    db.session.commit()
-    pac_grupo_id = pac_grupo.id
-
-# Área UNIFICADA: os 3 cadastros são da MESMA conta, então o login entra
-# DIRETO (sem tela de escolha) - a troca de clínica é feita lá dentro.
-r = client.post("/login-paciente", data={"cpf": "710.820.930-04", "data_nascimento": "15/04/1991"},
+r = client.post("/login-paciente", data={"cpf": CPF_ANA, "data_nascimento": "15/04/1991"},
                 follow_redirects=True)
 html = r.get_data(as_text=True)
-checar("Login da Ana entra direto (sem tela de escolha)",
+checar("Login da Ana entra direto (CPF é único, sem tela de escolha)",
        'name="paciente_id_escolhido"' not in html and "Olá, Ana Portatil" in html)
-checar("O painel mostra que ela é paciente em 3 clínicas",
-       "paciente em 3 clínicas" in html)
-opcao_grupo = html.split(f'value="{pac_grupo_id}"')[1][:60]
-checar("O cadastro ATIVO é o aprovado (Grupo vem selecionado no seletor de clínica)",
-       "selected" in opcao_grupo)
-
-# Trocar pra um cadastro que não é da conta é rejeitado.
-r = client.post("/paciente/trocar-clinica", data={"paciente_id": "999999"}, follow_redirects=True)
-checar("Trocar pra cadastro de outra conta é rejeitado",
-       "Escolha inválida" in r.get_data(as_text=True))
 client.get("/logout")
 
-# O filho (outra conta) loga direto, sem tela de escolha.
-r = client.post("/login-paciente", data={"cpf": "710.820.930-15", "data_nascimento": "20/10/2015"},
+# O filho (outra conta/cadastro) também loga direto.
+r = client.post("/login-paciente", data={"cpf": CPF_FILHO, "data_nascimento": "20/10/2015"},
                 follow_redirects=True)
-checar("O filho loga direto (uma conta, um cadastro)",
-       "mais de uma clínica" not in r.get_data(as_text=True) and r.status_code == 200)
+checar("O filho loga direto (CPF diferente, cadastro próprio)",
+       'name="paciente_id_escolhido"' not in html and r.status_code == 200)
 client.get("/logout")
 
-print("\nTodos os testes de conta única do paciente passaram.")
+print("\nTodos os testes de identidade única/global do paciente passaram.")

@@ -4,8 +4,7 @@ escolher algo), mas uma das opções continua sendo "Nenhum" - um exame pode
 legitimamente não precisar de preparo nenhum (ex.: uma consulta simples).
 O que não é permitido é deixar o campo sem escolher nada."""
 from app import create_app
-from app.extensions import db
-from app.models import Exame, PreparoModelo, Clinica
+from app.models import Exame, PreparoModelo, Grupo
 
 app = create_app()
 client = app.test_client()
@@ -58,8 +57,8 @@ with app.app_context():
 
 # Escolhendo um modelo de verdade também funciona.
 with app.app_context():
-    clinica_vitoria_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
-    modelo_id = PreparoModelo.query.filter_by(clinica_id=clinica_vitoria_id).first().id
+    grupo_vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
+    modelo_id = PreparoModelo.query.filter_by(grupo_id=grupo_vitoria_id).first().id
 r3 = client.post("/equipe/exames/novo", data={
     "nome": "Colonoscopia com preparo", "descricao": "Colono", "duracao_minutos": "45",
     "preparo_modelo_id": str(modelo_id),
