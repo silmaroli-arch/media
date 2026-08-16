@@ -30,11 +30,10 @@
           {% endif %}
         </td>
         <td class="text-nowrap">
-          <a href="{{ url_for('grupo.pacientes_lista', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-secondary">Pacientes</a>
-          <a href="{{ url_for('grupo.preparo_modelos_lista', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-secondary">Modelos de preparo</a>
-          <a href="{{ url_for('grupo.exames_lista', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-secondary">Exames</a>
-          <a href="{{ url_for('grupo.agenda_lista', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-secondary">Agenda</a>
-          <a href="{{ url_for('grupo.perguntas_pendentes', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-secondary">Perguntas</a>
+          {# Pacientes/exames/agenda/perguntas deste grupo ficam nas telas
+             de sempre (menu "Cadastro geral" etc.) depois de selecionar o
+             grupo acima como ativo - não há mais uma versão separada
+             dessas telas aqui (ver nota no topo de routes_grupo.py). #}
           {% if item.papel in ('dono', 'administrador') %}
           <a href="{{ url_for('grupo.convidar', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-primary">Ver membros / Convidar</a>
           {% endif %}
