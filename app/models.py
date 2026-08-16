@@ -150,6 +150,14 @@ class Clinica(db.Model):
 
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Grupo pareado (Fatia 4 da migração para Grupo) — âncora técnica que dá
+    # a esta filial legada um grupo_id real para Exame/PreparoModelo/
+    # Agendamento/PerguntaPendente/FaqItem, sem expor nenhuma tela de Grupo
+    # para quem usa o modelo antigo. Use sempre grupo_pareado(), não o id
+    # direto, pra garantir o pareamento lazy.
+    grupo_pareado_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True, unique=True)
+    grupo_pareado_rel = db.relationship("Grupo", foreign_keys=[grupo_pareado_id])
+
     empresa = db.relationship("Empresa", back_populates="filiais")
     membros = db.relationship("ClinicaMembro", back_populates="clinica", cascade="all, delete-orphan")
     pacientes = db.relationship("Paciente", back_populates="clinica", cascade="all, delete-orphan")
@@ -163,6 +171,19 @@ class Clinica(db.Model):
     @property
     def medicos_e_secretarias(self):
         return [m.usuario for m in self.membros if m.ativo]
+
+    def grupo_pareado(self):
+        """Cria (na primeira vez) e devolve o Grupo pareado a esta filial."""
+        from app.grupo_pareamento import sincronizar_grupo_membro_pareado
+
+        if self.grupo_pareado_id:
+            return self.grupo_pareado_rel
+        grupo = Grupo(nome=self.nome)
+        db.session.add(grupo)
+        db.session.flush()
+        self.grupo_pareado_id = grupo.id
+        sincronizar_grupo_membro_pareado(self)
+        return grupo
 
 
 class PlataformaConfig(db.Model):
@@ -606,36 +627,19 @@ class Grupo(db.Model):
     nome = db.Column(db.String(150), nullable=False)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # "Clínica interna" (junto de uma Empresa interna) criada por baixo dos
-    # panos, na primeira vez que o grupo precisa cadastrar um exame ou um
-    # modelo de preparo — Exame/PreparoModelo (modelo legado) exigem uma
-    # clinica_id de verdade (NOT NULL) e nunca foram desenhados para
-    # pertencer a um Grupo. Em vez de alterar esse modelo antigo (usado por
-    # financeiro, relatórios, fiscal etc. — arriscado demais nesta fatia),
-    # cada grupo ganha sua própria Empresa/Clínica "escondida" (nunca
-    # aparece em nenhuma tela do modelo antigo, porque nenhum ClinicaMembro
-    # é criado para ela) que serve só de âncora técnica. Isso é uma ponte
-    # temporária: a migração completa do restante do sistema para o
-    # conceito de grupo (item pendente do BBP) deve eventualmente
-    # eliminar essa necessidade.
-    clinica_interna_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
-    clinica_interna_rel = db.relationship("Clinica", foreign_keys=[clinica_interna_id])
+    # Observação histórica: até a Fatia 4 da migração para Grupo, este
+    # modelo tinha uma "clínica interna" (clinica_interna_id/
+    # clinica_interna()) criada por baixo dos panos como âncora técnica,
+    # porque Exame/PreparoModelo/Agendamento/PerguntaPendente/FaqItem só
+    # aceitavam clinica_id (NOT NULL). Agora esses 5 modelos têm um
+    # grupo_id próprio (ver mais abaixo e app/routes_grupo.py) e não
+    # precisam mais dessa ponte - removida nesta fatia. Bancos já
+    # existentes ficam com a coluna `grupos.clinica_interna_id` órfã (sem
+    # Flask-Migrate neste projeto; ver nota de limpeza manual no relatório
+    # da fatia).
 
     membros = db.relationship("GrupoMembro", back_populates="grupo", order_by="GrupoMembro.id")
     convites = db.relationship("GrupoConvite", back_populates="grupo", order_by="GrupoConvite.id")
-
-    def clinica_interna(self):
-        """Cria (na primeira vez) e devolve a clínica interna deste grupo."""
-        if self.clinica_interna_id:
-            return self.clinica_interna_rel
-        empresa = Empresa(nome=f"[grupo:{self.id}] {self.nome}", status="ativa")
-        db.session.add(empresa)
-        db.session.flush()
-        clinica = Clinica(nome=self.nome, empresa_id=empresa.id)
-        db.session.add(clinica)
-        db.session.flush()
-        self.clinica_interna_id = clinica.id
-        return clinica
 
     @property
     def dono(self):
@@ -649,6 +653,13 @@ class Grupo(db.Model):
             if m.usuario_id == usuario_id and m.ativo:
                 return m
         return None
+
+    @property
+    def clinica_pareada(self):
+        """Fatia 4: busca reversa de Clinica.grupo_pareado() — só preenchida
+        quando este grupo é a âncora técnica de uma filial legada, não para
+        grupos criados de verdade em app/routes_grupo.py."""
+        return Clinica.query.filter_by(grupo_pareado_id=self.id).first()
 
     def paciente_pode_ser_removido(self, paciente_id):
         """BBP seção 7: um paciente sem nenhuma consulta agendada neste
@@ -811,10 +822,19 @@ exame_medicos_associados = db.Table(
 
 class Exame(db.Model):
     __tablename__ = "exames"
-    __table_args__ = (db.UniqueConstraint("clinica_id", "nome", name="uq_clinica_exame_nome"),)
+    __table_args__ = (
+        db.UniqueConstraint("clinica_id", "nome", name="uq_clinica_exame_nome"),
+        db.UniqueConstraint("grupo_id", "nome", name="uq_grupo_exame_nome"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
+    # Fatia 4 da migração para Grupo: clinica_id passou a ser um campo
+    # legado/de exibição (nullable) — grupo_id é a chave real de
+    # escopo/isolamento a partir daqui. Toda escrita da aplicação continua
+    # preenchendo os dois (ver Clinica.grupo_pareado()), então clinica_id
+    # nunca fica desatualizado para os registros legados.
+    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
+    grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True)
     # DONO do exame: quem criou o cadastro. Se foi um MÉDICO, o exame é
     # dele - só ele pode editar o cadastro, e só ele pode ser associado a
     # este exame nas filiais (ver pode_ser_editado_por / a validação de
@@ -874,6 +894,7 @@ class Exame(db.Model):
     precisa_acompanhante = db.Column(db.Boolean, nullable=False, default=False)
 
     clinica = db.relationship("Clinica", back_populates="exames")
+    grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     medico = db.relationship("Usuario", back_populates="exames_medico", foreign_keys=[medico_id])
     medicos_extra = db.relationship(
         "Usuario", secondary=exame_medicos_associados,
@@ -953,10 +974,16 @@ class PreparoModelo(db.Model):
     agendamentos em dias diferentes) — evita recadastrar o mesmo texto em
     cada exame."""
     __tablename__ = "preparo_modelos"
-    __table_args__ = (db.UniqueConstraint("clinica_id", "nome", name="uq_clinica_preparo_modelo_nome"),)
+    __table_args__ = (
+        db.UniqueConstraint("clinica_id", "nome", name="uq_clinica_preparo_modelo_nome"),
+        db.UniqueConstraint("grupo_id", "nome", name="uq_grupo_preparo_modelo_nome"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
+    # Fatia 4: clinica_id vira legado/exibição (nullable); grupo_id é a
+    # chave real de escopo — ver mesmo comentário em Exame.clinica_id.
+    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
+    grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True)
     # DONO do modelo: quem o criou. Se foi um MÉDICO, só ele edita/remove
     # (conteúdo clínico é do médico). NULL em modelos antigos - esses
     # seguem editáveis pela equipe (comportamento antigo).
@@ -973,6 +1000,7 @@ class PreparoModelo(db.Model):
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     clinica = db.relationship("Clinica")
+    grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     exames = db.relationship("Exame", back_populates="preparo_modelo")
     cortes = db.relationship(
         "PreparoCorte", back_populates="preparo_modelo", cascade="all, delete-orphan",
@@ -1170,7 +1198,10 @@ class Agendamento(db.Model):
     __tablename__ = "agendamentos"
 
     id = db.Column(db.Integer, primary_key=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
+    # Fatia 4: clinica_id vira legado/exibição (nullable); grupo_id é a
+    # chave real de escopo — ver mesmo comentário em Exame.clinica_id.
+    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
+    grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True)
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=False)
     # Médico responsável por este agendamento — é assim que um médico
@@ -1196,6 +1227,7 @@ class Agendamento(db.Model):
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     clinica = db.relationship("Clinica")
+    grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     paciente = db.relationship("Paciente", back_populates="agendamentos")
     exame = db.relationship("Exame", back_populates="agendamentos")
     medico = db.relationship("Usuario", back_populates="agendamentos_medico", foreign_keys=[medico_id])
@@ -1256,7 +1288,10 @@ class FaqItem(db.Model):
     __tablename__ = "faq_itens"
 
     id = db.Column(db.Integer, primary_key=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
+    # Fatia 4: clinica_id vira legado/exibição (nullable); grupo_id é a
+    # chave real de escopo — ver mesmo comentário em Exame.clinica_id.
+    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
+    grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=True)  # None = pergunta geral
     pergunta = db.Column(db.Text, nullable=False)
     resposta = db.Column(db.Text, nullable=False)
@@ -1265,6 +1300,7 @@ class FaqItem(db.Model):
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     clinica = db.relationship("Clinica")
+    grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     exame = db.relationship("Exame", back_populates="faqs")
 
 
@@ -1272,7 +1308,10 @@ class PerguntaPendente(db.Model):
     __tablename__ = "perguntas_pendentes"
 
     id = db.Column(db.Integer, primary_key=True)
-    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=False)
+    # Fatia 4: clinica_id vira legado/exibição (nullable); grupo_id é a
+    # chave real de escopo — ver mesmo comentário em Exame.clinica_id.
+    clinica_id = db.Column(db.Integer, db.ForeignKey("clinicas.id"), nullable=True)
+    grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True)
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=True)
     pergunta = db.Column(db.Text, nullable=False)
@@ -1300,6 +1339,7 @@ class PerguntaPendente(db.Model):
     respondida_em = db.Column(db.DateTime)
 
     clinica = db.relationship("Clinica")
+    grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     paciente = db.relationship("Paciente", back_populates="perguntas_pendentes")
     exame = db.relationship("Exame")
 
@@ -1342,3 +1382,44 @@ def _preparo_dono_medico(self):
 
 PreparoModelo.pode_ser_editado_por = _preparo_pode_ser_editado_por
 PreparoModelo.dono_medico = property(_preparo_dono_medico)
+
+
+# ---------- Fatia 4: dual-write automático de grupo_id ----------
+# Rede de segurança do dual-write clinica_id/grupo_id (ver Decisão 2 do
+# plano da Fatia 4): toda escrita da aplicação já grava os dois campos
+# explicitamente nas rotas, mas fixtures de teste (e qualquer ponto que a
+# migração tenha esquecido) costumam só gravar clinica_id, do jeito que já
+# funcionava antes desta fatia. Este listener preenche grupo_id sozinho, a
+# partir de Clinica.grupo_pareado(), sempre que alguém cria um desses 5
+# modelos só com clinica_id - sem isso, esses registros ficariam invisíveis
+# para as telas que agora filtram por grupo_id.
+from sqlalchemy import event as _event  # noqa: E402
+
+_MODELOS_COM_GRUPO_ID = (Exame, PreparoModelo, Agendamento, PerguntaPendente, FaqItem)
+
+
+def _preencher_grupo_id_automaticamente(session, flush_context, instances):
+    for obj in list(session.new):
+        if (
+            isinstance(obj, _MODELOS_COM_GRUPO_ID)
+            and obj.clinica_id is not None
+            and obj.grupo_id is None
+        ):
+            clinica = Clinica.query.get(obj.clinica_id)
+            # Só usamos o pareamento se a Clinica JÁ tem um Grupo pareado
+            # (caso comum: filial vinda do seed/produção, já pareada há
+            # tempo). Se ainda não tiver, Clinica.grupo_pareado() criaria um
+            # Grupo novo agora, o que exige um db.session.flush() interno -
+            # e como este listener já roda DENTRO de um flush em andamento
+            # (before_flush), esse flush aninhado seria rejeitado pelo
+            # SQLAlchemy ("Session is already flushing"). Nesse caso raro
+            # (ex.: uma Clinica criada na hora por um teste), deixamos
+            # grupo_id em branco - o pareamento de verdade acontece
+            # normalmente na próxima vez que essa clínica for usada fora de
+            # um flush aninhado (ex.: seed.py, migrar_grupo_por_clinica.py,
+            # ou o dual-write explícito das rotas).
+            if clinica and clinica.grupo_pareado_id:
+                obj.grupo_id = clinica.grupo_pareado_rel.id
+
+
+_event.listen(db.session, "before_flush", _preencher_grupo_id_automaticamente)

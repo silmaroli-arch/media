@@ -170,9 +170,9 @@ def similaridade(pergunta_a: str, pergunta_b: str) -> float:
     return 0.4 * ratio_texto + 0.6 * ratio_kw
 
 
-def buscar_resposta(pergunta_usuario: str, clinica_id, exame_id=None):
+def buscar_resposta(pergunta_usuario: str, grupo_id, exame_id=None):
     """
-    Procura a melhor resposta na base de FAQ, restrita à clínica do
+    Procura a melhor resposta na base de FAQ, restrita ao Grupo (Fatia 4) do
     paciente (para não misturar conhecimento entre clínicas diferentes).
     Prioriza itens específicos do exame, mas também considera FAQs gerais.
 
@@ -180,7 +180,7 @@ def buscar_resposta(pergunta_usuario: str, clinica_id, exame_id=None):
     confiança suficiente.
     """
     candidatos = FaqItem.query.filter(
-        FaqItem.clinica_id == clinica_id,
+        FaqItem.grupo_id == grupo_id,
         (FaqItem.exame_id == exame_id) | (FaqItem.exame_id.is_(None)),
     ).all()
 

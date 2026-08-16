@@ -10,7 +10,7 @@ from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, normalizar_telefone, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, Clinica, normalizar_telefone, formatar_nome_proprio, cep_incompleto, telefone_incompleto
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.ia_preparo import responder_com_ia
 from app.clinica_utils import verificar_vencimento_empresa
@@ -39,6 +39,17 @@ def _clinica_ancora(paciente, exame=None, agendamento=None):
     if empresa and empresa.filiais:
         return empresa.filiais[0].id
     return paciente.clinica_id
+
+
+def _grupo_ancora(clinica_id_ancora):
+    """Fatia 4 - dual-write: Grupo pareado (ver Clinica.grupo_pareado())
+    correspondente ao clinica_id resolvido por _clinica_ancora acima. Vira
+    a chave de escopo real (grupo_id); clinica_id continua sendo gravado
+    junto, só por compatibilidade com o que já lê esse campo direto."""
+    if not clinica_id_ancora:
+        return None
+    clinica = Clinica.query.get(clinica_id_ancora)
+    return clinica.grupo_pareado().id if clinica else None
 
 
 def _meus_cadastros_ids():
@@ -208,11 +219,14 @@ def chat():
             # pergunta continua sendo encaminhada à IA de novo, mesmo que
             # pareça repetida — não há atalho pela FAQ aqui.
             resultado_ia = responder_com_ia(pergunta_enviada, exame_selecionado) if exame_selecionado else None
+            clinica_id_ancora = _clinica_ancora(paciente, exame_selecionado, agendamento_selecionado)
+            grupo_id_ancora = _grupo_ancora(clinica_id_ancora)
 
             if resultado_ia and resultado_ia["final"]:
                 origem = "ia_aguardando"
                 pendente = PerguntaPendente(
-                    clinica_id=_clinica_ancora(paciente, exame_selecionado, agendamento_selecionado),
+                    clinica_id=clinica_id_ancora,
+                    grupo_id=grupo_id_ancora,
                     paciente_id=paciente.id,
                     exame_id=exame_selecionado.id,
                     pergunta=pergunta_enviada,
@@ -237,7 +251,7 @@ def chat():
                 # de alimento/medicamento entram como alternativa.
                 faq_item, score = buscar_resposta(
                     pergunta_enviada,
-                    clinica_id=_clinica_ancora(paciente, exame_selecionado, agendamento_selecionado),
+                    grupo_id=grupo_id_ancora,
                     exame_id=int(exame_id_selecionado) if exame_id_selecionado else None,
                 )
                 if faq_item:
@@ -257,7 +271,8 @@ def chat():
                     origem = "medicamento"
                 else:
                     pendente = PerguntaPendente(
-                        clinica_id=_clinica_ancora(paciente, exame_selecionado, agendamento_selecionado),
+                        clinica_id=clinica_id_ancora,
+                        grupo_id=grupo_id_ancora,
                         paciente_id=paciente.id,
                         exame_id=exame_id_selecionado,
                         pergunta=pergunta_enviada,

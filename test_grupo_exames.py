@@ -111,9 +111,8 @@ checar("Modelo de preparo cadastrado com sucesso", "cadastrado com sucesso" in r
 
 with app.app_context():
     grupo_local = Grupo.query.get(grupo_id)
-    checar("Grupo ganhou uma clínica interna (shadow clinica)", grupo_local.clinica_interna_id is not None)
-    modelo1 = PreparoModelo.query.filter_by(clinica_id=grupo_local.clinica_interna_id, nome="Preparo Colonoscopia BBP").first()
-    checar("Modelo de preparo foi criado na clínica interna do grupo", modelo1 is not None)
+    modelo1 = PreparoModelo.query.filter_by(grupo_id=grupo_local.id, nome="Preparo Colonoscopia BBP").first()
+    checar("Modelo de preparo foi criado com o grupo_id do grupo", modelo1 is not None)
     modelo1_id = modelo1.id
 
 r = client_medico1.get(f"/grupos/{grupo_id}/preparo-modelos")
@@ -131,8 +130,8 @@ r = client_medico2.post(f"/grupos/{grupo_id}/preparo-modelos/novo", data={
 }, follow_redirects=True)
 checar("Segundo médico cadastra seu próprio modelo de preparo no mesmo grupo", "cadastrado com sucesso" in r.get_data(as_text=True))
 with app.app_context():
-    modelo2 = PreparoModelo.query.filter_by(clinica_id=grupo_local.clinica_interna_id, nome="Preparo Endoscopia BBP").first()
-    checar("Segundo modelo foi criado na MESMA clínica interna do grupo", modelo2 is not None and modelo2.clinica_id == grupo_local.clinica_interna_id)
+    modelo2 = PreparoModelo.query.filter_by(grupo_id=grupo_local.id, nome="Preparo Endoscopia BBP").first()
+    checar("Segundo modelo foi criado no MESMO grupo", modelo2 is not None and modelo2.grupo_id == grupo_local.id)
     modelo2_id = modelo2.id
 
 
@@ -159,8 +158,8 @@ r = client_medico1.post(f"/grupos/{grupo_id}/exames/novo", data={
 checar("Exame cadastrado com sucesso usando o modelo de preparo do próprio médico", "cadastrado com sucesso" in r.get_data(as_text=True))
 
 with app.app_context():
-    exame1 = Exame.query.filter_by(clinica_id=grupo_local.clinica_interna_id, nome="Colonoscopia BBP").first()
-    checar("Exame foi criado na clínica interna do grupo", exame1 is not None)
+    exame1 = Exame.query.filter_by(grupo_id=grupo_local.id, nome="Colonoscopia BBP").first()
+    checar("Exame foi criado com o grupo_id do grupo", exame1 is not None)
     checar("Exame ficou vinculado ao modelo de preparo correto", exame1.preparo_modelo_id == modelo1_id)
     checar("Exame ficou com o médico correto", exame1.medico_id == medico1_id)
 

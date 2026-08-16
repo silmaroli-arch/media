@@ -117,7 +117,7 @@ checar("Modelo de preparo com cortes cadastrado com sucesso", "cadastrado com su
 
 with app.app_context():
     grupo_local = Grupo.query.get(grupo_id)
-    modelo = PreparoModelo.query.filter_by(clinica_id=grupo_local.clinica_interna_id, nome="Preparo Agenda BBP").first()
+    modelo = PreparoModelo.query.filter_by(grupo_id=grupo_local.id, nome="Preparo Agenda BBP").first()
     checar("Modelo de preparo foi criado", modelo is not None)
     checar("Os dois cortes foram salvos", PreparoCorte.query.filter_by(preparo_modelo_id=modelo.id).count() == 2)
     modelo_id = modelo.id
@@ -129,7 +129,7 @@ r = client_medico.post(f"/grupos/{grupo_id}/exames/novo", data={
 checar("Exame cadastrado com sucesso", "cadastrado com sucesso" in r.get_data(as_text=True))
 with app.app_context():
     grupo_local2 = Grupo.query.filter_by(nome="Grupo Agenda BBP").first()
-    exame = Exame.query.filter_by(clinica_id=grupo_local2.clinica_interna_id, nome="Consulta Agenda BBP").first()
+    exame = Exame.query.filter_by(grupo_id=grupo_local2.id, nome="Consulta Agenda BBP").first()
     exame_id = exame.id
 
 
@@ -144,9 +144,9 @@ checar("Consulta agendada com sucesso pela secretária do grupo", "agendada" in 
 with app.app_context():
     grupo_local3 = Grupo.query.filter_by(nome="Grupo Agenda BBP").first()
     agendamento = Agendamento.query.filter_by(
-        clinica_id=grupo_local3.clinica_interna_id, paciente_id=paciente_id, exame_id=exame_id,
+        grupo_id=grupo_local3.id, paciente_id=paciente_id, exame_id=exame_id,
     ).first()
-    checar("Agendamento foi criado com a clínica interna do grupo", agendamento is not None)
+    checar("Agendamento foi criado com o grupo_id do grupo", agendamento is not None)
     checar("Agendamento ficou com o médico do exame", agendamento.medico_id == medico_id)
     agendamento_id = agendamento.id
 

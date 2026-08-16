@@ -283,6 +283,35 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS cidade VARCHAR(100);
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS uf VARCHAR(2);
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS crm_numero VARCHAR(20);
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS crm_uf VARCHAR(2);
+
+-- Fatia 4 da migração para Grupo: Exame/PreparoModelo/Agendamento/
+-- PerguntaPendente/FaqItem passam a ser escopados por grupo_id em vez de
+-- clinica_id (ver comentário em cada classe, app/models.py). Cada Clinica
+-- legada ganha um Grupo pareado (Clinica.grupo_pareado_id/grupo_pareado())
+-- que serve de âncora técnica - clinica_id continua sendo escrito (nunca
+-- fica desatualizado), só deixa de ser usado para busca/filtro. Isso é só
+-- o schema; o pareamento em si e o backfill de grupo_id nas linhas
+-- existentes são feitos à parte, manualmente, por
+-- migrar_grupo_por_clinica.py (ver instruções nesse arquivo).
+ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS grupo_pareado_id INTEGER REFERENCES grupos(id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_clinicas_grupo_pareado ON clinicas (grupo_pareado_id);
+
+ALTER TABLE exames ALTER COLUMN clinica_id DROP NOT NULL;
+ALTER TABLE exames ADD COLUMN IF NOT EXISTS grupo_id INTEGER REFERENCES grupos(id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_grupo_exame_nome ON exames (grupo_id, nome);
+
+ALTER TABLE preparo_modelos ALTER COLUMN clinica_id DROP NOT NULL;
+ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS grupo_id INTEGER REFERENCES grupos(id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_grupo_preparo_modelo_nome ON preparo_modelos (grupo_id, nome);
+
+ALTER TABLE agendamentos ALTER COLUMN clinica_id DROP NOT NULL;
+ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS grupo_id INTEGER REFERENCES grupos(id);
+
+ALTER TABLE perguntas_pendentes ALTER COLUMN clinica_id DROP NOT NULL;
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS grupo_id INTEGER REFERENCES grupos(id);
+
+ALTER TABLE faq_itens ALTER COLUMN clinica_id DROP NOT NULL;
+ALTER TABLE faq_itens ADD COLUMN IF NOT EXISTS grupo_id INTEGER REFERENCES grupos(id);
 """
 
 # Trilha de auditoria de acesso ao prontuario (ver LogAcessoProntuario em

@@ -123,6 +123,15 @@ def filiais_atuais_ids():
     return [f.id for f in filiais_atuais()]
 
 
+def grupos_atuais_ids():
+    """Ids dos Grupos pareados (Fatia 4) das filiais_atuais() — a chave real
+    de escopo para Exame/PreparoModelo/Agendamento/PerguntaPendente/FaqItem
+    a partir desta fatia. Usa .grupo_pareado() (não o id direto) para parear
+    na hora qualquer filial que a migração/backfill ainda não tenha
+    coberto."""
+    return [f.grupo_pareado().id for f in filiais_atuais()]
+
+
 def clinica_atual():
     """Uma filial "padrão" do usuário dentro da empresa atual.
 

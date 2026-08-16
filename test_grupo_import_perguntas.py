@@ -196,12 +196,12 @@ r = client_medico.post(f"/grupos/{grupo_id}/preparo-modelos/novo", data={
     "exame_anterior_nome[]": ["colonoscopia"],
     "exame_anterior_dias[]": ["28"],
 }, follow_redirects=True)
-checar("Modelo importado é salvo com sucesso na clínica interna do grupo", "cadastrado com sucesso" in r.get_data(as_text=True))
+checar("Modelo importado é salvo com sucesso no grupo", "cadastrado com sucesso" in r.get_data(as_text=True))
 
 with app.app_context():
     grupo_local = Grupo.query.filter_by(nome="Grupo Import BBP").first()
-    clinica_interna_id = grupo_local.clinica_interna_id
-    modelo_importado = PreparoModelo.query.filter_by(clinica_id=clinica_interna_id, nome="Preparo Importado BBP").first()
+    grupo_local_id = grupo_local.id
+    modelo_importado = PreparoModelo.query.filter_by(grupo_id=grupo_local_id, nome="Preparo Importado BBP").first()
     checar("Modelo importado existe", modelo_importado is not None)
     checar("Modelo importado tem o corte de jejum calculável (12h antes)", any(c.horas_antes == 12 for c in modelo_importado.cortes))
     checar("Modelo importado tem o medicamento com categoria",
@@ -230,7 +230,7 @@ checar("Exame com o modelo importado cadastrado", "cadastrado com sucesso" in r.
 
 with app.app_context():
     grupo_local = Grupo.query.filter_by(nome="Grupo Import BBP").first()
-    exame = Exame.query.filter_by(clinica_id=grupo_local.clinica_interna_id, nome="Exame Multi-Medico BBP").first()
+    exame = Exame.query.filter_by(grupo_id=grupo_local.id, nome="Exame Multi-Medico BBP").first()
     checar("Exame criado com o médico principal", exame.medico_id == medico_principal_id)
     # Vincula um segundo médico ao exame (BBP: exame pode ter múltiplos médicos).
     medico_extra_obj = Usuario.query.get(medico_extra_id)
@@ -239,7 +239,7 @@ with app.app_context():
     exame_id = exame.id
 
     pergunta_ia = PerguntaPendente(
-        clinica_id=grupo_local.clinica_interna_id, paciente_id=paciente_id, exame_id=exame_id,
+        grupo_id=grupo_local.id, paciente_id=paciente_id, exame_id=exame_id,
         pergunta="Posso tomar água antes do exame?", status="aguardando_aprovacao",
         resposta_sugerida_ia="Sim, água em pequena quantidade é permitida até 2 horas antes.",
     )
@@ -270,12 +270,12 @@ with app.app_context():
     checar("Pergunta ficou com status 'respondida'", pergunta_atualizada.status == "respondida")
     checar("Pergunta registra quem respondeu (o médico extra)", pergunta_atualizada.respondida_por == "Dra. Julia Rezende")
     faq = FaqItem.query.filter_by(exame_id=exame_id, pergunta="Posso tomar água antes do exame?").first()
-    checar("Resposta aprovada entrou na base de conhecimento (FaqItem) na clínica interna do grupo",
-           faq is not None and faq.clinica_id == clinica_interna_id)
+    checar("Resposta aprovada entrou na base de conhecimento (FaqItem) com o grupo_id do grupo",
+           faq is not None and faq.grupo_id == grupo_local_id)
 
     # Segunda pergunta, desta vez sem exame associado (geral) e sem rascunho da IA.
     pergunta_geral = PerguntaPendente(
-        clinica_id=clinica_interna_id, paciente_id=paciente_id, exame_id=None,
+        grupo_id=grupo_local_id, paciente_id=paciente_id, exame_id=None,
         pergunta="Qual o telefone da clínica?", status="pendente",
     )
     db.session.add(pergunta_geral)
@@ -287,7 +287,7 @@ with app.app_context():
     # principal NÃO pode responder perguntas de um exame que não é dele nem
     # tem como "extra".
     exame2 = Exame(
-        clinica_id=clinica_interna_id, criado_por_id=medico_extra_id,
+        grupo_id=grupo_local_id, criado_por_id=medico_extra_id,
         medico_id=medico_extra_id, nome="Exame Só Médico Extra BBP",
         associado=True, medico_confirmado=True,
     )
@@ -295,7 +295,7 @@ with app.app_context():
     db.session.commit()
     exame2_id = exame2.id
     pergunta_exame_alheio = PerguntaPendente(
-        clinica_id=clinica_interna_id, paciente_id=paciente_id, exame_id=exame2_id,
+        grupo_id=grupo_local_id, paciente_id=paciente_id, exame_id=exame2_id,
         pergunta="Preciso jejuar?", status="pendente",
     )
     db.session.add(pergunta_exame_alheio)

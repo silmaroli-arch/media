@@ -150,6 +150,14 @@ with app.app_context():
     ])
     db.session.commit()
 
+    # --- Pareamento Clínica <-> Grupo (Fatia 4) ---
+    # Cada filial precisa de um Grupo pareado ANTES de qualquer Exame/
+    # PreparoModelo/Agendamento/FaqItem ser criado pra ela, senão nasceria
+    # com grupo_id nulo (ver Clinica.grupo_pareado() em app/models.py e
+    # migrar_grupo_por_clinica.py, que faz o mesmo pareamento em produção).
+    for clinica in (clinica_vitoria, clinica_sp, filial_grupo_centro, filial_grupo_praia):
+        clinica.grupo_pareado()
+    db.session.commit()
 
     # --- Catálogo de medicamentos (compartilhado pela plataforma) ---
     med_ozempic = Medicamento(nome="Ozempic, Mounjaro, Trulicity ou similares", dias_padrao_suspensao=14, categoria="medicamento para emagrecimento")
@@ -165,7 +173,8 @@ with app.app_context():
         medicamentos_mantidos=None, informacoes_gerais=None, alimentos=None, exames_anteriores=None,
     ):
         modelo = PreparoModelo(
-            clinica_id=clinica_id, nome=nome, instrucoes=instrucoes,
+            clinica_id=clinica_id, grupo_id=Clinica.query.get(clinica_id).grupo_pareado().id,
+            nome=nome, instrucoes=instrucoes,
             observacoes_medicamentos=observacoes_medicamentos,
         )
         db.session.add(modelo)
@@ -194,7 +203,10 @@ with app.app_context():
         return modelo
 
     def criar_exame(clinica_id, medico_id, nome, descricao, modelo):
-        exame = Exame(clinica_id=clinica_id, medico_id=medico_id, nome=nome, descricao=descricao, preparo_modelo=modelo)
+        exame = Exame(
+            clinica_id=clinica_id, grupo_id=Clinica.query.get(clinica_id).grupo_pareado().id,
+            medico_id=medico_id, nome=nome, descricao=descricao, preparo_modelo=modelo,
+        )
         db.session.add(exame)
         db.session.flush()
         return exame
@@ -362,6 +374,7 @@ with app.app_context():
     # --- Agendamentos (cada um tem um médico responsável, herdado do exame) ---
     db.session.add(Agendamento(
         clinica_id=clinica_vitoria.id,
+        grupo_id=clinica_vitoria.grupo_pareado().id,
         paciente_id=joao.id,
         exame_id=colonoscopia_vitoria.id,
         medico_id=colonoscopia_vitoria.medico_id,
@@ -374,6 +387,7 @@ with app.app_context():
     ))
     db.session.add(Agendamento(
         clinica_id=clinica_vitoria.id,
+        grupo_id=clinica_vitoria.grupo_pareado().id,
         paciente_id=joao.id,
         exame_id=glicemia_vitoria.id,
         medico_id=glicemia_vitoria.medico_id,
@@ -382,6 +396,7 @@ with app.app_context():
     ))
     db.session.add(Agendamento(
         clinica_id=clinica_vitoria.id,
+        grupo_id=clinica_vitoria.grupo_pareado().id,
         paciente_id=pedro.id,
         exame_id=hemograma_vitoria.id,
         medico_id=hemograma_vitoria.medico_id,
@@ -389,6 +404,7 @@ with app.app_context():
     ))
     db.session.add(Agendamento(
         clinica_id=clinica_sp.id,
+        grupo_id=clinica_sp.grupo_pareado().id,
         paciente_id=maria.id,
         exame_id=colonoscopia_sp.id,
         medico_id=colonoscopia_sp.medico_id,
@@ -400,6 +416,7 @@ with app.app_context():
     db.session.add_all([
         FaqItem(
             clinica_id=clinica_vitoria.id,
+            grupo_id=clinica_vitoria.grupo_pareado().id,
             exame_id=colonoscopia_vitoria.id,
             pergunta="Posso comer batata antes da colonoscopia?",
             resposta="Não. Batata (principalmente com casca) tem fibra e pode prejudicar a limpeza do intestino. Evite nos 3 dias antes do exame.",
@@ -407,6 +424,7 @@ with app.app_context():
         ),
         FaqItem(
             clinica_id=clinica_vitoria.id,
+            grupo_id=clinica_vitoria.grupo_pareado().id,
             exame_id=colonoscopia_vitoria.id,
             pergunta="Posso beber água durante o jejum?",
             resposta="Sim, água pura é permitida até 2 horas antes do exame.",
@@ -414,6 +432,7 @@ with app.app_context():
         ),
         FaqItem(
             clinica_id=clinica_vitoria.id,
+            grupo_id=clinica_vitoria.grupo_pareado().id,
             exame_id=glicemia_vitoria.id,
             pergunta="Posso tomar café antes da glicemia de jejum?",
             resposta="Somente café sem açúcar e sem leite, em pequena quantidade. O ideal é evitar qualquer alimento ou bebida calórica durante o jejum.",
@@ -421,6 +440,7 @@ with app.app_context():
         ),
         FaqItem(
             clinica_id=clinica_vitoria.id,
+            grupo_id=clinica_vitoria.grupo_pareado().id,
             exame_id=None,
             pergunta="Posso tomar meus medicamentos normalmente?",
             resposta="Na maioria dos casos sim, com um pouco de água. Mas avise sempre a secretaria sobre quais medicamentos você usa, pois alguns exames exigem ajustes.",
@@ -428,6 +448,7 @@ with app.app_context():
         ),
         FaqItem(
             clinica_id=clinica_sp.id,
+            grupo_id=clinica_sp.grupo_pareado().id,
             exame_id=colonoscopia_sp.id,
             pergunta="Posso comer normalmente até a véspera do exame?",
             resposta="Não, siga a dieta de preparo intestinal indicada pela equipe a partir de 3 dias antes.",

@@ -421,10 +421,10 @@ def pacientes_remover(grupo_id, paciente_id):
 
 # ===================== Modelo de preparo (tela 5.1.13/5.1.14) =====================
 # BBP seção 4: "O modelo de preparo continuará pertencendo ao médico e
-# somente ele poderá alterar." Exame/PreparoModelo (modelo legado) exigem
-# uma Clinica de verdade — usamos a "clínica interna" do grupo (ver
-# Grupo.clinica_interna em app/models.py) como âncora técnica, sem alterar
-# o modelo antigo nem expor essa clínica em nenhuma tela do sistema atual.
+# somente ele poderá alterar." Desde a Fatia 4 da migração para Grupo,
+# Exame/PreparoModelo/Agendamento/PerguntaPendente/FaqItem têm um grupo_id
+# próprio (ver app/models.py) — o grupo já é a chave de escopo direta, sem
+# precisar mais de uma "clínica interna" como âncora técnica.
 
 @grupo_bp.route("/<int:grupo_id>/preparo-modelos")
 @login_required
@@ -435,9 +435,7 @@ def preparo_modelos_lista(grupo_id):
         flash("Você não participa deste grupo.", "danger")
         return redirect(url_for("grupo.meus_grupos"))
 
-    modelos = []
-    if grupo.clinica_interna_id:
-        modelos = PreparoModelo.query.filter_by(clinica_id=grupo.clinica_interna_id).order_by(PreparoModelo.nome).all()
+    modelos = PreparoModelo.query.filter_by(grupo_id=grupo.id).order_by(PreparoModelo.nome).all()
     return render_template("grupo/preparo_modelos_lista.html", grupo=grupo, modelos=modelos)
 
 
@@ -470,15 +468,14 @@ def preparo_modelos_novo(grupo_id):
             flash("Informe o nome do modelo.", "danger")
             return render_template("grupo/preparo_modelo_form.html", grupo=grupo, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
-        clinica_interna = grupo.clinica_interna()
-        ja_existe = PreparoModelo.query.filter_by(clinica_id=clinica_interna.id, nome=nome).first()
+        ja_existe = PreparoModelo.query.filter_by(grupo_id=grupo.id, nome=nome).first()
         if ja_existe:
             flash(f'Já existe um modelo de preparo chamado "{nome}" neste grupo.', "danger")
             db.session.rollback()
             return render_template("grupo/preparo_modelo_form.html", grupo=grupo, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
         modelo = PreparoModelo(
-            clinica_id=clinica_interna.id, criado_por_id=current_user.id,
+            grupo_id=grupo.id, criado_por_id=current_user.id,
             nome=nome, instrucoes=instrucoes,
             observacoes_medicamentos=(request.form.get("observacoes_medicamentos") or "").strip() or None,
         )
@@ -642,9 +639,7 @@ def exames_lista(grupo_id):
         flash("Você não participa deste grupo.", "danger")
         return redirect(url_for("grupo.meus_grupos"))
 
-    exames = []
-    if grupo.clinica_interna_id:
-        exames = Exame.query.filter_by(clinica_id=grupo.clinica_interna_id).order_by(Exame.nome).all()
+    exames = Exame.query.filter_by(grupo_id=grupo.id).order_by(Exame.nome).all()
     return render_template("grupo/exames_lista.html", grupo=grupo, exames=exames)
 
 
@@ -663,11 +658,9 @@ def exames_novo(grupo_id):
         flash("Somente usuários do tipo Médico podem cadastrar exames.", "danger")
         return redirect(url_for("grupo.exames_lista", grupo_id=grupo_id))
 
-    meus_modelos = []
-    if grupo.clinica_interna_id:
-        meus_modelos = PreparoModelo.query.filter_by(
-            clinica_id=grupo.clinica_interna_id, criado_por_id=current_user.id
-        ).order_by(PreparoModelo.nome).all()
+    meus_modelos = PreparoModelo.query.filter_by(
+        grupo_id=grupo.id, criado_por_id=current_user.id
+    ).order_by(PreparoModelo.nome).all()
 
     if request.method == "POST":
         if not meus_modelos:
@@ -682,8 +675,7 @@ def exames_novo(grupo_id):
             flash("Informe o nome do exame e escolha um modelo de preparo seu.", "danger")
             return render_template("grupo/exame_form.html", grupo=grupo, meus_modelos=meus_modelos)
 
-        clinica_interna = grupo.clinica_interna()
-        if Exame.query.filter_by(clinica_id=clinica_interna.id, nome=nome).first():
+        if Exame.query.filter_by(grupo_id=grupo.id, nome=nome).first():
             flash(f'Já existe um exame chamado "{nome}" neste grupo.', "danger")
             db.session.rollback()
             return render_template("grupo/exame_form.html", grupo=grupo, meus_modelos=meus_modelos)
@@ -691,7 +683,7 @@ def exames_novo(grupo_id):
         duracao = request.form.get("duracao_minutos") or None
         preco = request.form.get("preco") or None
         exame = Exame(
-            clinica_id=clinica_interna.id, criado_por_id=current_user.id, medico_id=current_user.id,
+            grupo_id=grupo.id, criado_por_id=current_user.id, medico_id=current_user.id,
             medico_confirmado=True, associado=True,
             nome=nome, descricao=(request.form.get("descricao") or "").strip() or None,
             preparo_modelo_id=modelo_escolhido.id,
@@ -726,12 +718,10 @@ def agenda_lista(grupo_id):
         flash("Você não participa deste grupo.", "danger")
         return redirect(url_for("grupo.meus_grupos"))
 
-    agendamentos = []
-    if grupo.clinica_interna_id:
-        agendamentos = (
-            Agendamento.query.filter_by(clinica_id=grupo.clinica_interna_id)
-            .order_by(Agendamento.data_hora).all()
-        )
+    agendamentos = (
+        Agendamento.query.filter_by(grupo_id=grupo.id)
+        .order_by(Agendamento.data_hora).all()
+    )
     return render_template("grupo/agenda_lista.html", grupo=grupo, agendamentos=agendamentos)
 
 
@@ -746,9 +736,7 @@ def agenda_novo(grupo_id):
         flash("Você não participa deste grupo.", "danger")
         return redirect(url_for("grupo.meus_grupos"))
 
-    exames = []
-    if grupo.clinica_interna_id:
-        exames = Exame.query.filter_by(clinica_id=grupo.clinica_interna_id).order_by(Exame.nome).all()
+    exames = Exame.query.filter_by(grupo_id=grupo.id).order_by(Exame.nome).all()
     pacientes = [
         v.paciente for v in
         GrupoPaciente.query.filter_by(grupo_id=grupo_id).join(Paciente).order_by(Paciente.nome).all()
@@ -772,7 +760,7 @@ def agenda_novo(grupo_id):
             return render_template("grupo/agenda_form.html", grupo=grupo, pacientes=pacientes, exames=exames)
 
         agendamento = Agendamento(
-            clinica_id=grupo.clinica_interna_id,
+            grupo_id=grupo.id,
             paciente_id=paciente.id,
             exame_id=exame.id,
             medico_id=exame.medico_id,
@@ -799,7 +787,7 @@ def agenda_detalhe(grupo_id, agendamento_id):
     if not grupo.membro_ativo(current_user.id):
         flash("Você não participa deste grupo.", "danger")
         return redirect(url_for("grupo.meus_grupos"))
-    agendamento = Agendamento.query.filter_by(id=agendamento_id, clinica_id=grupo.clinica_interna_id).first_or_404()
+    agendamento = Agendamento.query.filter_by(id=agendamento_id, grupo_id=grupo.id).first_or_404()
     return render_template("grupo/agenda_detalhe.html", grupo=grupo, agendamento=agendamento)
 
 
@@ -822,23 +810,21 @@ def perguntas_pendentes(grupo_id):
         flash("Você não participa deste grupo.", "danger")
         return redirect(url_for("grupo.meus_grupos"))
 
-    pendentes, aguardando, respondidas = [], [], []
-    if grupo.clinica_interna_id:
-        pendentes_q = PerguntaPendente.query.filter_by(clinica_id=grupo.clinica_interna_id, status="pendente")
-        aguardando_q = PerguntaPendente.query.filter_by(clinica_id=grupo.clinica_interna_id, status="aguardando_aprovacao")
-        respondidas_q = PerguntaPendente.query.filter_by(clinica_id=grupo.clinica_interna_id, status="respondida")
+    pendentes_q = PerguntaPendente.query.filter_by(grupo_id=grupo.id, status="pendente")
+    aguardando_q = PerguntaPendente.query.filter_by(grupo_id=grupo.id, status="aguardando_aprovacao")
+    respondidas_q = PerguntaPendente.query.filter_by(grupo_id=grupo.id, status="respondida")
 
-        # Mesma regra da equipe: um médico só acompanha perguntas dos seus
-        # próprios exames (principal ou "extra"), mais as gerais (sem exame)
-        # se também administrar pacientes — uma secretaria do grupo vê tudo.
-        if current_user.tipo == "medico":
-            pendentes_q = _restringir_perguntas_para_medico(pendentes_q)
-            aguardando_q = _restringir_perguntas_para_medico(aguardando_q)
-            respondidas_q = _restringir_perguntas_para_medico(respondidas_q)
+    # Mesma regra da equipe: um médico só acompanha perguntas dos seus
+    # próprios exames (principal ou "extra"), mais as gerais (sem exame)
+    # se também administrar pacientes — uma secretaria do grupo vê tudo.
+    if current_user.tipo == "medico":
+        pendentes_q = _restringir_perguntas_para_medico(pendentes_q)
+        aguardando_q = _restringir_perguntas_para_medico(aguardando_q)
+        respondidas_q = _restringir_perguntas_para_medico(respondidas_q)
 
-        pendentes = pendentes_q.order_by(PerguntaPendente.criado_em.desc()).all()
-        aguardando = aguardando_q.order_by(PerguntaPendente.criado_em.desc()).all()
-        respondidas = respondidas_q.order_by(PerguntaPendente.respondida_em.desc()).limit(20).all()
+    pendentes = pendentes_q.order_by(PerguntaPendente.criado_em.desc()).all()
+    aguardando = aguardando_q.order_by(PerguntaPendente.criado_em.desc()).all()
+    respondidas = respondidas_q.order_by(PerguntaPendente.respondida_em.desc()).limit(20).all()
 
     return render_template(
         "grupo/perguntas.html", grupo=grupo, pendentes=pendentes, aguardando=aguardando, respondidas=respondidas,
@@ -853,7 +839,7 @@ def perguntas_responder(grupo_id, pergunta_id):
         flash("Você não participa deste grupo.", "danger")
         return redirect(url_for("grupo.meus_grupos"))
 
-    pergunta = PerguntaPendente.query.filter_by(id=pergunta_id, clinica_id=grupo.clinica_interna_id).first_or_404()
+    pergunta = PerguntaPendente.query.filter_by(id=pergunta_id, grupo_id=grupo.id).first_or_404()
 
     # Qualquer médico vinculado ao exame (principal ou extra) pode aprovar —
     # ver Exame.medico_pode_atender. Uma secretaria do grupo com permissão
@@ -878,7 +864,7 @@ def perguntas_responder(grupo_id, pergunta_id):
 
     # "Aprendizado": a pergunta+resposta entra na base de FAQ do grupo para uso futuro.
     db.session.add(FaqItem(
-        clinica_id=pergunta.clinica_id,
+        grupo_id=pergunta.grupo_id,
         exame_id=pergunta.exame_id,
         pergunta=pergunta.pergunta,
         resposta=resposta,
