@@ -209,6 +209,19 @@ ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_codigo_servico VARCHAR(20);
 ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_aliquota_iss NUMERIC(5, 2);
 ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_rps_serie VARCHAR(10);
 ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_rps_proximo_numero INTEGER;
+
+-- Fatia 6: uma conta pode existir e ser plenamente usável sem NUNCA ter um
+-- Grupo (conta solo) - Exame/PreparoModelo já tinham criado_por_id (dono
+-- pessoal do conteúdo clínico, de uma feature anterior); Agendamento/
+-- PerguntaPendente/FaqItem ganham o mesmo campo agora, e Paciente ganha
+-- cadastrado_por_id (não existe dono individual nenhum até aqui - só
+-- GrupoPaciente, que exige Grupo). Usado só no fallback de escopo pessoal
+-- quando a pessoa não tem nenhum Grupo - ver
+-- clinica_utils.filtro_escopo_atual() e migrar_dados_pessoais_para_grupo().
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS cadastrado_por_id INTEGER REFERENCES usuarios(id);
+ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
+ALTER TABLE faq_itens ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)
