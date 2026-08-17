@@ -34,36 +34,6 @@ if not DATABASE_URL:
     sys.exit(1)
 
 SQL = """
--- "empresas" e "clinicas" ganharam vários campos (dados fiscais, endereço,
--- cobrança) depois de já estarem em uso em produção - sem estes ALTER
--- TABLE, salvar uma empresa/clínica nova falha com "column does not
--- exist", porque o INSERT gerado pelo SQLAlchemy inclui todas as colunas
--- do modelo atual.
-ALTER TABLE empresas ADD COLUMN IF NOT EXISTS cnpj VARCHAR(20);
-ALTER TABLE empresas ADD COLUMN IF NOT EXISTS email_contato VARCHAR(150);
-ALTER TABLE empresas ADD COLUMN IF NOT EXISTS telefone VARCHAR(30);
-ALTER TABLE empresas ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'trial';
-ALTER TABLE empresas ADD COLUMN IF NOT EXISTS data_vencimento DATE;
-ALTER TABLE empresas ADD COLUMN IF NOT EXISTS observacoes_pagamento TEXT;
-ALTER TABLE empresas ADD COLUMN IF NOT EXISTS valor_por_medico NUMERIC(10, 2);
-
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS razao_social VARCHAR(200);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS cnpj VARCHAR(20);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS email_contato VARCHAR(150);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS telefone VARCHAR(30);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS logo_url VARCHAR(300);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS cep VARCHAR(10);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS rua VARCHAR(200);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS numero VARCHAR(20);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS complemento VARCHAR(100);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS bairro VARCHAR(100);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS cidade VARCHAR(100);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS uf VARCHAR(2);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS inscricao_estadual VARCHAR(30);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS regime_tributario VARCHAR(50);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS cnae VARCHAR(20);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS codigo_ibge_municipio VARCHAR(10);
-
 -- "usuarios" ganhou as permissões administrativas por pessoa (perm_*)
 -- depois de já ter contas cadastradas.
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS perm_pacientes BOOLEAN NOT NULL DEFAULT FALSE;
@@ -94,33 +64,6 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS contato_emergencia_telefone VARCH
 -- PerguntaPendente.resposta_sugerida_ia em app/models.py).
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_sugerida_ia TEXT;
 
--- Emissão fiscal de NFS-e (nota fiscal de serviço eletrônica — padrão
--- NFS-e Nacional / ADN), na tela "Dados da clínica". Senha do certificado
--- e token do provedor ficam gravados só criptografados (ver
--- app/cripto_fiscal.py) — nunca em texto puro.
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_ambiente VARCHAR(20) NOT NULL DEFAULT 'homologacao';
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_modo_simulacao BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_simular_falha_conexao BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_certificado_pfx BYTEA;
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_certificado_senha_cripto BYTEA;
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_certificado_cnpj VARCHAR(20);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_certificado_validade DATE;
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_provedor_emissao VARCHAR(50) NOT NULL DEFAULT 'nenhum';
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_provedor_token_cripto BYTEA;
-
--- Campos específicos de NFS-e (substituem os antigos campos de NFC-e —
--- série/número de nota e CSC não se aplicam a serviço, e o app ainda não
--- estava em uso em produção, então as colunas antigas são removidas).
-ALTER TABLE clinicas DROP COLUMN IF EXISTS fiscal_nfce_serie;
-ALTER TABLE clinicas DROP COLUMN IF EXISTS fiscal_nfce_proximo_numero;
-ALTER TABLE clinicas DROP COLUMN IF EXISTS fiscal_csc_id_token;
-ALTER TABLE clinicas DROP COLUMN IF EXISTS fiscal_csc_codigo_cripto;
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_inscricao_municipal VARCHAR(30);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_codigo_servico VARCHAR(20);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_aliquota_iss NUMERIC(5,2);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_rps_serie VARCHAR(10);
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS fiscal_rps_proximo_numero INTEGER;
-
 -- Guarda a resposta "crua" de cada IA (Claude e ChatGPT) separada do
 -- rascunho final, pra tela de aprovação mostrar as duas lado a lado além
 -- da junção (ver app.ia_preparo.responder_com_ia e medico/perguntas.html).
@@ -133,63 +76,12 @@ ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_chatgpt 
 -- de atendimentos.
 ALTER TABLE chat_mensagens ADD COLUMN IF NOT EXISTS agendamento_id INTEGER REFERENCES agendamentos(id);
 
--- Emissao de NFS-e por pagamento (ver app/nfse_nacional.py).
-ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_status VARCHAR(30) DEFAULT 'nao_emitida';
-ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_numero_dps INTEGER;
-ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_numero VARCHAR(30);
-ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_codigo_verificacao VARCHAR(60);
-ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_xml_assinado TEXT;
-ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_erro TEXT;
-ALTER TABLE pagamentos ADD COLUMN IF NOT EXISTS nfse_emitida_em TIMESTAMP;
-
--- Auto-cadastro do paciente pelo app (link publico por clinica) e
--- aprovacao pela equipe antes de poder agendar (ver auth.cadastro_paciente
--- e medico.pacientes_solicitacoes).
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS codigo_cadastro_paciente VARCHAR(20);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_clinicas_codigo_cadastro_paciente ON clinicas (codigo_cadastro_paciente) WHERE codigo_cadastro_paciente IS NOT NULL;
+-- Auto-cadastro do paciente pelo app (link publico) e aprovacao pela
+-- equipe antes de poder agendar (ver auth.cadastro_paciente e
+-- medico.pacientes_solicitacoes). O código de auto-cadastro em si mudou
+-- de "clinicas"/"empresas" (removidas na Fatia 5) para "grupos" - ver
+-- bloco da Fatia 5 mais abaixo (grupos.codigo_cadastro_paciente).
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS status_cadastro VARCHAR(20) NOT NULL DEFAULT 'aprovado';
-
--- Prontuario eletronico "sem papel" (NGS2/NGS3, Resolucao CFM 1.821/2007):
--- certificado digital pessoal do medico (ver app/assinatura_clinica.py e
--- medico.certificado_digital) para assinar as evolucoes clinicas.
-ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS certificado_digital_pfx BYTEA;
-ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS certificado_digital_senha_cripto BYTEA;
-ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS certificado_digital_titular VARCHAR(200);
-ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS certificado_digital_validade DATE;
-
--- Evolucao clinica passa a ser criptografada em repouso (ver
--- app/cripto_clinico.py e EvolucaoClinica.texto em app/models.py) e ganha
--- campos de assinatura digital por evolucao.
---
--- ATENCAO - RISCO DE PERDA DE DADOS: o "DROP COLUMN IF EXISTS texto" abaixo
--- apaga permanentemente a coluna antiga em texto plano. Se alguma evolucao
--- clinica real ja foi registrada em algum ambiente (dev/qa/prod) ANTES
--- desta migracao rodar la, o conteudo dela sera perdido (nao e possivel
--- recuperar o texto original a partir da coluna nova, que so passa a ser
--- preenchida a partir de agora). Rode este migrar_banco.py o quanto antes,
--- antes que evolucoes reais se acumulem em texto plano nesses ambientes.
--- IF EXISTS aqui (alem do IF NOT EXISTS/IF EXISTS de cada coluna) porque
--- evolucoes_clinicas e uma tabela NOVA: no primeiro deploy que a introduz,
--- ela ainda nao existe quando este script roda (o predeploy hook roda
--- ANTES da aplicacao subir e criar a tabela via db.create_all()) - sem o
--- IF EXISTS aqui, esse primeiro deploy quebra com "relation does not
--- exist" e o deploy inteiro falha.
-ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS texto_cripto BYTEA;
-ALTER TABLE IF EXISTS evolucoes_clinicas DROP COLUMN IF EXISTS texto;
-ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_base64 TEXT;
-ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_titular VARCHAR(200);
-ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_serial VARCHAR(80);
-ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_certificado_pem TEXT;
-ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinatura_hash_sha256 VARCHAR(64);
-ALTER TABLE IF EXISTS evolucoes_clinicas ADD COLUMN IF NOT EXISTS assinado_em TIMESTAMP;
-
--- Cadastro público (modo "empresa") deixou de criar a primeira filial
--- automaticamente - agora cria só a Empresa, e a pessoa cadastra o
--- primeiro local de atendimento depois, ao entrar no app. Até lá, ela
--- não tem nenhum ClinicaMembro ainda, então precisa de uma âncora direta
--- com a empresa que criou (ver Usuario.empresa_fundadora_id em
--- app/models.py e empresas_do_usuario() em app/clinica_utils.py).
-ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS empresa_fundadora_id INTEGER REFERENCES empresas(id);
 
 -- O cadastro genérico de exame (medico.exames_novo) preenche medico_id com
 -- um valor técnico/provisório só pra passar pela constraint NOT NULL (não
@@ -209,20 +101,12 @@ ALTER TABLE exames ADD COLUMN IF NOT EXISTS medico_confirmado BOOLEAN NOT NULL D
 -- app/models.py.
 ALTER TABLE exames ADD COLUMN IF NOT EXISTS associado BOOLEAN NOT NULL DEFAULT TRUE;
 
--- O paciente passou a pertencer à EMPRESA, não a uma filial ("o cliente é
--- só cliente" - ver Paciente.empresa_id em app/models.py): a filial só é
--- escolhida na hora de marcar cada consulta (Agendamento.clinica_id).
--- Passos: cria a coluna nova. Copia a empresa da filial legada para os
--- cadastros existentes. Solta o NOT NULL da filial legada (cadastros novos
--- não a preenchem mais). E remove a unicidade de CPF por-filial - a
--- unicidade nova, por-empresa, é criada mais abaixo (na parte em Python),
--- só se não houver CPF repetido entre filiais da mesma empresa; se houver,
--- fica só a checagem da aplicação (ver medico.pacientes_novo), sem quebrar
--- o deploy. ATENÇÃO: nada de ";" no MEIO de uma frase de comentário aqui
--- dentro - o executor abaixo divide o bloco por ";" (agora ele descarta
--- linhas de comentário antes de executar, mas não custa manter o hábito).
-ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS empresa_id INTEGER REFERENCES empresas(id);
-UPDATE pacientes SET empresa_id = (SELECT empresa_id FROM clinicas WHERE clinicas.id = pacientes.clinica_id) WHERE empresa_id IS NULL AND clinica_id IS NOT NULL;
+-- Paciente.empresa_id/clinica_id: campos legados/de exibição, mantidos
+-- como coluna solta (sem FK) desde a Fatia 5 - "empresas"/"clinicas" não
+-- existem mais como tabela, e a associação real de paciente com grupo de
+-- trabalho é por GrupoPaciente (ver app/models.py). Aqui só garante que a
+-- coluna existe em bases antigas que a criaram antes desta mudança.
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS empresa_id INTEGER;
 ALTER TABLE pacientes ALTER COLUMN clinica_id DROP NOT NULL;
 ALTER TABLE pacientes DROP CONSTRAINT IF EXISTS uq_clinica_cpf;
 
@@ -231,15 +115,6 @@ ALTER TABLE pacientes DROP CONSTRAINT IF EXISTS uq_clinica_cpf;
 -- administrativo equivalente) para não ficar trancada fora do sistema.
 UPDATE usuarios SET tipo = 'secretaria' WHERE tipo = 'configurador';
 
--- O link de auto-cadastro de paciente passou a ser da EMPRESA (o paciente
--- é da empresa) e fica no Painel - ver Empresa.codigo_cadastro_paciente em
--- app/models.py e auth.cadastro_paciente. Cada empresa herda o código da
--- primeira filial que já tinha um (assim o link que a clínica já divulgou
--- continua funcionando igual). Os códigos legados por filial continuam
--- válidos como fallback em links antigos.
-ALTER TABLE empresas ADD COLUMN IF NOT EXISTS codigo_cadastro_paciente VARCHAR(20);
-UPDATE empresas SET codigo_cadastro_paciente = (SELECT c.codigo_cadastro_paciente FROM clinicas c WHERE c.empresa_id = empresas.id AND c.codigo_cadastro_paciente IS NOT NULL ORDER BY c.id LIMIT 1) WHERE codigo_cadastro_paciente IS NULL;
-
 -- DONO do conteúdo clínico: exame e modelo de preparo registram quem os
 -- criou (criado_por_id). Se o criador é um MÉDICO, só ele edita - e só
 -- ele pode ser associado ao exame. Registros antigos ficam NULL (sem
@@ -247,27 +122,13 @@ UPDATE empresas SET codigo_cadastro_paciente = (SELECT c.codigo_cadastro_pacient
 -- app/models.py.
 ALTER TABLE exames ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
 ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
-ALTER TABLE descontos_config ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
 
--- Código mestre do médico (identidade portátil dele na plataforma) e os
--- convites de vínculo por código - ver Usuario.codigo_mestre e
--- ConviteVinculo em app/models.py. A coluna nasce vazia e o preenchimento
--- para médicos existentes é feito mais abaixo (na parte em Python) porque
--- a geração do código usa aleatoriedade e checagem de unicidade.
+-- Código mestre do médico (identidade portátil dele na plataforma) -
+-- mecanismo de convite por código foi removido na Fatia 5 (convite hoje é
+-- por CPF, via GrupoConvite), mas a coluna em si (Usuario.codigo_mestre)
+-- continua existindo no modelo - mantida aqui só por compatibilidade de
+-- schema em bases antigas.
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS codigo_mestre VARCHAR(20);
--- Vínculo equipe x filial deixou de ser apagado na remoção - agora é
--- ENCERRADO (ativo=FALSE + encerrado_em), preservando o histórico de quem
--- atendeu onde - ver ClinicaMembro.encerrado_em em app/models.py.
-ALTER TABLE clinica_membros ADD COLUMN IF NOT EXISTS encerrado_em TIMESTAMP;
-CREATE TABLE IF NOT EXISTS convites_vinculo (
-    id SERIAL PRIMARY KEY,
-    clinica_id INTEGER NOT NULL REFERENCES clinicas(id),
-    medico_id INTEGER NOT NULL REFERENCES usuarios(id),
-    criado_por_id INTEGER REFERENCES usuarios(id),
-    status VARCHAR(20) NOT NULL DEFAULT 'pendente',
-    criado_em TIMESTAMP,
-    decidido_em TIMESTAMP
-);
 
 -- CPF e endereço PESSOAL de quem trabalha na plataforma, e CRM (só
 -- médico) - ver Usuario.cpf/cep/.../crm_numero/crm_uf em app/models.py.
@@ -286,16 +147,10 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS crm_uf VARCHAR(2);
 
 -- Fatia 4 da migração para Grupo: Exame/PreparoModelo/Agendamento/
 -- PerguntaPendente/FaqItem passam a ser escopados por grupo_id em vez de
--- clinica_id (ver comentário em cada classe, app/models.py). Cada Clinica
--- legada ganha um Grupo pareado (Clinica.grupo_pareado_id/grupo_pareado())
--- que serve de âncora técnica - clinica_id continua sendo escrito (nunca
--- fica desatualizado), só deixa de ser usado para busca/filtro. Isso é só
--- o schema; o pareamento em si e o backfill de grupo_id nas linhas
--- existentes são feitos à parte, manualmente, por
--- migrar_grupo_por_clinica.py (ver instruções nesse arquivo).
-ALTER TABLE clinicas ADD COLUMN IF NOT EXISTS grupo_pareado_id INTEGER REFERENCES grupos(id);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_clinicas_grupo_pareado ON clinicas (grupo_pareado_id);
-
+-- clinica_id (ver comentário em cada classe, app/models.py). clinica_id
+-- vira campo legado/de exibição (nunca mais usado para busca/filtro). O
+-- pareamento Clinica<->Grupo era feito por migrar_grupo_por_clinica.py,
+-- que cumpriu seu papel e foi removido junto com a classe Clinica (Fatia 5).
 ALTER TABLE exames ALTER COLUMN clinica_id DROP NOT NULL;
 ALTER TABLE exames ADD COLUMN IF NOT EXISTS grupo_id INTEGER REFERENCES grupos(id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_grupo_exame_nome ON exames (grupo_id, nome);
@@ -356,12 +211,28 @@ ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_rps_serie VARCHAR(10);
 ALTER TABLE grupos ADD COLUMN IF NOT EXISTS fiscal_rps_proximo_numero INTEGER;
 """
 
-# Trilha de auditoria de acesso ao prontuario (ver LogAcessoProntuario em
-# app/models.py e app/auditoria_clinica.py): a tabela em si e criada
-# automaticamente pelo db.create_all() na inicializacao da aplicacao, nao
-# precisa de ALTER/CREATE aqui.
-
 conn = psycopg.connect(DATABASE_URL, autocommit=True)
+
+# Este script só faz sentido contra um banco que já tem o schema de uma
+# versão ANTERIOR da aplicação (é isso que "migrar" quer dizer aqui) - ele
+# assume que tabelas centrais como "usuarios" já existem, e só ajusta o
+# que mudou desde então (ALTER TABLE ADD/DROP COLUMN, backfill, etc.).
+# Num ambiente genuinamente NOVO (banco vazio, primeiro deploy de sempre -
+# ex.: um staging recém-criado), não existe schema antigo nenhum pra
+# migrar: db.create_all() (que roda depois deste hook, na inicialização da
+# aplicação) já cria TODAS as tabelas certinho a partir do models.py atual
+# - rodar as instruções abaixo contra um banco vazio só quebraria o deploy
+# com "relation does not exist" na primeira tabela referenciada. Detecta
+# esse caso checando se "usuarios" (a tabela mais antiga/central) já
+# existe, e simplesmente não faz nada se não existir.
+tabela_usuarios_existe = conn.execute("SELECT to_regclass('public.usuarios')").fetchone()[0]
+if tabela_usuarios_existe is None:
+    print(
+        "Banco vazio (nenhuma tabela 'usuarios' ainda) - nada para migrar. "
+        "O schema completo será criado do zero por db.create_all() na "
+        "inicialização da aplicação."
+    )
+    sys.exit(0)
 
 # Remove as linhas de comentário ("-- ...") ANTES de dividir por ";".
 # Sem isso, um comentário com ";" no meio da frase quebra o split: o
@@ -457,13 +328,10 @@ if duplicados_cpf:
 else:
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_pacientes_cpf ON pacientes (cpf)")
 
-# O código de auto-cadastro da empresa é único (em bases novas o
-# db.create_all() já cria isso pelo unique=True do modelo - aqui é para as
-# bases que só ganharam a coluna via ALTER TABLE acima).
-conn.execute(
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_empresas_codigo_cadastro "
-    "ON empresas (codigo_cadastro_paciente)"
-)
+# O código de auto-cadastro (hoje por Grupo, ver bloco da Fatia 5 mais
+# acima) já ganha seu índice único ali mesmo (uq_grupos_codigo_cadastro_
+# paciente) - o antigo índice sobre "empresas" foi removido junto com essa
+# tabela (Fatia 5).
 
 # Código mestre para os médicos que já existiam antes da coluna (ver
 # Usuario.codigo_mestre em app/models.py): gera um código único por médico,
