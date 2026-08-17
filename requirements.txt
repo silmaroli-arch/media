@@ -14,3 +14,4 @@ cryptography>=42.0  # criptografia dos dados fiscais sensiveis (ver app/cripto_f
 lxml>=5.0  # montagem/assinatura do XML do DPS na emissao de NFS-e (ver app/nfse_nacional.py)
 signxml>=5.1  # assinatura XML-DSig real do DPS com o certificado da clinica (ver app/nfse_nacional.py)
 requests>=2.31  # envio do DPS assinado ao Ambiente de Dados Nacional (ver app/nfse_nacional.py)
+twilio>=9.0  # validação da assinatura do webhook de WhatsApp (ver app/routes_whatsapp.py) - sem TWILIO_AUTH_TOKEN configurado, o webhook recusa toda requisição, então o pacote não instalado também falha fechado
