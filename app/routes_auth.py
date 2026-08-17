@@ -222,12 +222,11 @@ def cadastro():
 
     A pessoa só passa a ter os dados da clínica preenchidos de verdade
     quando ela mesma os cadastra em "Dados da clínica" (ver
-    medico.clinica_configuracoes), depois de entrar no app pela primeira
-    vez (o assistente de configuração inicial, medico.onboarding, sugere
-    esse passo). Isso evita o formulário de cadastro ficar pedindo dados
-    de clínica (nome, CNPJ, endereço, telefone) que muita gente ainda não
-    tem em mãos nesse momento, e que fazem mais sentido preenchidos com
-    calma depois de já estar dentro do app.
+    medico.clinica_configuracoes), pra onde é levada direto assim que
+    entra no app pela primeira vez. Isso evita o formulário de cadastro
+    ficar pedindo dados de clínica (nome, CNPJ, endereço, telefone) que
+    muita gente ainda não tem em mãos nesse momento, e que fazem mais
+    sentido preenchidos com calma depois de já estar dentro do app.
 
     Antes existia aqui também um campo opcional de CNPJ que, quando já
     pertencia a uma clínica cadastrada, vinculava a pessoa direto a ela
@@ -336,7 +335,7 @@ def cadastro():
             "pra deixar tudo pronto pra uso.",
             "success",
         )
-        return redirect(url_for("medico.onboarding"))
+        return redirect(url_for("medico.clinica_configuracoes"))
 
     return render_template("auth/cadastro.html")
 

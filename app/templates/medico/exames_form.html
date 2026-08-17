@@ -4,7 +4,6 @@
 <h3 class="mb-3">{% if exame %}Editar exame{% else %}Cadastrar novo exame{% endif %}</h3>
 <div class="card p-4">
   <form method="post">
-    <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
     {% if exame and mostrar_filial %}
     <p class="text-muted small">Local de atendimento: <strong>{{ exame.clinica.nome }}</strong></p>
     {% endif %}

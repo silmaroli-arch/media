@@ -80,7 +80,7 @@ with app.app_context():
     checar("O Grupo nasce em trial", grupo.status == "trial")
     grupo1_id = grupo.id
 
-checar("Login automático após cadastro (cai direto no onboarding, não na tela de login)",
+checar("Login automático após cadastro (cai direto em Dados da clínica, não na tela de login)",
        "/login" not in r.request.path if hasattr(r, "request") else True)
 
 # Com um único Grupo, ele é escolhido automaticamente - nenhuma tela de

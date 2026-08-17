@@ -71,17 +71,6 @@ def _parse_data_nascimento(valor_str):
     return None
 
 
-def _destino_pos_onboarding(endpoint_padrao, **kwargs):
-    """Usado pelos formulários de cadastro que também são acessados a
-    partir do assistente de configuração inicial (ver medico.onboarding).
-    Quando a pessoa chegou à tela vindo do assistente (campo oculto
-    "voltar_onboarding"), volta para lá em vez de ir para o destino normal
-    daquele formulário — assim o fluxo guiado continua de onde parou."""
-    if request.form.get("voltar_onboarding") == "1":
-        return redirect(url_for("medico.onboarding"))
-    return redirect(url_for(endpoint_padrao, **kwargs))
-
-
 def _pessoa_da_empresa(usuario_id, empresa):
     """O usuário faz parte deste Grupo (tenant)? Fatia 5: checagem direta
     via GrupoMembro ativo - substitui o antigo vínculo por filial
@@ -247,65 +236,6 @@ def _filial_do_form(filiais, campo="clinica_id"):
     return next((f for f in filiais if f.id == filial_id), None)
 
 
-def status_configuracao_inicial(filiais):
-    """Calcula, a partir dos dados que já existem no banco (sem guardar
-    nenhum estado de "assistente" à parte), quais das etapas sugeridas na
-    configuração inicial da clínica já foram feitas. Usado tanto pela tela
-    do assistente (medico.onboarding) quanto pelo aviso mostrado no Painel
-    enquanto a configuração não estiver completa — por ser calculado a
-    partir dos dados reais, permanece correto mesmo que a pessoa pule
-    etapas e preencha as coisas por fora do assistente, em outra ordem.
-
-    Fatia 5: `filiais` é sempre uma lista de 0 ou 1 elemento (o próprio
-    Grupo atual - ver clinica_utils.filiais_atuais()) - não existe mais
-    "várias filiais da mesma empresa"."""
-    grupo_ids = [f.id for f in filiais]
-    tem_mais_gente = (
-        db.session.query(GrupoMembro.usuario_id)
-        .filter(GrupoMembro.grupo_id.in_(grupo_ids), GrupoMembro.ativo.is_(True))
-        .distinct().count() > 1
-    )
-    tem_modelo_preparo = PreparoModelo.query.filter(PreparoModelo.grupo_id.in_(grupo_ids)).first() is not None
-    tem_exame = Exame.query.filter(Exame.grupo_id.in_(grupo_ids)).first() is not None
-
-    etapas = [
-        {
-            "id": "locais_atendimento",
-            "titulo": "Dados da clínica",
-            "descricao": "Endereço, CNPJ e telefone/e-mail de contato da clínica.",
-            "concluida": bool(filiais) and all(f.telefone and f.email_contato for f in filiais),
-            "endpoint": "medico.clinica_configuracoes",
-            "permissao": "perm_filiais",
-        },
-        {
-            "id": "equipe",
-            "titulo": "Convidar mais gente para a equipe",
-            "descricao": "Adicione outra secretária ou médico, se houver — esta etapa é totalmente opcional.",
-            "concluida": tem_mais_gente,
-            "endpoint": "medico.equipe_lista",
-            "permissao": "perm_equipe",
-            "opcional": True,
-        },
-        {
-            "id": "modelo_preparo",
-            "titulo": "Primeiro modelo de preparo",
-            "descricao": "As instruções (cortes de alimentação, medicamentos, etc.) que o paciente vai ver.",
-            "concluida": tem_modelo_preparo,
-            "endpoint": "medico.preparo_modelos_novo",
-        },
-        {
-            "id": "exame",
-            "titulo": "Primeiro exame",
-            "descricao": "Vincula um exame a um modelo de preparo e a um médico responsável — sem isso, ainda não há nada para agendar.",
-            "concluida": tem_exame,
-            "endpoint": "medico.exames_novo",
-            "bloqueada": not tem_modelo_preparo,
-            "motivo_bloqueio": "Cadastre um modelo de preparo primeiro.",
-        },
-    ]
-    return etapas
-
-
 # ---------- Seleção de empresa (tenant) ----------
 
 @medico_bp.route("/clinica", methods=["GET", "POST"])
@@ -445,33 +375,6 @@ def dashboard():
         cadastros_pendentes=cadastros_pendentes_count,
         convites_pendentes=convites_pendentes,
         agendamentos=agendamentos,
-        etapas_configuracao_inicial=[e for e in status_configuracao_inicial(_filiais_da_empresa()) if not e["concluida"] and not e.get("opcional")],
-    )
-
-
-@medico_bp.route("/configuracao-inicial")
-@login_required
-@staff_required
-def onboarding():
-    """Assistente de configuração inicial, mostrado logo após a empresa se
-    cadastrar (ver auth.cadastro) e também acessível a qualquer momento
-    pelo aviso no Painel — reúne, num só lugar, as etapas sugeridas para
-    deixar a clínica pronta para uso. Nenhuma etapa é obrigatória: cada
-    uma só linka para a tela real (Dados Cadastrais, Equipe, Horário de
-    atendimento, Modelos de preparo, Exames), que continua funcionando
-    normalmente por fora do assistente também."""
-    # As etapas medem a configuração da EMPRESA (todas as filiais), não só
-    # dos locais em que o usuário atua - um fundador/configurador sem
-    # vínculo nenhum precisa ver o progresso real do que já cadastrou.
-    filiais = _filiais_da_empresa()
-    etapas = status_configuracao_inicial(filiais)
-    concluidas = sum(1 for e in etapas if e["concluida"])
-    return render_template(
-        "medico/onboarding.html",
-        clinica=clinica_atual(),
-        etapas=etapas,
-        concluidas=concluidas,
-        total=len(etapas),
     )
 
 
@@ -950,7 +853,7 @@ def exames_novo():
             '"Exames por filial", antes de agendar.',
             "success",
         )
-        return _destino_pos_onboarding("medico.exames_lista")
+        return redirect(url_for("medico.exames_lista"))
 
     return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
@@ -1591,7 +1494,7 @@ def preparo_modelos_novo():
         db.session.commit()
 
         flash("Modelo de preparo cadastrado com sucesso.", "success")
-        return _destino_pos_onboarding("medico.preparo_modelos_lista")
+        return redirect(url_for("medico.preparo_modelos_lista"))
 
     return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
@@ -2335,7 +2238,7 @@ def clinica_configuracoes(filial_id=None):
         flash(f"Dados Cadastrais de '{clinica.nome}' atualizados com sucesso.", "success")
         # Salvou -> FECHA a tela, voltando pra lista de locais (ou pro
         # assistente, se veio de lá) - em vez de continuar no formulário.
-        return _destino_pos_onboarding("medico.filiais_lista")
+        return redirect(url_for("medico.filiais_lista"))
 
     return render_template(
         "medico/clinica_configuracoes.html",
@@ -2374,7 +2277,7 @@ def clinica_dados_fiscais(filial_id=None):
         flash(f"Dados Fiscais de '{clinica.nome}' atualizados com sucesso.", "success")
         # Mesmo comportamento dos Dados Cadastrais: salvou -> fecha a
         # tela, voltando pra lista de locais.
-        return _destino_pos_onboarding("medico.filiais_lista")
+        return redirect(url_for("medico.filiais_lista"))
 
     return render_template(
         "medico/clinica_dados_fiscais.html",
@@ -2429,7 +2332,7 @@ def clinica_emissao_fiscal(filial_id=None):
 
     db.session.commit()
     flash("Dados fiscais de emissão atualizados com sucesso.", "success")
-    return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
+    return redirect(url_for("medico.clinica_dados_fiscais", filial_id=clinica.id))
 
 
 @medico_bp.route("/clinica/certificado", methods=["POST"])
@@ -2453,11 +2356,11 @@ def clinica_certificado_upload(filial_id=None):
 
     if not arquivo or not arquivo.filename:
         flash("Selecione o arquivo do certificado (.pfx) antes de enviar.", "danger")
-        return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
+        return redirect(url_for("medico.clinica_dados_fiscais", filial_id=clinica.id))
 
     if not senha:
         flash("Informe a senha do certificado.", "danger")
-        return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
+        return redirect(url_for("medico.clinica_dados_fiscais", filial_id=clinica.id))
 
     conteudo = arquivo.read()
     # Um certificado .pfx/.p12 normal tem poucos KB — um arquivo muito
@@ -2466,7 +2369,7 @@ def clinica_certificado_upload(filial_id=None):
     # upload indevido).
     if len(conteudo) > 5 * 1024 * 1024:
         flash("Arquivo muito grande para ser um certificado válido.", "danger")
-        return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
+        return redirect(url_for("medico.clinica_dados_fiscais", filial_id=clinica.id))
 
     try:
         _chave_privada, certificado, _cadeia = pkcs12.load_key_and_certificates(
@@ -2478,11 +2381,11 @@ def clinica_certificado_upload(filial_id=None):
             "é um .pfx/.p12 válido e se a senha está correta.",
             "danger",
         )
-        return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
+        return redirect(url_for("medico.clinica_dados_fiscais", filial_id=clinica.id))
 
     if certificado is None:
         flash("O arquivo enviado não contém um certificado válido.", "danger")
-        return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
+        return redirect(url_for("medico.clinica_dados_fiscais", filial_id=clinica.id))
 
     # Tentativa (best-effort) de extrair o CNPJ a partir do "Common Name" do
     # certificado — certificados e-CNPJ da ICP-Brasil costumam trazer o
@@ -2510,7 +2413,7 @@ def clinica_certificado_upload(filial_id=None):
     db.session.commit()
 
     flash("Certificado digital validado e salvo com sucesso.", "success")
-    return _destino_pos_onboarding("medico.clinica_dados_fiscais", filial_id=clinica.id)
+    return redirect(url_for("medico.clinica_dados_fiscais", filial_id=clinica.id))
 
 
 # ---------- "Meus Locais de Atendimento" -> "Meus Grupos" ----------

@@ -3,9 +3,7 @@ local, a tela fecha - a pessoa volta para "Meus locais de atendimento"
 (de onde abriu a tela), com a mensagem de sucesso dizendo de qual local
 era. Antes, salvar continuava na própria tela do formulário.
 
-O botão "Cancelar" já voltava pra lista; agora salvar também volta. Quem
-chega pela etapa do assistente de configuração inicial continua voltando
-pro assistente (comportamento do voltar_onboarding preservado).
+O botão "Cancelar" já voltava pra lista; agora salvar também volta.
 
 Fatia 5: não existe mais "várias filiais dentro de uma empresa" - o
 `<int:filial_id>` na URL é ignorado (mantido só por compatibilidade com
@@ -69,20 +67,6 @@ r = client.post(f"/equipe/clinica/dados-fiscais/{vitoria_id}", data={
 }, follow_redirects=False)
 checar("Salvar Dados Fiscais também redireciona pra lista de locais",
        r.status_code in (301, 302) and r.headers["Location"].endswith("/equipe/filiais"))
-
-# ---------- Vindo do assistente, volta pro assistente ----------
-
-r = client.post(f"/equipe/clinica/configuracoes/{vitoria_id}", data={
-    "voltar_onboarding": "1",
-    "nome": "Clínica Vitória",
-    "razao_social": "Clínica Vitória Diagnósticos Ltda. Atualizada",
-    "cnpj": "12.345.678/0001-90",
-    "telefone": "(27) 3333-4444",
-    "email_contato": "contato@clinicavitoria.com",
-    "cep": "", "rua": "", "numero": "", "complemento": "", "bairro": "", "cidade": "", "uf": "",
-}, follow_redirects=False)
-checar("Vindo do assistente de configuração, salvar volta pro assistente",
-       r.status_code in (301, 302) and "configuracao-inicial" in r.headers["Location"])
 
 client.get("/logout")
 print("\nTodos os testes de fechar a tela ao salvar passaram.")

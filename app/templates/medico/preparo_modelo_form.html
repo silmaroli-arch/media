@@ -33,7 +33,6 @@
 
 <div class="card p-4">
   <form method="post" id="form-preparo">
-    <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
     {# Modelo de preparo é genérico - vale para qualquer local de atendimento
        da empresa, por isso não pede (nem mostra) filial aqui. #}
 
