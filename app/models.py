@@ -1111,6 +1111,11 @@ class ConversaWhatsapp(db.Model):
     # Agendamento/exame em foco na conversa agora (quando o paciente tem
     # mais de um ativo e já escolheu um pela lista numerada).
     agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=True)
+    # Fatia 7 passo 5: True logo depois que o paciente escolhe "2) Fazer
+    # uma pergunta" no menu - a PRÓXIMA mensagem recebida é tratada como o
+    # texto da pergunta em si (não como uma opção do menu). Volta a False
+    # assim que a pergunta é processada (ou cancelada com "0").
+    aguardando_pergunta = db.Column(db.Boolean, nullable=False, default=False)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -231,6 +231,12 @@ ALTER TABLE faq_itens ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES 
 -- "conversas_whatsapp" não precisa de ALTER TABLE - é criada automaticamente
 -- pelo db.create_all() por não existir ainda em nenhum ambiente.
 ALTER TABLE chat_mensagens ADD COLUMN IF NOT EXISTS canal VARCHAR(20) NOT NULL DEFAULT 'web';
+
+-- Fatia 7 passo 5: "aguardando_pergunta" foi adicionada depois da tabela
+-- "conversas_whatsapp" já existir num deploy anterior (passo 1) - por
+-- segurança, também recebe ALTER TABLE (mesmo padrão de coluna nova em
+-- tabela já existente usado no resto deste arquivo).
+ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS aguardando_pergunta BOOLEAN NOT NULL DEFAULT FALSE;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

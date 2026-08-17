@@ -1,28 +1,36 @@
-"""Fatia 7 (área de WhatsApp) — passos 3 e 4 do plano:
+"""Fatia 7 (área de WhatsApp) — passos 3, 4 e 5 do plano:
 - Passo 3: identificação do paciente por CPF + data de nascimento, com
   sessão de conversa que expira por inatividade (ver `ConversaWhatsapp`
   em app/models.py).
-- Passo 4 (este arquivo): uma vez identificado (e com um exame em foco
-  escolhido), o menu de opções de verdade - "1) Ver informações do
-  preparo" reaproveita app.faq_engine.texto_preparo_whatsapp (mesmos
-  dados/cálculo de prazo que a tela paciente/preparo.html já usa) e
-  "3) Trocar de exame" reaproveita a mesma lógica de seleção da
-  identificação inicial.
+- Passo 4: uma vez identificado (e com um exame em foco escolhido), o
+  menu de opções - "1) Ver informações do preparo" reaproveita
+  app.faq_engine.texto_preparo_whatsapp (mesmos dados/cálculo de prazo
+  que a tela paciente/preparo.html já usa) e "3) Trocar de exame"
+  reaproveita a mesma lógica de seleção da identificação inicial.
+- Passo 5 (este arquivo): "2) Fazer uma pergunta" reaproveita a MESMA
+  lógica de app.routes_paciente.chat() (IA primeiro, com a resposta
+  ficando pendente de aprovação do médico; sem IA, base de conhecimento/
+  alimento/medicamento; sem nada disso, encaminhada pra equipe) - importa
+  o helper `_resolver_ancora` de lá em vez de duplicar a regra de
+  roteamento pra Grupo/dono pessoal.
 
 Este módulo é só a LÓGICA de conversa (recebe telefone + texto da
 mensagem, devolve o texto da resposta) — não sabe nada sobre Twilio nem
 sobre HTTP, para poder ser testado sem precisar simular um webhook (ver
-app/routes_whatsapp.py, que é a única coisa que fala com o provedor).
-
-O que ainda NÃO está implementado aqui (próximo passo do plano):
-- "2) Fazer uma pergunta" de verdade (reaproveitar app/ia_preparo.py) -
-  por ora essa opção só avisa que ainda está sendo construída."""
+app/routes_whatsapp.py, que é a única coisa que fala com o provedor)."""
 import re
 from datetime import date, datetime
 
 from app.extensions import db
-from app.faq_engine import texto_preparo_whatsapp
-from app.models import Agendamento, ConversaWhatsapp, Paciente
+from app.faq_engine import (
+    buscar_resposta,
+    buscar_resposta_alimento,
+    buscar_resposta_medicamento,
+    texto_preparo_whatsapp,
+)
+from app.ia_preparo import responder_com_ia
+from app.models import Agendamento, ChatMensagem, ConversaWhatsapp, Paciente, PerguntaPendente
+from app.routes_paciente import _resolver_ancora
 
 
 def normalizar_telefone_whatsapp(remetente_bruto):
@@ -125,10 +133,14 @@ MENSAGEM_SEM_EXAME_ATIVO = (
 )
 MENSAGEM_OPCAO_INVALIDA_EXAME = "Não entendi. Responda só com o número do exame na lista abaixo:"
 MENSAGEM_OPCAO_INVALIDA_MENU = f"Não entendi. Escolha uma das opções abaixo:\n\n{MENU_OPCOES}"
-MENSAGEM_PERGUNTA_EM_BREVE = (
-    "Essa opção (fazer uma pergunta) ainda está sendo construída nesta área "
-    "de WhatsApp. Por enquanto, entre em contato com a secretaria da clínica "
-    "para tirar dúvidas sobre o preparo.\n\n" + MENU_OPCOES
+MENSAGEM_PEDIR_PERGUNTA = (
+    "Pode digitar sua pergunta sobre o preparo deste exame. "
+    "(Ou responda 0 para cancelar e voltar ao menu.)"
+)
+MENSAGEM_PERGUNTA_VAZIA = "Não recebi nenhum texto. Digite sua pergunta, ou responda 0 para cancelar."
+MENSAGEM_PERGUNTA_ENCAMINHADA = (
+    "Recebemos sua pergunta! Ela foi encaminhada para a equipe e você "
+    "receberá a resposta assim que possível."
 )
 
 
@@ -146,6 +158,79 @@ def _resolver_exame_em_foco(conversa, paciente, agendamentos):
         return _texto_menu(paciente, agendamentos[0])
     conversa.agendamento_id = None
     return _texto_lista_exames(agendamentos)
+
+
+def _responder_pergunta(paciente, agendamento, pergunta_texto):
+    """Replica a lógica de app.routes_paciente.chat() (POST) para uma
+    pergunta livre recebida por WhatsApp: a IA (quando configurada) é
+    SEMPRE consultada primeiro, mas a resposta dela NUNCA vai direto pro
+    paciente - fica como PerguntaPendente "aguardando_aprovacao" até o
+    médico revisar; sem IA (ou sem resposta da IA), tenta a base de
+    conhecimento (FAQ) e as respostas prontas de alimento/medicamento;
+    sem nada disso, encaminha como pergunta pendente pra equipe responder
+    manualmente. Sempre grava um ChatMensagem (canal="whatsapp") no mesmo
+    histórico que a equipe já vê hoje (ver medico.atendimento). Devolve o
+    texto de resposta a mandar de volta pro paciente."""
+    exame = agendamento.exame if agendamento else None
+    grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame, agendamento)
+
+    resultado_ia = responder_com_ia(pergunta_texto, exame) if exame else None
+    resposta_final = None
+    origem = None
+
+    if resultado_ia and resultado_ia["final"]:
+        origem = "ia_aguardando"
+        db.session.add(PerguntaPendente(
+            grupo_id=grupo_id_ancora,
+            criado_por_id=criado_por_id_ancora,
+            paciente_id=paciente.id,
+            exame_id=exame.id,
+            pergunta=pergunta_texto,
+            status="aguardando_aprovacao",
+            resposta_sugerida_ia=resultado_ia["final"],
+            resposta_bruta_claude=resultado_ia["claude"],
+            resposta_bruta_chatgpt=resultado_ia["chatgpt"],
+        ))
+    else:
+        faq_item, _score = buscar_resposta(
+            pergunta_texto,
+            grupo_id=grupo_id_ancora,
+            exame_id=exame.id if exame else None,
+            criado_por_id=criado_por_id_ancora,
+        )
+        if faq_item:
+            faq_item.vezes_utilizada += 1
+            resposta_final = faq_item.resposta
+            origem = "faq"
+        elif exame and (resposta_alimento := buscar_resposta_alimento(pergunta_texto, exame, paciente)):
+            resposta_final, origem = resposta_alimento, "alimento"
+        elif exame and (resposta_medicamento := buscar_resposta_medicamento(pergunta_texto, exame, paciente)):
+            resposta_final, origem = resposta_medicamento, "medicamento"
+        else:
+            origem = "pendente"
+            db.session.add(PerguntaPendente(
+                grupo_id=grupo_id_ancora,
+                criado_por_id=criado_por_id_ancora,
+                paciente_id=paciente.id,
+                exame_id=exame.id if exame else None,
+                pergunta=pergunta_texto,
+            ))
+
+    db.session.add(ChatMensagem(
+        paciente_id=paciente.id,
+        exame_id=exame.id if exame else None,
+        agendamento_id=agendamento.id if agendamento else None,
+        pergunta=pergunta_texto,
+        # Igual à tela web: o histórico só grava uma resposta de verdade
+        # quando já existe uma (faq/alimento/medicamento) - "ia_aguardando"
+        # e "pendente" ainda não têm resposta nenhuma, só a mensagem de
+        # "encaminhamos" que vai pro paciente agora.
+        resposta=resposta_final,
+        origem=origem,
+        canal="whatsapp",
+    ))
+
+    return resposta_final if resposta_final else MENSAGEM_PERGUNTA_ENCAMINHADA
 
 
 def processar_mensagem(telefone, corpo_mensagem):
@@ -208,13 +293,28 @@ def processar_mensagem(telefone, corpo_mensagem):
 
     # Identificado e com exame em foco: menu de opções.
     paciente, agendamento = conversa.paciente, conversa.agendamento
-    opcao = (corpo_mensagem or "").strip()
+    texto = (corpo_mensagem or "").strip()
 
-    if opcao == "1":
+    # Depois de escolher "2) Fazer uma pergunta", a PRÓXIMA mensagem é o
+    # texto da pergunta em si, não uma opção do menu de novo.
+    if conversa.aguardando_pergunta:
+        if texto == "0":
+            conversa.aguardando_pergunta = False
+            resposta = _texto_menu(paciente, agendamento, saudacao=False)
+        elif not texto:
+            resposta = MENSAGEM_PERGUNTA_VAZIA
+        else:
+            conversa.aguardando_pergunta = False
+            resposta = _responder_pergunta(paciente, agendamento, texto) + "\n\n" + MENU_OPCOES
+        db.session.commit()
+        return resposta
+
+    if texto == "1":
         resposta = texto_preparo_whatsapp(agendamento) + "\n\n" + MENU_OPCOES
-    elif opcao == "2":
-        resposta = MENSAGEM_PERGUNTA_EM_BREVE
-    elif opcao == "3":
+    elif texto == "2":
+        conversa.aguardando_pergunta = True
+        resposta = MENSAGEM_PEDIR_PERGUNTA
+    elif texto == "3":
         resposta = _resolver_exame_em_foco(conversa, paciente, _agendamentos_ativos(paciente))
     else:
         resposta = MENSAGEM_OPCAO_INVALIDA_MENU

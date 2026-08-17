@@ -4,7 +4,10 @@ por CPF + data de nascimento, escolha do exame em foco quando há mais de
 um ativo, o menu de opções (ver preparo / fazer pergunta / trocar de
 exame) e expiração da sessão de conversa por inatividade — direto na
 camada de lógica (sem passar pelo webhook/Twilio, que já tem seu próprio
-teste de assinatura em test_whatsapp_webhook_assinatura.py)."""
+teste de assinatura em test_whatsapp_webhook_assinatura.py). O fluxo
+completo de "2) Fazer uma pergunta" (IA/FAQ/alimento/medicamento/
+encaminhamento) tem seu próprio teste em test_whatsapp_pergunta.py - aqui
+só confirma que a opção 2 entra no modo de "aguardando a pergunta"."""
 from datetime import datetime, timedelta
 
 from app import create_app, db
@@ -66,10 +69,20 @@ with app.app_context():
     checar("Opção 1 mostra um alimento proibido cadastrado no seed", "Amendoim" in resposta)
     checar("Opção 1 repete o menu no final", "Trocar de exame" in resposta)
 
-    # 4b) Opção 2 - fazer pergunta: ainda não implementada (passo 5 do
-    # plano), só avisa que está em construção.
+    # 4b) Opção 2 - fazer uma pergunta: entra no modo "aguardando a
+    # pergunta" (a próxima mensagem é o texto da pergunta em si, não uma
+    # opção do menu) - o fluxo de resposta de verdade é testado à parte,
+    # em test_whatsapp_pergunta.py.
     resposta = processar_mensagem(telefone_joao, "2")
-    checar("Opção 2 avisa que ainda está sendo construída", "ainda está sendo construída" in resposta)
+    checar("Opção 2 pede pra digitar a pergunta", "digitar sua pergunta" in resposta or "Pode digitar sua pergunta" in resposta)
+    conversa_meio_pergunta = ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first()
+    checar('Opção 2 liga "aguardando_pergunta"', conversa_meio_pergunta.aguardando_pergunta is True)
+
+    # 4b-1) Cancelar com "0" volta pro menu sem perguntar nada.
+    resposta = processar_mensagem(telefone_joao, "0")
+    checar('Cancelar com "0" volta pro menu', "Ver informações do preparo" in resposta)
+    conversa_meio_pergunta = ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first()
+    checar('Cancelar com "0" desliga "aguardando_pergunta"', conversa_meio_pergunta.aguardando_pergunta is False)
 
     # 4c) Opção fora do menu (nem 1, nem 2, nem 3): pede pra escolher de novo.
     resposta = processar_mensagem(telefone_joao, "9")
