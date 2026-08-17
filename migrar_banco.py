@@ -429,7 +429,13 @@ conn.execute(
 # (uq_empresa_cpf) não impedia duplicidade nenhuma pra cadastros globais
 # (empresa_id NULL não colide consigo mesmo num índice único), então sai
 # de cena - substituído pelo índice único por CPF sozinho.
-conn.execute("DROP INDEX IF EXISTS uq_empresa_cpf")
+# uq_empresa_cpf é uma constraint (não um índice solto) - o Postgres recusa
+# "DROP INDEX" no índice que a sustenta enquanto a constraint existir
+# (psycopg.errors.DependentObjectsStillExist, com a dica "DROP CONSTRAINT").
+# _remover_constraint_unica já resolve isso corretamente: ela busca qualquer
+# UNIQUE constraint que toque a coluna "cpf" (inclusive uq_empresa_cpf, que é
+# composta por (empresa_id, cpf)) e remove via ALTER TABLE ... DROP
+# CONSTRAINT, que também derruba o índice interno junto.
 _remover_constraint_unica(conn, "pacientes", "cpf")
 
 # Mesmo padrão de cautela do índice antigo: só cria a unicidade nova se a
