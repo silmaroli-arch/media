@@ -1,12 +1,16 @@
 """Fatia 7: área de WhatsApp — paciente conversa com o número único da
 aplicação para ver informações do preparo do exame e fazer perguntas.
 
-Passo 2 do plano (ver PLANO_WHATSAPP.md): só o webhook recebendo mensagens
-do provedor (Twilio) e validando a assinatura de cada requisição — ainda
-NÃO lê/grava Paciente/ConversaWhatsapp nem responde nada além de um TwiML
-vazio. Serve para confirmar a conectividade ponta-a-ponta (Twilio → este
-endpoint) antes de escrever a lógica de identificação por CPF + data de
-nascimento (passo 3) e o resto do fluxo de conversa (passos 4 e 5).
+Passo 2 do plano: o webhook recebendo mensagens do provedor (Twilio) e
+validando a assinatura de cada requisição.
+Passo 3 (este arquivo): a mensagem validada é encaminhada para
+app/whatsapp_conversa.py, que identifica o paciente por CPF + data de
+nascimento e resolve qual exame está em foco na conversa — a lógica de
+conversa em si mora lá (sem depender de Flask/Twilio), este arquivo só
+faz a ponte com o provedor.
+Ainda faltam (próximos passos do plano): "ver informações do preparo" e
+"fazer uma pergunta" de verdade (por ora a resposta é só de identificação,
+ver app/whatsapp_conversa.py).
 
 Configuração necessária (variáveis de ambiente — nunca em código nem no
 repositório, ver .env.example):
@@ -29,6 +33,8 @@ repositório, ver .env.example):
 import os
 
 from flask import Blueprint, current_app, request
+
+from app.whatsapp_conversa import normalizar_telefone_whatsapp, processar_mensagem
 
 whatsapp_bp = Blueprint("whatsapp", __name__, url_prefix="/whatsapp")
 
@@ -69,24 +75,36 @@ def _assinatura_valida():
     return validador.validate(_url_validacao(), request.form.to_dict(), assinatura)
 
 
+def _twiml(texto=""):
+    """Monta a resposta TwiML mínima - com ou sem um <Message> dentro,
+    escapando o texto (evita quebrar o XML se a resposta tiver "&", "<" etc,
+    algo que pode acontecer com nome de exame/paciente)."""
+    from xml.sax.saxutils import escape
+    corpo = f"<Message>{escape(texto)}</Message>" if texto else ""
+    return (f"<Response>{corpo}</Response>", 200, {"Content-Type": "text/xml"})
+
+
 @whatsapp_bp.route("/webhook", methods=["POST"])
 def webhook():
-    """Recebe cada mensagem enviada ao número de WhatsApp da aplicação.
+    """Recebe cada mensagem enviada ao número de WhatsApp da aplicação,
+    valida a assinatura e repassa para app.whatsapp_conversa (identificação
+    por CPF + data de nascimento, passo 3 do plano) — a resposta que a
+    lógica de conversa devolver é enviada de volta pelo mesmo canal.
 
-    Passo 2 do plano: só valida a assinatura e loga a mensagem recebida —
-    nenhuma lógica de identificação/resposta ainda (vem nos próximos
-    passos). Sempre responde 200 com um TwiML vazio, mesmo quando recusa
-    por assinatura inválida/ausente — devolver um erro HTTP faria a Twilio
-    reentregar a mesma mensagem várias vezes, achando que falhou."""
+    Sempre responde 200, mesmo quando recusa por assinatura inválida ou
+    ausente — devolver um erro HTTP faria a Twilio reentregar a mesma
+    mensagem várias vezes, achando que falhou."""
     if not _assinatura_valida():
         current_app.logger.warning("Webhook de WhatsApp recusado: assinatura inválida ou ausente.")
-        return ("<Response></Response>", 200, {"Content-Type": "text/xml"})
+        return _twiml()
 
-    remetente = request.form.get("From", "")
+    telefone = normalizar_telefone_whatsapp(request.form.get("From", ""))
     corpo = request.form.get("Body", "")
-    current_app.logger.info(
-        "WhatsApp recebido de %s: %r (passo 2 do plano — ainda sem resposta automática)",
-        remetente, corpo,
-    )
+    current_app.logger.info("WhatsApp recebido de %s: %r", telefone, corpo)
 
-    return ("<Response></Response>", 200, {"Content-Type": "text/xml"})
+    if not telefone:
+        current_app.logger.warning("Webhook de WhatsApp sem remetente (\"From\") - ignorado.")
+        return _twiml()
+
+    resposta = processar_mensagem(telefone, corpo)
+    return _twiml(resposta)
