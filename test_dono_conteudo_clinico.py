@@ -100,7 +100,7 @@ checar("Secretária é barrada ao editar o exame",
 
 r = client.post("/equipe/exames/por-filial/associar", data={
     "nome": "Exame Do Eduardo", "clinica_destino_id": str(centro_id),
-    "medico_id": str(gilda_id), "preco": "150,00",
+    "medico_id": str(gilda_id),
 }, follow_redirects=True)
 checar("Associar OUTRO médico ao exame do Eduardo é bloqueado",
        "só ele pode ser" in r.get_data(as_text=True))
@@ -110,7 +110,7 @@ with app.app_context():
 
 r = client.post("/equipe/exames/por-filial/associar", data={
     "nome": "Exame Do Eduardo", "clinica_destino_id": str(centro_id),
-    "medico_id": str(eduardo_id), "preco": "150,00",
+    "medico_id": str(eduardo_id),
 }, follow_redirects=True)
 checar("Associar o exame com o PRÓPRIO dono funciona",
        "associado" in r.get_data(as_text=True).lower())
@@ -118,7 +118,7 @@ checar("Associar o exame com o PRÓPRIO dono funciona",
 # Tentar adicionar a Gilda como médica extra também é bloqueado.
 r = client.post("/equipe/exames/por-filial/associar", data={
     "nome": "Exame Do Eduardo", "clinica_destino_id": str(centro_id),
-    "medico_id": str(gilda_id), "preco": "150,00",
+    "medico_id": str(gilda_id),
 }, follow_redirects=True)
 checar("Adicionar outro médico como EXTRA também é bloqueado",
        "só ele pode ser" in r.get_data(as_text=True))
@@ -130,16 +130,16 @@ with app.app_context():
 
 # Editar a associação trocando o médico pra Gilda: bloqueado.
 r = client.post(f"/equipe/exames/por-filial/{assoc_id}/atualizar", data={
-    "medico_id": str(gilda_id), "preco": "150,00",
+    "medico_id": str(gilda_id),
 }, follow_redirects=True)
 checar("Trocar o médico da associação pra quem não é dono é bloqueado",
        "só ele pode ser" in r.get_data(as_text=True))
 
-# Preço continua editável pela secretária (comercial, não clínico).
+# A secretária segue conseguindo editar a associação (mantendo o dono).
 r = client.post(f"/equipe/exames/por-filial/{assoc_id}/atualizar", data={
-    "medico_id": str(eduardo_id), "preco": "180,00",
+    "medico_id": str(eduardo_id),
 }, follow_redirects=True)
-checar("Secretária segue editando o PREÇO da associação",
+checar("Secretária segue editando a associação normalmente",
        "atualizado" in r.get_data(as_text=True))
 client.get("/logout")
 

@@ -218,13 +218,15 @@ def filtro_escopo_atual(coluna_grupo, coluna_dono):
 
 
 def migrar_dados_pessoais_para_grupo(usuario, grupo):
-    """Fatia 6: chamada uma única vez, no momento em que uma conta solo cria
-    seu primeiro Grupo (ver routes_grupo.py:novo()) - migra todo o histórico
-    pessoal dela (pacientes/exames/preparo-modelos/agendamentos/perguntas/
-    faq com dono pessoal == usuario e `grupo_id` ainda NULL) pro Grupo
-    recém-criado. Sem isso, o histórico da pessoa "sumiria" da vista assim
-    que ela convida alguém, porque as consultas passam a ser 100% por
-    `grupo_id` de novo quando há um Grupo (ver filtro_escopo_atual acima).
+    """Fatia 6: chamada em todo momento em que uma conta solo PASSA A TER um
+    Grupo - seja criando um novo (ver routes_grupo.py:novo()) ou aceitando o
+    convite de um Grupo já existente (ver routes_grupo.py:responder_convite())
+    - migra todo o histórico pessoal dela (pacientes/exames/preparo-modelos/
+    agendamentos/perguntas/faq com dono pessoal == usuario e `grupo_id`
+    ainda NULL) pro Grupo em questão. Sem isso, o histórico da pessoa
+    "sumiria" da vista assim que ela passasse a ter um Grupo, porque as
+    consultas passam a ser 100% por `grupo_id` de novo quando há um Grupo
+    (ver filtro_escopo_atual acima).
 
     Idempotente: só pega registros com `grupo_id IS NULL` ainda, então
     rodar de novo (ou chamar por engano) não duplica nem sobrescreve nada

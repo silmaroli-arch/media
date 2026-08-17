@@ -21,7 +21,7 @@ teste no início — não toca no banco real. Para rodar:
 from app import create_app
 from app.extensions import db
 from app.db_utils import resetar_banco
-from app.models import Usuario, GrupoMembro, Paciente, Exame, Agendamento, GrupoPaciente
+from app.models import Usuario, GrupoMembro, Paciente, Exame, Agendamento, GrupoPaciente, GrupoConvite
 
 app = create_app()
 client = app.test_client()
@@ -109,9 +109,9 @@ with app.app_context():
     exame_id = exame.id
 
 r_assoc = client.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Consulta Avulsa", "medico_id": str(usuario_id), "preco": "200,00",
+    "nome": "Consulta Avulsa", "medico_id": str(usuario_id),
 }, follow_redirects=True)
-checar("Conta solo consegue associar médico/preço ao exame, sem Grupo", r_assoc.status_code == 200)
+checar("Conta solo consegue associar médico ao exame, sem Grupo", r_assoc.status_code == 200)
 
 r_agenda = client.post("/equipe/agenda/novo", data={
     "paciente_id": str(paciente_id), "exame_id": str(exame_id),
@@ -181,5 +181,65 @@ with app.app_context():
     bruno = Usuario.query.filter_by(email="bruno.pavan@example.com").first()
     checar("Conta solo do Bruno foi criada, sem nenhum Grupo",
            bruno is not None and GrupoMembro.query.filter_by(usuario_id=bruno.id).first() is None)
+client.get("/logout")
+
+# ---------- Migração também acontece ao ACEITAR convite pra um Grupo já existente ----------
+# (não só ao CRIAR um Grupo novo - é o mesmo cuidado, mas no fluxo em que
+# quem já tinha Grupo convida um médico solo com histórico próprio.)
+r = client.post("/cadastro", data={
+    "nome": "Dra. Convidada Solo",
+    "papel": "medico",
+    "cpf": "104.332.181-00", "crm_numero": "55555", "crm_uf": "ES",
+    "email": "convidada.solo@example.com",
+    "senha": "123456",
+}, follow_redirects=True)
+checar("Cadastro da médica a ser convidada responde 200", r.status_code == 200)
+with app.app_context():
+    convidada = Usuario.query.filter_by(email="convidada.solo@example.com").first()
+    convidada_id = convidada.id
+
+r_exame_c = client.post("/equipe/exames/novo", data={
+    "nome": "Retorno Solo", "descricao": "desc", "preparo_modelo_id": "nenhum",
+    "duracao_minutos": "20",
+}, follow_redirects=True)
+checar("Médica convidada cadastra um exame próprio antes de entrar em qualquer Grupo", r_exame_c.status_code == 200)
+with app.app_context():
+    exame_convidada = Exame.query.filter_by(nome="Retorno Solo").first()
+    checar("Exame da convidada nasceu com dono pessoal, sem grupo_id",
+           exame_convidada is not None and exame_convidada.criado_por_id == convidada_id and exame_convidada.grupo_id is None)
+    exame_convidada_id = exame_convidada.id
+client.get("/logout")
+
+# Dr. João (dono do Grupo "Consultório - Praia", criado mais acima) convida
+# a médica solo pelo CPF.
+client.post("/login", data={"email": "joao.autonomo@example.com", "senha": "123456"}, follow_redirects=True)
+with app.app_context():
+    grupo_praia_id = GrupoMembro.query.filter_by(usuario_id=usuario_id, papel="dono", ativo=True).first().grupo_id
+r_convite = client.post(f"/grupos/{grupo_praia_id}/convidar", data={"cpf": "104.332.181-00"}, follow_redirects=True)
+checar("Convite por CPF enviado com sucesso", "Convite enviado" in r_convite.get_data(as_text=True))
+client.get("/logout")
+
+# A médica convidada aceita o convite - o exame pessoal dela deve migrar
+# pro Grupo "Consultório - Praia" nesse exato momento, senão ele "some" da
+# vista assim que ela passar a ter um Grupo (filtro_escopo_atual() vira
+# 100% por grupo_id quando há Grupo).
+client.post("/login", data={"email": "convidada.solo@example.com", "senha": "123456"}, follow_redirects=True)
+with app.app_context():
+    convite = GrupoConvite.query.filter_by(usuario_convidado_id=convidada_id, status="pendente").first()
+    convite_id = convite.id
+r_aceitar = client.post(f"/grupos/convites/{convite_id}/responder", data={"decisao": "aprovar"}, follow_redirects=True)
+checar("Aceitar o convite responde 200", r_aceitar.status_code == 200)
+
+with app.app_context():
+    vinculo_convidada = GrupoMembro.query.filter_by(usuario_id=convidada_id, grupo_id=grupo_praia_id, ativo=True).first()
+    checar("Médica convidada agora tem vínculo ativo no Grupo", vinculo_convidada is not None)
+    exame_convidada_migrado = Exame.query.get(exame_convidada_id)
+    checar("O exame pessoal da convidada foi migrado pro Grupo ao aceitar o convite (não só ao CRIAR um Grupo)",
+           exame_convidada_migrado.grupo_id == grupo_praia_id)
+
+r_assoc_grupo = client.get("/equipe/exames/por-filial")
+checar("O exame migrado aparece na tela de associar exames do Grupo",
+       "Retorno Solo" in r_assoc_grupo.get_data(as_text=True))
+client.get("/logout")
 
 print("\nTodos os testes do fluxo de cadastro público (conta solo, Fatia 6) passaram.")

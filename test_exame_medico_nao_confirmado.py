@@ -75,7 +75,7 @@ checar("A linha mostra o aviso de 'não confirmado' (não trata como já resolvi
 
 # Confirmando o médico pelo Editar marca medico_confirmado=True.
 r4 = client.post(f"/equipe/exames/por-filial/{exame_id}/atualizar", data={
-    "medico_id": str(dr_carlos_id), "preco": "200,00",
+    "medico_id": str(dr_carlos_id),
 }, follow_redirects=True)
 checar("Confirmar médico responde 200", r4.status_code == 200)
 with app.app_context():

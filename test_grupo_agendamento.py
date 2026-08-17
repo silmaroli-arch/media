@@ -147,7 +147,7 @@ with app.app_context():
 # A associação (exame + médico + preço) é o que faz o exame aparecer como
 # opção de agendamento (ver medico.exames_por_filial_associar).
 r = client_medico.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Consulta Agenda BBP", "medico_id": str(medico_id), "preco": "150,00",
+    "nome": "Consulta Agenda BBP", "medico_id": str(medico_id),
 }, follow_redirects=True)
 checar("Exame associado com sucesso", "associado" in r.get_data(as_text=True).lower())
 

@@ -703,9 +703,6 @@ class Exame(db.Model):
     # Quanto tempo (em minutos) esse exame costuma levar — informativo.
     duracao_minutos = db.Column(db.Integer)
 
-    # Preço do procedimento — informativo (sem controle financeiro no sistema).
-    preco = db.Column(db.Numeric(10, 2))
-
     # Se marcado, ao agendar esse exame o sistema exige/permite indicar
     # quem vai acompanhar o paciente no dia (ver Agendamento.acompanhante_nome).
     precisa_acompanhante = db.Column(db.Boolean, nullable=False, default=False)

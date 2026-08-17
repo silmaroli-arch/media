@@ -67,7 +67,7 @@ checar("O select de médico aparece pro médico também (mesmo fluxo da secretá
 # Tentar associar SEM escolher médico é bloqueado - não existe mais o
 # atalho de auto-associação silenciosa.
 r_sem_medico = client.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Raio-X Torax", "preco": "90,00",
+    "nome": "Raio-X Torax",
 }, follow_redirects=True)
 checar("Associar sem escolher médico é bloqueado", "Escolha um médico válido" in r_sem_medico.get_data(as_text=True))
 with app.app_context():
@@ -78,14 +78,13 @@ with app.app_context():
 
 # Escolhendo o médico explicitamente (mesmo sendo ele mesmo) funciona.
 r2 = client.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Raio-X Torax", "medico_id": str(medico_id), "preco": "90,00",
+    "nome": "Raio-X Torax", "medico_id": str(medico_id),
 }, follow_redirects=True)
 checar("Médico consegue se associar escolhendo a si mesmo no select", "associado com" in r2.get_data(as_text=True))
 
 with app.app_context():
     exame_atualizado = Exame.query.filter_by(nome="Raio-X Torax").first()
     checar("Exame associado tem o médico escolhido como responsável", exame_atualizado.medico_id == medico_id)
-    checar("Preço informado na associação foi salvo", float(exame_atualizado.preco) == 90.0)
 
 client.get("/logout")
 print("\nTodos os testes do fluxo unificado (sem médico principal) em exames por filial passaram.")

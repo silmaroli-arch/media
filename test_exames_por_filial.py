@@ -67,42 +67,30 @@ r = client.get("/equipe/exames/por-filial")
 html = r.get_data(as_text=True)
 checar("Tela responde 200", r.status_code == 200)
 checar(
-    "Formulário tem só os 3 campos (sem escolher filial de destino)",
-    'name="nome"' in html and 'name="medico_id"' in html and 'name="preco"' in html
+    "Formulário tem só os 2 campos (sem escolher filial de destino)",
+    'name="nome"' in html and 'name="medico_id"' in html
     and 'name="clinica_destino_id"' not in html,
 )
 
-# Tentar associar sem informar preço é bloqueado (testado ANTES da associação bem-sucedida).
-r2b = client.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Ultrassom Abdominal", "medico_id": str(medico_id),
-}, follow_redirects=True)
-checar("Associar sem preço é bloqueado com aviso", "Informe o preço" in r2b.get_data(as_text=True))
-with app.app_context():
-    checar(
-        "Não promoveu o exame do catálogo sem o preço",
-        Exame.query.get(exame_origem_id).associado is False,
-    )
-
 # Associa o exame no Grupo Centro.
 r0 = client.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Ultrassom Abdominal", "medico_id": str(medico_id), "preco": "150,00",
+    "nome": "Ultrassom Abdominal", "medico_id": str(medico_id),
 }, follow_redirects=True)
 checar("Associar o exame no Grupo Centro responde 200", r0.status_code == 200)
 with app.app_context():
     exame_centro = Exame.query.get(exame_origem_id)
     checar("A associação promoveu o registro do catálogo (sem duplicar)",
            Exame.query.filter_by(grupo_id=centro_id, nome="Ultrassom Abdominal").count() == 1)
-    checar("Exame do Centro ficou associado, com médico e preço", exame_centro.associado and float(exame_centro.preco) == 150.0)
+    checar("Exame do Centro ficou associado, com médico", exame_centro.associado)
 
 r = client.get("/equipe/exames/por-filial")
 html = r.get_data(as_text=True)
 checar("Mostra o nome do exame na lista", "Ultrassom Abdominal" in html)
 checar("Mostra o médico responsável na linha", medico_nome in html)
-checar("Mostra o preço da associação", "150,00" in html)
 
 # Tentar associar de novo (já existe) é bloqueado com aviso, sem duplicar.
 r3 = client.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Ultrassom Abdominal", "medico_id": str(medico_id), "preco": "150,00",
+    "nome": "Ultrassom Abdominal", "medico_id": str(medico_id),
 }, follow_redirects=True)
 checar("Segunda tentativa de associar mostra aviso de duplicidade", "já está associado" in r3.get_data(as_text=True))
 with app.app_context():
@@ -111,24 +99,15 @@ with app.app_context():
         Exame.query.filter_by(grupo_id=centro_id, nome="Ultrassom Abdominal").count() == 1,
     )
 
-# Ajusta o preço direto pela tela de associações (não mais pelo cadastro do exame).
-r5 = client.post(f"/equipe/exames/por-filial/{exame_origem_id}/atualizar", data={
-    "medico_id": str(medico_id), "preco": "200,00",
-}, follow_redirects=True)
-checar("Atualizar preço responde 200", r5.status_code == 200)
-with app.app_context():
-    checar("Preço foi atualizado", float(Exame.query.get(exame_origem_id).preco) == 200.0)
-
-# O formulário de EDITAR o exame não pede mais preço (nem aceita alterá-lo).
+# O formulário de EDITAR o exame continua funcionando normalmente (não
+# mexe em médico/associação, só nos dados de catálogo do exame).
 r6 = client.post(f"/equipe/exames/{exame_origem_id}/editar", data={
     "nome": "Ultrassom Abdominal", "descricao": "Ultrassom", "duracao_minutos": "30",
-    "preco": "999,00",  # mesmo enviando, não deve ser aplicado
     "preparo_modelo_id": str(modelo_centro_id),
 }, follow_redirects=True)
 checar("Editar exame responde 200", r6.status_code == 200)
 with app.app_context():
-    checar("Editar o exame NÃO altera o preço (só a tela de associações altera)",
-           float(Exame.query.get(exame_origem_id).preco) == 200.0)
+    checar("Editar o exame não desfaz a associação", Exame.query.get(exame_origem_id).associado)
 
 # ---------- Grupo Praia: catálogo/associação independentes do Centro ----------
 # Como cada Grupo já é a própria unidade, servir o mesmo exame na Praia
@@ -145,10 +124,9 @@ checar("Cadastro genérico do exame na Praia responde 200", r.status_code == 200
 with app.app_context():
     exame_praia_id = Exame.query.filter_by(grupo_id=praia_id, nome="Ultrassom Abdominal").first().id
 
-# Associa com o mesmo médico (que atende os dois grupos) e um preço
-# DIFERENTE do praticado no Centro.
+# Associa com o mesmo médico (que atende os dois grupos).
 r2 = client.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Ultrassom Abdominal", "medico_id": str(medico_id), "preco": "180,00",
+    "nome": "Ultrassom Abdominal", "medico_id": str(medico_id),
 }, follow_redirects=True)
 checar("Associar no Grupo Praia responde 200", r2.status_code == 200)
 checar("Mensagem de sucesso aparece", "associado" in r2.get_data(as_text=True))
@@ -158,13 +136,11 @@ with app.app_context():
     exame_praia = Exame.query.get(exame_praia_id)
     checar("São registros distintos (um por Grupo, não duplicado)", exame_centro.id != exame_praia.id)
     checar("Duração cadastrada na Praia", exame_praia.duracao_minutos == 30)
-    checar("Preço na Praia é o informado lá (independente do Centro)", float(exame_praia.preco) == 180.0)
     checar("Médico responsável na Praia é o mesmo (atende os dois Grupos)", exame_praia.medico_id == medico_id)
-    checar("Preço no Centro continua o de lá, sem ser afetado pela Praia", float(exame_centro.preco) == 200.0)
 
 r4 = client.get("/equipe/exames/por-filial")
 html4 = r4.get_data(as_text=True)
-checar("Lista da Praia mostra o preço de lá", "180,00" in html4)
+checar("Lista da Praia mostra o exame associado", "Ultrassom Abdominal" in html4)
 
 client.get("/logout")
 print("\nTodos os testes de exames por filial (Grupo atômico) passaram.")

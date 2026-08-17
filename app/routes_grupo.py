@@ -347,6 +347,12 @@ def responder_convite(convite_id):
             membro_existente.ativo = True
         else:
             db.session.add(GrupoMembro(grupo_id=convite.grupo_id, usuario_id=current_user.id, papel="membro"))
+        # Fatia 6: quem aceita o convite pode ter vindo trabalhando sozinho
+        # (sem Grupo nenhum) até agora - mesmo cuidado de grupo.novo() acima:
+        # sem migrar aqui também, o histórico pessoal dela (pacientes/
+        # exames/etc. já cadastrados) "sumiria" da vista assim que ela
+        # passasse a ter um Grupo (ver filtro_escopo_atual()).
+        migrar_dados_pessoais_para_grupo(current_user, convite.grupo)
         db.session.commit()
         session["grupo_ativo_id"] = convite.grupo_id
         flash(f'Você agora faz parte do grupo "{convite.grupo.nome}".', "success")

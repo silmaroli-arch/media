@@ -1308,16 +1308,15 @@ r = client.post(f"/equipe/exames/{colonoscopia_id}/editar", data={
 }, follow_redirects=True)
 checar("Exame atualizado com duração/acompanhante", "atualizado" in r.get_data(as_text=True).lower())
 
-# Preço é atualizado pela tela de associações (Exames por filial).
+# Associação médico/exame é atualizada pela tela de associações (Exames por filial).
 r = client.post(f"/equipe/exames/por-filial/{colonoscopia_id}/atualizar", data={
-    "medico_id": str(medico_carlos_id), "preco": "350,00",
+    "medico_id": str(medico_carlos_id),
 }, follow_redirects=True)
-checar("Preço atualizado pela tela de associações", r.status_code == 200)
+checar("Associação atualizada pela tela de associações", r.status_code == 200)
 
 with app.app_context():
     colonoscopia_checar = Exame.query.get(colonoscopia_id)
     checar("Duração do exame salva (45 minutos)", colonoscopia_checar.duracao_minutos == 45)
-    checar("Preço do exame salvo (350.00)", float(colonoscopia_checar.preco) == 350.00)
     checar("Flag de acompanhante obrigatório salva", colonoscopia_checar.precisa_acompanhante is True)
 
 # Agendar sem informar acompanhante deve ser rejeitado

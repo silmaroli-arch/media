@@ -4,7 +4,6 @@ import re
 import secrets
 import uuid
 from datetime import datetime, timedelta
-from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 from flask import (
@@ -44,19 +43,6 @@ medico_bp = Blueprint("medico", __name__, url_prefix="/equipe")
 # persistente entre deploys/reinícios; para um uso mais robusto no futuro,
 # trocar por um armazenamento externo (ex.: S3).
 PASTA_RESULTADOS = "resultados_exame"
-
-
-def _parse_valor_decimal(valor_str):
-    """Converte um valor digitado (aceita vírgula ou ponto decimal) para
-    Decimal, ou None se vazio/inválido."""
-    if not valor_str:
-        return None
-    valor_str = valor_str.strip().replace(".", "").replace(",", ".") if "," in valor_str else valor_str.strip()
-    try:
-        return Decimal(valor_str)
-    except InvalidOperation:
-        return None
-
 
 def _parse_data_nascimento(valor_str):
     """Converte a data de nascimento digitada para um date, aceitando o
@@ -1133,8 +1119,7 @@ def exames_por_filial_associar():
         db.session.commit()
         flash(
             f"{medico_novo.nome} foi adicionado(a) como médico que também atende \"{nome}\" "
-            f"(responsável: {existente.medico.nome}). O preço continua o já definido para essa "
-            "associação — ajuste pelo Editar, se precisar.",
+            f"(responsável: {existente.medico.nome}).",
             "success",
         )
         return redirect(url_for("medico.exames_por_filial"))
@@ -1144,19 +1129,10 @@ def exames_por_filial_associar():
         flash("Escolha um médico válido.", "danger")
         return redirect(url_for("medico.exames_por_filial"))
 
-    # O preço é informado aqui, na hora da associação — não vem mais
-    # copiado silenciosamente de outro registro nem editável no cadastro
-    # do exame (ver exames_editar).
-    preco = _parse_valor_decimal(request.form.get("preco", ""))
-    if preco is None:
-        flash("Informe o preço deste exame.", "danger")
-        return redirect(url_for("medico.exames_por_filial"))
-
     # O exame já existia como item de CATÁLOGO (cadastro genérico, sem
     # associação, ver exames_novo) - a associação promove esse mesmo
     # registro em vez de criar outro.
     existente.medico_id = medico_escolhido_id
-    existente.preco = preco
     existente.medico_confirmado = True
     existente.associado = True
     db.session.commit()
@@ -1169,7 +1145,7 @@ def exames_por_filial_associar():
 @staff_required
 def exames_por_filial_atualizar(exame_id):
     """Atualiza uma associação já existente - usada pelo "Editar" da tela
-    de associações (medico.exames_por_filial). Exame, médico e preço são
+    de associações (medico.exames_por_filial). Exame e médico são
     editáveis. Também aceita ajustar os médicos extras quando o chamador
     manda atualizar_extras=1.
 
@@ -1187,7 +1163,7 @@ def exames_por_filial_atualizar(exame_id):
         if exame.agendamentos:
             flash(
                 "Esta associação já tem agendamentos - não dá pra trocar o exame dela. "
-                "Troque só médico/preço, ou exclua a associação (após tratar os agendamentos) e crie outra.",
+                "Troque só o médico, ou exclua a associação (após tratar os agendamentos) e crie outra.",
                 "danger",
             )
             return redirect(url_for("medico.exames_por_filial", editar=exame.id))
@@ -1233,15 +1209,6 @@ def exames_por_filial_atualizar(exame_id):
         # apontando pra outro exame, não vale mais; fica pra revisar.
         exame.preparo_modelo_id = None
         exame.medicos_extra = []
-
-    # Só valida/atualiza o preço quando ele veio no formulário - chamadas
-    # que só mexem em médico/extras não mandam o campo.
-    if "preco" in request.form:
-        preco = _parse_valor_decimal(request.form.get("preco", ""))
-        if preco is None:
-            flash("Informe um preço válido.", "danger")
-            return redirect(url_for("medico.exames_por_filial", editar=exame.id))
-        exame.preco = preco
 
     # Não existe "médico principal" - qualquer pessoa da equipe (médico
     # ou secretária) pode reatribuir o médico responsável aqui, escolhendo

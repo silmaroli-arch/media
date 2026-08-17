@@ -7,7 +7,7 @@
 </div>
 <p class="text-muted">
   Cada associação diz <strong>qual exame</strong> está disponível, com <strong>qual médico</strong>
-  responsável e a <strong>qual preço</strong>. Clique em "Adicionar", preencha os 3 campos e salve — pronto.
+  responsável. Clique em "Adicionar", preencha os campos e salve — pronto.
 </p>
 
 {# ---------- Formulário de ADICIONAR (aberto pelo botão) ---------- #}
@@ -39,10 +39,6 @@
         <div class="form-text text-warning-emphasis">Nenhum médico disponível ainda (vincule pela tela Equipe).</div>
         {% endif %}
       </div>
-      <div class="mb-3">
-        <label class="form-label">Preço (R$)</label>
-        <input type="text" name="preco" class="form-control" placeholder="Ex.: 250,00" required>
-      </div>
       <button type="submit" class="btn btn-primary">Salvar</button>
     </form>
   </div>
@@ -56,7 +52,7 @@
   {% if tem_agendamentos %}
   <div class="alert alert-warning py-2 small">
     Esta associação já tem agendamento(s) marcados — por isso o exame fica travado
-    (os agendamentos apontam pra ela). Médico e preço continuam editáveis.
+    (os agendamentos apontam pra ela). O médico continua editável.
   </div>
   {% endif %}
   <form method="post" action="{{ url_for('medico.exames_por_filial_atualizar', exame_id=editar_exame.id) }}">
@@ -82,11 +78,6 @@
       </div>
       {% endif %}
     </div>
-    <div class="mb-3">
-      <label class="form-label">Preço (R$)</label>
-      <input type="text" name="preco" class="form-control"
-             value="{{ '%.2f'|format(editar_exame.preco)|replace('.', ',') if editar_exame.preco else '' }}" required>
-    </div>
     <button type="submit" class="btn btn-primary">Salvar</button>
     <a href="{{ url_for('medico.exames_por_filial') }}" class="btn btn-link">Cancelar</a>
   </form>
@@ -100,7 +91,7 @@
 {# ---------- Lista das associações ---------- #}
 <div class="card p-3">
   <table class="table table-hover align-middle">
-    <thead><tr><th>Exame</th><th>Médico</th><th>Preço</th><th></th></tr></thead>
+    <thead><tr><th>Exame</th><th>Médico</th><th></th></tr></thead>
     <tbody>
       {% for e in associacoes %}
       <tr>
@@ -117,13 +108,12 @@
           <span class="badge bg-light text-dark border ms-1">+ {{ m.nome }}</span>
           {% endfor %}
         </td>
-        <td>{% if e.preco %}R$ {{ "%.2f"|format(e.preco)|replace(".", ",") }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
         <td class="text-nowrap">
           <a href="{{ url_for('medico.exames_por_filial', editar=e.id) }}#form-editar" class="btn btn-sm btn-outline-primary">Editar</a>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4" class="text-muted text-center">Nenhuma associação ainda — clique em "Adicionar" acima.</td></tr>
+      <tr><td colspan="3" class="text-muted text-center">Nenhuma associação ainda — clique em "Adicionar" acima.</td></tr>
       {% endfor %}
     </tbody>
   </table>

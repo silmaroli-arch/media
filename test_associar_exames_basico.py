@@ -45,7 +45,7 @@ with app.app_context():
     exame_centro = Exame(
         grupo_id=centro_id, medico_id=medico_grupo_id, nome="Endoscopia Assoc",
         descricao="", duracao_minutos=30, preparo_modelo_id=modelo.id, medico_confirmado=True,
-        associado=True, preco=300.00,
+        associado=True,
     )
     # Um segundo exame (só catálogo, sem associação) - usado no teste de
     # trocar o EXAME de uma associação para outro que ainda não é associado.
@@ -66,8 +66,8 @@ client.post("/equipe/clinica", data={"clinica_id": str(centro_id)}, follow_redir
 r = client.get("/equipe/exames/por-filial")
 html = r.get_data(as_text=True)
 checar("Tela abre com o botão Adicionar", "Adicionar" in html)
-checar("Formulário tem os 3 campos: Exame, Médico e Preço",
-       'name="nome"' in html and 'name="medico_id"' in html and 'name="preco"' in html)
+checar("Formulário tem os 2 campos: Exame e Médico",
+       'name="nome"' in html and 'name="medico_id"' in html)
 checar("Não pede mais filial de destino (Grupo já é a unidade)", 'name="clinica_destino_id"' not in html)
 checar("A antiga escolha de 'Tipo de associação' sumiu", "Tipo de associação" not in html)
 checar("A lista mostra a associação existente (Endoscopia)", "Endoscopia Assoc" in html)
@@ -94,7 +94,7 @@ checar("Mas o exame aparece como opção no formulário Adicionar",
 # Associar o exame genérico PROMOVE o mesmo registro (não duplica).
 r = client.post("/equipe/exames/por-filial/associar", data={
     "nome": "Exame Generico Basico",
-    "medico_id": str(medico_grupo_id), "preco": "100,00",
+    "medico_id": str(medico_grupo_id),
 }, follow_redirects=True)
 checar("Associar o exame de catálogo funciona", "associado com" in r.get_data(as_text=True))
 with app.app_context():
@@ -110,7 +110,7 @@ checar("Agora SIM o exame aparece na lista de associações",
 # Repetir a MESMA associação com o MESMO médico é barrada com aviso.
 r = client.post("/equipe/exames/por-filial/associar", data={
     "nome": "Exame Generico Basico",
-    "medico_id": str(medico_grupo_id), "preco": "100,00",
+    "medico_id": str(medico_grupo_id),
 }, follow_redirects=True)
 checar("Associação repetida (mesmo exame + médico) é barrada", "já está associado" in r.get_data(as_text=True))
 
@@ -128,7 +128,7 @@ with app.app_context():
 
 r = client.post("/equipe/exames/por-filial/associar", data={
     "nome": "Exame Generico Basico",
-    "medico_id": str(medico2_id), "preco": "0",
+    "medico_id": str(medico2_id),
 }, follow_redirects=True)
 html_extra = r.get_data(as_text=True)
 checar("Médico NOVO na mesma associação é adicionado (não é rejeitado)",
@@ -138,7 +138,6 @@ with app.app_context():
     checar("O médico novo entrou como médico extra da associação",
            medico2_id in [m.id for m in e_gen.medicos_extra])
     checar("O responsável original continua o mesmo", e_gen.medico_id == medico_grupo_id)
-    checar("O preço da associação NÃO foi alterado pelo médico extra", float(e_gen.preco) == 100.0)
     checar("Continua UMA associação só (não duplicou a linha)",
            Exame.query.filter_by(grupo_id=centro_id, nome="Exame Generico Basico").count() == 1)
 checar("O médico extra aparece na linha da lista", "+ Medico Dois Assoc" in html_extra)
@@ -146,23 +145,20 @@ checar("O médico extra aparece na linha da lista", "+ Medico Dois Assoc" in htm
 # Repetir o mesmo médico extra também é barrado.
 r = client.post("/equipe/exames/por-filial/associar", data={
     "nome": "Exame Generico Basico",
-    "medico_id": str(medico2_id), "preco": "0",
+    "medico_id": str(medico2_id),
 }, follow_redirects=True)
 checar("Repetir o médico extra é barrado com aviso", "já está associado" in r.get_data(as_text=True))
 
-# ---------- Editar: trocar o preço pela própria tela ----------
+# ---------- Editar a associação pela própria tela ----------
 
 r = client.get(f"/equipe/exames/por-filial?editar={exame_centro_id}")
 html3 = r.get_data(as_text=True)
-checar("Editar abre o formulário pré-preenchido da associação", "Editar associação" in html3 and "300,00" in html3)
+checar("Editar abre o formulário pré-preenchido da associação", "Editar associação" in html3)
 
 r = client.post(f"/equipe/exames/por-filial/{exame_centro_id}/atualizar", data={
     "medico_id": str(medico_grupo_id),
-    "preco": "350,00",
 }, follow_redirects=True)
 checar("Salvar a edição atualiza a associação", "atualizado" in r.get_data(as_text=True))
-with app.app_context():
-    checar("Novo preço foi salvo", float(Exame.query.get(exame_centro_id).preco) == 350.0)
 
 # ---------- Editar TODOS os campos: trocar o EXAME de uma associação ----------
 
@@ -171,7 +167,6 @@ with app.app_context():
 r = client.post(f"/equipe/exames/por-filial/{exame_centro_id}/atualizar", data={
     "nome": "Ecografia Assoc",
     "medico_id": str(medico_grupo_id),
-    "preco": "130,00",
 }, follow_redirects=True)
 with app.app_context():
     exame_atualizado = Exame.query.get(exame_centro_id)
@@ -183,7 +178,6 @@ with app.app_context():
 r = client.post(f"/equipe/exames/por-filial/{exame_centro_id}/atualizar", data={
     "nome": "Exame Generico Basico",  # já é uma associação
     "medico_id": str(medico_grupo_id),
-    "preco": "130,00",
 }, follow_redirects=True)
 checar("Editar pra um nome que já é associação é barrado",
        "já está associado" in r.get_data(as_text=True))
@@ -220,20 +214,18 @@ with app.app_context():
 r = client.post(f"/equipe/exames/por-filial/{exame_gen_id}/atualizar", data={
     "nome": "Ecografia Assoc",  # tenta trocar o exame da associação com agendamento marcado
     "medico_id": str(medico_grupo_id),
-    "preco": "350,00",
 }, follow_redirects=True)
 checar("Com agendamento marcado, trocar o exame é barrado",
        "já tem agendamentos" in r.get_data(as_text=True))
 with app.app_context():
     checar("O exame da associação não mudou", Exame.query.get(exame_gen_id).nome == "Exame Generico Basico")
 
-# Médico/preço continuam editáveis mesmo com agendamento.
+# Médico continua editável mesmo com agendamento.
 r = client.post(f"/equipe/exames/por-filial/{exame_gen_id}/atualizar", data={
-    "medico_id": str(medico_grupo_id), "preco": "375,00",
+    "medico_id": str(medico_grupo_id),
 }, follow_redirects=True)
-with app.app_context():
-    checar("Médico/preço continuam editáveis com agendamento marcado",
-           float(Exame.query.get(exame_gen_id).preco) == 375.0)
+checar("Médico continua editável com agendamento marcado",
+       "atualizado" in r.get_data(as_text=True))
 
 r = client.post(f"/equipe/exames/por-filial/{exame_gen_id}/excluir", follow_redirects=True)
 checar("Excluir associação com agendamento marcado é barrado",

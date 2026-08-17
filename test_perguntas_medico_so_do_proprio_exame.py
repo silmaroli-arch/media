@@ -37,11 +37,11 @@ with app.app_context():
 
     exame_carlos = Exame(
         grupo_id=clinica_id, medico_id=carlos_id, nome="Exame do Carlos Teste",
-        preco=100, associado=True, medico_confirmado=True,
+        associado=True, medico_confirmado=True,
     )
     exame_fernanda = Exame(
         grupo_id=clinica_id, medico_id=fernanda_id, nome="Exame da Fernanda Teste",
-        preco=100, associado=True, medico_confirmado=True,
+        associado=True, medico_confirmado=True,
     )
     db.session.add_all([exame_carlos, exame_fernanda])
     db.session.commit()

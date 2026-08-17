@@ -50,7 +50,6 @@ with app.app_context():
     exame = Exame.query.filter_by(nome="Exame genérico de teste").first()
     checar("Exame foi criado", exame is not None)
     checar("Médico responsável foi preenchido automaticamente (obrigatório no banco)", exame.medico_id is not None)
-    checar("Preço fica em branco até ser definido em 'Exames por filial'", exame.preco is None)
     exame_id = exame.id
 
 client.get("/logout")

@@ -42,8 +42,10 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS perm_filiais BOOLEAN NOT NULL DEFA
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS perm_dados_clinica BOOLEAN NOT NULL DEFAULT FALSE;
 
 ALTER TABLE exames ADD COLUMN IF NOT EXISTS duracao_minutos INTEGER;
-ALTER TABLE exames ADD COLUMN IF NOT EXISTS preco NUMERIC(10, 2);
 ALTER TABLE exames ADD COLUMN IF NOT EXISTS precisa_acompanhante BOOLEAN NOT NULL DEFAULT FALSE;
+-- exames.preco saiu do modelo (não há mais controle financeiro no sistema) -
+-- a coluna fica órfã em bancos já existentes, mesmo tratamento das remoções
+-- anteriores (sem DROP COLUMN, sem Flask-Migrate neste projeto).
 
 ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS acompanhante_nome VARCHAR(150);
 ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS acompanhante_telefone VARCHAR(30);

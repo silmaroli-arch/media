@@ -54,7 +54,7 @@ checar(
 
 # Associar escolhendo a si mesmo funciona normalmente.
 r2 = client.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Espirometria Teste", "medico_id": str(carlos_id), "preco": "120,00",
+    "nome": "Espirometria Teste", "medico_id": str(carlos_id),
 }, follow_redirects=True)
 checar("Associar escolhendo a si mesmo funciona", "associado com" in r2.get_data(as_text=True))
 
@@ -70,7 +70,7 @@ client.post("/equipe/exames/novo", data={
     "preparo_modelo_id": str(modelo2_id),
 }, follow_redirects=True)
 r3 = client.post("/equipe/exames/por-filial/associar", data={
-    "nome": "Espirometria Teste 2", "medico_id": str(fernanda_id), "preco": "120,00",
+    "nome": "Espirometria Teste 2", "medico_id": str(fernanda_id),
 }, follow_redirects=True)
 checar(
     "Servidor bloqueia médico tentando se associar como outro médico, mesmo via POST direto",

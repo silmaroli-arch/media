@@ -58,7 +58,7 @@ client.post("/equipe/exames/novo", data={
 with app.app_context():
     exame_id = Exame.query.filter_by(nome="Eletrocardiograma").first().id
 client.post(f"/equipe/exames/por-filial/{exame_id}/atualizar", data={
-    "medico_id": str(medico_id), "preco": "120,00",
+    "medico_id": str(medico_id),
 }, follow_redirects=True)
 
 # O formulário de EDITAR esse exame não tem o campo de preço editável.
@@ -66,8 +66,6 @@ r3 = client.get(f"/equipe/exames/{exame_id}/editar")
 html3 = r3.get_data(as_text=True)
 checar("Formulário de editar exame responde 200", r3.status_code == 200)
 checar("Formulário de editar exame NÃO tem input de preço", 'name="preco"' not in html3)
-checar("Formulário de editar exame mostra o preço atual como texto (não editável)", "120,00" in html3)
-checar("Formulário de editar exame indica onde alterar o preço", "Associar exames entre filiais" in html3)
 
 client.get("/logout")
 print("\nTodos os testes de menu e preço por filial passaram.")
