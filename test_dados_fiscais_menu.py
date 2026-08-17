@@ -1,5 +1,6 @@
-"""Testa que "Dados Fiscais" virou uma tela própria (submenu de "Cadastro
-geral"), separada de "Dados Cadastrais": inscrição estadual, regime
+"""Testa que "Dados Fiscais" virou uma tela própria, separada de "Dados
+Cadastrais" (nenhuma das duas tem link no menu lateral - são acessadas por
+URL direta ou pelo checklist de configuração inicial): inscrição estadual, regime
 tributário, CNAE e a configuração de emissão de NFS-e (ambiente, certificado,
 provedor, dados da NFS-e) saíram de "Dados Cadastrais" e passaram para essa
 nova tela. O código IBGE do município continua sendo preenchido a partir do

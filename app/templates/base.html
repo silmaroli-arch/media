@@ -37,19 +37,12 @@
 {% set eh_staff_logado = current_user.is_authenticated and current_user.is_staff %}
 <div class="d-flex">
   {% if eh_staff_logado %}
-  {% set grupo_medico = ['medico.medico_agenda_pessoal', 'medico.minha_agenda_completa'] %}
-  {% set grupo_cadastro_geral = ['medico.pacientes_lista', 'medico.pacientes_novo', 'medico.pacientes_editar', 'medico.pacientes_detalhe',
-                                  'medico.equipe_lista', 'medico.equipe_permissoes', 'grupo.convidar',
-                                  'medico.filiais_lista', 'medico.filiais_nova',
-                                  'medico.clinica_configuracoes', 'medico.clinica_dados_fiscais'] %}
   {% set grupo_ia = ['medico.perguntas_pendentes', 'medico.perguntas_responder',
                       'medico.faq_lista', 'medico.faq_novo'] %}
   {% set grupo_config_exames = ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar',
                                  'medico.exames_por_filial',
                                  'medico.preparo_modelos_lista', 'medico.preparo_modelos_novo',
                                  'medico.preparo_modelos_editar'] %}
-  {% set grupo_relatorios = ['relatorios.index', 'relatorios.agenda',
-                              'relatorios.pacientes', 'relatorios.desempenho_medico'] %}
   <nav class="app-sidebar bg-primary text-white p-3 no-print">
     <div class="d-flex align-items-center justify-content-between mb-4">
       <a class="d-block text-decoration-none" href="{{ url_for('medico.dashboard') }}">
@@ -76,89 +69,35 @@
       </li>
 
       <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuCadastroGeral" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_cadastro_geral else 'false' }}">
-          <span><i class="bi bi-journal-plus me-2"></i>Cadastro geral</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">
+          <i class="bi bi-journal-plus me-2"></i>Pacientes
         </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_cadastro_geral %}show{% endif %}" id="menuCadastroGeral">
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">Pacientes</a>
-            </li>
-            {# Fatia 5: "Equipe" e "Meus locais de atendimento" saíram do menu -
-               eram duplicados/redirects para "Grupos de trabalho" (Equipe) ou
-               telas sem substituto ainda no fluxo de Grupo (Meus locais de
-               atendimento - Dados da clínica/Fiscal). As rotas continuam
-               existindo (equipe_lista/filiais_lista redirecionam; clinica_
-               configuracoes/clinica_dados_fiscais seguem acessíveis por URL
-               direta ou pelo checklist de configuração inicial), só o link
-               do menu foi removido. #}
-          </ul>
-        </div>
+        {# Fatia 5/reorganização de menus: "Cadastro geral" só tinha
+           "Pacientes" dentro - virou um item direto, sem submenu.
+           "Equipe" e "Meus locais de atendimento" já tinham saído do menu
+           antes (duplicados/redirects para "Grupos de trabalho" ou telas
+           sem substituto ainda no fluxo de Grupo) - as rotas continuam
+           existindo (equipe_lista/filiais_lista redirecionam; clinica_
+           configuracoes/clinica_dados_fiscais seguem acessíveis por URL
+           direta ou pelo checklist de configuração inicial), só não têm
+           link no menu. #}
       </li>
 
       <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuMedico" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_medico else 'false' }}">
-          <span><i class="bi bi-clipboard2-pulse me-2"></i>Médico</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
+        <a class="nav-link {% if request.endpoint == 'medico.medico_agenda_pessoal' %}active{% endif %}" href="{{ url_for('medico.medico_agenda_pessoal') }}">
+          <i class="bi bi-clipboard2-pulse me-2"></i>Meus exames agendados
         </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_medico %}show{% endif %}" id="menuMedico">
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.medico_agenda_pessoal' %}active{% endif %}" href="{{ url_for('medico.medico_agenda_pessoal') }}">Meus exames agendados</a>
-            </li>
-            {% if current_user.tipo == 'medico' %}
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.minha_agenda_completa' %}active{% endif %}" href="{{ url_for('medico.minha_agenda_completa') }}">Minha agenda em todos os locais</a>
-            </li>
-            {% endif %}
-          </ul>
-        </div>
+        {# Reorganização de menus: o menu "Médico" (que só tinha "Meus
+           exames agendados" e "Minha agenda em todos os locais") deixou
+           de existir - "Meus exames agendados" virou item direto, e
+           "Minha agenda em todos os locais" saiu do menu (a rota
+           medico.minha_agenda_completa continua existindo, só sem link
+           aqui). #}
       </li>
 
-      <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuRelatorios" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_relatorios else 'false' }}">
-          <span><i class="bi bi-bar-chart-line me-2"></i>Relatórios</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
-        </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_relatorios %}show{% endif %}" id="menuRelatorios">
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'relatorios.index' %}active{% endif %}" href="{{ url_for('relatorios.index') }}">Resumo</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'relatorios.agenda' %}active{% endif %}" href="{{ url_for('relatorios.agenda') }}">Agenda / operação</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'relatorios.pacientes' %}active{% endif %}" href="{{ url_for('relatorios.pacientes') }}">Pacientes</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'relatorios.desempenho_medico' %}active{% endif %}" href="{{ url_for('relatorios.desempenho_medico') }}">Desempenho por médico</a>
-            </li>
-          </ul>
-        </div>
-      </li>
-
-      <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuIA" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_ia else 'false' }}">
-          <span><i class="bi bi-robot me-2"></i>IA</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
-        </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_ia %}show{% endif %}" id="menuIA">
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.perguntas') %}active{% endif %}" href="{{ url_for('medico.perguntas_pendentes') }}">Perguntas dos pacientes</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">Base de conhecimento</a>
-            </li>
-          </ul>
-        </div>
-      </li>
+      {# Reorganização de menus: o menu "Relatórios" deixou de existir -
+         as rotas (relatorios.index/agenda/pacientes/desempenho_medico)
+         continuam existindo, só sem link no menu. #}
 
       <li class="nav-item mb-1">
         <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuConfigExames" role="button"
@@ -176,6 +115,24 @@
             </li>
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint == 'medico.exames_por_filial' %}active{% endif %}" href="{{ url_for('medico.exames_por_filial') }}">Associar exames entre filiais</a>
+            </li>
+          </ul>
+        </div>
+      </li>
+
+      <li class="nav-item mb-1">
+        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuIA" role="button"
+           aria-expanded="{{ 'true' if request.endpoint in grupo_ia else 'false' }}">
+          <span><i class="bi bi-robot me-2"></i>Médico + IA</span>
+          <i class="bi bi-chevron-down chevron-icon"></i>
+        </a>
+        <div class="collapse nav-sub {% if request.endpoint in grupo_ia %}show{% endif %}" id="menuIA">
+          <ul class="nav flex-column">
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.perguntas') %}active{% endif %}" href="{{ url_for('medico.perguntas_pendentes') }}">Perguntas dos pacientes</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">Base de conhecimento</a>
             </li>
           </ul>
         </div>
