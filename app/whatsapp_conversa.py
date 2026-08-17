@@ -1,23 +1,27 @@
-"""Fatia 7 (área de WhatsApp) — passo 3 do plano: fluxo de identificação
-do paciente por CPF + data de nascimento, com sessão de conversa que
-expira por inatividade (ver `ConversaWhatsapp` em app/models.py).
+"""Fatia 7 (área de WhatsApp) — passos 3 e 4 do plano:
+- Passo 3: identificação do paciente por CPF + data de nascimento, com
+  sessão de conversa que expira por inatividade (ver `ConversaWhatsapp`
+  em app/models.py).
+- Passo 4 (este arquivo): uma vez identificado (e com um exame em foco
+  escolhido), o menu de opções de verdade - "1) Ver informações do
+  preparo" reaproveita app.faq_engine.texto_preparo_whatsapp (mesmos
+  dados/cálculo de prazo que a tela paciente/preparo.html já usa) e
+  "3) Trocar de exame" reaproveita a mesma lógica de seleção da
+  identificação inicial.
 
 Este módulo é só a LÓGICA de conversa (recebe telefone + texto da
 mensagem, devolve o texto da resposta) — não sabe nada sobre Twilio nem
 sobre HTTP, para poder ser testado sem precisar simular um webhook (ver
 app/routes_whatsapp.py, que é a única coisa que fala com o provedor).
 
-O que ainda NÃO está implementado aqui (próximos passos do plano):
-- "Ver informações do preparo" (reaproveitar app/faq_engine.py e o
-  cálculo de prazos de app/models.py:Agendamento.limite()).
-- "Fazer uma pergunta" (reaproveitar app/ia_preparo.py).
-Por ora, depois de identificado (e com um exame em foco escolhido), a
-conversa só confirma a identificação — o menu de opções de verdade entra
-no próximo passo."""
+O que ainda NÃO está implementado aqui (próximo passo do plano):
+- "2) Fazer uma pergunta" de verdade (reaproveitar app/ia_preparo.py) -
+  por ora essa opção só avisa que ainda está sendo construída."""
 import re
 from datetime import date, datetime
 
 from app.extensions import db
+from app.faq_engine import texto_preparo_whatsapp
 from app.models import Agendamento, ConversaWhatsapp, Paciente
 
 
@@ -91,11 +95,19 @@ def _texto_lista_exames(agendamentos, preambulo="Você tem mais de um exame em p
     return preambulo + "\n" + "\n".join(linhas)
 
 
-def _texto_identificado(paciente, agendamento):
+MENU_OPCOES = (
+    "1) Ver informações do preparo\n"
+    "2) Fazer uma pergunta\n"
+    "3) Trocar de exame"
+)
+
+
+def _texto_menu(paciente, agendamento, saudacao=True):
+    cabecalho = f"Olá, {paciente.nome.split(' ')[0]}! " if saudacao else ""
     return (
-        f"Olá, {paciente.nome.split(' ')[0]}! Encontrei seu cadastro.\n"
-        f"Exame em foco: {agendamento.exame.nome} — {agendamento.data_hora.strftime('%d/%m/%Y')}.\n"
-        "(As opções de ver o preparo e fazer perguntas chegam no próximo passo desta área de WhatsApp.)"
+        f"{cabecalho}Exame em foco: *{agendamento.exame.nome}* — "
+        f"{agendamento.data_hora.strftime('%d/%m/%Y')}.\n\n"
+        f"{MENU_OPCOES}"
     )
 
 
@@ -111,7 +123,29 @@ MENSAGEM_SEM_EXAME_ATIVO = (
     "Não encontramos nenhum exame em preparo no momento. Se acha que isso é "
     "um engano, entre em contato com a clínica."
 )
-MENSAGEM_OPCAO_INVALIDA = "Não entendi. Responda só com o número do exame na lista abaixo:"
+MENSAGEM_OPCAO_INVALIDA_EXAME = "Não entendi. Responda só com o número do exame na lista abaixo:"
+MENSAGEM_OPCAO_INVALIDA_MENU = f"Não entendi. Escolha uma das opções abaixo:\n\n{MENU_OPCOES}"
+MENSAGEM_PERGUNTA_EM_BREVE = (
+    "Essa opção (fazer uma pergunta) ainda está sendo construída nesta área "
+    "de WhatsApp. Por enquanto, entre em contato com a secretaria da clínica "
+    "para tirar dúvidas sobre o preparo.\n\n" + MENU_OPCOES
+)
+
+
+def _resolver_exame_em_foco(conversa, paciente, agendamentos):
+    """Decide o próximo passo depois de identificar o paciente (na
+    entrada) ou depois de "3) Trocar de exame" (já identificado): com um
+    só exame ativo, fixa ele direto e mostra o menu; com mais de um, pede
+    pra escolher (a escolha em si é tratada por processar_mensagem, na
+    próxima mensagem que chegar)."""
+    if not agendamentos:
+        conversa.agendamento_id = None
+        return MENSAGEM_SEM_EXAME_ATIVO
+    if len(agendamentos) == 1:
+        conversa.agendamento_id = agendamentos[0].id
+        return _texto_menu(paciente, agendamentos[0])
+    conversa.agendamento_id = None
+    return _texto_lista_exames(agendamentos)
 
 
 def processar_mensagem(telefone, corpo_mensagem):
@@ -147,20 +181,13 @@ def processar_mensagem(telefone, corpo_mensagem):
             return MENSAGEM_NAO_ENCONTRADO
 
         conversa.paciente_id = paciente.id
-        agendamentos = _agendamentos_ativos(paciente)
-        if not agendamentos:
-            db.session.commit()
-            return MENSAGEM_SEM_EXAME_ATIVO
-        if len(agendamentos) == 1:
-            conversa.agendamento_id = agendamentos[0].id
-            db.session.commit()
-            return _texto_identificado(paciente, agendamentos[0])
-
+        resposta = _resolver_exame_em_foco(conversa, paciente, _agendamentos_ativos(paciente))
         db.session.commit()
-        return _texto_lista_exames(agendamentos)
+        return resposta
 
     # Já identificado - falta só escolher qual exame (paciente com mais
-    # de um agendamento ativo).
+    # de um agendamento ativo, seja na identificação inicial ou depois de
+    # "3) Trocar de exame").
     if not conversa.agendamento_id:
         paciente = conversa.paciente
         agendamentos = _agendamentos_ativos(paciente)
@@ -172,14 +199,25 @@ def processar_mensagem(telefone, corpo_mensagem):
         indice = int(escolha) if escolha.isdigit() else None
         if not indice or not (1 <= indice <= len(agendamentos)):
             db.session.commit()
-            return _texto_lista_exames(agendamentos, preambulo=MENSAGEM_OPCAO_INVALIDA)
+            return _texto_lista_exames(agendamentos, preambulo=MENSAGEM_OPCAO_INVALIDA_EXAME)
 
         agendamento_escolhido = agendamentos[indice - 1]
         conversa.agendamento_id = agendamento_escolhido.id
         db.session.commit()
-        return _texto_identificado(paciente, agendamento_escolhido)
+        return _texto_menu(paciente, agendamento_escolhido)
 
-    # Identificado e com exame em foco: o menu de opções de verdade
-    # (ver preparo / fazer pergunta) é o próximo passo do plano.
+    # Identificado e com exame em foco: menu de opções.
+    paciente, agendamento = conversa.paciente, conversa.agendamento
+    opcao = (corpo_mensagem or "").strip()
+
+    if opcao == "1":
+        resposta = texto_preparo_whatsapp(agendamento) + "\n\n" + MENU_OPCOES
+    elif opcao == "2":
+        resposta = MENSAGEM_PERGUNTA_EM_BREVE
+    elif opcao == "3":
+        resposta = _resolver_exame_em_foco(conversa, paciente, _agendamentos_ativos(paciente))
+    else:
+        resposta = MENSAGEM_OPCAO_INVALIDA_MENU
+
     db.session.commit()
-    return _texto_identificado(conversa.paciente, conversa.agendamento)
+    return resposta

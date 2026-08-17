@@ -421,3 +421,101 @@ def buscar_resposta_medicamento(pergunta_usuario: str, exame, paciente=None):
         resposta += f" {melhor_item.observacao}"
     resposta += " Em caso de dúvida, fale com o médico que prescreveu antes de suspender por conta própria."
     return resposta
+
+
+def texto_preparo_whatsapp(agendamento):
+    """Monta o mesmo conteúdo de app/templates/paciente/preparo.html, só
+    que como texto plano formatado para WhatsApp (negrito com
+    *asteriscos*, sem HTML) — usado pela opção "Ver informações do
+    preparo" da área de WhatsApp (Fatia 7, ver app/whatsapp_conversa.py).
+
+    Não duplica nenhuma regra de cálculo de prazo: lê os mesmos campos e
+    chama os mesmos métodos `.limite()`/`.limite_formatado()` que a tela
+    web já usa, sempre a partir de `agendamento.data_hora` — só troca o
+    formato de saída (texto em vez de HTML)."""
+    exame = agendamento.exame
+    preparo = exame.preparo
+    data_hora = agendamento.data_hora
+
+    linhas = [f"*{exame.nome}* — {data_hora.strftime('%d/%m/%Y às %H:%M')}"]
+
+    if not preparo:
+        linhas.append(
+            "\nEste agendamento não tem instruções de preparo cadastradas "
+            "— não é necessário nenhum preparo prévio. Em caso de dúvida, "
+            "entre em contato com a clínica."
+        )
+        return "\n".join(linhas)
+
+    if preparo.cortes:
+        linhas.append("")
+        for corte in preparo.cortes:
+            linhas.append(
+                f"⏱ *{corte.descricao}*: até "
+                f"{corte.limite(data_hora).strftime('%d/%m/%Y às %H:%M')} "
+                f"({corte.horas_antes}h antes do exame)"
+            )
+
+    if preparo.medicamentos_suspensos:
+        linhas.append("\n*Medicamentos a suspender:*")
+        for ms in preparo.medicamentos_suspensos:
+            obs = f" — {ms.observacao}" if ms.observacao else ""
+            linhas.append(
+                f"- {ms.medicamento.nome}: suspender a partir de "
+                f"{ms.limite(data_hora).strftime('%d/%m/%Y')} "
+                f"({ms.dias_antes} dias antes){obs}"
+            )
+        if preparo.observacoes_medicamentos:
+            linhas.append(preparo.observacoes_medicamentos)
+        linhas.append(
+            "Em caso de dúvida sobre suspender algum medicamento "
+            "(principalmente anticoagulantes), fale com o médico que "
+            "prescreveu antes de suspender por conta própria."
+        )
+
+    if preparo.medicamentos_mantidos:
+        linhas.append("\n*Medicamentos que podem ser mantidos:*")
+        for mm in preparo.medicamentos_mantidos:
+            obs = f" — {mm.observacao}" if mm.observacao else ""
+            linhas.append(f"- {mm.nome}{obs}")
+
+    if preparo.alimentos:
+        proibidos = [a for a in preparo.alimentos if not a.permitido]
+        permitidos = [a for a in preparo.alimentos if a.permitido]
+        if proibidos:
+            linhas.append("\n*Alimentos proibidos:*")
+            for a in proibidos:
+                if a.horas_antes is not None:
+                    linhas.append(f"- {a.nome} — evitar a partir de {a.limite_formatado(data_hora)} ({a.horas_antes}h antes)")
+                elif a.dias_antes is not None:
+                    linhas.append(f"- {a.nome} — evitar a partir de {a.limite_formatado(data_hora)} ({a.dias_antes} dias antes)")
+                else:
+                    linhas.append(f"- {a.nome}")
+        if permitidos:
+            linhas.append("\n*Sugestão para consumo:*")
+            for a in permitidos:
+                linhas.append(f"- {a.nome}")
+
+    if preparo.exames_anteriores_proibidos:
+        linhas.append("\n*Não pode ter feito recentemente:*")
+        for e in preparo.exames_anteriores_proibidos:
+            if e.dias_antes is not None:
+                linhas.append(
+                    f"- {e.nome} — não deve ter sido feito desde "
+                    f"{e.limite(data_hora).strftime('%d/%m/%Y')} ({e.dias_antes} dias antes)"
+                )
+            else:
+                linhas.append(f"- {e.nome}")
+        linhas.append("Se você fez algum desses procedimentos recentemente, avise a secretaria antes do exame.")
+
+    if preparo.informacoes_gerais:
+        linhas.append("\n*Outras orientações:*")
+        for info in preparo.informacoes_gerais:
+            limite_info = info.limite(data_hora)
+            sufixo = f" — {limite_info.strftime('%d/%m/%Y às %H:%M')}" if limite_info else ""
+            linhas.append(f"- {info.texto}{sufixo}")
+
+    if preparo.instrucoes:
+        linhas.append("\n" + preparo.instrucoes.strip())
+
+    return "\n".join(linhas).strip()

@@ -1,9 +1,10 @@
-"""Testa o passo 3 do plano da área de WhatsApp (ver PLANO_WHATSAPP.md e
-app/whatsapp_conversa.py): identificação do paciente por CPF + data de
-nascimento, escolha do exame em foco quando há mais de um ativo, e
-expiração da sessão de conversa por inatividade — direto na camada de
-lógica (sem passar pelo webhook/Twilio, que já tem seu próprio teste de
-assinatura em test_whatsapp_webhook_assinatura.py)."""
+"""Testa os passos 3 e 4 do plano da área de WhatsApp (ver
+PLANO_WHATSAPP.md e app/whatsapp_conversa.py): identificação do paciente
+por CPF + data de nascimento, escolha do exame em foco quando há mais de
+um ativo, o menu de opções (ver preparo / fazer pergunta / trocar de
+exame) e expiração da sessão de conversa por inatividade — direto na
+camada de lógica (sem passar pelo webhook/Twilio, que já tem seu próprio
+teste de assinatura em test_whatsapp_webhook_assinatura.py)."""
 from datetime import datetime, timedelta
 
 from app import create_app, db
@@ -47,11 +48,32 @@ with app.app_context():
     checar("ConversaWhatsapp ficou com o paciente_id certo", conversa.paciente_id == joao.id)
     checar("ConversaWhatsapp ficou com um agendamento_id (só havia um exame ativo)", conversa.agendamento_id is not None)
 
-    # 4) Mensagem seguinte (já identificado): não pede CPF de novo, só
-    # confirma o exame em foco outra vez (o menu de opções é um passo futuro).
+    # 4) Mensagem seguinte (já identificado): não pede CPF de novo, mostra
+    # o menu de opções.
     resposta = processar_mensagem(telefone_joao, "quero saber sobre o preparo")
     checar("Já identificado: não pede CPF de novo", "CPF" not in resposta)
-    checar("Já identificado: repete a confirmação do exame em foco", "Colonoscopia" in resposta)
+    checar("Já identificado: mensagem fora do menu (1/2/3) pede pra escolher uma opção", "Não entendi" in resposta)
+    checar("Menu de opções aparece", "Ver informações do preparo" in resposta and "Fazer uma pergunta" in resposta and "Trocar de exame" in resposta)
+
+    # 4a) Opção 1 - ver informações do preparo: reaproveita
+    # app.faq_engine.texto_preparo_whatsapp (mesmos dados/cálculo de prazo
+    # da tela paciente/preparo.html - a colonoscopia do seed.py tem cortes
+    # de "Alimentos sólidos"/"Líquidos claros" e o alimento proibido
+    # "Amendoim" cadastrados no modelo de preparo).
+    resposta = processar_mensagem(telefone_joao, "1")
+    checar("Opção 1 mostra o nome do exame", "Colonoscopia" in resposta)
+    checar("Opção 1 mostra os cortes cadastrados no seed", "Alimentos sólidos" in resposta and "Líquidos claros" in resposta)
+    checar("Opção 1 mostra um alimento proibido cadastrado no seed", "Amendoim" in resposta)
+    checar("Opção 1 repete o menu no final", "Trocar de exame" in resposta)
+
+    # 4b) Opção 2 - fazer pergunta: ainda não implementada (passo 5 do
+    # plano), só avisa que está em construção.
+    resposta = processar_mensagem(telefone_joao, "2")
+    checar("Opção 2 avisa que ainda está sendo construída", "ainda está sendo construída" in resposta)
+
+    # 4c) Opção fora do menu (nem 1, nem 2, nem 3): pede pra escolher de novo.
+    resposta = processar_mensagem(telefone_joao, "9")
+    checar("Opção inválida no menu pede pra escolher de novo", "Não entendi" in resposta and "Ver informações do preparo" in resposta)
 
     # 5) Paciente com múltiplos exames ativos: dá um segundo agendamento
     # ativo ao João (mesmo exame, data diferente) e simula uma conversa nova.
@@ -81,7 +103,19 @@ with app.app_context():
     resposta = processar_mensagem(telefone_joao2, "2")
     checar("Escolha válida: confirma o exame escolhido", "Colonoscopia" in resposta)
     conversa2 = ConversaWhatsapp.query.filter_by(telefone=telefone_joao2).first()
-    checar("Escolha válida: agendamento_id foi fixado", conversa2.agendamento_id is not None)
+    agendamento_id_original = conversa2.agendamento_id
+    checar("Escolha válida: agendamento_id foi fixado", agendamento_id_original is not None)
+
+    # 5c) "3) Trocar de exame" com mais de um exame ativo: volta a pedir a
+    # escolha (mesma lista numerada de novo).
+    resposta = processar_mensagem(telefone_joao2, "3")
+    checar('"Trocar de exame" com múltiplos exames ativos mostra a lista de novo', "1)" in resposta and "2)" in resposta)
+    conversa2 = ConversaWhatsapp.query.filter_by(telefone=telefone_joao2).first()
+    checar('"Trocar de exame": agendamento_id foi limpo, aguardando nova escolha', conversa2.agendamento_id is None)
+
+    resposta = processar_mensagem(telefone_joao2, "1")
+    conversa2 = ConversaWhatsapp.query.filter_by(telefone=telefone_joao2).first()
+    checar("Nova escolha depois de trocar de exame fixou um agendamento_id", conversa2.agendamento_id is not None)
 
     # 6) Expiração: força a conversa do João a parecer inativa há muito
     # tempo - a próxima mensagem deve voltar a pedir CPF + data de nascimento.
@@ -92,4 +126,4 @@ with app.app_context():
     conversa_expirada = ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first()
     checar("Conversa expirada: paciente_id foi limpo", conversa_expirada.paciente_id is None)
 
-    print("\nTodos os testes de identificação por WhatsApp (passo 3) passaram.")
+    print("\nTodos os testes de identificação e menu por WhatsApp (passos 3 e 4) passaram.")
