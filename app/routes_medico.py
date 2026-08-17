@@ -359,14 +359,6 @@ def dashboard():
         filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id),
         PerguntaPendente.status == "aguardando_aprovacao",
     )
-    # Pacientes que se cadastraram sozinhos pelo app (ver
-    # auth.cadastro_paciente) e aguardam a equipe aceitar o cadastro antes
-    # de poder solicitar agendamento — qualquer um da equipe pode ver e
-    # decidir, não depende de perm_pacientes.
-    cadastros_pendentes_count = Paciente.query.filter(
-        _filtro_pacientes_da_empresa(), Paciente.status_cadastro == "pendente"
-    ).count()
-
     if eh_medico() and not current_user.perm_pacientes:
         total_pacientes = (
             db.session.query(Agendamento.paciente_id)
@@ -426,7 +418,6 @@ def dashboard():
         total_pacientes=total_pacientes,
         proximos=proximos,
         pendentes=pendentes,
-        cadastros_pendentes=cadastros_pendentes_count,
         convites_pendentes=convites_pendentes,
         agendamentos=agendamentos,
     )

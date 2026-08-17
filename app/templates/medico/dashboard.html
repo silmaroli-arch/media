@@ -22,13 +22,6 @@
   </div>
   <div class="col-md-3 col-lg">
     <div class="card p-3">
-      <div class="text-muted small">Cadastros pendentes de aprovação</div>
-      <div class="fs-3 fw-bold {% if cadastros_pendentes %}text-warning{% endif %}">{{ cadastros_pendentes }}</div>
-      <a href="{{ url_for('medico.pacientes_solicitacoes') }}" class="small">Ver cadastros</a>
-    </div>
-  </div>
-  <div class="col-md-3 col-lg">
-    <div class="card p-3">
       <div class="text-muted small">Ações rápidas</div>
       {% if current_user.perm_pacientes %}
       <a href="{{ url_for('medico.pacientes_novo') }}" class="btn btn-sm btn-primary mt-1">Novo paciente</a>
