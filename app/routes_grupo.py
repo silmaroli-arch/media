@@ -91,6 +91,19 @@ def meus_grupos():
             "n_membros": sum(1 for m in g.membros if m.ativo),
             "ativo": g.id == _grupo_ativo_id(),
         })
+    # Quem trabalha sozinho só tem o próprio Grupo automático (nasce no
+    # cadastro, ver routes_auth.py:cadastro) - pra essa pessoa, a palavra
+    # "Grupo" deve ficar o mais invisível possível (decisão da Fatia 5,
+    # passo 4): a lista de "Meus grupos" não agrega nada quando só tem uma
+    # linha, então pula direto pra "Convidar membros" DAQUELE grupo -
+    # mesmo destino que a extinta tela "Equipe" já levava. "Meus grupos"
+    # continua acessível por trás (breadcrumb em grupo/convidar.html) pra
+    # quem quiser criar um segundo grupo.
+    # Só pula quando a pessoa é dona/administradora do único grupo -
+    # sem isso, ela nem teria permissão de abrir "Convidar membros" (ver
+    # checagem em grupo.convidar) e cairia num redirecionamento em loop.
+    if len(grupos) == 1 and grupos[0]["papel"] in ("dono", "administrador"):
+        return redirect(url_for("grupo.convidar", grupo_id=grupos[0]["grupo"].id))
     return render_template("grupo/lista.html", grupos=grupos)
 
 
