@@ -2,10 +2,8 @@
 
 - O botão "Importar de um Excel" saiu da LISTA e foi pro FORMULÁRIO de
   novo modelo, abrindo um popup (modal) pra escolher o arquivo e extrair
-  os dados. A importação DIRETA de PDF saiu de vez desse formulário - virou
-  a tela própria "Gerar Excel a partir de PDF" (ver
-  test_preparo_pdf_para_excel.py), que só gera uma planilha pra revisão,
-  sem preencher formulário nenhum diretamente.
+  os dados. O mesmo popup também aceita PDF, lido diretamente por IA com
+  fallback pra extração por regex (ver test_preparo_pdf_para_excel.py).
 - O formulário foi dividido em ABAS (uma por tópico: Dados gerais, Cortes
   de alimentação, Medicamentos, Informações gerais, Alimentos, Exames
   proibidos antes) - tudo dentro do MESMO <form>, então salvar continua

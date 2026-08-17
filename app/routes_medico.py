@@ -1,3 +1,4 @@
+import io
 import os
 import re
 import secrets
@@ -8,7 +9,7 @@ from functools import wraps
 
 from flask import (
     Blueprint, render_template, redirect, url_for, request, flash, session,
-    send_file, current_app,
+    current_app,
 )
 from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
@@ -30,7 +31,8 @@ from app.clinica_utils import (
     filiais_atuais, filtro_escopo_atual,
     tem_algum_vinculo_de_grupo,
 )
-from app.pdf_preparo import extrair_sugestao_de_pdf, gerar_xlsx_da_sugestao
+from app.pdf_preparo import extrair_sugestao_de_pdf
+from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -1618,53 +1620,47 @@ def preparo_modelos_remover(modelo_id):
     return redirect(url_for("medico.preparo_modelos_lista"))
 
 
-@medico_bp.route("/preparo-modelos/pdf-para-excel", methods=["GET", "POST"])
-@login_required
-@staff_required
-def preparo_pdf_para_excel():
-    """Gera uma planilha Excel (.xlsx) pronta pra revisão a partir de um PDF
-    de preparo - substitui a antiga importação direta de PDF pro formulário
-    de modelo (preparo_modelos_importar_pdf, removida): a extração
-    heurística de PDF nunca foi tão confiável quanto a de Excel (ver
-    app.xlsx_preparo), então agora ela só gera a planilha - a pessoa revisa/
-    ajusta no Excel com calma e importa o resultado pelo botão "Importar de
-    um Excel" já existente na tela de novo modelo de preparo."""
-    if request.method == "POST":
-        arquivo = request.files.get("arquivo_pdf")
-        if not arquivo or not arquivo.filename:
-            flash("Selecione um arquivo PDF.", "danger")
-            return render_template("medico/preparo_pdf_para_excel.html")
-
-        try:
-            sugestao = extrair_sugestao_de_pdf(arquivo.stream)
-            planilha_buffer = gerar_xlsx_da_sugestao(sugestao)
-        except Exception:
-            flash(
-                "Não foi possível ler esse PDF. Ele pode estar corrompido, protegido por senha, ou ser "
-                "uma imagem escaneada sem texto selecionável — nesse caso, cadastre o modelo manualmente.",
-                "danger",
-            )
-            return render_template("medico/preparo_pdf_para_excel.html")
-
-        return send_file(
-            planilha_buffer,
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            as_attachment=True,
-            download_name="preparo-extraido-do-pdf.xlsx",
-        )
-
-    return render_template("medico/preparo_pdf_para_excel.html")
-
-
 @medico_bp.route("/preparo-modelos/importar-xlsx", methods=["GET", "POST"])
 @login_required
 @staff_required
 def preparo_modelos_importar_xlsx():
+    """Importa um modelo de preparo a partir de um arquivo Excel (.xlsx) ou
+    PDF - PDF é lido diretamente pela IA (ver app.ia_pdf_preparo), com
+    fallback automático e silencioso pra extração heurística por regex
+    (app.pdf_preparo) se a IA não estiver configurada ou a leitura falhar
+    por qualquer motivo. Substitui o antigo fluxo em duas etapas (gerar
+    Excel a partir do PDF, revisar/ajustar no Excel, reimportar aqui) -
+    agora o PDF vem direto pra tela de revisão, igual já acontecia com o
+    Excel."""
     if request.method == "POST":
         arquivo = request.files.get("arquivo_xlsx")
         if not arquivo or not arquivo.filename:
-            flash("Selecione um arquivo Excel (.xlsx).", "danger")
+            flash("Selecione um arquivo Excel (.xlsx) ou PDF.", "danger")
             return render_template("medico/preparo_modelo_importar_xlsx.html")
+
+        nome_arquivo = arquivo.filename.lower()
+
+        if nome_arquivo.endswith(".pdf"):
+            pdf_bytes = arquivo.stream.read()
+            sugestao = extrair_sugestao_de_pdf_com_ia(pdf_bytes)
+            if sugestao is None:
+                try:
+                    sugestao = extrair_sugestao_de_pdf(io.BytesIO(pdf_bytes))
+                except Exception:
+                    flash(
+                        "Não foi possível ler esse PDF. Ele pode estar corrompido, protegido por senha, ou ser "
+                        "uma imagem escaneada sem texto selecionável — nesse caso, cadastre o modelo manualmente.",
+                        "danger",
+                    )
+                    return render_template("medico/preparo_modelo_importar_xlsx.html")
+
+            session["preparo_sugestao_importada"] = sugestao
+            flash(
+                "Dados extraídos do PDF. Revise com cuidado antes de salvar — a extração é "
+                "automática e pode ter interpretado algo errado.",
+                "warning",
+            )
+            return redirect(url_for("medico.preparo_modelos_novo", de_importacao=1))
 
         try:
             sugestoes = extrair_sugestoes_de_xlsx(arquivo.stream)

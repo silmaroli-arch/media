@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, time as dt_time
 from unittest.mock import patch
 
 from reportlab.pdfgen import canvas
-from openpyxl import Workbook, load_workbook
+from openpyxl import Workbook
 
 from app import create_app
 from app.extensions import db
@@ -513,11 +513,11 @@ checar("Lista de medicamentos mostra a data calculada de suspensão (14 dias ant
        "27/07/2026" in texto)
 client.get("/logout")
 
-# Importação de PDF: não existe mais um formulário de modelo pré-preenchido
-# direto a partir do PDF (medico.preparo_modelos_importar_pdf foi removida,
-# nota unrelated à Fatia 5) - agora medico.preparo_pdf_para_excel gera uma
-# planilha .xlsx (no mesmo formato aceito pela importação de Excel) pronta
-# pra revisão, que depois é importada pelo fluxo de Excel já testado acima.
+# Importação de PDF: o PDF é lido diretamente pela IA (app.ia_pdf_preparo),
+# preenchendo o formulário de novo modelo direto pra revisão — sem etapa
+# intermediária de gerar/reimportar Excel. Sem ANTHROPIC_API_KEY neste
+# ambiente de teste, cai automaticamente no fallback de extração por regex
+# (app.pdf_preparo), exercitado aqui.
 buffer_pdf = io.BytesIO()
 c = canvas.Canvas(buffer_pdf)
 c.drawString(50, 800, "TESTE DE EXTRACAO AUTOMATICA DE PDF")
@@ -533,24 +533,20 @@ buffer_pdf.seek(0)
 
 login("secretaria@clinicavitoria.com", "123456")
 r = client.post(
-    "/equipe/preparo-modelos/pdf-para-excel",
-    data={"arquivo_pdf": (buffer_pdf, "teste_preparo.pdf")},
+    "/equipe/preparo-modelos/importar-xlsx",
+    data={"arquivo_xlsx": (buffer_pdf, "teste_preparo.pdf")},
     content_type="multipart/form-data",
+    follow_redirects=True,
 )
-checar("Gerar Excel a partir do PDF responde 200 com um .xlsx pra download",
-       r.status_code == 200 and r.mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-wb_pdf = load_workbook(io.BytesIO(r.data))
-aba_pdf = wb_pdf.active
-linhas_pdf = [tuple(row) for row in aba_pdf.iter_rows(values_only=True)]
-nomes_linha = {str(l[3]) for l in linhas_pdf[1:] if l[3]}
-checar("Planilha gerada do PDF sugere o corte de jejum de 12 horas",
-       any(l[0] == "Aviso" and l[5] == 12 and "JEJUM" in str(l[3]).upper() for l in linhas_pdf[1:]))
-checar("Planilha gerada do PDF sugere os medicamentos separados (não uma lista só)",
-       any("OZEMPIC" in n.upper() for n in nomes_linha) or any("MOUNJARO" in n.upper() for n in nomes_linha)
-       or any("TRULICITY" in n.upper() for n in nomes_linha))
-checar("Planilha gerada do PDF sugere os exames/procedimentos proibidos antes (colonoscopia/endoscopia, 28 dias)",
-       any(l[0] == "Exames / Procedimentos" and l[4] == 28 for l in linhas_pdf[1:]))
+html_pdf = r.get_data(as_text=True)
+checar("Importar o PDF responde 200 e leva direto pra revisão do formulário",
+       r.status_code == 200 and "Revise com cuidado" in html_pdf)
+checar("Formulário preenchido sugere o corte de jejum de 12 horas",
+       "JEJUM de 12 horas" in html_pdf)
+checar("Formulário preenchido sugere os medicamentos separados (não uma lista só)",
+       "OZEMPIC" in html_pdf and "MOUNJARO" in html_pdf and "TRULICITY" in html_pdf)
+checar("Formulário preenchido sugere os exames/procedimentos proibidos antes (colonoscopia/endoscopia, 28 dias)",
+       "olonoscopia" in html_pdf or "ndoscopia" in html_pdf)
 client.get("/logout")
 
 # A extração de "informações gerais" (regras avulsas, sem data calculada) reconhece

@@ -5,7 +5,7 @@
 
 {% if sugestao %}
 <div class="alert alert-warning">
-  Dados extraídos automaticamente da planilha Excel enviada.
+  Dados extraídos automaticamente do arquivo enviado.
   <strong>Revise com cuidado</strong> — a extração é automática e pode ter interpretado algo errado ou
   deixado de reconhecer alguma regra. Nada foi salvo ainda.
 </div>
@@ -20,12 +20,13 @@
 {% if not modelo %}
 <div class="mb-3">
   {# Importar preenche este formulário - por isso o botão mora aqui, não
-     na lista. Abre um popup pra escolher o arquivo. A importação de PDF
-     saiu daqui - agora é feita numa tela própria (Configuração de exames
-     > Gerar Excel a partir de PDF, ver medico.preparo_pdf_para_excel) que
-     gera um Excel pronto pra ser importado por este mesmo botão. #}
+     na lista. Abre um popup pra escolher o arquivo (Excel ou PDF). PDF é
+     lido diretamente pela IA (ver app.ia_pdf_preparo), com fallback
+     automático pra extração por regex se a IA não estiver disponível -
+     não existe mais uma etapa intermediária de gerar Excel a partir do
+     PDF. #}
   <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx">
-    <i class="bi bi-file-earmark-excel"></i> Importar de um Excel
+    <i class="bi bi-file-earmark-arrow-up"></i> Importar de um Excel ou PDF
   </button>
   <span class="form-text d-block mt-1">A importação lê o arquivo e preenche os campos abaixo pra você revisar — nada é salvo antes do Salvar.</span>
 </div>
@@ -297,16 +298,16 @@
     <div class="modal-content">
       <form method="post" action="{{ url_for('medico.preparo_modelos_importar_xlsx') }}" enctype="multipart/form-data">
         <div class="modal-header">
-          <h6 class="modal-title"><i class="bi bi-file-earmark-excel"></i> Importar de um Excel</h6>
+          <h6 class="modal-title"><i class="bi bi-file-earmark-arrow-up"></i> Importar de um Excel ou PDF</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
           <p class="text-muted small">
             Envie a planilha (.xlsx) no formato com as colunas Tipo/Ação/Agrupador/Nome/Dias antes/
-            Horas antes/Hora exata. Os dados extraídos preenchem o formulário pra você revisar —
-            nada é salvo antes do Salvar.
+            Horas antes/Hora exata, ou um PDF com o preparo (lido diretamente por IA). Os dados
+            extraídos preenchem o formulário pra você revisar — nada é salvo antes do Salvar.
           </p>
-          <input type="file" name="arquivo_xlsx" class="form-control" accept=".xlsx" required>
+          <input type="file" name="arquivo_xlsx" class="form-control" accept=".xlsx,.pdf" required>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
