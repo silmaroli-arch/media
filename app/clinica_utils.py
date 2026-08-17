@@ -71,6 +71,22 @@ def clinicas_do_usuario():
 grupos_do_usuario = clinicas_do_usuario
 
 
+def tem_algum_vinculo_de_grupo():
+    """Fatia 6: True se o usuário logado tem QUALQUER vínculo de Grupo
+    (`GrupoMembro` ativo), mesmo que o Grupo esteja bloqueado - diferente
+    de `clinicas_do_usuario()`, que já filtra os bloqueados fora.
+
+    Usada só por `staff_required` pra distinguir dois casos que
+    `clinicas_do_usuario()` sozinha não separa (ambos dão lista vazia):
+    (a) a conta é solo de verdade, nunca teve Grupo - deve ser deixada
+    passar, com escopo pessoal (ver filtro_escopo_atual); (b) a conta tem
+    Grupo, mas ele foi bloqueado pelo dono da plataforma - deve continuar
+    sendo barrada, como sempre foi."""
+    if not current_user.is_authenticated or not current_user.is_staff:
+        return False
+    return GrupoMembro.query.filter_by(usuario_id=current_user.id, ativo=True).first() is not None
+
+
 def empresas_do_usuario():
     """Tenants (Grupos) distintos em que o usuário tem vínculo ativo.
     Antes da Fatia 5 isso agregava várias Clinica sob uma mesma Empresa;
@@ -176,3 +192,53 @@ def papel_no_grupo_atual():
         return None
     membro = GrupoMembro.query.filter_by(grupo_id=grupo.id, usuario_id=current_user.id, ativo=True).first()
     return membro.papel if membro else None
+
+
+def filtro_escopo_atual(coluna_grupo, coluna_dono):
+    """Fatia 6: filtro SQLAlchemy pro escopo de dados do usuário logado -
+    substitui o antigo `coluna_grupo.in_(grupos_atuais_ids())` usado em toda
+    consulta de Exame/PreparoModelo/Agendamento/PerguntaPendente/FaqItem.
+
+    Desde a Fatia 6, uma conta pode existir e ser plenamente usável SEM
+    nunca ter um Grupo (ver routes_auth.py:cadastro() - o Grupo só nasce se
+    a pessoa decidir convidar alguém, via grupo.novo()). Enquanto isso, os
+    dados que ela cria (pacientes/exames/agendamentos/etc.) ficam com
+    `grupo_id` NULL e são escopados pelo dono pessoal
+    (`criado_por_id`/`cadastrado_por_id`, conforme o modelo) em vez de por
+    Grupo. Se/quando a pessoa forma um Grupo de verdade,
+    migrar_dados_pessoais_para_grupo() abaixo migra esses dados de uma vez
+    só - a partir daí o filtro volta a ser 100% por `grupo_id`, igual
+    sempre foi.
+
+    Uso: `Exame.query.filter(filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id))`."""
+    grupo_ids = grupos_atuais_ids()
+    if grupo_ids:
+        return coluna_grupo.in_(grupo_ids)
+    return coluna_dono == current_user.id
+
+
+def migrar_dados_pessoais_para_grupo(usuario, grupo):
+    """Fatia 6: chamada uma única vez, no momento em que uma conta solo cria
+    seu primeiro Grupo (ver routes_grupo.py:novo()) - migra todo o histórico
+    pessoal dela (pacientes/exames/preparo-modelos/agendamentos/perguntas/
+    faq com dono pessoal == usuario e `grupo_id` ainda NULL) pro Grupo
+    recém-criado. Sem isso, o histórico da pessoa "sumiria" da vista assim
+    que ela convida alguém, porque as consultas passam a ser 100% por
+    `grupo_id` de novo quando há um Grupo (ver filtro_escopo_atual acima).
+
+    Idempotente: só pega registros com `grupo_id IS NULL` ainda, então
+    rodar de novo (ou chamar por engano) não duplica nem sobrescreve nada
+    já migrado."""
+    from app.models import Exame, PreparoModelo, Agendamento, PerguntaPendente, FaqItem, Paciente, GrupoPaciente
+
+    Exame.query.filter_by(criado_por_id=usuario.id, grupo_id=None).update({"grupo_id": grupo.id})
+    PreparoModelo.query.filter_by(criado_por_id=usuario.id, grupo_id=None).update({"grupo_id": grupo.id})
+    Agendamento.query.filter_by(criado_por_id=usuario.id, grupo_id=None).update({"grupo_id": grupo.id})
+    PerguntaPendente.query.filter_by(criado_por_id=usuario.id, grupo_id=None).update({"grupo_id": grupo.id})
+    FaqItem.query.filter_by(criado_por_id=usuario.id, grupo_id=None).update({"grupo_id": grupo.id})
+
+    pacientes_pessoais = Paciente.query.filter_by(cadastrado_por_id=usuario.id).all()
+    for paciente in pacientes_pessoais:
+        ja_associado = GrupoPaciente.query.filter_by(grupo_id=grupo.id, paciente_id=paciente.id).first()
+        if not ja_associado:
+            db.session.add(GrupoPaciente(grupo_id=grupo.id, paciente_id=paciente.id))

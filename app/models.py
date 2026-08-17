@@ -127,7 +127,8 @@ class Usuario(db.Model, UserMixin):
     # vê o cadastro dela - LGPD). A propriedade `paciente` (abaixo) mantém
     # a compatibilidade com o código que assume um cadastro só.
     pacientes = db.relationship(
-        "Paciente", back_populates="usuario", order_by="Paciente.id"
+        "Paciente", back_populates="usuario", order_by="Paciente.id",
+        foreign_keys="Paciente.usuario_id",
     )
     # Exames e agendamentos pelos quais este usuário é o médico responsável
     # (só se aplica quando tipo == 'medico').
@@ -578,6 +579,14 @@ class Paciente(db.Model):
     # encontrar_conta_paciente e a migração que troca a constraint em
     # bases antigas (migrar_banco.py).
     usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"))
+    # Fatia 6: dono pessoal do CADASTRO (o médico/secretária que cadastrou
+    # este paciente), usado só quando quem cadastrou ainda não tem Grupo
+    # (conta solo) - não confundir com `usuario_id` acima, que é a conta de
+    # LOGIN do próprio PACIENTE. Enquanto há Grupo, a associação real
+    # continua sendo por GrupoPaciente (ver Paciente.grupos abaixo); este
+    # campo só entra em jogo no fallback de escopo pessoal - ver
+    # clinica_utils.filtro_escopo_atual().
+    cadastrado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
     nome = db.Column(db.String(150), nullable=False)
     cpf = db.Column(db.String(20), nullable=False)
     data_nascimento = db.Column(db.Date, nullable=True)
@@ -605,7 +614,7 @@ class Paciente(db.Model):
     # clínica aceitar) ou 'rejeitado'.
     status_cadastro = db.Column(db.String(20), nullable=False, default="aprovado")
 
-    usuario = db.relationship("Usuario", back_populates="pacientes")
+    usuario = db.relationship("Usuario", back_populates="pacientes", foreign_keys=[usuario_id])
 
     @property
     def grupos(self):
@@ -1008,6 +1017,10 @@ class Agendamento(db.Model):
     # chave real de escopo — ver mesmo comentário em Exame.clinica_id.
     clinica_id = db.Column(db.Integer, nullable=True)
     grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True)
+    # Fatia 6: dono pessoal do agendamento, usado só quando quem criou ainda
+    # não tem Grupo (conta solo) — mesmo padrão de Exame.criado_por_id/
+    # PreparoModelo.criado_por_id. Ver clinica_utils.filtro_escopo_atual().
+    criado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=False)
     # Médico responsável por este agendamento — é assim que um médico
@@ -1101,6 +1114,11 @@ class FaqItem(db.Model):
     pergunta = db.Column(db.Text, nullable=False)
     resposta = db.Column(db.Text, nullable=False)
     criado_por = db.Column(db.String(150))
+    # Fatia 6: dono pessoal do item, usado só quando quem criou ainda não
+    # tem Grupo (conta solo). Coluna separada de `criado_por` acima (que é
+    # só uma string solta pra exibição) — ver
+    # clinica_utils.filtro_escopo_atual().
+    criado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
     vezes_utilizada = db.Column(db.Integer, default=0)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -1116,6 +1134,9 @@ class PerguntaPendente(db.Model):
     # chave real de escopo — ver mesmo comentário em Exame.clinica_id.
     clinica_id = db.Column(db.Integer, nullable=True)
     grupo_id = db.Column(db.Integer, db.ForeignKey("grupos.id"), nullable=True)
+    # Fatia 6: dono pessoal da pergunta, usado só quando quem responde ainda
+    # não tem Grupo (conta solo). Ver clinica_utils.filtro_escopo_atual().
+    criado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=True)
     pergunta = db.Column(db.Text, nullable=False)

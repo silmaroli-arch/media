@@ -27,7 +27,8 @@ from app.models import (
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
     empresa_atual, empresas_do_usuario, selecionar_empresa,
-    filiais_atuais, grupos_atuais_ids,
+    filiais_atuais, grupos_atuais_ids, filtro_escopo_atual,
+    tem_algum_vinculo_de_grupo,
 )
 from app.pdf_preparo import extrair_sugestao_de_pdf, gerar_xlsx_da_sugestao
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
@@ -140,10 +141,20 @@ def _gerar_codigo_cadastro_paciente():
 
 
 def staff_required(f):
-    """Garante que o usuário é da equipe (médico/secretária) e que já tem
-    uma EMPRESA (tenant) definida na sessão. Como quase todo mundo só tem
-    vínculo em uma empresa, ela é escolhida automaticamente; só quem atua em
-    empresas diferentes cai na tela de escolha."""
+    """Garante que o usuário é da equipe (médico/secretária). Como quase
+    todo mundo só tem vínculo em um Grupo (ou nenhum ainda - ver abaixo),
+    ele é escolhido automaticamente; só quem atua em Grupos diferentes cai
+    na tela de escolha.
+
+    Fatia 6: não ter NENHUM Grupo deixou de ser um erro - é o estado normal
+    de uma conta solo, que ainda nunca convidou ninguém (ver
+    routes_auth.py:cadastro(), que parou de criar um Grupo automaticamente).
+    Os dados dessa conta ficam escopados pelo dono pessoal em vez de por
+    Grupo (ver clinica_utils.filtro_escopo_atual()) - a rota segue
+    normalmente, só `empresa_atual()` retorna None. Isso é diferente de ter
+    um Grupo BLOQUEADO pelo dono da plataforma - esse caso continua sendo
+    barrado, como sempre foi (`tem_algum_vinculo_de_grupo()` distingue os
+    dois: "nunca teve Grupo" de "tem Grupo, mas bloqueado")."""
     @wraps(f)
     def decorado(*args, **kwargs):
         if not current_user.is_authenticated or not current_user.is_staff:
@@ -151,10 +162,11 @@ def staff_required(f):
             return redirect(url_for("auth.login"))
 
         if empresa_atual() is None:
-            if not clinicas_do_usuario():
-                # Precisa deslogar de verdade — senão a pessoa continua
-                # autenticada e cai num loop (auth.login manda pra index,
-                # que manda de volta pra uma view protegida por este decorator).
+            if clinicas_do_usuario():
+                # Ambíguo: 2+ Grupos ativos e nenhum selecionado ainda.
+                return redirect(url_for("medico.escolher_clinica"))
+            if tem_algum_vinculo_de_grupo():
+                # Tem Grupo(s), mas todos bloqueados - continua barrado.
                 logout_user()
                 flash(
                     "Sua conta não está vinculada a nenhuma clínica ativa. "
@@ -162,7 +174,8 @@ def staff_required(f):
                     "danger",
                 )
                 return redirect(url_for("auth.login"))
-            return redirect(url_for("medico.escolher_clinica"))
+            # Nenhum Grupo NUNCA existiu para esta conta - modo solo,
+            # segue normalmente com escopo pessoal.
 
         return f(*args, **kwargs)
     return decorado
@@ -337,9 +350,12 @@ def dashboard():
         aguardando_q = _restringir_perguntas_para_medico(aguardando_q)
 
     # Link de auto-cadastro de paciente é da EMPRESA e fica aqui no
-    # Painel - gera o código na primeira vez que o painel é aberto.
+    # Painel - gera o código na primeira vez que o painel é aberto. Fatia
+    # 6: conta solo (sem Grupo ainda) não tem onde pendurar esse código -
+    # o link de auto-cadastro público só existe depois que a pessoa forma
+    # um Grupo de verdade.
     empresa = empresa_atual()
-    if not empresa.codigo_cadastro_paciente:
+    if empresa and not empresa.codigo_cadastro_paciente:
         empresa.codigo_cadastro_paciente = _gerar_codigo_cadastro_paciente()
         db.session.commit()
 
