@@ -170,17 +170,25 @@ def similaridade(pergunta_a: str, pergunta_b: str) -> float:
     return 0.4 * ratio_texto + 0.6 * ratio_kw
 
 
-def buscar_resposta(pergunta_usuario: str, grupo_id, exame_id=None):
+def buscar_resposta(pergunta_usuario: str, grupo_id, exame_id=None, criado_por_id=None):
     """
     Procura a melhor resposta na base de FAQ, restrita ao Grupo (Fatia 4) do
     paciente (para não misturar conhecimento entre clínicas diferentes).
     Prioriza itens específicos do exame, mas também considera FAQs gerais.
 
+    Fatia 6: quando não há Grupo (`grupo_id` None - conta solo), a busca é
+    restrita ao dono pessoal (`criado_por_id`) em vez de por Grupo - mesmo
+    padrão de clinica_utils.filtro_escopo_atual().
+
     Retorna (faq_item, score) ou (None, melhor_score) se não houver
     confiança suficiente.
     """
+    if grupo_id is not None:
+        escopo = FaqItem.grupo_id == grupo_id
+    else:
+        escopo = FaqItem.criado_por_id == criado_por_id
     candidatos = FaqItem.query.filter(
-        FaqItem.grupo_id == grupo_id,
+        escopo,
         (FaqItem.exame_id == exame_id) | (FaqItem.exame_id.is_(None)),
     ).all()
 

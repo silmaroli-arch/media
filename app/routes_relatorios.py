@@ -13,8 +13,11 @@ from flask import Blueprint, render_template, request
 from flask_login import login_required, current_user
 
 from app.models import Agendamento, Paciente
-from app.clinica_utils import filiais_atuais, filiais_atuais_ids, grupos_atuais_ids
-from app.routes_medico import staff_required, eh_medico, medicos_das_filiais, _filtro_pacientes_da_empresa
+from app.clinica_utils import filtro_escopo_atual, empresa_atual
+from app.routes_medico import (
+    staff_required, eh_medico, _filtro_pacientes_da_empresa,
+    _medicos_do_escopo_atual,
+)
 from app.relatorios_utils import (
     periodo_do_filtro, intervalo_datetime, exportar_csv, exportar_xlsx, exportar_pdf,
 )
@@ -49,12 +52,12 @@ def _filtro_medico_id():
 def index():
     """Painel com um resumo rápido de cada área — cada card leva para o
     relatório completo, já com os mesmos 30 dias usados aqui."""
-    grupo_ids = grupos_atuais_ids()
     data_inicio, data_fim = periodo_do_filtro()
     inicio_dt, fim_dt = intervalo_datetime(data_inicio, data_fim)
 
     agendamentos_periodo = Agendamento.query.filter(
-        Agendamento.grupo_id.in_(grupo_ids), Agendamento.data_hora.between(inicio_dt, fim_dt),
+        filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
+        Agendamento.data_hora.between(inicio_dt, fim_dt),
     )
     total_agendamentos = agendamentos_periodo.count()
 
@@ -75,13 +78,13 @@ def index():
 @login_required
 @staff_required
 def agenda():
-    grupo_ids = grupos_atuais_ids()
     data_inicio, data_fim = periodo_do_filtro()
     inicio_dt, fim_dt = intervalo_datetime(data_inicio, data_fim)
     medico_id = _filtro_medico_id()
 
     consulta = Agendamento.query.filter(
-        Agendamento.grupo_id.in_(grupo_ids), Agendamento.data_hora.between(inicio_dt, fim_dt),
+        filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
+        Agendamento.data_hora.between(inicio_dt, fim_dt),
     )
     if medico_id:
         consulta = consulta.filter(Agendamento.medico_id == medico_id)
@@ -121,7 +124,7 @@ def agenda():
     return render_template(
         "relatorios/agenda.html",
         data_inicio=data_inicio, data_fim=data_fim, medico_id=medico_id,
-        medicos=medicos_das_filiais(filiais_atuais()), restrito_a_si_mesmo=_medico_restrito_a_si_mesmo(),
+        medicos=_medicos_do_escopo_atual(empresa_atual()), restrito_a_si_mesmo=_medico_restrito_a_si_mesmo(),
         agendamentos=agendamentos, total=total,
         por_exame=por_exame, por_dia=por_dia,
     )
@@ -131,7 +134,6 @@ def agenda():
 @login_required
 @staff_required
 def pacientes():
-    filial_ids = filiais_atuais_ids()
     data_inicio, data_fim = periodo_do_filtro()
     inicio_dt, fim_dt = intervalo_datetime(data_inicio, data_fim)
 
@@ -193,18 +195,20 @@ def pacientes():
 @login_required
 @staff_required
 def desempenho_medico():
-    grupo_ids = grupos_atuais_ids()
     data_inicio, data_fim = periodo_do_filtro()
     inicio_dt, fim_dt = intervalo_datetime(data_inicio, data_fim)
 
-    medicos = medicos_das_filiais(filiais_atuais())
+    # Fatia 6: sem Grupo (conta solo), não há "equipe" pra listar - o
+    # próprio usuário (se médico) é o único médico do escopo.
+    medicos = _medicos_do_escopo_atual(empresa_atual())
     if _medico_restrito_a_si_mesmo():
         medicos = [m for m in medicos if m.id == current_user.id]
 
     linhas_dados = []
     for medico in medicos:
         total = Agendamento.query.filter(
-            Agendamento.grupo_id.in_(grupo_ids), Agendamento.medico_id == medico.id,
+            filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
+            Agendamento.medico_id == medico.id,
             Agendamento.data_hora.between(inicio_dt, fim_dt),
         ).count()
 

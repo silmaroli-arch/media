@@ -174,11 +174,11 @@ texto = r.get_data(as_text=True)
 checar("Secretária vê pacientes de ambos os médicos", "João Pereira" in texto and "Pedro Souza" in texto)
 client.get("/logout")
 
-# ---------- Cadastro público cria um Grupo novo (o próprio tenant), isolado ----------
-# Fatia 5 (passo 4): não existe mais "Empresa com filiais" - o cadastro
-# cria direto um Grupo (do qual a pessoa é a dona/GrupoMembro), que já É a
-# unidade completa (não precisa de nenhum passo extra de "criar a 1ª
-# filial" depois).
+# ---------- Cadastro público: conta nasce SOLO, sem nenhum Grupo (Fatia 6) ----------
+# O cadastro não cria mais Grupo nenhum - a conta é plenamente usável
+# sozinha (escopo pessoal via criado_por_id/cadastrado_por_id), e só passa
+# a ter um Grupo de verdade se a pessoa decidir criar um (ver
+# routes_grupo.py:novo()).
 
 r = client.post("/cadastro", data={
     "nome": "Fulano Teste",
@@ -188,23 +188,20 @@ r = client.post("/cadastro", data={
     "papel": "secretaria",
 }, follow_redirects=True)
 texto = r.get_data(as_text=True)
-checar("Cadastro público cria o grupo e loga automaticamente", "Painel" in texto)
-checar("Nome provisório do grupo (a partir do nome da pessoa) aparece na navbar", "Consultório de Fulano Teste" in texto)
+checar("Cadastro público loga automaticamente, direto no painel", "Painel" in texto)
 with app.app_context():
-    grupo_novo = Grupo.query.filter_by(nome="Consultório de Fulano Teste").first()
-    checar("Grupo novo foi criado", grupo_novo is not None)
     usuario_novo = Usuario.query.filter_by(email="fulano@clinicateste.com").first()
-    vinculo_novo = GrupoMembro.query.filter_by(grupo_id=grupo_novo.id, usuario_id=usuario_novo.id).first()
-    checar("Usuário fica vinculado ao grupo como dono (GrupoMembro)",
-           vinculo_novo is not None and vinculo_novo.papel == "dono")
+    checar("NENHUM Grupo foi criado no cadastro (Fatia 6: Grupo é opcional)",
+           GrupoMembro.query.filter_by(usuario_id=usuario_novo.id).first() is None)
 
 r = client.get("/equipe/pacientes")
-checar("Grupo novo começa sem nenhum paciente de outros grupos", "João Pereira" not in r.get_data(as_text=True))
+checar("Conta solo recém-criada começa sem nenhum paciente de outras contas/grupos",
+       "João Pereira" not in r.get_data(as_text=True))
 
 client.get("/logout")
 
-# ---------- Cadastro público escolhendo "médico": mesmo sem secretária, ----------
-# ---------- quem cria o grupo recebe todas as permissões administrativas ----------
+# ---------- Cadastro público escolhendo "médico": conta solo recebe ----------
+# ---------- todas as permissões administrativas mesmo sem Grupo/secretária ----------
 
 r = client.post("/cadastro", data={
     "nome": "Dr. Ricardo Alves",
@@ -218,22 +215,23 @@ checar("Cadastro público como médico também funciona", "Painel" in r.get_data
 
 with app.app_context():
     ricardo = Usuario.query.filter_by(email="ricardo@clinicasolo.com").first()
-    checar("Médico que criou o grupo é tipo 'medico'", ricardo.tipo == "medico")
+    checar("Médico que se cadastrou é tipo 'medico'", ricardo.tipo == "medico")
     checar(
-        "Médico fundador recebe todas as permissões administrativas (não há secretária)",
+        "Médico solo recebe todas as permissões administrativas (não há secretária)",
         ricardo.perm_pacientes and ricardo.perm_equipe and ricardo.perm_filiais and ricardo.perm_dados_clinica,
     )
+    checar("NENHUM Grupo foi criado para o médico solo", GrupoMembro.query.filter_by(usuario_id=ricardo.id).first() is None)
 
 r = client.get("/equipe/equipe-membros", follow_redirects=True)
-checar("Médico fundador consegue acessar a tela de Equipe mesmo sendo médico (redireciona pra grupo.convidar)",
-       "Convidar membros para o grupo" in r.get_data(as_text=True))
+checar("Médico solo (sem Grupo) que acessa Equipe cai na tela de 'Meus grupos' vazia (nenhum grupo pra convidar ainda)",
+       "ainda não participa de nenhum grupo" in r.get_data(as_text=True).lower())
 r = client.get("/equipe/filiais", follow_redirects=True)
-checar("Médico fundador consegue acessar 'Meus grupos' (redireciona pra grupo.meus_grupos)",
-       "Consultório de Dr. Ricardo Alves" in r.get_data(as_text=True))
+checar("Médico solo consegue acessar 'Meus grupos' (redireciona pra grupo.meus_grupos)", r.status_code == 200)
 r = client.get("/equipe/clinica/configuracoes", follow_redirects=True)
-checar("Médico fundador consegue acessar Dados da clínica (o grupo já existe, criado no cadastro)", r.status_code == 200)
+checar("Médico solo é levado a criar um Grupo antes de configurar 'Dados da clínica' (não há Grupo ainda)",
+       "Cadastre seu primeiro grupo" in r.get_data(as_text=True))
 r = client.get("/equipe/pacientes/novo")
-checar("Médico fundador consegue acessar Novo paciente", r.status_code == 200)
+checar("Médico solo consegue acessar Novo paciente mesmo sem Grupo", r.status_code == 200)
 
 # ---------- Cadastro de paciente sem senha: login por telefone + data de nascimento ----------
 
@@ -1131,13 +1129,21 @@ medicamentos_barra_sugeridos = _sugerir_medicamentos(texto_medicamentos_barra)
 checar("Lista de medicamentos separada por '/' é dividida em itens individuais",
        {"Xarelto", "Eliquis", "Marevan"} == {m["nome"] for m in medicamentos_barra_sugeridos})
 
+# Fatia 6: "Fulano Teste" nasceu solo (sem Grupo, ver cadastro acima) -
+# pra testar cobrança/trial/bloqueio (que só existem A PARTIR de um
+# Grupo de verdade), ele cria um Grupo agora, do jeito que qualquer conta
+# solo faria pra convidar alguém pra trabalhar junto.
+login("fulano@clinicateste.com", "senha123")
+r = client.post("/grupos/novo", data={"nome": "Consultório de Fulano Teste"}, follow_redirects=True)
+checar("Conta solo consegue criar um Grupo de trabalho de verdade", r.status_code == 200)
+client.get("/logout")
+
 with app.app_context():
     config = PlataformaConfig.obter()
     checar("Configuração de trial tem um valor padrão de dias", config.trial_dias > 0)
 
-    # Fatia 5: o Grupo criado no cadastro público (bem acima, "Consultório
-    # de Fulano Teste") já É a unidade de cobrança/trial (antes era a
-    # Empresa) - não existe mais uma Empresa separada por cima dele.
+    # Fatia 6: o Grupo criado agora (acima) já É a unidade de cobrança/
+    # trial (antes, na Fatia 5, era criado automaticamente no cadastro).
     grupo_teste = Grupo.query.filter_by(nome="Consultório de Fulano Teste").first()
     checar("Grupo novo recebeu data de vencimento do trial", grupo_teste.data_vencimento is not None)
     checar("Grupo novo começa com status 'trial'", grupo_teste.status == "trial")

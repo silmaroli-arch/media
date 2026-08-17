@@ -21,7 +21,7 @@ equivalente direto em `routes_medico.py` - ficam pra uma iteração
 futura, se fizerem falta na prática.
 """
 import re
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from flask import (
     Blueprint, render_template, redirect, url_for, request, flash, session,
@@ -29,7 +29,8 @@ from flask import (
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Usuario, Grupo, GrupoMembro, GrupoConvite, validar_cpf
+from app.models import Usuario, Grupo, GrupoMembro, GrupoConvite, PlataformaConfig, validar_cpf
+from app.clinica_utils import migrar_dados_pessoais_para_grupo
 
 grupo_bp = Blueprint("grupo", __name__, url_prefix="/grupos")
 
@@ -65,13 +66,34 @@ def novo():
             flash("Informe o nome do grupo.", "danger")
             return render_template("grupo/novo.html")
 
-        grupo = Grupo(nome=nome)
+        # Fatia 6: este é hoje o ÚNICO lugar onde um Grupo nasce (o
+        # cadastro público parou de criar um automaticamente - ver
+        # routes_auth.py:cadastro()) - por isso é aqui que o trial começa
+        # a contar, do mesmo jeito que o cadastro fazia antes.
+        trial_dias = PlataformaConfig.obter().trial_dias
+        grupo = Grupo(
+            nome=nome,
+            email_contato=current_user.email,
+            data_vencimento=date.today() + timedelta(days=trial_dias),
+        )
         db.session.add(grupo)
         db.session.flush()  # garante grupo.id antes de criar o membro
         db.session.add(GrupoMembro(grupo_id=grupo.id, usuario_id=current_user.id, papel="dono"))
+        # Fatia 6: se quem está criando o grupo vinha trabalhando sozinho
+        # (sem Grupo nenhum), todo o histórico pessoal dela (pacientes/
+        # exames/agendamentos/etc. com escopo pessoal - ver
+        # clinica_utils.filtro_escopo_atual()) migra pro grupo recém-criado
+        # agora, antes do commit - sem isso, esse histórico "sumiria" da
+        # vista assim que o Grupo passasse a ser o escopo de consulta.
+        migrar_dados_pessoais_para_grupo(current_user, grupo)
         db.session.commit()
 
         session["grupo_ativo_id"] = grupo.id
+        # empresa_atual() (clinica_utils) é quem de fato resolve o Grupo
+        # ativo em toda a aplicação - sem isso, a pessoa continuaria "sem
+        # Grupo selecionado" mesmo tendo acabado de criar/entrar num.
+        session["empresa_id"] = grupo.id
+        session.pop("clinica_id", None)
         flash(f'Grupo "{grupo.nome}" criado com sucesso.', "success")
         return redirect(url_for("grupo.meus_grupos"))
 

@@ -1,11 +1,11 @@
 import re
-from datetime import date, datetime, timedelta
+from datetime import datetime
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, session
 from flask_login import login_user, logout_user, login_required, current_user
 
 from app.extensions import db
-from app.models import Usuario, Grupo, GrupoMembro, Paciente, PlataformaConfig, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.models import Usuario, Paciente, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -208,38 +208,31 @@ def cadastro():
     cadastrando (nome, CPF — que agora é o login, ver auth.login —,
     e-mail, senha, endereço pessoal).
 
-    Fatia 5 (passo 4, gap fechado depois): o cadastro cria um GRUPO (não
-    mais uma Empresa) do qual a pessoa é a dona (GrupoMembro papel="dono")
-    e o Usuario — nenhuma Clinica, nenhum ClinicaMembro. O Grupo nasce
-    sempre, mas é um detalhe invisível pra quem se cadastra: o médico ou
-    secretário(a) que trabalha sozinho(a) nunca precisa ver a palavra
-    "Grupo" nem convidar ninguém — ele só existe por baixo porque é a
-    unidade de cobrança/dados fiscais/escopo de dados que todo o resto do
-    app já usa (ver app/clinica_utils.py). "Grupo" só vira um conceito
-    visível de verdade se essa pessoa decidir convidar alguém pra
-    trabalhar junto (tela "Equipe", que por baixo é
-    routes_grupo.py:convidar()).
-
-    A pessoa só passa a ter os dados da clínica preenchidos de verdade
-    quando ela mesma os cadastra em "Dados da clínica" (ver
-    medico.clinica_configuracoes), pra onde é levada direto assim que
-    entra no app pela primeira vez. Isso evita o formulário de cadastro
-    ficar pedindo dados de clínica (nome, CNPJ, endereço, telefone) que
-    muita gente ainda não tem em mãos nesse momento, e que fazem mais
-    sentido preenchidos com calma depois de já estar dentro do app.
+    Fatia 6: o cadastro NÃO cria mais um Grupo. A conta nasce solo,
+    plenamente usável desde já (pode cadastrar paciente, exame,
+    agendamento) sem nunca precisar de um Grupo — os dados que essa
+    pessoa cria ficam com escopo pessoal (`criado_por_id`/
+    `cadastrado_por_id`, ver app/clinica_utils.py:filtro_escopo_atual())
+    em vez de por Grupo, e não há trial/vencimento/bloqueio nenhum
+    enquanto ela estiver sozinha. Um Grupo de verdade só nasce se essa
+    pessoa decidir convidar alguém pra trabalhar junto (tela "Equipe",
+    que por baixo é routes_grupo.py:convidar()/novo()) — nesse momento o
+    histórico pessoal dela é migrado pro Grupo recém-criado (ver
+    migrar_dados_pessoais_para_grupo()).
 
     Antes existia aqui também um campo opcional de CNPJ que, quando já
     pertencia a uma clínica cadastrada, vinculava a pessoa direto a ela
     (evitando empresas duplicadas para colegas da mesma clínica). Esse
     mecanismo foi removido junto com o resto do formulário de clínica —
     pessoas da mesma clínica que se cadastrarem separadamente agora
-    ficam, cada uma, no seu próprio Grupo, e se juntam depois manualmente
-    (convite pela tela "Equipe", por CPF).
+    ficam, cada uma, na sua própria conta solo, e se juntam depois
+    manualmente (convite pela tela "Equipe", por CPF).
 
     A pessoa escolhe se é médico(a) ou secretário(a) (isso só muda a
-    exigência de CRM). Quem se cadastra é sempre quem FUNDA o novo Grupo,
-    então recebe todas as permissões administrativas automaticamente
-    (conceder_todas_permissoes)."""
+    exigência de CRM). Recebe todas as permissões administrativas
+    automaticamente (conceder_todas_permissoes) — são por Usuario, não
+    por Grupo, então valem tanto pro uso solo quanto se um Grupo vier a
+    existir depois."""
     if current_user.is_authenticated:
         return redirect(url_for("index"))
 
@@ -302,40 +295,28 @@ def cadastro():
         usuario.crm_uf = crm_uf
 
         db.session.add(usuario)
-        db.session.flush()  # garante usuario.id antes de criar o Grupo/GrupoMembro
-
-        trial_dias = PlataformaConfig.obter().trial_dias
-        grupo = Grupo(
-            # Sem "local de atendimento" coletado no cadastro, não temos
-            # mais um nome de clínica pra usar aqui - o Grupo nasce com um
-            # nome provisório a partir do nome da própria pessoa, e pode
-            # ser ajustado depois (ex.: ao preencher "Dados da clínica").
-            nome=f"Consultório de {nome}",
-            email_contato=email,
-            status="trial",
-            data_vencimento=date.today() + timedelta(days=trial_dias),
-        )
-        db.session.add(grupo)
-        db.session.flush()
-        # Quem se cadastra é sempre o DONO do Grupo novo - mesmo alguém
-        # que nunca vai convidar ninguém precisa desse vínculo, porque é
-        # ele (GrupoMembro) que dá acesso ao Grupo (ver
-        # app/clinica_utils.py:empresa_atual()). Pra essa pessoa, "Grupo"
-        # nunca aparece na tela - só entra em jogo se ela convidar alguém.
-        db.session.add(GrupoMembro(grupo_id=grupo.id, usuario_id=usuario.id, papel="dono", ativo=True))
-        # Quem funda o Grupo é a administradora inicial — recebe todas as
-        # permissões administrativas independentemente de ser médico(a) ou
-        # secretário(a), já que a clínica pode não ter uma secretária.
+        # Fatia 6: o cadastro NÃO cria mais um Grupo. A conta nasce solo,
+        # plenamente usável (pacientes/exames/agendamentos ficam com
+        # escopo pessoal via criado_por_id/cadastrado_por_id - ver
+        # app/clinica_utils.py:filtro_escopo_atual()), sem trial/cobrança
+        # nenhuma até que essa pessoa decida convidar alguém pra
+        # trabalhar junto (tela "Equipe", que por baixo é
+        # routes_grupo.py:convidar()/novo()) - só nesse momento um Grupo
+        # de verdade nasce e o histórico pessoal é migrado pra ele (ver
+        # migrar_dados_pessoais_para_grupo()).
+        #
+        # Quem funda a conta recebe todas as permissões administrativas
+        # desde já — elas são por Usuario, não por Grupo, e valem tanto
+        # pro uso solo quanto para quando um Grupo vier a existir.
         usuario.conceder_todas_permissoes()
         db.session.commit()
         login_user(usuario)
 
         flash(
-            f"Conta criada com sucesso, {usuario.nome}! Cadastre agora os dados da sua clínica "
-            "pra deixar tudo pronto pra uso.",
+            f"Conta criada com sucesso, {usuario.nome}! Bem-vindo(a) ao MedIA.",
             "success",
         )
-        return redirect(url_for("medico.clinica_configuracoes"))
+        return redirect(url_for("medico.dashboard"))
 
     return render_template("auth/cadastro.html")
 

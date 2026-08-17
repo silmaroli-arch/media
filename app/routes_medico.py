@@ -27,7 +27,7 @@ from app.models import (
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
     empresa_atual, empresas_do_usuario, selecionar_empresa,
-    filiais_atuais, grupos_atuais_ids, filtro_escopo_atual,
+    filiais_atuais, filtro_escopo_atual,
     tem_algum_vinculo_de_grupo,
 )
 from app.pdf_preparo import extrair_sugestao_de_pdf, gerar_xlsx_da_sugestao
@@ -101,25 +101,38 @@ def _grupos_da_empresa_ids():
 
 
 def _filtro_pacientes_da_empresa():
-    """Filtro SQLAlchemy para "pacientes do Grupo (tenant) atual". Fatia 5:
-    o paciente é uma identidade global (ver Paciente em app/models.py) e a
-    associação canônica é 100% por GrupoPaciente - Empresa/Clinica não
-    existem mais, então não há mais um fallback legado de
-    Paciente.empresa_id/clinica_id pra cobrir aqui (cadastros antigos já
-    foram migrados por migrar_paciente_para_grupo.py, que criou o
-    GrupoPaciente que faltava pra cada um)."""
+    """Filtro SQLAlchemy para "pacientes do escopo atual". Fatia 5: o
+    paciente é uma identidade global (ver Paciente em app/models.py) e,
+    havendo Grupo, a associação canônica é 100% por GrupoPaciente.
+
+    Fatia 6: quando a conta é solo (sem Grupo nenhum ainda), não existe
+    GrupoPaciente pra criar - o paciente fica associado diretamente ao
+    dono pessoal (`Paciente.cadastrado_por_id`), mesmo padrão dos outros
+    modelos (ver clinica_utils.filtro_escopo_atual())."""
     grupo_ids = _grupos_da_empresa_ids()
+    if not grupo_ids:
+        return Paciente.cadastrado_por_id == current_user.id
     paciente_ids_do_grupo = db.session.query(GrupoPaciente.paciente_id).filter(
-        GrupoPaciente.grupo_id.in_(grupo_ids or [0])
+        GrupoPaciente.grupo_id.in_(grupo_ids)
     )
     return Paciente.id.in_(paciente_ids_do_grupo)
 
 
-def _associar_paciente_a_empresa(paciente, empresa):
-    """Cria o GrupoPaciente que faltar para que este paciente passe a ser
-    visto pelo Grupo (tenant) atual - equivalente ao antigo "paciente é da
-    empresa" (Paciente.empresa_id), agora feito via associação em vez de
-    campo direto na tabela (ver _filtro_pacientes_da_empresa acima)."""
+def _associar_paciente_ao_escopo_atual(paciente, empresa):
+    """Torna este paciente visível no escopo atual: cria o GrupoPaciente
+    que faltar quando há um Grupo (tenant) atual - equivalente ao antigo
+    "paciente é da empresa" (Paciente.empresa_id), agora feito via
+    associação em vez de campo direto na tabela (ver
+    _filtro_pacientes_da_empresa acima).
+
+    Fatia 6: quando a conta é solo (`empresa` é None), não há Grupo pra
+    associar - o paciente passa a ter este usuário como dono pessoal
+    (`cadastrado_por_id`), sem precisar de GrupoPaciente nenhum."""
+    if not empresa:
+        if paciente.cadastrado_por_id == current_user.id:
+            return 0
+        paciente.cadastrado_por_id = current_user.id
+        return 1
     if GrupoPaciente.query.filter_by(grupo_id=empresa.id, paciente_id=paciente.id).first():
         return 0
     db.session.add(GrupoPaciente(grupo_id=empresa.id, paciente_id=paciente.id))
@@ -238,6 +251,27 @@ def medicos_das_filiais(filiais):
     return sorted(vistos.values(), key=lambda m: (m.nome or "").lower())
 
 
+def _medicos_do_escopo_atual(grupo):
+    """Fatia 6: médicos disponíveis no escopo atual - os da clínica/Grupo,
+    se houver um; senão (conta solo, sem Grupo) só o próprio usuário
+    logado, se ele for médico - não existe "equipe" pra listar sem Grupo,
+    então uma secretária sozinha (sem médico algum) não tem ninguém pra
+    escolher aqui."""
+    if grupo:
+        return medicos_da_clinica(grupo)
+    return [current_user] if eh_medico() else []
+
+
+def _filtro_exame_por_filial(filial):
+    """Fatia 6: filtro SQLAlchemy pra "exames desta filial/Grupo" usado em
+    medico.agenda_novo - quando não há Grupo (conta solo, `filial` é
+    None), o escopo passa a ser o dono pessoal (criado_por_id), mesmo
+    padrão de clinica_utils.filtro_escopo_atual()."""
+    if filial:
+        return Exame.grupo_id == filial.id
+    return and_(Exame.grupo_id.is_(None), Exame.criado_por_id == current_user.id)
+
+
 def _filial_do_form(filiais, campo="clinica_id"):
     """Filial escolhida num formulário de cadastro, sempre validada contra
     as filiais acessíveis do usuário (fronteira de acesso). Quando a pessoa
@@ -301,9 +335,8 @@ def escolher_clinica():
 @staff_required
 def dashboard():
     filiais = filiais_atuais()
-    grupo_ids = [f.id for f in filiais]
 
-    agendamentos_q = Agendamento.query.filter(Agendamento.grupo_id.in_(grupo_ids))
+    agendamentos_q = Agendamento.query.filter(filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id))
     # Médico logado com o próprio login vê no painel APENAS a agenda DELE -
     # independente das permissões administrativas que tenha (um médico
     # fundador com todas as permissões continua vendo as telas
@@ -319,10 +352,12 @@ def dashboard():
     # — antes só a primeira era contada aqui, então uma pergunta com
     # rascunho da IA aparecia como card zerado mesmo tendo o que revisar.
     pendentes_q = PerguntaPendente.query.filter(
-        PerguntaPendente.grupo_id.in_(grupo_ids), PerguntaPendente.status == "pendente"
+        filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id),
+        PerguntaPendente.status == "pendente",
     )
     aguardando_q = PerguntaPendente.query.filter(
-        PerguntaPendente.grupo_id.in_(grupo_ids), PerguntaPendente.status == "aguardando_aprovacao"
+        filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id),
+        PerguntaPendente.status == "aguardando_aprovacao",
     )
     # Pacientes que se cadastraram sozinhos pelo app (ver
     # auth.cadastro_paciente) e aguardam a equipe aceitar o cadastro antes
@@ -335,7 +370,10 @@ def dashboard():
     if eh_medico() and not current_user.perm_pacientes:
         total_pacientes = (
             db.session.query(Agendamento.paciente_id)
-            .filter(Agendamento.grupo_id.in_(grupo_ids), Agendamento.medico_id == current_user.id)
+            .filter(
+                filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
+                Agendamento.medico_id == current_user.id,
+            )
             .distinct()
             .count()
         )
@@ -505,12 +543,9 @@ def _buscar_paciente_por_cpf_plataforma(cpf):
 @staff_required
 @permissao_required("perm_pacientes")
 def pacientes_novo():
-    filiais = filiais_atuais()
-
-    if not filiais:
-        flash("Cadastre seu primeiro local de atendimento antes de cadastrar pacientes.", "info")
-        return redirect(url_for("medico.filiais_lista"))
-
+    # Fatia 6: cadastrar paciente não depende mais de ter um Grupo - uma
+    # conta solo cadastra pacientes normalmente, com escopo pessoal (ver
+    # _associar_paciente_ao_escopo_atual/_filtro_pacientes_da_empresa).
     empresa = empresa_atual()
 
     # Busca por CPF ("importar paciente da plataforma"): antes de digitar
@@ -648,7 +683,7 @@ def pacientes_novo():
         _preencher_endereco_emergencia(paciente, request.form)
         db.session.add(paciente)
         db.session.flush()
-        _associar_paciente_a_empresa(paciente, empresa)
+        _associar_paciente_ao_escopo_atual(paciente, empresa)
         db.session.commit()
 
         flash(
@@ -687,7 +722,7 @@ def pacientes_importar():
         flash(f"{origem.nome} já é paciente desta empresa.", "warning")
         return redirect(url_for("medico.pacientes_lista"))
 
-    _associar_paciente_a_empresa(origem, empresa)
+    _associar_paciente_ao_escopo_atual(origem, empresa)
     db.session.commit()
     flash(
         f"{origem.nome} foi importado(a) da plataforma para esta empresa - o cadastro (contato/"
@@ -755,7 +790,8 @@ def pacientes_detalhe(paciente_id):
 def exames_lista():
     # Exames são dados de CONFIGURAÇÃO da empresa - a lista mostra os de
     # todas as filiais, mesmo pra quem não está vinculado a local nenhum.
-    query = Exame.query.filter(Exame.grupo_id.in_(_grupos_da_empresa_ids()))
+    # Fatia 6: conta solo (sem Grupo) vê o próprio catálogo pessoal.
+    query = Exame.query.filter(filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id))
     if eh_medico():
         query = query.filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -770,10 +806,13 @@ def exames_lista():
 def exames_novo():
     # Cadastro de exame é CONFIGURAÇÃO da empresa - não depende de o
     # usuário estar vinculado a alguma filial (ver _filiais_da_empresa).
+    # Fatia 6: também não depende de haver Grupo nenhum - conta solo tem
+    # seu próprio catálogo pessoal (ver filtro_escopo_atual).
     filiais = _filiais_da_empresa()
-    grupo_ids = _grupos_da_empresa_ids()
     medicos = medicos_das_filiais(filiais)
-    modelos = PreparoModelo.query.filter(PreparoModelo.grupo_id.in_(grupo_ids)).order_by(PreparoModelo.nome).all()
+    modelos = PreparoModelo.query.filter(
+        filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
+    ).order_by(PreparoModelo.nome).all()
     # Mesmo padrão de dono de conteúdo clínico: o médico só pode escolher
     # (e, portanto, só vê no dropdown) os SEUS modelos de preparo ou os sem
     # dono registrado - não os de outro médico da empresa.
@@ -786,10 +825,9 @@ def exames_novo():
         # esse exame em cada local (e com qual médico) é decidido depois, na
         # tela "Exames por filial" (medico.exames_por_filial), que é onde
         # médico e preço realmente variam por local de atendimento.
-        if not filiais:
-            flash("A empresa ainda não tem nenhum local de atendimento cadastrado.", "danger")
-            return redirect(url_for("medico.filiais_lista"))
-        filial = filiais[0]
+        # Fatia 6: sem Grupo (conta solo), o exame nasce sem grupo_id -
+        # escopado por criado_por_id (ver Exame abaixo).
+        filial = filiais[0] if filiais else None
 
         nome = request.form.get("nome", "").strip()
         descricao = request.form.get("descricao", "").strip()
@@ -832,7 +870,9 @@ def exames_novo():
             flash("Nome do exame é obrigatório.", "danger")
             return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
-        if Exame.query.filter(Exame.grupo_id.in_(grupo_ids), Exame.nome == nome).first():
+        if Exame.query.filter(
+            filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id), Exame.nome == nome
+        ).first():
             flash("Já existe um exame com esse nome.", "danger")
             return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
 
@@ -840,7 +880,7 @@ def exames_novo():
         # local de atendimento, em "Exames por filial" (mesmo esquema que já
         # vale pra médico e pra associar o exame a mais de uma filial).
         exame = Exame(
-            grupo_id=filial.id,
+            grupo_id=filial.id if filial else None,
             medico_id=medico_id, nome=nome, descricao=descricao,
             preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos,
             precisa_acompanhante=precisa_acompanhante,
@@ -878,8 +918,9 @@ def exames_novo():
 @login_required
 @staff_required
 def exames_editar(exame_id):
-    grupo_ids = _grupos_da_empresa_ids()
-    query = Exame.query.filter(Exame.id == exame_id, Exame.grupo_id.in_(grupo_ids))
+    query = Exame.query.filter(
+        Exame.id == exame_id, filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id)
+    )
     if eh_medico():
         query = query.filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -896,8 +937,10 @@ def exames_editar(exame_id):
         return redirect(url_for("medico.exames_lista"))
     # Médico responsável é do GRUPO do exame, mas modelo de preparo é
     # genérico - vale qualquer modelo acessível ao usuário na empresa.
-    medicos = medicos_da_clinica(exame.grupo)
-    modelos = PreparoModelo.query.filter(PreparoModelo.grupo_id.in_(grupo_ids)).order_by(PreparoModelo.nome).all()
+    medicos = _medicos_do_escopo_atual(exame.grupo)
+    modelos = PreparoModelo.query.filter(
+        filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
+    ).order_by(PreparoModelo.nome).all()
     if eh_medico():
         modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
 
@@ -970,7 +1013,7 @@ def exames_por_filial():
     aviso de "não confirmado" - escolher e salvar o médico aqui é o que
     confirma."""
     empresa = empresa_atual()
-    exames_do_grupo = Exame.query.filter(Exame.grupo_id == empresa.id).all() if empresa else []
+    exames_do_grupo = Exame.query.filter(filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id)).all()
 
     # A lista mostra só ASSOCIAÇÕES de verdade (associado=True) - o
     # cadastro genérico de exame cria só um item de catálogo
@@ -1005,7 +1048,7 @@ def exames_por_filial():
     # listar os colegas do grupo ali só confunde. Secretária/dono
     # continuam vendo todos, já que são quem de fato define qual médico
     # atende cada exame.
-    medicos_disponiveis = medicos_da_clinica(empresa) if empresa else []
+    medicos_disponiveis = _medicos_do_escopo_atual(empresa)
     if current_user.tipo == "medico":
         medicos_disponiveis = [m for m in medicos_disponiveis if m.id == current_user.id]
 
@@ -1025,12 +1068,14 @@ def exames_por_filial():
 
 
 def _dono_medico_do_exame(nome, empresa):
-    """O médico DONO do exame com esse nome no Grupo - quem criou o
+    """O médico DONO do exame com esse nome no escopo atual - quem criou o
     cadastro (ver Exame.criado_por_id). Um médico não pode ser associado
     a um exame do qual não é o dono. Retorna None quando o exame não tem
     dono médico registrado (cadastro antigo ou criado pela secretária) -
     nesse caso vale o comportamento antigo (qualquer médico do grupo)."""
-    for e in Exame.query.filter(Exame.grupo_id == empresa.id, Exame.nome == nome).all():
+    for e in Exame.query.filter(
+        filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id), Exame.nome == nome
+    ).all():
         dono = e.dono_medico
         if dono:
             return dono
@@ -1044,7 +1089,7 @@ def exames_por_filial_associar():
     empresa = empresa_atual()
     nome = request.form.get("nome", "").strip()
 
-    if not nome or not empresa:
+    if not nome:
         flash("Escolha um exame válido.", "danger")
         return redirect(url_for("medico.exames_por_filial"))
 
@@ -1069,7 +1114,9 @@ def exames_por_filial_associar():
         )
         return redirect(url_for("medico.exames_por_filial"))
 
-    existente = Exame.query.filter_by(grupo_id=empresa.id, nome=nome).first()
+    existente = Exame.query.filter(
+        filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id), Exame.nome == nome
+    ).first()
     if not existente:
         flash("Exame não encontrado.", "danger")
         return redirect(url_for("medico.exames_por_filial"))
@@ -1079,7 +1126,7 @@ def exames_por_filial_associar():
         # (o responsável + outros que também o atendem). Se o médico
         # escolhido for novo, ele é ADICIONADO à associação existente
         # como médico extra, em vez de rejeitar.
-        medicos_disponiveis = medicos_da_clinica(empresa)
+        medicos_disponiveis = _medicos_do_escopo_atual(empresa)
         medico_novo = next((m for m in medicos_disponiveis if m.id == medico_escolhido_id), None)
         if not medico_novo:
             flash("Escolha um médico válido.", "danger")
@@ -1099,7 +1146,7 @@ def exames_por_filial_associar():
         )
         return redirect(url_for("medico.exames_por_filial"))
 
-    medicos_disponiveis = medicos_da_clinica(empresa)
+    medicos_disponiveis = _medicos_do_escopo_atual(empresa)
     if not medico_escolhido_id or not any(m.id == medico_escolhido_id for m in medicos_disponiveis):
         flash("Escolha um médico válido.", "danger")
         return redirect(url_for("medico.exames_por_filial"))
@@ -1137,7 +1184,9 @@ def exames_por_filial_atualizar(exame_id):
     Grupo atual) - só o exame associado pode mudar, e continua travado
     quando já há agendamento marcado (mesmo motivo de antes)."""
     empresa = empresa_atual()
-    exame = Exame.query.filter(Exame.id == exame_id, Exame.grupo_id == empresa.id).first_or_404()
+    exame = Exame.query.filter(
+        Exame.id == exame_id, filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id)
+    ).first_or_404()
 
     nome_novo = request.form.get("nome", "").strip() if "nome" in request.form else None
     mudou_exame = bool(nome_novo) and nome_novo != exame.nome
@@ -1151,7 +1200,7 @@ def exames_por_filial_atualizar(exame_id):
             return redirect(url_for("medico.exames_por_filial", editar=exame.id))
 
         ja_existe = Exame.query.filter(
-            Exame.grupo_id == empresa.id, Exame.nome == nome_novo,
+            filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id), Exame.nome == nome_novo,
             Exame.id != exame.id, Exame.associado.is_(True),
         ).first()
         if ja_existe:
@@ -1162,7 +1211,7 @@ def exames_por_filial_atualizar(exame_id):
         # cadastro dele no Grupo - a associação passa a ser DESSE exame,
         # não é só uma troca de rótulo.
         origem = Exame.query.filter(
-            Exame.grupo_id == empresa.id, Exame.nome == nome_novo, Exame.id != exame.id,
+            filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id), Exame.nome == nome_novo, Exame.id != exame.id,
         ).first()
         if not origem:
             flash("Exame não encontrado.", "danger")
@@ -1219,7 +1268,7 @@ def exames_por_filial_atualizar(exame_id):
         )
         db.session.rollback()
         return redirect(url_for("medico.exames_por_filial", editar=exame.id))
-    medicos_do_grupo = medicos_da_clinica(empresa)
+    medicos_do_grupo = _medicos_do_escopo_atual(empresa)
     if medico_id and any(m.id == medico_id for m in medicos_do_grupo):
         exame.medico_id = medico_id
         exame.medico_confirmado = True
@@ -1254,8 +1303,9 @@ def exames_por_filial_excluir(exame_id):
     (o agendamento aponta pra ela); trate os agendamentos primeiro.
     Perguntas e mensagens de chat antigas que citavam este exame são
     mantidas, só perdem o vínculo com ele."""
-    empresa = empresa_atual()
-    exame = Exame.query.filter(Exame.id == exame_id, Exame.grupo_id == empresa.id).first_or_404()
+    exame = Exame.query.filter(
+        Exame.id == exame_id, filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id)
+    ).first_or_404()
 
     if exame.agendamentos:
         flash(
@@ -1283,7 +1333,7 @@ def exames_por_filial_excluir(exame_id):
 @staff_required
 def preparo_modelos_lista():
     modelos = (
-        PreparoModelo.query.filter(PreparoModelo.grupo_id.in_(_grupos_da_empresa_ids()))
+        PreparoModelo.query.filter(filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id))
         .order_by(PreparoModelo.nome).all()
     )
     # Mesmo padrão do dono de conteúdo clínico usado em "Exames"/"Associar
@@ -1479,10 +1529,9 @@ def preparo_modelos_novo():
         # existindo no banco só por exigência técnica da FK/constraint atual;
         # usamos a primeira filial acessível do usuário sem expor essa
         # escolha na tela.
-        if not filiais:
-            flash("A empresa ainda não tem nenhum local de atendimento cadastrado.", "danger")
-            return redirect(url_for("medico.filiais_lista"))
-        filial = filiais[0]
+        # Fatia 6: sem Grupo (conta solo), o modelo nasce sem grupo_id -
+        # escopado por criado_por_id (ver PreparoModelo abaixo).
+        filial = filiais[0] if filiais else None
 
         nome = request.form.get("nome", "").strip()
         instrucoes = request.form.get("instrucoes", "").strip()
@@ -1492,12 +1541,14 @@ def preparo_modelos_novo():
             flash("Nome do modelo e instruções são obrigatórios.", "danger")
             return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
-        if PreparoModelo.query.filter(PreparoModelo.grupo_id.in_(_grupos_da_empresa_ids()), PreparoModelo.nome == nome).first():
+        if PreparoModelo.query.filter(
+            filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id), PreparoModelo.nome == nome
+        ).first():
             flash("Já existe um modelo de preparo com esse nome.", "danger")
             return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
 
         modelo = PreparoModelo(
-            grupo_id=filial.id,
+            grupo_id=filial.id if filial else None,
             nome=nome, instrucoes=instrucoes,
             observacoes_medicamentos=observacoes_medicamentos or None,
             # DONO do modelo: quem criou. Se for um médico, só ele
@@ -1520,7 +1571,7 @@ def preparo_modelos_novo():
 @staff_required
 def preparo_modelos_editar(modelo_id):
     modelo = PreparoModelo.query.filter(
-        PreparoModelo.id == modelo_id, PreparoModelo.grupo_id.in_(_grupos_da_empresa_ids())
+        PreparoModelo.id == modelo_id, filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
     ).first_or_404()
     # DONO do conteúdo clínico: modelo criado por um médico só é editado
     # POR ELE. Modelos sem dono registrado (antigos) seguem como antes.
@@ -1554,7 +1605,7 @@ def preparo_modelos_editar(modelo_id):
 @staff_required
 def preparo_modelos_remover(modelo_id):
     modelo = PreparoModelo.query.filter(
-        PreparoModelo.id == modelo_id, PreparoModelo.grupo_id.in_(_grupos_da_empresa_ids())
+        PreparoModelo.id == modelo_id, filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
     ).first_or_404()
     # Mesma regra da edição: só o médico dono remove.
     if not modelo.pode_ser_editado_por(current_user):
@@ -1713,14 +1764,16 @@ def agenda_novo():
             flash("Telefone do acompanhante incompleto — digite o DDD e o número completos.", "danger")
             return redirect(url_for("medico.agenda_novo", filial_id=filial_id))
 
+        # Fatia 6: sem Grupo (conta solo), `filiais_disponiveis` é vazia -
+        # não há filial pra escolher, e não é mais um erro (era antes).
         filial = next((f for f in filiais_disponiveis if f.id == filial_id), None)
-        if not filial:
+        if filiais_disponiveis and not filial:
             flash("Escolha uma filial válida.", "danger")
             return redirect(url_for("medico.agenda_novo"))
 
         if not paciente_id or not exame_id:
             flash("Escolha um paciente e um exame válidos.", "danger")
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id))
+            return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None))
 
         # O médico só pode agendar para os seus próprios exames (principal
         # ou associado). Quando o exame tem mais de um médico associado,
@@ -1735,7 +1788,7 @@ def agenda_novo():
         paciente = Paciente.query.filter(Paciente.id == paciente_id, _filtro_pacientes_da_empresa()).first()
         # Só exame ASSOCIADO à filial pode ser agendado (item de catálogo
         # sem associação não é ofertado em lugar nenhum).
-        exame_query = Exame.query.filter_by(id=exame_id, grupo_id=filial.id, associado=True)
+        exame_query = Exame.query.filter(_filtro_exame_por_filial(filial), Exame.id == exame_id, Exame.associado.is_(True))
         if eh_medico():
             exame_query = exame_query.filter(
                 or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -1747,7 +1800,7 @@ def agenda_novo():
         exame = exame_query.first()
         if not paciente or not exame:
             flash("Paciente ou exame inválido para a filial/médico escolhidos.", "danger")
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
+            return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
 
         if eh_medico():
             medico_atende_id = current_user.id
@@ -1760,7 +1813,7 @@ def agenda_novo():
             data_hora = datetime.strptime(data_hora_str, "%Y-%m-%dT%H:%M")
         except (ValueError, TypeError):
             flash("Data/hora inválida.", "danger")
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
+            return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
 
         if exame.precisa_acompanhante and not acompanhante_nome:
             flash(
@@ -1768,10 +1821,13 @@ def agenda_novo():
                 "o paciente no dia (pode ser alterado depois, se necessário).",
                 "danger",
             )
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id, medico_id=medico_id_form))
+            return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
 
         agendamento = Agendamento(
-            grupo_id=filial.id,
+            grupo_id=filial.id if filial else None,
+            # Fatia 6: sem Grupo (conta solo), o agendamento fica escopado
+            # pelo dono pessoal (ver clinica_utils.filtro_escopo_atual()).
+            criado_por_id=current_user.id if not filial else None,
             paciente_id=paciente.id,
             exame_id=exame.id,
             medico_id=medico_atende_id,
@@ -1798,7 +1854,7 @@ def agenda_novo():
         medicos_disponiveis = []
         medico_selecionado_id = current_user.id
     else:
-        medicos_disponiveis = medicos_da_clinica(filial_selecionada)
+        medicos_disponiveis = _medicos_do_escopo_atual(filial_selecionada)
         medico_id_param = request.args.get("medico_id", type=int)
         medico_selecionado_id = medico_id_param if any(m.id == medico_id_param for m in medicos_disponiveis) else None
         if medico_selecionado_id is None and len(medicos_disponiveis) == 1:
@@ -1808,7 +1864,7 @@ def agenda_novo():
     # (a filial vale só para o exame e para onde o atendimento acontece).
     pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).order_by(Paciente.nome).all()
 
-    exames_query = Exame.query.filter_by(grupo_id=filial_selecionada.id, associado=True)
+    exames_query = Exame.query.filter(_filtro_exame_por_filial(filial_selecionada), Exame.associado.is_(True))
     if eh_medico():
         exames_query = exames_query.filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -1868,7 +1924,7 @@ def medico_agenda_pessoal(medico_id=None):
     # horário mas ainda não foi encerrado continua precisando aparecer aqui.
     proximos = (
         Agendamento.query.filter(
-            Agendamento.grupo_id.in_([f.id for f in filiais]),
+            filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
             Agendamento.medico_id == medico_alvo.id,
         )
         .order_by(Agendamento.data_hora.asc())
@@ -1915,7 +1971,7 @@ def minha_agenda_completa():
 def atendimento(agendamento_id):
     query = Agendamento.query.filter(
         Agendamento.id == agendamento_id,
-        Agendamento.grupo_id.in_(grupos_atuais_ids()),
+        filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
     )
     if eh_medico():
         query = query.filter(Agendamento.medico_id == current_user.id)
@@ -2005,7 +2061,7 @@ def _pasta_resultados():
 def resultado_upload(agendamento_id):
     query = Agendamento.query.filter(
         Agendamento.id == agendamento_id,
-        Agendamento.grupo_id.in_(grupos_atuais_ids()),
+        filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
     )
     if eh_medico():
         query = query.filter(Agendamento.medico_id == current_user.id)
@@ -2051,18 +2107,12 @@ def resultado_upload(agendamento_id):
 @login_required
 @staff_required
 def perguntas_pendentes():
-    grupo_ids = grupos_atuais_ids()
-    pendentes_q = PerguntaPendente.query.filter(
-        PerguntaPendente.grupo_id.in_(grupo_ids), PerguntaPendente.status == "pendente"
-    )
+    escopo = filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id)
+    pendentes_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "pendente")
     # Respostas que a IA já rascunhou e estão esperando o médico revisar,
     # editar se precisar, e aprovar antes de irem para o paciente.
-    aguardando_q = PerguntaPendente.query.filter(
-        PerguntaPendente.grupo_id.in_(grupo_ids), PerguntaPendente.status == "aguardando_aprovacao"
-    )
-    respondidas_q = PerguntaPendente.query.filter(
-        PerguntaPendente.grupo_id.in_(grupo_ids), PerguntaPendente.status == "respondida"
-    )
+    aguardando_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "aguardando_aprovacao")
+    respondidas_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "respondida")
 
     if eh_medico():
         # O médico só acompanha perguntas sobre exames de sua
@@ -2088,7 +2138,8 @@ def perguntas_pendentes():
 @staff_required
 def perguntas_responder(pergunta_id):
     pergunta = PerguntaPendente.query.filter(
-        PerguntaPendente.id == pergunta_id, PerguntaPendente.grupo_id.in_(grupos_atuais_ids())
+        PerguntaPendente.id == pergunta_id,
+        filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id),
     ).first_or_404()
 
     # Mesma regra de quem PODE VER (ver _restringir_perguntas_para_medico):
@@ -2115,9 +2166,11 @@ def perguntas_responder(pergunta_id):
 
     # "Aprendizado": a pergunta+resposta entra na base de FAQ para uso futuro
     novo_faq = FaqItem(
-        # O item de FAQ nasce na MESMA filial/grupo da pergunta respondida.
+        # O item de FAQ nasce no MESMO escopo (filial/grupo, ou dono
+        # pessoal se a pergunta era de uma conta solo) da pergunta respondida.
         clinica_id=pergunta.clinica_id,
         grupo_id=pergunta.grupo_id,
+        criado_por_id=pergunta.criado_por_id,
         exame_id=pergunta.exame_id,
         pergunta=pergunta.pergunta,
         resposta=resposta,
@@ -2136,7 +2189,7 @@ def perguntas_responder(pergunta_id):
 @login_required
 @staff_required
 def faq_lista():
-    query = FaqItem.query.filter(FaqItem.grupo_id.in_(grupos_atuais_ids()))
+    query = FaqItem.query.filter(filtro_escopo_atual(FaqItem.grupo_id, FaqItem.criado_por_id))
     if eh_medico():
         query = query.join(Exame, FaqItem.exame_id == Exame.id).filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -2150,7 +2203,7 @@ def faq_lista():
 @staff_required
 def faq_novo():
     filiais = filiais_atuais()
-    exames_query = Exame.query.filter(Exame.grupo_id.in_(grupos_atuais_ids()))
+    exames_query = Exame.query.filter(filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id))
     if eh_medico():
         exames_query = exames_query.filter(
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
@@ -2161,7 +2214,9 @@ def faq_novo():
         exame_id = request.form.get("exame_id", type=int)
         exame_escolhido = next((e for e in exames if e.id == exame_id), None)
         # Item vinculado a um exame nasce no Grupo DESSE exame; item geral
-        # (sem exame) usa o Grupo escolhido no formulário.
+        # (sem exame) usa o Grupo escolhido no formulário. Fatia 6: sem
+        # Grupo (conta solo), não há filial pra escolher - `filial` fica
+        # None e o item nasce escopado pelo dono pessoal (criado_por_id).
         filial = exame_escolhido.grupo if exame_escolhido else _filial_do_form(filiais)
 
         if eh_medico():
@@ -2179,12 +2234,13 @@ def faq_novo():
             flash("Pergunta e resposta são obrigatórias.", "danger")
             return render_template("medico/faq_form.html", exames=exames)
 
-        if not filial:
+        if filiais and not filial:
             flash("Escolha a filial em que este item será cadastrado.", "danger")
             return render_template("medico/faq_form.html", exames=exames)
 
         item = FaqItem(
-            grupo_id=filial.id,
+            grupo_id=filial.id if filial else None,
+            criado_por_id=current_user.id if not filial else None,
             exame_id=exame_id,
             pergunta=pergunta,
             resposta=resposta,
@@ -2213,9 +2269,10 @@ def clinica_configuracoes(filial_id=None):
     clinica = empresa_atual()
 
     if not clinica:
-        # Conta recém-criada, ainda sem nenhum Grupo (isso agora é feito
-        # depois do cadastro público, ao entrar no app - não mais
-        # automaticamente no cadastro).
+        # Fatia 6: conta solo, sem Grupo nenhum ainda - não há "dados da
+        # clínica" pra configurar sem um Grupo (isso não é mais um erro,
+        # só um estado válido; a pessoa cria um Grupo quando decidir
+        # convidar alguém, ver routes_grupo.py:novo()).
         flash("Cadastre seu primeiro grupo antes de preencher os dados dele.", "info")
         return redirect(url_for("medico.filiais_lista"))
 

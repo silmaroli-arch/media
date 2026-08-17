@@ -19,16 +19,24 @@ paciente_bp = Blueprint("paciente", __name__, url_prefix="/paciente")
 
 
 def _resolver_ancora(paciente, exame=None, agendamento=None):
-    """Grupo usado para ROTEAR PerguntaPendente/FAQ: o do agendamento em
-    questão, senão o do exame em questão, senão o do agendamento mais
-    recente do paciente, senão a primeira associação (GrupoPaciente) do
-    próprio paciente. É só um endereçamento para a equipe certa ver a
-    pergunta - não é um vínculo de acesso do paciente."""
+    """(grupo_id, criado_por_id) usado para ROTEAR PerguntaPendente/FAQ: o
+    do agendamento em questão, senão o do exame em questão, senão o do
+    agendamento mais recente do paciente, senão a primeira associação
+    (GrupoPaciente) do próprio paciente. É só um endereçamento para a
+    equipe certa ver a pergunta - não é um vínculo de acesso do paciente.
+
+    Fatia 6: quando não há Grupo nenhum envolvido (agendamento/exame de uma
+    conta solo), o endereçamento passa a ser pelo dono pessoal
+    (`criado_por_id` de quem cadastrou o exame/agendamento) em vez de por
+    Grupo - só assim a pergunta chega até quem vai respondê-la."""
     grupo_id = None
+    criado_por_id = None
     if agendamento is not None:
         grupo_id = agendamento.grupo_id
+        criado_por_id = agendamento.criado_por_id
     elif exame is not None:
         grupo_id = exame.grupo_id
+        criado_por_id = exame.criado_por_id
     else:
         ultimo = (
             Agendamento.query.filter_by(paciente_id=paciente.id)
@@ -37,13 +45,19 @@ def _resolver_ancora(paciente, exame=None, agendamento=None):
         )
         if ultimo:
             grupo_id = ultimo.grupo_id
+            criado_por_id = ultimo.criado_por_id
 
-    if grupo_id is None:
+    if grupo_id is None and criado_por_id is None:
         grupos = _grupos_do_paciente(paciente)
         if grupos:
             grupo_id = grupos[0].id
+        else:
+            # Cadastro pessoal (sem Grupo nenhum) de uma conta solo - o
+            # dono do cadastro (ver Paciente.cadastrado_por_id) é quem
+            # deve receber a pergunta.
+            criado_por_id = paciente.cadastrado_por_id
 
-    return grupo_id
+    return grupo_id, criado_por_id
 
 
 def _meus_cadastros_ids():
@@ -236,12 +250,13 @@ def chat():
             # pergunta continua sendo encaminhada à IA de novo, mesmo que
             # pareça repetida — não há atalho pela FAQ aqui.
             resultado_ia = responder_com_ia(pergunta_enviada, exame_selecionado) if exame_selecionado else None
-            grupo_id_ancora = _resolver_ancora(paciente, exame_selecionado, agendamento_selecionado)
+            grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame_selecionado, agendamento_selecionado)
 
             if resultado_ia and resultado_ia["final"]:
                 origem = "ia_aguardando"
                 pendente = PerguntaPendente(
                     grupo_id=grupo_id_ancora,
+                    criado_por_id=criado_por_id_ancora,
                     paciente_id=paciente.id,
                     exame_id=exame_selecionado.id,
                     pergunta=pergunta_enviada,
@@ -268,6 +283,7 @@ def chat():
                     pergunta_enviada,
                     grupo_id=grupo_id_ancora,
                     exame_id=int(exame_id_selecionado) if exame_id_selecionado else None,
+                    criado_por_id=criado_por_id_ancora,
                 )
                 if faq_item:
                     faq_item.vezes_utilizada += 1
@@ -287,6 +303,7 @@ def chat():
                 else:
                     pendente = PerguntaPendente(
                         grupo_id=grupo_id_ancora,
+                        criado_por_id=criado_por_id_ancora,
                         paciente_id=paciente.id,
                         exame_id=exame_id_selecionado,
                         pergunta=pergunta_enviada,
