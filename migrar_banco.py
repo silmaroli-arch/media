@@ -224,6 +224,13 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS cadastrado_por_id INTEGER REFEREN
 ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
 ALTER TABLE faq_itens ADD COLUMN IF NOT EXISTS criado_por_id INTEGER REFERENCES usuarios(id);
+
+-- Fatia 7 (WhatsApp): de onde veio cada pergunta do histórico de chat -
+-- "web" é o padrão (cobre todo o histórico existente), "whatsapp" identifica
+-- as recebidas pelo número único da aplicação. A tabela nova
+-- "conversas_whatsapp" não precisa de ALTER TABLE - é criada automaticamente
+-- pelo db.create_all() por não existir ainda em nenhum ambiente.
+ALTER TABLE chat_mensagens ADD COLUMN IF NOT EXISTS canal VARCHAR(20) NOT NULL DEFAULT 'web';
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

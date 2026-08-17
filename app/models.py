@@ -1077,11 +1077,55 @@ class ChatMensagem(db.Model):
     resposta = db.Column(db.Text)
     # origem: faq, ia, ia_aguardando (resposta da IA esperando aprovação do médico), alimento, medicamento, pendente (encaminhada)
     origem = db.Column(db.String(20))
+    # Fatia 7 (WhatsApp): canal por onde a pergunta chegou - "web" (tela de
+    # dúvidas do app, valor padrão, cobre todo o histórico anterior a este
+    # campo) ou "whatsapp" (recebida pelo número único da aplicação). Serve
+    # só para exibição no histórico que o médico já vê hoje - não muda
+    # nenhuma lógica de resposta.
+    canal = db.Column(db.String(20), nullable=False, default="web")
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     paciente = db.relationship("Paciente", back_populates="mensagens_chat")
     exame = db.relationship("Exame")
     agendamento = db.relationship("Agendamento")
+
+
+class ConversaWhatsapp(db.Model):
+    """Fatia 7: estado da conversa de WhatsApp associada a um número de
+    telefone remetente - guarda, enquanto a conversa está "ativa", qual
+    Paciente já foi confirmado (via CPF + data de nascimento) e sobre qual
+    Agendamento/exame a conversa está focada agora, para não repetir a
+    pergunta de identificação a cada mensagem trocada.
+
+    Uma linha por número de telefone (o WhatsApp de origem). Quando a
+    conversa expira (ver `expirada()`), a aplicação volta a pedir
+    CPF + data de nascimento antes de mostrar qualquer informação - por
+    segurança, o vínculo com um número de telefone não é definitivo."""
+    __tablename__ = "conversas_whatsapp"
+
+    id = db.Column(db.Integer, primary_key=True)
+    # Número do remetente, normalizado em formato E.164 (ex.: "+5527999998888").
+    telefone = db.Column(db.String(30), nullable=False, unique=True)
+    # Só preenchido depois que CPF + data de nascimento conferirem.
+    paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=True)
+    # Agendamento/exame em foco na conversa agora (quando o paciente tem
+    # mais de um ativo e já escolheu um pela lista numerada).
+    agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    paciente = db.relationship("Paciente")
+    agendamento = db.relationship("Agendamento")
+
+    # Depois de quanto tempo sem mensagem a conversa deixa de valer como
+    # identificação confirmada (volta a pedir CPF + data de nascimento).
+    MINUTOS_EXPIRACAO = 240  # 4 horas
+
+    def expirada(self):
+        if not self.atualizado_em:
+            return True
+        minutos_parados = (datetime.utcnow() - self.atualizado_em).total_seconds() / 60
+        return minutos_parados > self.MINUTOS_EXPIRACAO
 
 
 class ResultadoExame(db.Model):
