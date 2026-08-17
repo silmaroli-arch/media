@@ -8,7 +8,6 @@ exame depois de criado. A troca do médico RESPONSÁVEL principal continua
 restrita à secretária - só os médicos "extras" (compartilhamento) passam
 a ser editáveis por um médico também."""
 from app import create_app
-from app.extensions import db
 from app.models import Usuario, Exame
 
 app = create_app()
@@ -32,13 +31,13 @@ with app.app_context():
     checar("Exame do seed já está com Dr. Carlos como responsável (pré-condição)", exame.medico_id == dr_carlos.id)
     checar("Exame do seed ainda não tem médico extra (pré-condição)", len(exame.medicos_extra) == 0)
     exame_id = exame.id
-    clinica_id = exame.clinica_id
+    grupo_id = exame.grupo_id
     dra_fernanda_id = dra_fernanda.id
 
 login("medico@clinicavitoria.com", "123456")
-# Dr. Carlos atende em mais de uma clínica (Vitória e São Paulo) - garante
-# que a Clínica Vitória (dona deste exame) está selecionada como ativa.
-client.post("/equipe/clinica", data={"clinica_id": str(clinica_id)}, follow_redirects=True)
+# Dr. Carlos atende em mais de um grupo (Vitória e São Paulo) - garante
+# que o Grupo Vitória (dono deste exame) está selecionado como ativo.
+client.post("/equipe/clinica", data={"empresa_id": str(grupo_id)}, follow_redirects=True)
 
 # O formulário de editar exame mostra a seção de "outros médicos" mesmo
 # para um médico logado (antes só aparecia para secretária).

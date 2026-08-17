@@ -9,7 +9,7 @@
 """
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Clinica, ClinicaMembro, Exame, PreparoModelo
+from app.models import Usuario, Grupo, GrupoMembro, Exame, PreparoModelo
 
 app = create_app()
 client = app.test_client()
@@ -25,10 +25,12 @@ def login(email, senha="123456"):
     return client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
 
 
-# Cenário: Grupo Saúde Total. Dr. Eduardo (dono do conteúdo) + Dra. Gilda
-# (segunda médica, criada aqui) + secretária Camila.
+# Cenário: Grupo Saúde Total - Centro. Dr. Eduardo (dono do conteúdo) + Dra.
+# Gilda (segunda médica, criada aqui) + secretária Camila. Fatia 5: o que
+# era uma Empresa com filiais virou um Grupo atômico - "Centro" e "Praia"
+# são dois Grupos distintos que compartilham a mesma equipe (ver seed.py).
 with app.app_context():
-    centro = Clinica.query.filter_by(nome="Grupo Saúde Total - Centro").first()
+    centro = Grupo.query.filter_by(nome="Grupo Saúde Total - Centro").first()
     centro_id = centro.id
     eduardo = Usuario.query.filter_by(email="medico@gruposaude.com").first()
     eduardo_id = eduardo.id
@@ -38,13 +40,16 @@ with app.app_context():
     gilda.definir_permissoes_padrao()
     db.session.add(gilda)
     db.session.flush()
-    db.session.add(ClinicaMembro(clinica_id=centro_id, usuario_id=gilda.id))
+    db.session.add(GrupoMembro(grupo_id=centro_id, usuario_id=gilda.id, papel="membro", ativo=True))
     db.session.commit()
     gilda_id = gilda.id
 
 # ---------- Eduardo cria o exame e o modelo (vira o dono) ----------
 
+# Dr. Eduardo atua nos dois grupos ("Centro" e "Praia", ver seed.py) -
+# precisa escolher explicitamente com qual está trabalhando agora.
 login("medico@gruposaude.com")
+client.post("/equipe/clinica", data={"empresa_id": str(centro_id)}, follow_redirects=True)
 r = client.post("/equipe/preparo-modelos/novo", data={
     "nome": "Preparo Do Eduardo", "instrucoes": "Jejum de 8 horas.",
     "observacoes_medicamentos": "",
@@ -75,6 +80,7 @@ client.get("/logout")
 # ---------- Secretária NÃO edita conteúdo do médico ----------
 
 login("secretaria@gruposaude.com")
+client.post("/equipe/clinica", data={"empresa_id": str(centro_id)}, follow_redirects=True)
 r = client.get("/equipe/preparo-modelos")
 html = r.get_data(as_text=True)
 checar("Na lista, a secretária vê quem é o dono do modelo",
@@ -117,7 +123,7 @@ r = client.post("/equipe/exames/por-filial/associar", data={
 checar("Adicionar outro médico como EXTRA também é bloqueado",
        "só ele pode ser" in r.get_data(as_text=True))
 with app.app_context():
-    assoc = Exame.query.filter_by(nome="Exame Do Eduardo", clinica_id=centro_id, associado=True).first()
+    assoc = Exame.query.filter_by(nome="Exame Do Eduardo", grupo_id=centro_id, associado=True).first()
     checar("A associação continua só com o dono",
            assoc.medico_id == eduardo_id and len(assoc.medicos_extra) == 0)
     assoc_id = assoc.id
@@ -148,6 +154,7 @@ client.get("/logout")
 # ---------- Conteúdo SEM dono (legado / criado pela secretária) ----------
 
 login("secretaria@gruposaude.com")
+client.post("/equipe/clinica", data={"empresa_id": str(centro_id)}, follow_redirects=True)
 r = client.post("/equipe/preparo-modelos/novo", data={
     "nome": "Preparo Da Secretaria", "instrucoes": "Sem restrições.",
     "observacoes_medicamentos": "",
@@ -157,7 +164,7 @@ with app.app_context():
     m2 = PreparoModelo.query.filter_by(nome="Preparo Da Secretaria").first()
     m2_id = m2.id
     # Modelo LEGADO: sem criador registrado.
-    m2_legado = PreparoModelo(clinica_id=centro_id, nome="Preparo Legado", instrucoes="Antigo.")
+    m2_legado = PreparoModelo(grupo_id=centro_id, nome="Preparo Legado", instrucoes="Antigo.")
     db.session.add(m2_legado)
     db.session.commit()
     legado_id = m2_legado.id

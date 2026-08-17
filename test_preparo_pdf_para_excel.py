@@ -26,7 +26,7 @@ def login(email, senha="123456"):
     return client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
 
 
-login("secretaria@gruposaude.com")
+login("secretaria@clinicavitoria.com")
 
 # ---------- Menu e tela ----------
 

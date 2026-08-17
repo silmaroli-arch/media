@@ -5,8 +5,7 @@
    exame (nem no cadastro, nem na edição) - o cadastro é genérico e o preço
    só é definido/ajustado depois, por local, na tela "Exames por filial"."""
 from app import create_app
-from app.extensions import db
-from app.models import Usuario, Exame, PreparoModelo, Clinica
+from app.models import Usuario, Exame, PreparoModelo, Grupo
 
 app = create_app()
 client = app.test_client()
@@ -27,7 +26,7 @@ login("secretaria@clinicavitoria.com", "123456")
 with app.app_context():
     medico_id = Usuario.query.filter_by(email="medico@clinicavitoria.com").first().id
     modelo_id = PreparoModelo.query.filter_by(
-        clinica_id=Clinica.query.filter_by(nome="Clínica Vitória").first().id
+        grupo_id=Grupo.query.filter_by(nome="Clínica Vitória").first().id
     ).first().id
 
 # A tela de Exames & Preparo não tem mais o botão "Associar exames entre filiais".

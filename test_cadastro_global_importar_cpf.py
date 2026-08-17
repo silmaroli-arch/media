@@ -9,12 +9,17 @@
 3) O link antigo de cadastro por clínica saiu do Painel (links já
    divulgados redirecionam pro cadastro global - ver
    test_link_cadastro_por_empresa.py).
-"""
+
+Fatia 5: Paciente é uma identidade GLOBAL única por CPF (constraint única
+em `cpf`, sem mais "uma cópia por empresa") - importar pelo CPF não cria
+um segundo cadastro, só associa (GrupoPaciente) o MESMO registro ao Grupo
+que importou (ver medico.pacientes_importar/_associar_paciente_a_empresa
+em app/routes_medico.py). Antes da Fatia 5 existiam cópias separadas por
+empresa; agora existe só uma linha em `pacientes` por CPF, para sempre."""
 from datetime import date
 
 from app import create_app
-from app.extensions import db
-from app.models import Usuario, Empresa, Clinica, Paciente, normalizar_telefone
+from app.models import Grupo, GrupoPaciente, Paciente
 
 app = create_app()
 client = app.test_client()
@@ -125,8 +130,9 @@ checar("A mensagem orienta informar o CPF na clínica", "CPF" in r.get_data(as_t
 
 with app.app_context():
     perfil = Paciente.query.filter_by(cpf=CPF).first()
-    checar("O cadastro global NÃO pertence a nenhuma empresa",
-           perfil is not None and perfil.empresa_id is None and perfil.clinica_id is None)
+    checar("O cadastro global NÃO pertence a nenhum grupo (só GrupoPaciente cria essa associação)",
+           perfil is not None and perfil.empresa_id is None and perfil.clinica_id is None
+           and len(perfil.grupos) == 0)
     checar("Endereço e emergência salvos no cadastro global",
            perfil.rua == "Rua Global" and perfil.contato_emergencia_nome == "Irma Plataforma")
 client.get("/logout")
@@ -147,11 +153,11 @@ r = client.post("/cadastro-paciente", data={
 checar("Quem já tem conta é orientado a entrar pelo login",
        "já tem cadastro na plataforma" in r.get_data(as_text=True))
 
-# ---------- 2) A clínica importa pelo CPF ----------
+# ---------- 2) O grupo importa pelo CPF ----------
 
-login_equipe("secretaria@gruposaude.com")
+login_equipe("secretaria@clinicavitoria.com")
 with app.app_context():
-    grupo_id = Empresa.query.filter_by(nome="Grupo Saúde Total").first().id
+    grupo_vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
 
 r = client.get("/equipe/pacientes/novo")
 html = r.get_data(as_text=True)
@@ -176,30 +182,30 @@ checar("Busca acha o Diego na plataforma",
        "Diego Plataforma" in html and "Importar para esta clínica" in html)
 
 r = client.post("/equipe/pacientes/importar", data={"cpf": CPF}, follow_redirects=True)
-checar("Importar cria o cadastro nesta empresa", "importado(a) da plataforma" in r.get_data(as_text=True))
+checar("Importar associa o cadastro a este grupo", "importado(a) da plataforma" in r.get_data(as_text=True))
 with app.app_context():
-    importado = Paciente.query.filter_by(cpf=CPF, empresa_id=grupo_id).first()
-    perfil = Paciente.query.filter_by(cpf=CPF, empresa_id=None).first()
-    checar("O cadastro da empresa existe e é separado do global",
-           importado is not None and perfil is not None and importado.id != perfil.id)
-    checar("Dados vieram junto (endereço/emergência/nascimento)",
-           importado.rua == "Rua Global" and importado.contato_emergencia_nome == "Irma Plataforma"
-           and importado.data_nascimento == date(1990, 12, 12))
-    checar("MESMA conta de login (conta única)", importado.usuario_id == perfil.usuario_id)
-    checar("Importado pela equipe entra APROVADO (sem fila de pendentes)",
-           importado.status_cadastro == "aprovado")
+    perfil = Paciente.query.filter_by(cpf=CPF).first()
+    checar("Continua existindo UM ÚNICO cadastro (identidade global por CPF) - importar não duplica",
+           Paciente.query.filter_by(cpf=CPF).count() == 1)
+    checar("O Grupo Vitória agora enxerga esse paciente via GrupoPaciente",
+           GrupoPaciente.query.filter_by(grupo_id=grupo_vitoria_id, paciente_id=perfil.id).first() is not None)
+    checar("Dados continuam os mesmos (endereço/emergência/nascimento) - é o mesmo registro",
+           perfil.rua == "Rua Global" and perfil.contato_emergencia_nome == "Irma Plataforma"
+           and perfil.data_nascimento == date(1990, 12, 12))
+    checar("Importado pela equipe entra/continua APROVADO (sem fila de pendentes)",
+           perfil.status_cadastro == "aprovado")
 
 r = client.get("/equipe/pacientes")
-checar("O Diego aparece na lista de pacientes da empresa", "Diego Plataforma" in r.get_data(as_text=True))
+checar("O Diego aparece na lista de pacientes do grupo", "Diego Plataforma" in r.get_data(as_text=True))
 
 # Importar de novo → aviso.
 r = client.post("/equipe/pacientes/importar", data={"cpf": CPF}, follow_redirects=True)
 checar("Importar repetido avisa que já é paciente daqui",
        "já é paciente desta empresa" in r.get_data(as_text=True))
 
-# Buscar CPF que já é da empresa → aviso direto.
+# Buscar CPF que já é do grupo → aviso direto.
 r = client.get(f"/equipe/pacientes/novo?cpf_busca={CPF}", follow_redirects=True)
-checar("Buscar CPF que já é da empresa avisa e leva pra lista",
+checar("Buscar CPF que já é do grupo avisa e leva pra lista",
        "já é paciente desta empresa" in r.get_data(as_text=True))
 
 # CPF inexistente → orienta cadastrar do zero (formulário com o CPF preenchido).
@@ -211,23 +217,27 @@ checar("O CPF buscado já vem preenchido no formulário",
        'value="111.111.111-11"' in html)
 client.get("/logout")
 
-# ---------- O paciente vê a clínica no app dele depois da importação ----------
+# ---------- O paciente vê o grupo no app dele depois da importação ----------
 
 r = client.post("/login-paciente", data={"cpf": CPF, "data_nascimento": "12/12/1990"},
                 follow_redirects=True)
 html = r.get_data(as_text=True)
 checar("O Diego loga direto (conta única)", "Diego Plataforma" in html)
 
-# Importação em OUTRA clínica também funciona (paciente da empresa → Vitória).
+# Importação em OUTRO grupo também funciona (mesma pessoa, dois grupos).
 client.get("/logout")
-login_equipe("secretaria@clinicavitoria.com")
+login_equipe("secretaria@clinicasp.com")
+with app.app_context():
+    grupo_sp_id = Grupo.query.filter_by(nome="Clínica São Paulo").first().id
 r = client.post("/equipe/pacientes/importar", data={"cpf": CPF}, follow_redirects=True)
-checar("Outra clínica também importa o mesmo CPF",
+checar("Outro grupo também importa o mesmo CPF",
        "importado(a) da plataforma" in r.get_data(as_text=True))
 with app.app_context():
-    checar("O Diego agora tem 3 cadastros (global + 2 empresas), uma conta só",
-           Paciente.query.filter_by(cpf=CPF).count() == 3
-           and len({p.usuario_id for p in Paciente.query.filter_by(cpf=CPF).all()}) == 1)
+    perfil = Paciente.query.filter_by(cpf=CPF).first()
+    checar("O Diego continua com UM ÚNICO cadastro (identidade global), agora em 2 grupos",
+           Paciente.query.filter_by(cpf=CPF).count() == 1
+           and {gp.grupo_id for gp in GrupoPaciente.query.filter_by(paciente_id=perfil.id).all()}
+           == {grupo_vitoria_id, grupo_sp_id})
 client.get("/logout")
 
 print("\nTodos os testes de cadastro global + importação por CPF passaram.")

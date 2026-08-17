@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 from app import create_app
 from app.extensions import db
-from app.models import Usuario, Clinica, Paciente, Exame, Agendamento
+from app.models import Usuario, Grupo, Paciente, Exame, Agendamento
 
 app = create_app()
 client = app.test_client()
@@ -30,21 +30,22 @@ def login(email, senha):
 # Cenário: na Clínica Vitória, um agendamento FUTURO para o Dr. Carlos e
 # outro para a Dra. Fernanda - cada médico deve ver só o seu no painel.
 with app.app_context():
-    vitoria = Clinica.query.filter_by(nome="Clínica Vitória").first()
+    vitoria = Grupo.query.filter_by(nome="Clínica Vitória").first()
+    vitoria_id = vitoria.id
     carlos = Usuario.query.filter_by(email="medico@clinicavitoria.com").first()
     fernanda = Usuario.query.filter_by(email="medica2@clinicavitoria.com").first()
     joao = Paciente.query.filter_by(nome="João Pereira").first()
     pedro = Paciente.query.filter_by(nome="Pedro Souza").first()
-    exame_carlos = Exame.query.filter_by(clinica_id=vitoria.id, medico_id=carlos.id).first()
-    exame_fernanda = Exame.query.filter_by(clinica_id=vitoria.id, medico_id=fernanda.id).first()
+    exame_carlos = Exame.query.filter_by(grupo_id=vitoria.id, medico_id=carlos.id).first()
+    exame_fernanda = Exame.query.filter_by(grupo_id=vitoria.id, medico_id=fernanda.id).first()
 
     futuro = datetime.utcnow() + timedelta(days=30)
     ag_carlos = Agendamento(
-        clinica_id=vitoria.id, paciente_id=joao.id, exame_id=exame_carlos.id,
+        grupo_id=vitoria.id, paciente_id=joao.id, exame_id=exame_carlos.id,
         medico_id=carlos.id, data_hora=futuro.replace(hour=9, minute=0),
     )
     ag_fernanda = Agendamento(
-        clinica_id=vitoria.id, paciente_id=pedro.id, exame_id=exame_fernanda.id,
+        grupo_id=vitoria.id, paciente_id=pedro.id, exame_id=exame_fernanda.id,
         medico_id=fernanda.id, data_hora=futuro.replace(hour=10, minute=0),
     )
     db.session.add_all([ag_carlos, ag_fernanda])
@@ -68,10 +69,10 @@ checar("Dra. Fernanda vê o agendamento DELA no painel", "Pedro Souza" in html)
 checar("Dra. Fernanda NÃO vê o agendamento do Dr. Carlos no painel", "João Pereira" not in html)
 client.get("/logout")
 
-# ---------- Dr. Carlos (atua em 2 empresas): vê SÓ a agenda dele ----------
+# ---------- Dr. Carlos (atua em 2 grupos): vê SÓ a agenda dele ----------
 
 login("medico@clinicavitoria.com", "123456")
-client.post("/equipe/clinica", data={"clinica_id": "1"}, follow_redirects=True)
+client.post("/equipe/clinica", data={"empresa_id": str(vitoria_id)}, follow_redirects=True)
 html = client.get("/equipe/").get_data(as_text=True)
 checar("Dr. Carlos vê o agendamento DELE no painel", "João Pereira" in html)
 checar("Dr. Carlos NÃO vê o agendamento da Dra. Fernanda no painel", "Pedro Souza" not in html)

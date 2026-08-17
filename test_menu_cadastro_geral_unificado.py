@@ -5,8 +5,7 @@ abaixo de "Grupos de trabalho" (antes de "Médico"). Também testa que as
 telas "Dados Cadastrais" e "Dados Fiscais" ganharam um botão "Cancelar" que
 volta para "Meus locais de atendimento"."""
 from app import create_app
-from app.extensions import db
-from app.models import Clinica
+from app.models import Grupo
 
 app = create_app()
 client = app.test_client()
@@ -23,7 +22,7 @@ def login(email, senha):
 
 
 with app.app_context():
-    clinica_id = Clinica.query.filter_by(nome="Clínica Vitória").first().id
+    clinica_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
 
 login("secretaria@clinicavitoria.com", "123456")
 
