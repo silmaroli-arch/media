@@ -1,9 +1,10 @@
 """Testa a reorganização do menu lateral: "Pessoas" deixou de existir -
-Pacientes e Equipe passaram a ser submenus de "Cadastro geral" (junto com
-"Meus locais de atendimento"), e o menu "Cadastro geral" agora aparece logo
-abaixo de "Grupos de trabalho" (antes de "Médico"). Também testa que as
-telas "Dados Cadastrais" e "Dados Fiscais" ganharam um botão "Cancelar" que
-volta para "Meus locais de atendimento"."""
+Pacientes virou submenu de "Cadastro geral", que agora aparece logo abaixo
+de "Grupos de trabalho" (antes de "Médico"). "Equipe" e "Meus locais de
+atendimento" saíram do menu (eram redirect/duplicado do fluxo de "Grupos de
+trabalho" - ver base.html) - o teste confirma que não aparecem mais como
+link, mas que as rotas (e o botão "Cancelar" de Dados Cadastrais/Fiscais,
+que ainda aponta pra URL antiga) continuam funcionando."""
 from app import create_app
 from app.models import Grupo
 
@@ -31,8 +32,8 @@ html0 = r0.get_data(as_text=True)
 checar("Painel responde 200", r0.status_code == 200)
 checar("Menu 'Pessoas' não existe mais", ">Pessoas<" not in html0)
 checar("Menu 'Cadastro geral' contém 'Pacientes'", "Pacientes" in html0)
-checar("Menu 'Cadastro geral' contém 'Equipe'", ">Equipe<" in html0)
-checar("Menu 'Cadastro geral' contém 'Meus locais de atendimento'", "Meus locais de atendimento" in html0)
+checar("Menu não contém mais 'Equipe' (virou redirect p/ Grupos de trabalho)", ">Equipe<" not in html0)
+checar("Menu não contém mais 'Meus locais de atendimento'", "Meus locais de atendimento" not in html0)
 
 # "Cadastro geral" aparece antes de "Médico" no HTML (ordem no menu lateral).
 idx_cadastro = html0.find("Cadastro geral")

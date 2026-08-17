@@ -86,16 +86,14 @@
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">Pacientes</a>
             </li>
-            {% if current_user.perm_equipe %}
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.equipe') %}active{% endif %}" href="{{ url_for('medico.equipe_lista') }}">Equipe</a>
-            </li>
-            {% endif %}
-            {% if current_user.perm_filiais or current_user.perm_dados_clinica %}
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint in ['medico.filiais_lista', 'medico.filiais_nova', 'medico.clinica_configuracoes', 'medico.clinica_dados_fiscais'] %}active{% endif %}" href="{{ url_for('medico.filiais_lista') }}">Meus locais de atendimento</a>
-            </li>
-            {% endif %}
+            {# Fatia 5: "Equipe" e "Meus locais de atendimento" saíram do menu -
+               eram duplicados/redirects para "Grupos de trabalho" (Equipe) ou
+               telas sem substituto ainda no fluxo de Grupo (Meus locais de
+               atendimento - Dados da clínica/Fiscal). As rotas continuam
+               existindo (equipe_lista/filiais_lista redirecionam; clinica_
+               configuracoes/clinica_dados_fiscais seguem acessíveis por URL
+               direta ou pelo checklist de configuração inicial), só o link
+               do menu foi removido. #}
           </ul>
         </div>
       </li>
