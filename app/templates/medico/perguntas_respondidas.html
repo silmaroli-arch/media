@@ -2,12 +2,7 @@
 {% from "medico/_filial.html" import th_filial, td_filial with context %}
 {% block titulo %}Últimas respondidas{% endblock %}
 {% block conteudo %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h3 class="mb-0">Últimas respondidas</h3>
-  <a href="{{ url_for('medico.perguntas_pendentes') }}" class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-arrow-left"></i> Voltar para pendentes
-  </a>
-</div>
+<h3 class="mb-3">Últimas respondidas</h3>
 
 <table class="table table-sm">
   <thead><tr><th>Paciente</th>{{ th_filial() }}<th>Exame</th><th>Data</th><th>Pergunta</th><th>Resposta</th><th>Por</th></tr></thead>

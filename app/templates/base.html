@@ -130,7 +130,10 @@
         <div class="collapse nav-sub {% if request.endpoint in grupo_ia %}show{% endif %}" id="menuIA">
           <ul class="nav flex-column">
             <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.perguntas') %}active{% endif %}" href="{{ url_for('medico.perguntas_pendentes') }}">Perguntas dos pacientes</a>
+              <a class="nav-link {% if request.endpoint == 'medico.perguntas_pendentes' or request.endpoint == 'medico.perguntas_responder' %}active{% endif %}" href="{{ url_for('medico.perguntas_pendentes') }}">Perguntas dos pacientes</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'medico.perguntas_respondidas' %}active{% endif %}" href="{{ url_for('medico.perguntas_respondidas') }}">Últimas respondidas</a>
             </li>
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">Base de conhecimento</a>
