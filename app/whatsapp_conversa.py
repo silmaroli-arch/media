@@ -109,11 +109,24 @@ def _texto_lista_exames(agendamentos, preambulo="Você tem mais de um exame em p
     return preambulo + "\n" + "\n".join(linhas)
 
 
-MENU_OPCOES = (
+MENU_OPCOES_SEM_TROCAR = (
+    "1) Ver informações do preparo\n"
+    "2) Fazer uma pergunta"
+)
+MENU_OPCOES_COM_TROCAR = (
     "1) Ver informações do preparo\n"
     "2) Fazer uma pergunta\n"
     "3) Trocar de exame"
 )
+
+
+def _menu_opcoes(paciente):
+    """"3) Trocar de exame" só faz sentido - e só aparece - quando o
+    paciente tem mais de um exame ativo no momento; com um só, o menu fica
+    só com as duas opções relevantes (a opção de trocar confundia quem só
+    tinha um exame)."""
+    tem_mais_de_um_exame = len(_agendamentos_ativos(paciente)) > 1
+    return MENU_OPCOES_COM_TROCAR if tem_mais_de_um_exame else MENU_OPCOES_SEM_TROCAR
 
 
 def _texto_menu(paciente, agendamento, saudacao=True):
@@ -121,7 +134,7 @@ def _texto_menu(paciente, agendamento, saudacao=True):
     return (
         f"{cabecalho}Exame em foco: *{agendamento.exame.nome}* — "
         f"{agendamento.data_hora.strftime('%d/%m/%Y')}.\n\n"
-        f"{MENU_OPCOES}"
+        f"{_menu_opcoes(paciente)}"
     )
 
 
@@ -146,7 +159,12 @@ MENSAGEM_SEM_EXAME_ATIVO = (
     "um engano, entre em contato com a clínica."
 )
 MENSAGEM_OPCAO_INVALIDA_EXAME = "Não entendi. Responda só com o número do exame na lista abaixo:"
-MENSAGEM_OPCAO_INVALIDA_MENU = f"Não entendi. Escolha uma das opções abaixo:\n\n{MENU_OPCOES}"
+
+
+def _mensagem_opcao_invalida_menu(paciente):
+    return f"Não entendi. Escolha uma das opções abaixo:\n\n{_menu_opcoes(paciente)}"
+
+
 MENSAGEM_PEDIR_PERGUNTA = (
     "Pode digitar sua pergunta sobre o preparo deste exame. "
     "(Ou responda 0 para cancelar e voltar ao menu.)"
@@ -340,19 +358,26 @@ def processar_mensagem(telefone, corpo_mensagem):
             resposta = MENSAGEM_PERGUNTA_VAZIA
         else:
             conversa.aguardando_pergunta = False
-            resposta = _responder_pergunta(paciente, agendamento, texto, telefone) + "\n\n" + MENU_OPCOES
+            resposta = (
+                _responder_pergunta(paciente, agendamento, texto, telefone)
+                + "\n\n"
+                + _menu_opcoes(paciente)
+            )
         db.session.commit()
         return resposta
 
+    agendamentos_ativos = _agendamentos_ativos(paciente)
+    tem_mais_de_um_exame = len(agendamentos_ativos) > 1
+
     if texto == "1":
-        resposta = texto_preparo_whatsapp(agendamento) + "\n\n" + MENU_OPCOES
+        resposta = texto_preparo_whatsapp(agendamento) + "\n\n" + _menu_opcoes(paciente)
     elif texto == "2":
         conversa.aguardando_pergunta = True
         resposta = MENSAGEM_PEDIR_PERGUNTA
-    elif texto == "3":
-        resposta = _resolver_exame_em_foco(conversa, paciente, _agendamentos_ativos(paciente))
+    elif texto == "3" and tem_mais_de_um_exame:
+        resposta = _resolver_exame_em_foco(conversa, paciente, agendamentos_ativos)
     else:
-        resposta = MENSAGEM_OPCAO_INVALIDA_MENU
+        resposta = _mensagem_opcao_invalida_menu(paciente)
 
     db.session.commit()
     return resposta

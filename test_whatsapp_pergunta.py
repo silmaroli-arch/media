@@ -36,7 +36,7 @@ with app.app_context():
     processar_mensagem(telefone, "2")
     resposta = processar_mensagem(telefone, "Posso beber água durante o jejum?")
     checar("Pergunta que bate com FAQ devolve a resposta cadastrada", "água pura é permitida" in resposta)
-    checar("Depois de responder, o menu aparece de novo", "Trocar de exame" in resposta)
+    checar("Depois de responder, o menu aparece de novo", "Fazer uma pergunta" in resposta)
 
     conversa = ConversaWhatsapp.query.filter_by(telefone=telefone).first()
     checar('"aguardando_pergunta" volta a False depois de responder', conversa.aguardando_pergunta is False)

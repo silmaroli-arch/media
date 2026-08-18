@@ -84,7 +84,8 @@ with app.app_context():
     resposta = processar_mensagem(telefone_joao, "quero saber sobre o preparo")
     checar("Já identificado: não pede CPF de novo", "CPF" not in resposta)
     checar("Já identificado: mensagem fora do menu (1/2/3) pede pra escolher uma opção", "Não entendi" in resposta)
-    checar("Menu de opções aparece", "Ver informações do preparo" in resposta and "Fazer uma pergunta" in resposta and "Trocar de exame" in resposta)
+    checar("Menu de opções aparece", "Ver informações do preparo" in resposta and "Fazer uma pergunta" in resposta)
+    checar("Menu não mostra \"Trocar de exame\" (João só tem um exame ativo)", "Trocar de exame" not in resposta)
 
     # 4a) Opção 1 - ver informações do preparo: reaproveita
     # app.faq_engine.texto_preparo_whatsapp (mesmos dados/cálculo de prazo
@@ -95,7 +96,7 @@ with app.app_context():
     checar("Opção 1 mostra o nome do exame", "Colonoscopia" in resposta)
     checar("Opção 1 mostra os cortes cadastrados no seed", "Alimentos sólidos" in resposta and "Líquidos claros" in resposta)
     checar("Opção 1 mostra um alimento proibido cadastrado no seed", "Amendoim" in resposta)
-    checar("Opção 1 repete o menu no final", "Trocar de exame" in resposta)
+    checar("Opção 1 repete o menu no final", "Fazer uma pergunta" in resposta)
 
     # 4b) Opção 2 - fazer uma pergunta: entra no modo "aguardando a
     # pergunta" (a próxima mensagem é o texto da pergunta em si, não uma
