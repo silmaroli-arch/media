@@ -1,9 +1,15 @@
 {% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}Novo item da base de conhecimento{% endblock %}
 {% block conteudo %}
 <h3 class="mb-3">Adicionar pergunta/resposta manualmente</h3>
 <div class="card p-4">
   <form method="post">
+    {# Item vinculado a um exame nasce na filial daquele exame; item geral
+       (sem exame) precisa da filial escolhida aqui. #}
+    {% if current_user.tipo == "secretaria" %}
+    {{ select_filial(ajuda="Usada quando o item for geral (sem exame). Se você escolher um exame abaixo, o item fica no local daquele exame.") }}
+    {% endif %}
     <div class="mb-3">
       <label class="form-label">Exame relacionado{% if current_user.tipo == "secretaria" %} (opcional){% endif %}</label>
       <select name="exame_id" class="form-select" {% if current_user.tipo == "medico" %}required{% endif %}>
@@ -13,7 +19,7 @@
         <option value="" disabled selected>Selecione...</option>
         {% endif %}
         {% for e in exames %}
-        <option value="{{ e.id }}">{{ e.nome }}</option>
+        <option value="{{ e.id }}">{{ e.nome }}{% if mostrar_filial %} — {{ e.clinica.nome }}{% endif %}</option>
         {% endfor %}
       </select>
     </div>

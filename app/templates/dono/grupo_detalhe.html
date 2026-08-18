@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block titulo %}{{ grupo.nome }}{% endblock %}
+{% block conteudo %}
+<a href="{{ url_for('dono.dashboard') }}" class="small">&larr; Voltar</a>
+<div class="d-flex justify-content-between align-items-center mt-2 mb-3">
+  <h3>{{ grupo.nome }}</h3>
+  <div>
+    {% if grupo.bloqueada %}
+    <form method="post" action="{{ url_for('dono.grupo_desbloquear', grupo_id=grupo.id) }}" class="d-inline">
+      <button type="submit" class="btn btn-success">Desbloquear acesso</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('dono.grupo_bloquear', grupo_id=grupo.id) }}" class="d-inline" onsubmit="return confirm('Bloquear o acesso deste grupo? Todos os médicos, secretárias e pacientes vinculados não conseguirão mais entrar.');">
+      <button type="submit" class="btn btn-danger">Bloquear acesso</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card p-3">
+      <div class="text-muted small">Status atual</div>
+      <div class="fs-5 fw-bold">{{ grupo.status }}</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card p-3">
+      <div class="text-muted small">Pacientes cadastrados</div>
+      <div class="fs-5 fw-bold">{{ total_pacientes }}</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card p-3">
+      <div class="text-muted small">Agendamentos totais</div>
+      <div class="fs-5 fw-bold">{{ total_agendamentos }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card p-4 mb-4">
+  <h5>Dados de pagamento</h5>
+  <form method="post" action="{{ url_for('dono.grupo_editar', grupo_id=grupo.id) }}">
+    <div class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label">Status</label>
+        <select name="status" class="form-select">
+          {% for s in ['trial', 'ativa', 'inadimplente', 'bloqueada'] %}
+          <option value="{{ s }}" {% if s == grupo.status %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Vencimento da mensalidade</label>
+        <input type="date" name="data_vencimento" class="form-control" value="{{ grupo.data_vencimento.isoformat() if grupo.data_vencimento else '' }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Valor por médico (R$)</label>
+        <input type="text" name="valor_por_medico" class="form-control" placeholder="ex.: 150.00"
+               value="{{ '%.2f'|format(grupo.valor_por_medico) if grupo.valor_por_medico is not none else '' }}">
+        <div class="form-text">Negociado individualmente com este grupo. Deixe em branco se ainda não foi definido.</div>
+      </div>
+    </div>
+    <div class="mt-3">
+      <label class="form-label">Observações sobre o pagamento</label>
+      <textarea name="observacoes_pagamento" class="form-control" rows="3">{{ grupo.observacoes_pagamento or '' }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary mt-3">Salvar</button>
+  </form>
+</div>
+
+<div class="card p-4 mb-4">
+  <h5 class="mb-1">Cobrança estimada</h5>
+  <p class="text-muted small mb-2">
+    Calculada como (médicos distintos com vínculo ativo neste grupo) × (valor por médico).
+    A cobrança em si continua manual — este valor é só uma referência para você.
+  </p>
+  <div class="row g-3">
+    <div class="col-md-4">
+      <div class="text-muted small">Médicos distintos</div>
+      <div class="fs-5 fw-bold">{{ medicos|length }}</div>
+    </div>
+    <div class="col-md-4">
+      <div class="text-muted small">Valor por médico</div>
+      <div class="fs-5 fw-bold">{{ '%.2f'|format(grupo.valor_por_medico) if grupo.valor_por_medico is not none else 'não definido' }}</div>
+    </div>
+    <div class="col-md-4">
+      <div class="text-muted small">Valor mensal estimado</div>
+      <div class="fs-5 fw-bold">{{ 'R$ %.2f'|format(valor_estimado) if valor_estimado is not none else '-' }}</div>
+    </div>
+  </div>
+  {% if medicos %}
+  <ul class="small text-muted mt-3 mb-0">
+    {% for m in medicos %}
+    <li>{{ m.nome }} ({{ m.email }})</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+
+<div class="card p-3">
+  <h5>Equipe</h5>
+  <table class="table table-sm">
+    <thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Vínculo ativo</th></tr></thead>
+    <tbody>
+      {% for m in grupo.membros %}
+      <tr>
+        <td>{{ m.usuario.nome }}</td>
+        <td>{{ m.usuario.email }}</td>
+        <td>{{ m.papel }}</td>
+        <td>{{ 'sim' if m.ativo else 'não' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-muted text-center">Nenhum membro cadastrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

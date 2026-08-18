@@ -4,13 +4,21 @@
 <div class="row justify-content-center">
   <div class="col-md-5">
     <div class="card p-4 mt-5">
-      <h4 class="mb-3 text-center"><i class="bi bi-heart-pulse"></i> Media</h4>
-      <p class="text-muted small text-center">Acesso do paciente: informe o telefone cadastrado na clínica e sua data de nascimento. Não é necessário senha.</p>
+      <div class="text-center mb-3"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 52px;"></div>
+      <p class="text-muted small text-center">Acesso do paciente: informe o seu CPF e a sua data de nascimento. Não é necessário senha.</p>
+      {% if cpf_nao_encontrado %}
+      <div class="alert alert-warning">
+        <strong>Não encontramos esse CPF na plataforma.</strong> Quer criar a sua conta de
+        paciente agora? Leva menos de um minuto — depois é só informar o CPF na recepção da
+        clínica.
+        <a href="{{ url_for('auth.cadastro_paciente_global') }}" class="btn btn-sm btn-primary d-block mt-2">Criar minha conta de paciente</a>
+      </div>
+      {% endif %}
       <form method="post">
         <div class="mb-3">
-          <label class="form-label">Telefone</label>
-          <input type="text" inputmode="numeric" name="telefone" id="telefone"
-                 class="form-control" placeholder="(27) 99999-9999" maxlength="15" required autofocus>
+          <label class="form-label">CPF</label>
+          <input type="text" inputmode="numeric" name="cpf" id="cpf"
+                 class="form-control" placeholder="000.000.000-00" maxlength="14" required autofocus>
         </div>
         <div class="mb-3">
           <label class="form-label">Data de nascimento</label>
@@ -33,24 +41,28 @@
             }
           });
 
-          var campoTelefone = document.getElementById("telefone");
-          campoTelefone.addEventListener("input", function () {
-            var digitos = campoTelefone.value.replace(/\D/g, "").slice(0, 11);
+          var campoCpf = document.getElementById("cpf");
+          campoCpf.addEventListener("input", function () {
+            var digitos = campoCpf.value.replace(/\D/g, "").slice(0, 11);
             var formatado = digitos;
-            if (digitos.length > 6) {
-              formatado = "(" + digitos.slice(0, 2) + ") " + digitos.slice(2, digitos.length > 10 ? 7 : 6) + "-" + digitos.slice(digitos.length > 10 ? 7 : 6);
-            } else if (digitos.length > 2) {
-              formatado = "(" + digitos.slice(0, 2) + ") " + digitos.slice(2);
-            } else if (digitos.length > 0) {
-              formatado = "(" + digitos;
+            if (digitos.length > 9) {
+              formatado = digitos.slice(0, 3) + "." + digitos.slice(3, 6) + "." + digitos.slice(6, 9) + "-" + digitos.slice(9);
+            } else if (digitos.length > 6) {
+              formatado = digitos.slice(0, 3) + "." + digitos.slice(3, 6) + "." + digitos.slice(6);
+            } else if (digitos.length > 3) {
+              formatado = digitos.slice(0, 3) + "." + digitos.slice(3);
             }
-            campoTelefone.value = formatado;
+            campoCpf.value = formatado;
           });
         })();
       </script>
       <div class="text-center mt-3">
-        <a href="{{ url_for('auth.login') }}" class="small">Sou médico(a) ou secretário(a) &rarr; <strong>Entrar com e-mail e senha</strong></a>
+        {# O paciente vai DIRETO pro cadastro - sem link de equipe nem
+           informações internas de versão/deploy nesta tela (isso é coisa
+           da tela de login da equipe, não do cliente). #}
+        <a href="{{ url_for('auth.cadastro_paciente_global') }}" class="btn btn-outline-primary w-100 mb-2">Ainda não tenho cadastro — <strong>criar minha conta</strong></a>
       </div>
+      
     </div>
   </div>
 </div>

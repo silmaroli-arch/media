@@ -10,6 +10,15 @@ jobs:
     steps:
       - name: Baixar código do repositório
         uses: actions/checkout@v4
+        with:
+          # Histórico completo (em vez do padrão, que traz só o último
+          # commit) - o passo seguinte precisa comparar TODO o intervalo
+          # do push (github.event.before até github.event.after), não só
+          # o último commit, senão um push com vários commits de uma vez
+          # (ex.: ao promover um pacote de mudanças de dev para qualidade
+          # ou main) mostraria no histórico de versões só o que mudou no
+          # último commit, escondendo o resto.
+          fetch-depth: 0
 
       - name: Definir qual ambiente da AWS corresponde a este branch
         id: ambiente
@@ -21,6 +30,80 @@ jobs:
           else
             echo "environment_name=media-dev" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Gerar informações de versão/deploy
+        run: |
+          python3 -c "
+          import json, subprocess
+
+          MENSAGEM_GENERICA = 'Auto-commit: sincronizacao automatica'
+          COMMIT_VAZIO = '0' * 40
+          antes = '${{ github.event.before }}'
+          depois = '${{ github.event.after }}'
+          # Push de uma branch nova (primeiro push) nao tem um 'antes' de
+          # verdade para comparar - nesse caso so da pra olhar o ultimo
+          # commit mesmo.
+          tem_intervalo = antes and antes != COMMIT_VAZIO
+
+          def rodar(args):
+              resultado = subprocess.run(args, capture_output=True, text=True)
+              if resultado.returncode != 0:
+                  return []
+              return [l for l in resultado.stdout.strip().splitlines() if l]
+
+          def commits_do_push():
+              # TODOS os commits publicados neste push (ex.: ao promover um
+              # pacote de varias mudancas de dev para qualidade/main de uma
+              # vez), nao so o ultimo - senao o historico de versoes
+              # esconderia tudo, menos a ultima mudanca do lote.
+              if not tem_intervalo:
+                  return None
+              return rodar(['git', 'log', '--reverse', '--pretty=%s', f'{antes}..{depois}'])
+
+          def arquivos_do_push():
+              if tem_intervalo:
+                  return rodar(['git', 'diff', '--name-only', antes, depois])
+              return rodar(['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'])
+
+          commits = commits_do_push()
+          mensagens_uteis = [m for m in (commits or []) if m and m != MENSAGEM_GENERICA]
+
+          if mensagens_uteis:
+              # Usa os resumos reais dos commits (ex.: os que o Claude deixa
+              # em ultima_mudanca.txt), na ordem em que foram publicados.
+              LIMITE = 8
+              mensagem = '; '.join(mensagens_uteis[:LIMITE])
+              if len(mensagens_uteis) > LIMITE:
+                  mensagem += f' e mais {len(mensagens_uteis) - LIMITE} alteracao(oes)'
+          else:
+              # Nenhum commit do lote tinha uma mensagem util - cai pra
+              # lista de arquivos alterados em TODO o intervalo do push.
+              arquivos = arquivos_do_push()
+              if arquivos:
+                  LIMITE = 6
+                  mensagem = ', '.join(arquivos[:LIMITE])
+                  if len(arquivos) > LIMITE:
+                      mensagem += f' e mais {len(arquivos) - LIMITE} arquivo(s)'
+              else:
+                  mensagem = subprocess.run(
+                      ['git', 'log', '-1', '--pretty=%s'], capture_output=True, text=True
+                  ).stdout.strip()
+
+          json.dump({
+              'commit': '${{ github.sha }}',
+              'commit_curto': '${{ github.sha }}'[:7],
+              'branch': '${{ github.ref_name }}',
+              'mensagem': mensagem,
+              'deploy_em': '$(date -u +%Y-%m-%dT%H:%M:%SZ)',
+          }, open('deploy_info.json', 'w'), ensure_ascii=False)
+          "
+
+      - name: Garantir que os hooks de deploy do Elastic Beanstalk sejam executáveis
+        # O checkout costuma vir de uma máquina Windows, onde o bit de
+        # execução do Unix não é preservado pelo Git - sem isso o Elastic
+        # Beanstalk simplesmente ignora o hook silenciosamente (não dá erro,
+        # só não roda).
+        run: chmod +x .platform/hooks/*/*.sh || true
 
       - name: Compactar o projeto para o deploy
         run: zip -r deploy.zip . -x '.git/*' '.github/*'

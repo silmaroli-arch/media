@@ -4,11 +4,12 @@
 <div class="row justify-content-center">
   <div class="col-md-5">
     <div class="card p-4 mt-5">
-      <h4 class="mb-3 text-center"><i class="bi bi-heart-pulse"></i> Media</h4>
+      <div class="text-center mb-3"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 52px;"></div>
       <form method="post">
         <div class="mb-3">
-          <label class="form-label">E-mail</label>
-          <input type="email" name="email" class="form-control" required autofocus>
+          <label class="form-label">CPF ou e-mail</label>
+          <input type="text" name="identificador" class="form-control" placeholder="000.000.000-00" required autofocus>
+          <div class="form-text">Conforme o BBP, o login do sistema principal passa a ser por CPF; o e-mail continua funcionando por compatibilidade com contas já existentes.</div>
         </div>
         <div class="mb-3">
           <label class="form-label">Senha</label>
@@ -17,11 +18,37 @@
         <button type="submit" class="btn btn-primary w-100">Entrar</button>
       </form>
       <div class="text-center mt-3">
-        <a href="{{ url_for('auth.cadastro') }}" class="small">Ainda não tem clínica cadastrada? <strong>Criar minha clínica</strong></a>
+        <a href="{{ url_for('auth.cadastro') }}" class="small"><strong>Primeira vez por aqui?</strong> Crie sua conta</a>
       </div>
+      {# O cadastro público agora é uma tela única pra todo mundo — não
+      existe mais "modo" (empresa x independente): o CNPJ virou um campo
+      opcional dentro do próprio formulário (ver auth.cadastro em
+      app/routes_auth.py). #}
       <div class="text-center mt-2">
-        <a href="{{ url_for('auth.login_paciente') }}" class="small">Sou paciente &rarr; <strong>Entrar com telefone e data de nascimento</strong></a>
+        <a href="{{ url_for('auth.login_paciente') }}" class="small">Sou paciente &rarr; <strong>Entrar com CPF e data de nascimento</strong></a>
       </div>
+      <div class="text-center mt-3">
+        <a href="{{ url_for('auth.dev_limpar_base') }}" class="small text-danger" style="opacity:.6;">Limpar dados de teste (temporário)</a>
+      </div>
+      {% if versao_info %}
+      <div class="text-muted text-center small mt-3" style="opacity:.55; font-size:.75rem;">
+        versão {{ versao_info.commit_curto }} ({{ versao_info.branch }}) · último deploy: {{ versao_info.deploy_em_local }}
+        {% if historico_deploy %}
+        · <a href="#" class="text-muted" data-bs-toggle="collapse" data-bs-target="#historicoVersoesLogin" style="text-decoration: underline;">ver histórico</a>
+        {% endif %}
+      </div>
+      {% if historico_deploy %}
+      <div class="collapse mt-2" id="historicoVersoesLogin">
+        <ul class="list-unstyled text-start small text-muted mb-0" style="opacity:.75; font-size:.72rem; max-height: 220px; overflow-y: auto;">
+          {% for v in historico_deploy %}
+          <li class="mb-1">
+            <strong>{{ v.commit_curto }}</strong> ({{ v.branch }}) — {{ v.deploy_em_local }}{% if v.mensagem %}: {{ v.mensagem }}{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      {% endif %}
     </div>
   </div>
 </div>

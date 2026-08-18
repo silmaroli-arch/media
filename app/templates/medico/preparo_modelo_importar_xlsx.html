@@ -1,10 +1,11 @@
 {% extends "base.html" %}
-{% block titulo %}Importar preparo de Excel{% endblock %}
+{% block titulo %}Importar preparo de Excel ou PDF{% endblock %}
 {% block conteudo %}
-<h3 class="mb-3">Importar modelo de preparo de uma planilha Excel</h3>
+<h3 class="mb-3">Importar modelo de preparo de uma planilha Excel ou de um PDF</h3>
 <div class="card p-4" style="max-width: 640px;">
   <p class="text-muted small">
-    A planilha deve ter uma linha por regra, com estas colunas (cabeçalho na primeira linha):
+    Envie um PDF com o preparo — os dados são extraídos automaticamente por IA. Ou, se preferir,
+    uma planilha Excel com uma linha por regra, com estas colunas (cabeçalho na primeira linha):
   </p>
   <p class="small">
     <code>Tipo | Ação | Agrupador | Nome | Dias antes | Horas antes | Hora exata + dia antes</code>
@@ -27,15 +28,12 @@
   </p>
   <form method="post" enctype="multipart/form-data">
     <div class="mb-3">
-      <label class="form-label">Arquivo Excel (.xlsx)</label>
+      <label class="form-label">Arquivo Excel (.xlsx) ou PDF</label>
       <input type="file" name="arquivo_xlsx" class="form-control"
-             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.pdf" required>
     </div>
     <button type="submit" class="btn btn-primary">Extrair e revisar</button>
     <a href="{{ url_for('medico.preparo_modelos_lista') }}" class="btn btn-link">Cancelar</a>
   </form>
 </div>
-<p class="mt-3">
-  Prefere enviar um PDF? <a href="{{ url_for('medico.preparo_modelos_importar_pdf') }}">Importar de um PDF</a> em vez de Excel.
-</p>
 {% endblock %}

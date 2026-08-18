@@ -6,7 +6,36 @@ __pycache__/
 venv/
 instance/
 
+# Gerado automaticamente pelo pipeline de deploy (.github/workflows/deploy.yml)
+# a cada publicação - nunca deve ser commitado manualmente.
+deploy_info.json
+
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+tmp_export_debug.tar.gz
+
+# Bilhete de uma linha que o Claude deixa com um resumo da mudanca antes do
+# auto_commit_push.bat rodar (ver auto_commit_push.bat) - e sempre apagado
+# pelo proprio script antes do commit, mas fica aqui tambem por seguranca
+# caso essa etapa falhe por algum motivo.
+ultima_mudanca.txt
+
+# Log do auto_commit_push.bat - cresce a CADA execucao do agendador (a cada
+# poucos minutos), mesmo quando nao ha nenhuma mudanca de codigo real. Se
+# ele ficasse rastreado pelo git (como ficou por engano ate agora), isso
+# gerava um commit - e um deploy inteiro no GitHub Actions - a cada
+# execucao, so por causa do log crescer. So deve existir localmente.
+auto_commit_push.log
+
+# Pasta de arquivos que o device_bash (ambiente do Claude) nao consegue
+# apagar de verdade, entao move pra ca em vez de remover - so serve como
+# "lixeira" temporaria ate voce apagar manualmente. NUNCA deve ser
+# commitada: um incidente real ja aconteceu aqui (um .tar.gz de teste com
+# um .env de credenciais reais de banco foi parar aqui e quase foi
+# commitado pelo auto_commit_push.bat via "git add -A").
+_to_delete/
+
+# Nunca versionar tarballs de export/backup, seja qual for a origem.
+*.tar.gz

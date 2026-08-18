@@ -60,11 +60,35 @@ if not %errorlevel%==0 (
 
 REM Traz o que tiver de novo no dev remoto antes de comitar por cima -
 REM evita o erro "rejected (fetch first)" quando alguem/alguma automacao
-REM avancou o dev remoto nesse meio tempo.
-git pull --rebase origin dev >> "%LOG%" 2>&1
+REM avancou o dev remoto nesse meio tempo. O --autostash guarda de lado
+REM (e devolve depois) qualquer alteracao local ainda nao comitada antes de
+REM sincronizar - sem isso, o "pull --rebase" recusa rodar quando ja existem
+REM arquivos modificados na pasta (que e exatamente o caso normal aqui,
+REM ja que o script so roda quando ha algo nao comitado para publicar).
+git pull --rebase --autostash origin dev >> "%LOG%" 2>&1
 if not %errorlevel%==0 (
     echo [%date% %time%] ERRO ao sincronizar com origin/dev - veja acima. Resolva manualmente antes da proxima execucao. >> "%LOG%"
     exit /b 1
+)
+
+REM Se o Claude deixou um resumo de uma linha do que acabou de implementar
+REM em ultima_mudanca.txt, usa ele como mensagem do commit - senao, cai na
+REM mensagem generica de sempre. O arquivo e apagado ANTES do "git add -A"
+REM (nao depois), entao ele nunca entra no historico do git - so serve
+REM como um bilhete de passagem unica pra essa mensagem.
+set "MENSAGEM_COMMIT=Auto-commit: sincronizacao automatica"
+set "ARQUIVO_MENSAGEM=ultima_mudanca.txt"
+
+if exist "%ARQUIVO_MENSAGEM%" (
+    for /f "usebackq delims=" %%L in ("%ARQUIVO_MENSAGEM%") do (
+        set "MENSAGEM_COMMIT=%%L"
+        goto :mensagem_lida
+    )
+)
+:mensagem_lida
+
+if exist "%ARQUIVO_MENSAGEM%" (
+    del /f /q "%ARQUIVO_MENSAGEM%" >> "%LOG%" 2>&1
 )
 
 git add -A >> "%LOG%" 2>&1
@@ -72,10 +96,30 @@ git add -A >> "%LOG%" 2>&1
 git diff --cached --quiet
 if %errorlevel%==0 (
     echo [%date% %time%] Nada para comitar. >> "%LOG%"
+
+    REM Mesmo sem nada novo para comitar agora, pode existir um commit local
+    REM de uma execucao anterior que nunca chegou a ser enviado (ex.: um
+    REM commit feito manualmente, ou por outra ferramenta, fora deste
+    REM script) - sem esta checagem, ele fica preso local para sempre, ja
+    REM que so chegamos a rodar "git push" mais abaixo quando ESTE script
+    REM acabou de criar um commit novo.
+    set "COMMITS_PENDENTES=0"
+    for /f %%A in ('git rev-list --count origin/dev..dev') do set "COMMITS_PENDENTES=%%A"
+    if "%COMMITS_PENDENTES%"=="0" (
+        exit /b 0
+    )
+
+    echo [%date% %time%] Existem %COMMITS_PENDENTES% commits locais ainda nao enviados - publicando agora. >> "%LOG%"
+    git push origin dev >> "%LOG%" 2>&1
+    if not %errorlevel%==0 (
+        echo [%date% %time%] ERRO no push - veja acima. >> "%LOG%"
+        exit /b 1
+    )
+    echo [%date% %time%] Push dos commits pendentes concluido com sucesso na branch dev. >> "%LOG%"
     exit /b 0
 )
 
-git commit -m "Auto-commit: sincronizacao automatica" >> "%LOG%" 2>&1
+git commit -m "%MENSAGEM_COMMIT%" >> "%LOG%" 2>&1
 if not %errorlevel%==0 (
     echo [%date% %time%] ERRO no commit - veja acima. >> "%LOG%"
     exit /b 1

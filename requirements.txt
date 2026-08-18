@@ -8,4 +8,10 @@ gunicorn==22.0.0
 pypdf==3.17.4
 openpyxl==3.1.5
 anthropic==0.120.2  # opcional: só é usado se ANTHROPIC_API_KEY estiver configurada (ver app/ia_preparo.py)
-reportlab==4.4.10  # só usado pelo test_smoke.py, para gerar um PDF de teste
+openai==1.109.1  # opcional: só é usado se OPENAI_API_KEY estiver configurada (ver app/ia_preparo.py). OBS: versoes <1.55 quebram com o httpx atual (TypeError: proxies) - nao rebaixar sem checar isso.
+reportlab==4.4.10  # usado no PDF de contingencia da NFS-e (app/nfse_nacional.py) e no test_smoke.py
+cryptography>=42.0  # criptografia dos dados fiscais sensiveis (ver app/cripto_fiscal.py) e leitura do certificado .pfx
+lxml>=5.0  # montagem/assinatura do XML do DPS na emissao de NFS-e (ver app/nfse_nacional.py)
+signxml>=5.1  # assinatura XML-DSig real do DPS com o certificado da clinica (ver app/nfse_nacional.py)
+requests>=2.31  # envio do DPS assinado ao Ambiente de Dados Nacional (ver app/nfse_nacional.py)
+twilio>=9.0  # validação da assinatura do webhook de WhatsApp (ver app/routes_whatsapp.py) - sem TWILIO_AUTH_TOKEN configurado, o webhook recusa toda requisição, então o pacote não instalado também falha fechado

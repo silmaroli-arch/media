@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block titulo %}Meus grupos{% endblock %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3>Meus grupos</h3>
+  <div>
+    <a href="{{ url_for('grupo.meus_convites') }}" class="btn btn-outline-secondary"><i class="bi bi-envelope-paper"></i> Meus convites</a>
+    <a href="{{ url_for('grupo.novo') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Criar novo grupo</a>
+  </div>
+</div>
+<div class="card p-3">
+  <table class="table table-hover">
+    <thead><tr><th>Nome do grupo</th><th>Papel</th><th>Membros</th><th>Ativo</th><th></th></tr></thead>
+    <tbody>
+      {% for item in grupos %}
+      <tr>
+        <td>{{ item.grupo.nome }}</td>
+        <td>
+          {% if item.papel == 'dono' %}<span class="badge bg-primary">Dono (criador)</span>
+          {% elif item.papel == 'administrador' %}<span class="badge bg-info text-dark">Administrador</span>
+          {% else %}<span class="badge bg-secondary">Membro</span>{% endif %}
+        </td>
+        <td>{{ item.n_membros }}</td>
+        <td>
+          {% if item.ativo %}<span class="badge bg-success">Selecionado</span>
+          {% else %}
+          <form method="post" action="{{ url_for('grupo.selecionar', grupo_id=item.grupo.id) }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Selecionar</button>
+          </form>
+          {% endif %}
+        </td>
+        <td class="text-nowrap">
+          {# Pacientes/exames/agenda/perguntas deste grupo ficam nas telas
+             de sempre (menu lateral: Pacientes, Configuração de exames
+             etc.) depois de selecionar o grupo acima como ativo - não há
+             mais uma versão separada
+             dessas telas aqui (ver nota no topo de routes_grupo.py). #}
+          {% if item.papel in ('dono', 'administrador') %}
+          <a href="{{ url_for('grupo.convidar', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-primary">Ver membros / Convidar</a>
+          {% endif %}
+          {% if item.papel != 'dono' %}
+          <form method="post" action="{{ url_for('grupo.sair', grupo_id=item.grupo.id) }}" class="d-inline" onsubmit="return confirm('Sair deste grupo?');">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Sair do grupo</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted text-center">Você ainda não participa de nenhum grupo de trabalho.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,16 @@
+{# Botões de exportação — reaproveitados em todos os relatórios. Espera
+   `endpoint_atual` (nome da rota, ex. 'relatorios.agenda') e os
+   parâmetros de filtro já aplicados na tela (data_inicio/data_fim e,
+   quando existir, medico_id), para o download sair com o mesmo filtro
+   que está sendo visto na tela. #}
+<div class="btn-group no-print">
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for(endpoint_atual, formato='csv', **kwargs) }}">
+    <i class="bi bi-filetype-csv"></i> CSV
+  </a>
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for(endpoint_atual, formato='xlsx', **kwargs) }}">
+    <i class="bi bi-file-earmark-excel"></i> Excel
+  </a>
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for(endpoint_atual, formato='pdf', **kwargs) }}">
+    <i class="bi bi-file-earmark-pdf"></i> PDF
+  </a>
+</div>

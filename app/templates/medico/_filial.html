@@ -1,0 +1,43 @@
+{#
+  Componentes reutilizados nas telas da equipe para INDICAR (nas listas) e
+  ESCOLHER (nos cadastros) a filial de cada registro.
+
+  Os dados de todas as filiais em que a pessoa atua aparecem juntos — quem
+  determina onde o médico está é o agendamento, não uma troca manual de
+  local. Estes componentes só aparecem quando a pessoa atua em mais de uma
+  filial (variável global `mostrar_filial`, ver app/__init__.py); com uma só,
+  a tela continua exatamente como antes.
+
+  Importar sempre "with context" (os macros dependem das variáveis globais):
+    {% from "medico/_filial.html" import th_filial, td_filial, select_filial with context %}
+#}
+{%- macro th_filial() -%}
+{%- if mostrar_filial %}<th>Filial</th>{% endif -%}
+{%- endmacro -%}
+
+{%- macro td_filial(registro) -%}
+{%- if mostrar_filial %}<td>{{ badge_filial(registro) }}</td>{% endif -%}
+{%- endmacro -%}
+
+{%- macro badge_filial(registro) -%}
+{%- if mostrar_filial -%}
+<span class="badge bg-light text-dark border">{{ registro.clinica.nome if registro.clinica else '-' }}</span>
+{%- endif -%}
+{%- endmacro -%}
+
+{%- macro colspan_extra(base) -%}{{ base + (1 if mostrar_filial else 0) }}{%- endmacro -%}
+
+{%- macro select_filial(campo="clinica_id", selecionado=None, filiais=None, rotulo="Filial (local de atendimento)", ajuda="Em qual dos seus locais de atendimento este cadastro vai ficar.") -%}
+{%- if mostrar_filial %}
+<div class="mb-3">
+  <label class="form-label" for="{{ campo }}">{{ rotulo }}</label>
+  <select name="{{ campo }}" id="{{ campo }}" class="form-select" required>
+    <option value="">Selecione o local...</option>
+    {% for f in (filiais if filiais is not none else filiais_atuais_navbar) %}
+    <option value="{{ f.id }}" {% if selecionado and selecionado == f.id %}selected{% endif %}>{{ f.nome }}</option>
+    {% endfor %}
+  </select>
+  <div class="form-text">{{ ajuda }}</div>
+</div>
+{% endif -%}
+{%- endmacro -%}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block titulo %}Desempenho por médico{% endblock %}
+{% block conteudo %}
+{% set endpoint_atual = 'relatorios.desempenho_medico' %}
+{% set kwargs = {'data_inicio': data_inicio.isoformat(), 'data_fim': data_fim.isoformat()} %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h3 class="mb-0">Desempenho por médico</h3>
+  {% include "relatorios/_exportar.html" %}
+</div>
+
+<form method="get" class="card p-3 mb-4 no-print">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label">De</label>
+      <input type="date" name="data_inicio" class="form-control" value="{{ data_inicio.isoformat() }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Até</label>
+      <input type="date" name="data_fim" class="form-control" value="{{ data_fim.isoformat() }}">
+    </div>
+    <div class="col-md-3">
+      <button type="submit" class="btn btn-primary w-100">Filtrar</button>
+    </div>
+  </div>
+</form>
+
+{% if restrito_a_si_mesmo %}
+<p class="text-muted small">Mostrando só os seus próprios números — quem tem permissão de equipe (perm_equipe) vê a comparação entre todos os médicos da clínica.</p>
+{% endif %}
+
+{% if linhas_dados %}
+<div class="card p-3 mb-4">
+  <div class="text-muted small mb-2">Agendamentos por médico</div>
+  <canvas id="graficoAgendamentosMedico" height="{{ 70 if linhas_dados|length > 1 else 40 }}"></canvas>
+</div>
+{% endif %}
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead>
+        <tr><th>Médico</th><th class="text-end">Agendamentos</th></tr>
+      </thead>
+      <tbody>
+        {% for d in linhas_dados %}
+        <tr>
+          <td>{{ d.medico.nome }}</td>
+          <td class="text-end">{{ d.total }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="2" class="text-center text-muted py-4">Nenhum dado encontrado para este período.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if linhas_dados %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById('graficoAgendamentosMedico'), {
+  type: 'bar',
+  data: {
+    labels: {{ linhas_dados|map(attribute='medico')|map(attribute='nome')|list|tojson }},
+    datasets: [{ label: 'Agendamentos', data: {{ linhas_dados|map(attribute='total')|list|tojson }}, backgroundColor: '#0d6efd' }]
+  },
+  options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+});
+</script>
+{% endif %}
+{% endblock %}
