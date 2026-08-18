@@ -174,7 +174,7 @@ def _resolver_exame_em_foco(conversa, paciente, agendamentos):
     return _texto_lista_exames(agendamentos)
 
 
-def _responder_pergunta(paciente, agendamento, pergunta_texto):
+def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     """Replica a lógica de app.routes_paciente.chat() (POST) para uma
     pergunta livre recebida por WhatsApp: a IA (quando configurada) é
     SEMPRE consultada primeiro, mas a resposta dela NUNCA vai direto pro
@@ -183,8 +183,12 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto):
     conhecimento (FAQ) e as respostas prontas de alimento/medicamento;
     sem nada disso, encaminha como pergunta pendente pra equipe responder
     manualmente. Sempre grava um ChatMensagem (canal="whatsapp") no mesmo
-    histórico que a equipe já vê hoje (ver medico.atendimento). Devolve o
-    texto de resposta a mandar de volta pro paciente."""
+    histórico que a equipe já vê hoje (ver medico.atendimento). Toda
+    PerguntaPendente criada aqui guarda `telefone` (o remetente desta
+    conversa) - é o que permite ao sistema mandar a resposta de volta
+    pelo WhatsApp automaticamente assim que o médico/equipe responder
+    (ver app.routes_medico.perguntas_responder). Devolve o texto de
+    resposta a mandar de volta pro paciente agora."""
     exame = agendamento.exame if agendamento else None
     grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame, agendamento)
 
@@ -204,6 +208,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto):
             resposta_sugerida_ia=resultado_ia["final"],
             resposta_bruta_claude=resultado_ia["claude"],
             resposta_bruta_chatgpt=resultado_ia["chatgpt"],
+            telefone_whatsapp=telefone,
         ))
     else:
         faq_item, _score = buscar_resposta(
@@ -228,6 +233,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto):
                 paciente_id=paciente.id,
                 exame_id=exame.id if exame else None,
                 pergunta=pergunta_texto,
+                telefone_whatsapp=telefone,
             ))
 
     db.session.add(ChatMensagem(
@@ -334,7 +340,7 @@ def processar_mensagem(telefone, corpo_mensagem):
             resposta = MENSAGEM_PERGUNTA_VAZIA
         else:
             conversa.aguardando_pergunta = False
-            resposta = _responder_pergunta(paciente, agendamento, texto) + "\n\n" + MENU_OPCOES
+            resposta = _responder_pergunta(paciente, agendamento, texto, telefone) + "\n\n" + MENU_OPCOES
         db.session.commit()
         return resposta
 

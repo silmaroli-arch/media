@@ -1193,6 +1193,15 @@ class PerguntaPendente(db.Model):
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=True)
     pergunta = db.Column(db.Text, nullable=False)
+    # Fatia 7 (WhatsApp): quando a pergunta veio pelo WhatsApp, guarda o
+    # número de telefone exato da conversa que originou (o mesmo formato
+    # usado em ConversaWhatsapp.telefone, sem o prefixo "whatsapp:") - é
+    # o número usado para ENVIAR a resposta de volta automaticamente
+    # assim que o médico/equipe responder (ver
+    # app.routes_medico.perguntas_responder). None para perguntas feitas
+    # pela área web do paciente (não precisam de envio nenhum - a pessoa
+    # já vê a resposta ao acessar o chat).
+    telefone_whatsapp = db.Column(db.String(30), nullable=True)
     # status: pendente (sem nenhuma resposta ainda, aguardando a
     # secretaria/médico digitar uma do zero), aguardando_aprovacao (a IA já
     # rascunhou uma resposta em `resposta_sugerida_ia`, mas o médico ainda

@@ -2133,6 +2133,17 @@ def perguntas_responder(pergunta_id):
     db.session.add(novo_faq)
     db.session.commit()
 
+    # Fatia 7 (ajuste): se a pergunta veio pelo WhatsApp, manda a resposta
+    # de volta automaticamente pelo mesmo canal - sem isso, o paciente só
+    # veria a resposta entrando na área web (ver whatsapp_envio.py sobre
+    # a configuração necessária; sem ela, só pula o envio silenciosamente).
+    if pergunta.telefone_whatsapp:
+        from app.whatsapp_envio import enviar_mensagem_whatsapp
+        enviar_mensagem_whatsapp(
+            pergunta.telefone_whatsapp,
+            f"Sobre sua pergunta \"{pergunta.pergunta}\":\n\n{resposta}",
+        )
+
     flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
     return redirect(url_for("medico.perguntas_pendentes"))
 

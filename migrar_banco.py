@@ -261,6 +261,11 @@ ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS aguardando_pergunta BOOL
 -- Fatia 7 (ajuste): identificação em duas mensagens separadas (CPF, depois
 -- data de nascimento) - guarda o CPF já recebido enquanto aguarda a data.
 ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS cpf_pendente VARCHAR(11);
+
+-- Fatia 7 (ajuste): telefone da conversa que originou a pergunta, usado
+-- para mandar a resposta de volta pelo WhatsApp automaticamente quando o
+-- médico/equipe responder (ver app.whatsapp_envio).
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS telefone_whatsapp VARCHAR(30);
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)
