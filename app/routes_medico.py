@@ -2142,6 +2142,7 @@ def perguntas_responder(pergunta_id):
         enviar_mensagem_whatsapp(
             pergunta.telefone_whatsapp,
             f"Sobre sua pergunta \"{pergunta.pergunta}\":\n\n{resposta}",
+            content_variables=[pergunta.pergunta, resposta],
         )
 
     flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
