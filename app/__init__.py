@@ -144,6 +144,15 @@ def create_app():
         "pool_pre_ping": True,  # evita erros de conexão "caída" em bancos remotos
     }
 
+    # PWA da equipe / notificação push (ver app.push_notificacoes e
+    # gerar_chaves_vapid.py) - sem essas 3 variáveis configuradas, o
+    # recurso fica desligado sozinho (nenhuma rota quebra, o front-end só
+    # não tenta se inscrever - mesmo padrão de "falha aberta" usado no
+    # WhatsApp/whatsapp_envio.py quando as chaves da Twilio não existem).
+    app.config["VAPID_PUBLIC_KEY"] = os.environ.get("VAPID_PUBLIC_KEY")
+    app.config["VAPID_PRIVATE_KEY"] = os.environ.get("VAPID_PRIVATE_KEY")
+    app.config["VAPID_CLAIM_EMAIL"] = os.environ.get("VAPID_CLAIM_EMAIL")
+
     info_deploy = _carregar_info_deploy(base_dir)
 
     db.init_app(app)
@@ -237,6 +246,24 @@ def create_app():
         if current_user.is_staff:
             return redirect(url_for("medico.dashboard"))
         return redirect(url_for("paciente.dashboard"))
+
+    @app.route("/sw.js")
+    def service_worker():
+        """Service worker do PWA da equipe (ver app/static/sw.js) - servido
+        na RAIZ do site (não em /static/sw.js) de propósito: o cabeçalho
+        Service-Worker-Allowed abaixo é o que permite ao navegador dar
+        escopo "/" a ele (senão o escopo ficaria limitado a "/static/", e
+        notificações/clique não funcionariam fora dessa pasta)."""
+        resposta = app.send_static_file("sw.js")
+        resposta.headers["Service-Worker-Allowed"] = "/"
+        resposta.headers["Cache-Control"] = "no-cache"
+        return resposta
+
+    @app.route("/manifest.json")
+    def manifest_pwa():
+        resposta = app.send_static_file("manifest.json")
+        resposta.headers["Content-Type"] = "application/manifest+json"
+        return resposta
 
     with app.app_context():
         db.create_all()

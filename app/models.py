@@ -1230,6 +1230,27 @@ class PerguntaPendente(db.Model):
     exame = db.relationship("Exame")
 
 
+class PushSubscription(db.Model):
+    """Uma inscrição de notificação push (Web Push) do navegador/PWA de um
+    membro da equipe - permite avisar o médico/secretária no celular
+    assim que uma pergunta nova de paciente chega, sem depender do
+    WhatsApp (ver app.push_notificacoes). Uma pessoa pode ter várias
+    (um por navegador/aparelho em que instalou o PWA e autorizou)."""
+    __tablename__ = "push_subscriptions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    # Identifica o navegador/aparelho de destino - único por natureza (a
+    # própria API do navegador garante isso), usado para não duplicar a
+    # mesma inscrição a cada vez que o service worker é registrado de novo.
+    endpoint = db.Column(db.Text, nullable=False, unique=True)
+    p256dh = db.Column(db.String(255), nullable=False)
+    auth = db.Column(db.String(255), nullable=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship("Usuario")
+
+
 class HistoricoDeploy(db.Model):
     """Um registro por deploy realizado neste ambiente (media-dev, media-qa
     ou media-prod - cada um tem seu proprio banco, entao cada um acumula

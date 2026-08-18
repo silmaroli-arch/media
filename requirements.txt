@@ -15,3 +15,5 @@ lxml>=5.0  # montagem/assinatura do XML do DPS na emissao de NFS-e (ver app/nfse
 signxml>=5.1  # assinatura XML-DSig real do DPS com o certificado da clinica (ver app/nfse_nacional.py)
 requests>=2.31  # envio do DPS assinado ao Ambiente de Dados Nacional (ver app/nfse_nacional.py)
 twilio>=9.0  # validação da assinatura do webhook de WhatsApp (ver app/routes_whatsapp.py) - sem TWILIO_AUTH_TOKEN configurado, o webhook recusa toda requisição, então o pacote não instalado também falha fechado
+setuptools<71  # necessário para instalar a dependência http-ece do pywebpush abaixo - versões mais novas do setuptools removeram uma API do distutils que o setup.py (antigo) do http-ece ainda usa, e a instalação quebra sem isso
+pywebpush>=2.4  # notificação push (Web Push) do PWA da equipe (ver app/push_notificacoes.py) - sem VAPID_PRIVATE_KEY configurada, o recurso fica desligado sozinho

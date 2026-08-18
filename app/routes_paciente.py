@@ -14,6 +14,7 @@ from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Pacie
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.ia_preparo import responder_com_ia
 from app.clinica_utils import verificar_vencimento_grupo
+from app.push_notificacoes import notificar_equipe_nova_pergunta
 
 paciente_bp = Blueprint("paciente", __name__, url_prefix="/paciente")
 
@@ -270,6 +271,7 @@ def chat():
                 )
                 db.session.add(pendente)
                 db.session.commit()
+                notificar_equipe_nova_pergunta(pendente)
                 # Mesma mensagem de "aguarde" usada quando ninguém sabe
                 # responder ainda — o paciente só vê a resposta final depois
                 # que o médico aprovar (ela aparece no histórico abaixo).
@@ -310,6 +312,7 @@ def chat():
                     )
                     db.session.add(pendente)
                     db.session.commit()
+                    notificar_equipe_nova_pergunta(pendente)
                     encaminhada = True
                     origem = "pendente"
 

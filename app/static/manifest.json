@@ -1,0 +1,32 @@
+{
+  "name": "MedIA - Equipe",
+  "short_name": "MedIA Equipe",
+  "description": "Perguntas dos pacientes e aprovação de respostas da IA",
+  "start_url": "/equipe/perguntas",
+  "id": "/equipe/perguntas",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0B3D66",
+  "theme_color": "#1660B0",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/static/img/pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/img/pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/img/pwa/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

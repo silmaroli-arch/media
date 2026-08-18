@@ -30,6 +30,7 @@ from app.faq_engine import (
 )
 from app.ia_preparo import responder_com_ia
 from app.models import Agendamento, ChatMensagem, ConversaWhatsapp, Paciente, PerguntaPendente
+from app.push_notificacoes import notificar_equipe_nova_pergunta
 from app.routes_paciente import _resolver_ancora
 
 
@@ -225,18 +226,24 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     PerguntaPendente criada aqui guarda `telefone` (o remetente desta
     conversa) - é o que permite ao sistema mandar a resposta de volta
     pelo WhatsApp automaticamente assim que o médico/equipe responder
-    (ver app.routes_medico.perguntas_responder). Devolve o texto de
-    resposta a mandar de volta pro paciente agora."""
+    (ver app.routes_medico.perguntas_responder). Devolve uma tupla
+    (texto de resposta a mandar de volta pro paciente agora, a
+    PerguntaPendente criada - ou None se já foi respondida na hora por
+    FAQ/alimento/medicamento) - o chamador usa o segundo item para
+    avisar a equipe por notificação push (ver
+    app.push_notificacoes.notificar_equipe_nova_pergunta), só depois de
+    commitar de verdade."""
     exame = agendamento.exame if agendamento else None
     grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame, agendamento)
 
     resultado_ia = responder_com_ia(pergunta_texto, exame) if exame else None
     resposta_final = None
     origem = None
+    pergunta_pendente_criada = None
 
     if resultado_ia and resultado_ia["final"]:
         origem = "ia_aguardando"
-        db.session.add(PerguntaPendente(
+        pergunta_pendente_criada = PerguntaPendente(
             grupo_id=grupo_id_ancora,
             criado_por_id=criado_por_id_ancora,
             paciente_id=paciente.id,
@@ -247,7 +254,8 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             resposta_bruta_claude=resultado_ia["claude"],
             resposta_bruta_chatgpt=resultado_ia["chatgpt"],
             telefone_whatsapp=telefone,
-        ))
+        )
+        db.session.add(pergunta_pendente_criada)
     else:
         faq_item, _score = buscar_resposta(
             pergunta_texto,
@@ -265,14 +273,15 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             resposta_final, origem = resposta_medicamento, "medicamento"
         else:
             origem = "pendente"
-            db.session.add(PerguntaPendente(
+            pergunta_pendente_criada = PerguntaPendente(
                 grupo_id=grupo_id_ancora,
                 criado_por_id=criado_por_id_ancora,
                 paciente_id=paciente.id,
                 exame_id=exame.id if exame else None,
                 pergunta=pergunta_texto,
                 telefone_whatsapp=telefone,
-            ))
+            )
+            db.session.add(pergunta_pendente_criada)
 
     db.session.add(ChatMensagem(
         paciente_id=paciente.id,
@@ -288,7 +297,8 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
         canal="whatsapp",
     ))
 
-    return resposta_final if resposta_final else MENSAGEM_PERGUNTA_ENCAMINHADA
+    texto_resposta = resposta_final if resposta_final else MENSAGEM_PERGUNTA_ENCAMINHADA
+    return texto_resposta, pergunta_pendente_criada
 
 
 def processar_mensagem(telefone, corpo_mensagem):
@@ -371,6 +381,7 @@ def processar_mensagem(telefone, corpo_mensagem):
     # Depois de escolher "2) Fazer uma pergunta", a PRÓXIMA mensagem é o
     # texto da pergunta em si, não uma opção do menu de novo.
     if conversa.aguardando_pergunta:
+        pergunta_criada = None
         if texto == "0":
             conversa.aguardando_pergunta = False
             resposta = _texto_menu(paciente, agendamento, saudacao=False)
@@ -378,7 +389,7 @@ def processar_mensagem(telefone, corpo_mensagem):
             resposta = MENSAGEM_PERGUNTA_VAZIA
         else:
             conversa.aguardando_pergunta = False
-            resposta_pergunta = _responder_pergunta(paciente, agendamento, texto, telefone)
+            resposta_pergunta, pergunta_criada = _responder_pergunta(paciente, agendamento, texto, telefone)
             # Se a pergunta acabou de ficar pendente/aguardando aprovação
             # (ver _tem_pergunta_pendente), não mostra o menu de novo -
             # só o aviso de que a resposta já foi encaminhada, sem dar a
@@ -391,6 +402,11 @@ def processar_mensagem(telefone, corpo_mensagem):
             )
             resposta = resposta_pergunta + "\n\n" + complemento
         db.session.commit()
+        if pergunta_criada:
+            # Só depois do commit acima - o push é melhor esforço (ver
+            # push_notificacoes), não deve atrapalhar a resposta ao
+            # paciente se falhar.
+            notificar_equipe_nova_pergunta(pergunta_criada)
         return resposta
 
     # Enquanto houver uma pergunta pendente sem resposta da equipe, o

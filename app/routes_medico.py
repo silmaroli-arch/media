@@ -8,7 +8,7 @@ from functools import wraps
 
 from flask import (
     Blueprint, render_template, redirect, url_for, request, flash, session,
-    current_app,
+    current_app, jsonify,
 )
 from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
@@ -20,7 +20,7 @@ from app.models import (
     PerguntaPendente, GrupoPaciente, Grupo, GrupoMembro, GrupoConvite,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
-    ChatMensagem, ResultadoExame,
+    ChatMensagem, ResultadoExame, PushSubscription,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto,
 )
@@ -2557,3 +2557,62 @@ def equipe_permissoes(usuario_id):
         return redirect(url_for("medico.equipe_lista"))
 
     return render_template("medico/equipe_permissoes.html", usuario_alvo=usuario_alvo)
+
+
+# ---------- PWA da equipe: notificação push (ver app.push_notificacoes) ----------
+
+@medico_bp.route("/push/vapid-public-key")
+@login_required
+@staff_required
+def push_vapid_public_key():
+    """Chave pública VAPID que o navegador precisa para o
+    PushManager.subscribe(applicationServerKey=...) - sem ela configurada
+    (ver gerar_chaves_vapid.py), o front-end simplesmente não tenta se
+    inscrever (ver app/templates/base.html)."""
+    return jsonify({"publicKey": current_app.config.get("VAPID_PUBLIC_KEY") or ""})
+
+
+@medico_bp.route("/push/subscribe", methods=["POST"])
+@login_required
+@staff_required
+def push_subscribe():
+    """Salva (ou atualiza) a inscrição de push deste navegador/aparelho
+    para o usuário logado - chamado pelo JS de base.html assim que o
+    service worker registra e o usuário autoriza notificações."""
+    dados = request.get_json(silent=True) or {}
+    endpoint = dados.get("endpoint")
+    chaves = dados.get("keys") or {}
+    if not endpoint or not chaves.get("p256dh") or not chaves.get("auth"):
+        return jsonify({"erro": "Dados de inscrição incompletos."}), 400
+
+    existente = PushSubscription.query.filter_by(endpoint=endpoint).first()
+    if existente:
+        # Mesmo endpoint podendo agora pertencer a outra pessoa (ex.:
+        # trocou de conta no mesmo navegador) - reatribui em vez de
+        # duplicar, já que o endpoint é único por natureza.
+        existente.usuario_id = current_user.id
+        existente.p256dh = chaves["p256dh"]
+        existente.auth = chaves["auth"]
+    else:
+        db.session.add(PushSubscription(
+            usuario_id=current_user.id,
+            endpoint=endpoint,
+            p256dh=chaves["p256dh"],
+            auth=chaves["auth"],
+        ))
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@medico_bp.route("/push/unsubscribe", methods=["POST"])
+@login_required
+@staff_required
+def push_unsubscribe():
+    """Remove a inscrição deste navegador (ex.: usuário desativou a
+    notificação nas configurações do PWA)."""
+    dados = request.get_json(silent=True) or {}
+    endpoint = dados.get("endpoint")
+    if endpoint:
+        PushSubscription.query.filter_by(endpoint=endpoint).delete()
+        db.session.commit()
+    return jsonify({"ok": True})

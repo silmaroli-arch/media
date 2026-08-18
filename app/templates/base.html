@@ -6,6 +6,16 @@
   <title>{% block titulo %}Media{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/icone-quadrado.svg') }}">
   <link rel="alternate icon" href="{{ url_for('static', filename='img/favicon-32.png') }}">
+  {% if current_user.is_authenticated and current_user.is_staff %}
+  {# PWA só para a área da equipe - o paciente não instala nada, continua
+     só pelo navegador normal (ver app/static/manifest.json e sw.js). #}
+  <link rel="manifest" href="{{ url_for('manifest_pwa') }}">
+  <meta name="theme-color" content="#1660B0">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/pwa/icon-192.png') }}">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MedIA">
+  {% endif %}
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
@@ -221,6 +231,16 @@
         {% endif %}
       {% endwith %}
 
+      {% if eh_staff_logado %}
+      <div id="pushAtivarBanner" class="alert alert-info d-none d-flex align-items-center justify-content-between no-print" role="alert">
+        <span><i class="bi bi-bell me-2"></i>Ative as notificações para ser avisado no celular quando chegar uma pergunta nova de paciente.</span>
+        <div>
+          <button type="button" id="pushAtivarBtn" class="btn btn-info btn-sm">Ativar notificações</button>
+          <button type="button" class="btn-close" id="pushAtivarFechar" aria-label="Fechar"></button>
+        </div>
+      </div>
+      {% endif %}
+
       {% block conteudo %}{% endblock %}
     </div>
   </div>
@@ -283,6 +303,95 @@
           localStorage.setItem(CHAVE_ESCONDIDO, estaEscondido() ? "false" : "true");
           aplicar();
         });
+      }
+    });
+  })();
+</script>
+{% endif %}
+{% if eh_staff_logado %}
+<script>
+  // PWA da equipe: registra o service worker (ver app/static/sw.js) e, se
+  // notificação push estiver configurada no servidor (chaves VAPID - ver
+  // gerar_chaves_vapid.py) e o navegador ainda não perguntou/recusou,
+  // mostra o banner oferecendo para ativar. Sem chave pública (servidor
+  // não configurado ainda), o banner nunca aparece - fica tudo
+  // silenciosamente desligado, igual ao padrão do envio por WhatsApp.
+  (function () {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      return; // navegador não suporta (ex.: Safari bem antigo) - não faz nada
+    }
+
+    function base64UrlParaUint8Array(base64Url) {
+      var padding = "=".repeat((4 - (base64Url.length % 4)) % 4);
+      var base64 = (base64Url + padding).replace(/-/g, "+").replace(/_/g, "/");
+      var bruto = window.atob(base64);
+      var saida = new Uint8Array(bruto.length);
+      for (var i = 0; i < bruto.length; ++i) {
+        saida[i] = bruto.charCodeAt(i);
+      }
+      return saida;
+    }
+
+    function mostrarBanner() {
+      var banner = document.getElementById("pushAtivarBanner");
+      if (banner) banner.classList.remove("d-none");
+    }
+
+    function esconderBanner() {
+      var banner = document.getElementById("pushAtivarBanner");
+      if (banner) banner.classList.add("d-none");
+    }
+
+    async function inscrever(registration) {
+      var resp = await fetch("{{ url_for('medico.push_vapid_public_key') }}");
+      var dados = await resp.json();
+      if (!dados.publicKey) return; // servidor sem VAPID configurado ainda
+
+      var subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: base64UrlParaUint8Array(dados.publicKey),
+      });
+
+      await fetch("{{ url_for('medico.push_subscribe') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(subscription.toJSON()),
+      });
+    }
+
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).then(async function (registration) {
+      var jaInscrito = await registration.pushManager.getSubscription();
+      if (jaInscrito || Notification.permission === "denied") {
+        return; // já ativado antes, ou o usuário recusou - não insiste
+      }
+
+      var resp = await fetch("{{ url_for('medico.push_vapid_public_key') }}");
+      var dados = await resp.json();
+      if (!dados.publicKey) return; // sem VAPID no servidor, nada a oferecer
+
+      if (Notification.permission === "granted") {
+        // Permissão já concedida (ex.: em outra aba) mas ainda sem
+        // inscrição salva neste navegador - inscreve direto, sem banner.
+        inscrever(registration);
+        return;
+      }
+
+      mostrarBanner();
+
+      var btn = document.getElementById("pushAtivarBtn");
+      if (btn) {
+        btn.addEventListener("click", async function () {
+          var permissao = await Notification.requestPermission();
+          if (permissao === "granted") {
+            await inscrever(registration);
+          }
+          esconderBanner();
+        });
+      }
+
+      var fecharBtn = document.getElementById("pushAtivarFechar");
+      if (fecharBtn) {
+        fecharBtn.addEventListener("click", esconderBanner);
       }
     });
   })();

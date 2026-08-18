@@ -266,6 +266,18 @@ ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS cpf_pendente VARCHAR(11)
 -- para mandar a resposta de volta pelo WhatsApp automaticamente quando o
 -- médico/equipe responder (ver app.whatsapp_envio).
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS telefone_whatsapp VARCHAR(30);
+
+-- PWA da equipe com notificação push: inscrição de um navegador/aparelho
+-- para receber aviso quando chega pergunta nova de paciente (ver
+-- app.push_notificacoes e app.models.PushSubscription).
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id SERIAL PRIMARY KEY,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh VARCHAR(255) NOT NULL,
+    auth VARCHAR(255) NOT NULL,
+    criado_em TIMESTAMP
+);
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)
