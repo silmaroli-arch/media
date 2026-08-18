@@ -33,6 +33,26 @@ if not DATABASE_URL:
     )
     sys.exit(1)
 
+# Garante que TODAS as tabelas do models.py atual já existem antes de rodar
+# qualquer ALTER TABLE abaixo - db.create_all() só CRIA tabelas que ainda
+# não existem (nunca mexe nas que já existem), então é sempre seguro rodar
+# de novo. Sem isso, um ambiente que já tinha schema de uma versão ANTIGA
+# (ex.: só até a Fatia 1) mas nunca rodou a aplicação nova o bastante para
+# db.create_all() criar as tabelas mais recentes (ex.: "grupos",
+# "grupo_membros", "conversas_whatsapp") quebra logo no primeiro ALTER
+# TABLE que referencia uma dessas tabelas novas, com
+# "psycopg.errors.UndefinedTable" - foi exatamente o que aconteceu ao
+# promover de uma vez várias fatias para o media-qa (deploy pulou direto
+# de "só Fatia 1" para "Fatia 7", sem os boots incrementais que no
+# media-dev foram criando cada tabela nova aos poucos).
+print("Garantindo que o schema tem todas as tabelas do models.py atual (db.create_all())...")
+from app import create_app, db  # import tardio - só depois de já ter validado DATABASE_URL
+
+_app_para_create_all = create_app()
+with _app_para_create_all.app_context():
+    db.create_all()
+print("Schema de tabelas OK - seguindo para os ajustes de coluna (ALTER TABLE).")
+
 SQL = """
 -- "usuarios" ganhou as permissões administrativas por pessoa (perm_*)
 -- depois de já ter contas cadastradas.
