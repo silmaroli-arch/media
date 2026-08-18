@@ -79,18 +79,20 @@
 
 <h4 class="mt-4">Últimas respondidas</h4>
 <table class="table table-sm">
-  <thead><tr><th>Paciente</th>{{ th_filial() }}<th>Pergunta</th><th>Resposta</th><th>Por</th></tr></thead>
+  <thead><tr><th>Paciente</th>{{ th_filial() }}<th>Exame</th><th>Data</th><th>Pergunta</th><th>Resposta</th><th>Por</th></tr></thead>
   <tbody>
     {% for p in respondidas %}
     <tr>
       <td>{{ p.paciente.nome }}</td>
       {{ td_filial(p) }}
+      <td>{{ p.exame.nome if p.exame else "—" }}</td>
+      <td class="text-nowrap">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
       <td>{{ p.pergunta }}</td>
       <td>{{ p.resposta }}</td>
       <td>{{ p.respondida_por }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="{{ 5 if mostrar_filial else 4 }}" class="text-muted text-center">Nenhuma respondida ainda.</td></tr>
+    <tr><td colspan="{{ 7 if mostrar_filial else 6 }}" class="text-muted text-center">Nenhuma respondida ainda.</td></tr>
     {% endfor %}
   </tbody>
 </table>
