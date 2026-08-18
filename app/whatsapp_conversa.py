@@ -174,6 +174,26 @@ MENSAGEM_PERGUNTA_ENCAMINHADA = (
     "Recebemos sua pergunta! Ela foi encaminhada para a equipe e você "
     "receberá a resposta assim que possível."
 )
+MENSAGEM_AGUARDANDO_RESPOSTA = (
+    "Sua pergunta ainda está sendo respondida pela equipe. Assim que "
+    "tivermos uma resposta, você a receberá por aqui."
+)
+
+
+def _tem_pergunta_pendente(paciente):
+    """True se o paciente tem alguma PerguntaPendente ainda sem resposta
+    (status "pendente" ou "aguardando_aprovacao") - enquanto isso for
+    verdade, o menu de opções fica escondido: a única coisa que faz
+    sentido o paciente ver é o aviso de que a resposta está a caminho (ver
+    pedido do Silvan - antes disso, o menu completo reaparecia mesmo com
+    uma pergunta ainda pendente, o que dava a entender, por engano, que
+    dava pra mandar outra pergunta ou trocar de exame livremente)."""
+    return (
+        PerguntaPendente.query.filter_by(paciente_id=paciente.id)
+        .filter(PerguntaPendente.status != "respondida")
+        .first()
+        is not None
+    )
 
 
 def _resolver_exame_em_foco(conversa, paciente, agendamentos):
@@ -358,13 +378,27 @@ def processar_mensagem(telefone, corpo_mensagem):
             resposta = MENSAGEM_PERGUNTA_VAZIA
         else:
             conversa.aguardando_pergunta = False
-            resposta = (
-                _responder_pergunta(paciente, agendamento, texto, telefone)
-                + "\n\n"
-                + _menu_opcoes(paciente)
+            resposta_pergunta = _responder_pergunta(paciente, agendamento, texto, telefone)
+            # Se a pergunta acabou de ficar pendente/aguardando aprovação
+            # (ver _tem_pergunta_pendente), não mostra o menu de novo -
+            # só o aviso de que a resposta já foi encaminhada, sem dar a
+            # entender que dá pra perguntar de novo ou trocar de exame
+            # livremente enquanto isso.
+            complemento = (
+                MENSAGEM_AGUARDANDO_RESPOSTA
+                if _tem_pergunta_pendente(paciente)
+                else _menu_opcoes(paciente)
             )
+            resposta = resposta_pergunta + "\n\n" + complemento
         db.session.commit()
         return resposta
+
+    # Enquanto houver uma pergunta pendente sem resposta da equipe, o
+    # menu de opções fica escondido - a única coisa que faz sentido o
+    # paciente ver é o aviso de que a resposta está a caminho.
+    if _tem_pergunta_pendente(paciente):
+        db.session.commit()
+        return MENSAGEM_AGUARDANDO_RESPOSTA
 
     agendamentos_ativos = _agendamentos_ativos(paciente)
     tem_mais_de_um_exame = len(agendamentos_ativos) > 1

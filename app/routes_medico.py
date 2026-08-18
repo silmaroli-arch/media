@@ -2139,6 +2139,16 @@ def perguntas_responder(pergunta_id):
     # a configuração necessária; sem ela, só pula o envio silenciosamente).
     if pergunta.telefone_whatsapp:
         from app.whatsapp_envio import enviar_mensagem_whatsapp
+
+        # Nota: o texto de fato exibido ao paciente vem do Content
+        # Template aprovado na Twilio (ver TWILIO_CONTENT_SID_RESPOSTA em
+        # app/whatsapp_envio.py) quando ele está configurado - hoje esse
+        # template só tem pergunta+resposta, sem o menu de opções (ver
+        # PLANO_WHATSAPP.md/decisão do Silvan: adicionar o menu exigiria
+        # um novo template e nova aprovação da Meta, por ora adiado). O
+        # paciente volta a ver o menu normalmente na próxima mensagem que
+        # mandar, já que a pergunta não está mais pendente (ver
+        # app.whatsapp_conversa._tem_pergunta_pendente).
         enviar_mensagem_whatsapp(
             pergunta.telefone_whatsapp,
             f"Sobre sua pergunta \"{pergunta.pergunta}\":\n\n{resposta}",
