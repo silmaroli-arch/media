@@ -23,7 +23,10 @@ with app.app_context():
     telefone = "+5527900003333"
 
     # Identifica o João (seed.py) - um só exame ativo (colonoscopia).
-    processar_mensagem(telefone, "123.456.789-00, 12/04/1985")
+    # CPF e data de nascimento agora são pedidos em duas mensagens
+    # separadas (ver app/whatsapp_conversa.py).
+    processar_mensagem(telefone, "123.456.789-00")
+    processar_mensagem(telefone, "12/04/1985")
     joao = Paciente.query.filter_by(cpf="123.456.789-00").first()
 
     # --- Caminho 1: bate com uma FAQ já cadastrada no seed.py ---

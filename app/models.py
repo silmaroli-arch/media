@@ -1108,6 +1108,13 @@ class ConversaWhatsapp(db.Model):
     telefone = db.Column(db.String(30), nullable=False, unique=True)
     # Só preenchido depois que CPF + data de nascimento conferirem.
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=True)
+    # Fatia 7 (ajuste): identificação em duas mensagens separadas - CPF
+    # primeiro, depois data de nascimento. Guarda aqui só os dígitos do
+    # CPF já recebido (com formato validado), enquanto aguarda a próxima
+    # mensagem com a data de nascimento para então localizar o paciente.
+    # Volta a None assim que a identificação é concluída, com sucesso ou
+    # não (se os dados não baterem, exige recomeçar pedindo o CPF de novo).
+    cpf_pendente = db.Column(db.String(11), nullable=True)
     # Agendamento/exame em foco na conversa agora (quando o paciente tem
     # mais de um ativo e já escolheu um pela lista numerada).
     agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=True)

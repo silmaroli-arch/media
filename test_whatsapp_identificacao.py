@@ -1,13 +1,14 @@
 """Testa os passos 3 e 4 do plano da área de WhatsApp (ver
 PLANO_WHATSAPP.md e app/whatsapp_conversa.py): identificação do paciente
-por CPF + data de nascimento, escolha do exame em foco quando há mais de
-um ativo, o menu de opções (ver preparo / fazer pergunta / trocar de
-exame) e expiração da sessão de conversa por inatividade — direto na
-camada de lógica (sem passar pelo webhook/Twilio, que já tem seu próprio
-teste de assinatura em test_whatsapp_webhook_assinatura.py). O fluxo
-completo de "2) Fazer uma pergunta" (IA/FAQ/alimento/medicamento/
-encaminhamento) tem seu próprio teste em test_whatsapp_pergunta.py - aqui
-só confirma que a opção 2 entra no modo de "aguardando a pergunta"."""
+por CPF + data de nascimento (em duas mensagens separadas - primeiro o
+CPF, depois a data), escolha do exame em foco quando há mais de um
+ativo, o menu de opções (ver preparo / fazer pergunta / trocar de exame)
+e expiração da sessão de conversa por inatividade — direto na camada de
+lógica (sem passar pelo webhook/Twilio, que já tem seu próprio teste de
+assinatura em test_whatsapp_webhook_assinatura.py). O fluxo completo de
+"2) Fazer uma pergunta" (IA/FAQ/alimento/medicamento/encaminhamento) tem
+seu próprio teste em test_whatsapp_pergunta.py - aqui só confirma que a
+opção 2 entra no modo de "aguardando a pergunta"."""
 from datetime import datetime, timedelta
 
 from app import create_app, db
@@ -31,18 +32,44 @@ with app.app_context():
 
     telefone_joao = "+5527900001111"
 
-    # 1) Primeira mensagem, texto qualquer (sem CPF nem data): pede identificação.
+    # 1) Primeira mensagem, texto qualquer (não é um CPF): pede o CPF.
     resposta = processar_mensagem(telefone_joao, "Oi, bom dia")
-    checar("Mensagem sem CPF/data pede identificação", "CPF" in resposta and "data de nascimento" in resposta)
+    checar("Mensagem sem CPF pede o CPF primeiro", "CPF" in resposta)
     checar("Não cria paciente_id sem identificação", ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first().paciente_id is None)
 
-    # 2) CPF + data que não batem com nenhum cadastro: mensagem genérica de não encontrado.
-    resposta = processar_mensagem(telefone_joao, "111.111.111-11, 01/01/2000")
-    checar("CPF/data inexistentes: mensagem genérica de não encontrado", "Não encontramos" in resposta)
+    # 1a) Texto que não é um CPF reconhecível (depois da primeira mensagem):
+    # avisa que não reconheceu, sem falar em data de nascimento ainda.
+    resposta = processar_mensagem(telefone_joao, "não sei meu cpf")
+    checar("Texto que não é CPF avisa e pede de novo", "CPF" in resposta)
+    checar("Ainda não pede data de nascimento (CPF não veio)", "data de nascimento" not in resposta.lower())
 
-    # 3) CPF + data do João (seed.py) - um só exame ativo (a colonoscopia;
-    # a glicemia já está encerrada) -> identifica e já mostra o exame em foco.
-    resposta = processar_mensagem(telefone_joao, "123.456.789-00, 12/04/1985")
+    # 2) CPF que não bate com nenhum cadastro: aceita o formato, guarda
+    # como pendente e passa a pedir a data de nascimento.
+    resposta = processar_mensagem(telefone_joao, "111.111.111-11")
+    checar("CPF em formato válido: passa a pedir a data de nascimento", "data de nascimento" in resposta.lower())
+    checar(
+        "CPF pendente foi guardado na conversa",
+        ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first().cpf_pendente == "11111111111",
+    )
+
+    # 2a) Data que não bate com o CPF informado: mensagem genérica de não
+    # encontrado, e volta a pedir o CPF do zero (não fica preso pedindo
+    # só a data de um CPF que pode ter sido digitado errado).
+    resposta = processar_mensagem(telefone_joao, "01/01/2000")
+    checar("CPF/data inexistentes: mensagem genérica de não encontrado", "Não encontramos" in resposta)
+    checar(
+        "Depois de não encontrar, volta a exigir o CPF (limpa o pendente)",
+        ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first().cpf_pendente is None,
+    )
+
+    # 3) CPF do João (seed.py, sem máscara desta vez) - passa a pedir a
+    # data de nascimento.
+    resposta = processar_mensagem(telefone_joao, "12345678900")
+    checar("CPF só com números também é aceito", "data de nascimento" in resposta.lower())
+
+    # 3a) Data do João - um só exame ativo (a colonoscopia; a glicemia já
+    # está encerrada) -> identifica e já mostra o exame em foco.
+    resposta = processar_mensagem(telefone_joao, "12/04/1985")
     checar("CPF/data corretos identificam o paciente (nome no cumprimento)", "João" in resposta)
     checar("Já mostra o exame em foco (um só ativo)", "Colonoscopia" in resposta)
 
@@ -50,6 +77,7 @@ with app.app_context():
     joao = Paciente.query.filter_by(cpf="123.456.789-00").first()
     checar("ConversaWhatsapp ficou com o paciente_id certo", conversa.paciente_id == joao.id)
     checar("ConversaWhatsapp ficou com um agendamento_id (só havia um exame ativo)", conversa.agendamento_id is not None)
+    checar("CPF pendente foi limpo depois de identificar", conversa.cpf_pendente is None)
 
     # 4) Mensagem seguinte (já identificado): não pede CPF de novo, mostra
     # o menu de opções.
@@ -101,7 +129,8 @@ with app.app_context():
     db.session.commit()
 
     telefone_joao2 = "+5527900002222"
-    resposta = processar_mensagem(telefone_joao2, "123.456.789-00, 12/04/1985")
+    processar_mensagem(telefone_joao2, "123.456.789-00")
+    resposta = processar_mensagem(telefone_joao2, "12/04/1985")
     checar("Múltiplos exames ativos: mostra lista numerada", "1)" in resposta and "2)" in resposta)
 
     conversa2 = ConversaWhatsapp.query.filter_by(telefone=telefone_joao2).first()

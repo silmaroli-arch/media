@@ -257,6 +257,10 @@ ALTER TABLE chat_mensagens ADD COLUMN IF NOT EXISTS canal VARCHAR(20) NOT NULL D
 -- segurança, também recebe ALTER TABLE (mesmo padrão de coluna nova em
 -- tabela já existente usado no resto deste arquivo).
 ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS aguardando_pergunta BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Fatia 7 (ajuste): identificação em duas mensagens separadas (CPF, depois
+-- data de nascimento) - guarda o CPF já recebido enquanto aguarda a data.
+ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS cpf_pendente VARCHAR(11);
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

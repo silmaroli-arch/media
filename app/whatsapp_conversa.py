@@ -42,32 +42,38 @@ def normalizar_telefone_whatsapp(remetente_bruto):
     return remetente_bruto.replace("whatsapp:", "").strip()
 
 
-def _extrair_cpf_e_nascimento(texto):
-    """Lê CPF + data de nascimento de uma mensagem de texto livre, em
-    qualquer ordem e com ou sem pontuação (ex.: "111.222.333-44,
-    01/01/1990" ou "01/01/1990 11122233344"). Retorna (cpf_digitos,
-    data_nascimento) — qualquer um dos dois pode vir None se não for
-    possível reconhecer com confiança."""
-    texto = texto or ""
+def _extrair_cpf(texto):
+    """Lê um CPF de uma mensagem, aceitando só números (11 dígitos) ou com
+    a máscara usual (000.000.000-00) — e mais nada além disso na mensagem,
+    para não aceitar por engano um texto que só CONTÉM 11 dígitos em meio
+    a outra coisa (ex.: uma data de nascimento digitada cedo demais).
+    Retorna os dígitos do CPF, ou None se não reconhecer com confiança.
+    Valida só o FORMATO (11 dígitos, com ou sem pontuação) - não o dígito
+    verificador (ver validar_cpf em app/models.py), porque aqui é uma
+    busca por um cadastro já existente, não uma validação de cadastro
+    novo: um CPF de paciente já salvo (mesmo que digitado de forma
+    inconsistente em algum cadastro antigo) precisa continuar sendo
+    reconhecível por quem está tentando se identificar."""
+    texto = (texto or "").strip()
+    if not re.fullmatch(r"\d{3}\.?\d{3}\.?\d{3}-?\d{2}", texto):
+        return None
+    return re.sub(r"\D", "", texto)
 
-    data_nascimento = None
-    data_match = re.search(r"(\d{1,2})\s*[/-]\s*(\d{1,2})\s*[/-]\s*(\d{4})", texto)
-    resto = texto
-    if data_match:
-        dia, mes, ano = (int(x) for x in data_match.groups())
-        try:
-            data_nascimento = date(ano, mes, dia)
-        except ValueError:
-            data_nascimento = None
-        # Remove o trecho da data antes de procurar o CPF, para os dígitos
-        # da data não se misturarem com os do CPF.
-        resto = texto[:data_match.start()] + texto[data_match.end():]
 
-    cpf_digitos = re.sub(r"\D", "", resto)
-    if len(cpf_digitos) != 11:
-        cpf_digitos = None
-
-    return cpf_digitos, data_nascimento
+def _extrair_data_nascimento(texto):
+    """Lê uma data de nascimento em formato dd/mm/aaaa (aceita "-" no
+    lugar de "/") de uma mensagem que contenha só a data. Retorna a data,
+    ou None se não reconhecer ou se a data não existir de verdade (ex.:
+    31/02/1990)."""
+    texto = (texto or "").strip()
+    data_match = re.fullmatch(r"(\d{1,2})\s*[/-]\s*(\d{1,2})\s*[/-]\s*(\d{4})", texto)
+    if not data_match:
+        return None
+    dia, mes, ano = (int(x) for x in data_match.groups())
+    try:
+        return date(ano, mes, dia)
+    except ValueError:
+        return None
 
 
 def _cpf_digitos(cpf):
@@ -119,13 +125,21 @@ def _texto_menu(paciente, agendamento, saudacao=True):
     )
 
 
-MENSAGEM_PEDIR_IDENTIFICACAO = (
-    "Olá! Para começar, me envie seu CPF e sua data de nascimento, assim: "
-    "000.000.000-00, 01/01/1990"
+MENSAGEM_PEDIR_CPF = (
+    "Olá! Para começar, me envie seu CPF (só números ou com pontuação), "
+    "assim: 000.000.000-00"
+)
+MENSAGEM_CPF_INVALIDO = (
+    "Não reconheci um CPF. Envie só o CPF, com 11 números, com ou sem "
+    "pontuação (ex.: 000.000.000-00)."
+)
+MENSAGEM_PEDIR_NASCIMENTO = "Certo! Agora me envie sua data de nascimento, assim: 01/01/1990"
+MENSAGEM_NASCIMENTO_INVALIDA = (
+    "Não reconheci a data. Envie no formato dia/mês/ano, assim: 01/01/1990"
 )
 MENSAGEM_NAO_ENCONTRADO = (
-    "Não encontramos um cadastro com esses dados. Confira o CPF e a data de "
-    "nascimento e tente novamente."
+    "Não encontramos um cadastro com esses dados. Vamos tentar de novo — "
+    "me envie seu CPF."
 )
 MENSAGEM_SEM_EXAME_ATIVO = (
     "Não encontramos nenhum exame em preparo no momento. Se acha que isso é "
@@ -243,7 +257,9 @@ def processar_mensagem(telefone, corpo_mensagem):
         # a mesma pessoa (ver PLANO_WHATSAPP.md).
         conversa.paciente_id = None
         conversa.agendamento_id = None
+        conversa.cpf_pendente = None
 
+    primeira_mensagem = conversa is None
     if not conversa:
         conversa = ConversaWhatsapp(telefone=telefone)
         db.session.add(conversa)
@@ -254,13 +270,26 @@ def processar_mensagem(telefone, corpo_mensagem):
     # data da ÚLTIMA MUDANÇA de estado, não da última mensagem trocada.
     conversa.atualizado_em = datetime.utcnow()
 
+    # Identificação em duas mensagens separadas: primeiro só o CPF, depois
+    # só a data de nascimento (mais fácil de digitar certo no WhatsApp do
+    # que tudo numa mensagem só).
     if not conversa.paciente_id:
-        cpf_digitos, data_nascimento = _extrair_cpf_e_nascimento(corpo_mensagem)
-        if not cpf_digitos or not data_nascimento:
+        if not conversa.cpf_pendente:
+            cpf_digitos = _extrair_cpf(corpo_mensagem)
+            if not cpf_digitos:
+                db.session.commit()
+                return MENSAGEM_PEDIR_CPF if primeira_mensagem else MENSAGEM_CPF_INVALIDO
+            conversa.cpf_pendente = cpf_digitos
             db.session.commit()
-            return MENSAGEM_PEDIR_IDENTIFICACAO
+            return MENSAGEM_PEDIR_NASCIMENTO
 
-        paciente = _localizar_paciente(cpf_digitos, data_nascimento)
+        data_nascimento = _extrair_data_nascimento(corpo_mensagem)
+        if not data_nascimento:
+            db.session.commit()
+            return MENSAGEM_NASCIMENTO_INVALIDA
+
+        paciente = _localizar_paciente(conversa.cpf_pendente, data_nascimento)
+        conversa.cpf_pendente = None
         if not paciente:
             db.session.commit()
             return MENSAGEM_NAO_ENCONTRADO
