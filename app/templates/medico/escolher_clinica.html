@@ -1,17 +1,28 @@
 {% extends "base.html" %}
-{% block titulo %}Escolher clínica{% endblock %}
+{% block titulo %}Escolher empresa{% endblock %}
 {% block conteudo %}
+{#
+  Escolha da EMPRESA (o cliente/tenant) em que a pessoa vai trabalhar agora.
+  Não existe mais escolha de filial: dentro da empresa, os dados de todos os
+  locais em que a pessoa atua aparecem juntos, com o local indicado em cada
+  registro. Esta tela só aparece no caso raro de a pessoa ter vínculo em mais
+  de uma empresa (ex.: um médico que presta serviço para duas clínicas sem
+  relação entre si); com uma empresa só, a seleção é automática.
+#}
 <div class="row justify-content-center">
   <div class="col-md-6">
     <div class="card p-4 mt-4">
-      <h4 class="mb-3 text-center">Em qual clínica você quer trabalhar agora?</h4>
-      <p class="text-muted small text-center">Sua conta está vinculada a mais de uma clínica.</p>
+      <h4 class="mb-3 text-center">Em qual empresa você quer trabalhar agora?</h4>
+      <p class="text-muted small text-center">
+        Sua conta está vinculada a mais de uma empresa. Dentro da empresa escolhida, você vê os
+        dados de todos os seus locais de atendimento juntos — não é preciso trocar de local.
+      </p>
       <form method="post">
         <div class="list-group">
-          {% for c in clinicas %}
+          {% for e in empresas %}
           <label class="list-group-item d-flex align-items-center gap-2">
-            <input type="radio" name="clinica_id" value="{{ c.id }}" class="form-check-input mt-0" required>
-            <span>{{ c.nome }}</span>
+            <input type="radio" name="empresa_id" value="{{ e.id }}" class="form-check-input mt-0" required>
+            <span>{{ e.nome }}</span>
           </label>
           {% endfor %}
         </div>

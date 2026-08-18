@@ -1,11 +1,10 @@
 {% extends "base.html" %}
-{% block titulo %}Dados da clínica{% endblock %}
+{% block titulo %}Dados Cadastrais{% endblock %}
 {% block conteudo %}
-<h3 class="mb-1">Dados da clínica</h3>
+<h3 class="mb-1">Dados Cadastrais</h3>
 <p class="text-muted mb-4">Essas informações podem ser alteradas a qualquer momento.</p>
 
 <form method="post">
-  <input type="hidden" name="voltar_onboarding" value="{{ request.args.get('voltar_onboarding') or request.form.get('voltar_onboarding') or '' }}">
   <div class="card p-4 mb-4">
     <h5 class="mb-3">Dados gerais</h5>
     <div class="row g-3">
@@ -19,11 +18,12 @@
       </div>
       <div class="col-md-6">
         <label class="form-label">CNPJ</label>
-        <input type="text" name="cnpj" class="form-control" value="{{ clinica.cnpj or '' }}" placeholder="00.000.000/0000-00">
+        <input type="text" inputmode="numeric" name="cnpj" id="cnpj" class="form-control" value="{{ clinica.cnpj or '' }}" placeholder="00.000.000/0000-00">
       </div>
       <div class="col-md-3">
         <label class="form-label">Telefone *</label>
-        <input type="text" name="telefone" class="form-control" value="{{ clinica.telefone or '' }}" required>
+        <input type="text" inputmode="numeric" name="telefone" id="telefone_clinica" class="form-control" value="{{ clinica.telefone or '' }}" placeholder="(27) 99999-9999" required>
+        <div class="invalid-feedback" id="telefone_clinica_status"></div>
       </div>
       <div class="col-md-3">
         <label class="form-label">E-mail de contato *</label>
@@ -37,11 +37,12 @@
     <div class="row g-3">
       <div class="col-md-3">
         <label class="form-label">CEP</label>
-        <input type="text" name="cep" class="form-control" value="{{ clinica.cep or '' }}" placeholder="00000-000">
+        <input type="text" inputmode="numeric" name="cep" id="cep_clinica" class="form-control" value="{{ clinica.cep or '' }}" placeholder="00000-000">
+        <div class="form-text" id="cep_clinica_status"></div>
       </div>
       <div class="col-md-6">
         <label class="form-label">Rua</label>
-        <input type="text" name="rua" class="form-control" value="{{ clinica.rua or '' }}">
+        <input type="text" name="rua" id="rua_clinica" class="form-control" value="{{ clinica.rua or '' }}">
       </div>
       <div class="col-md-3">
         <label class="form-label">Número</label>
@@ -53,50 +54,136 @@
       </div>
       <div class="col-md-4">
         <label class="form-label">Bairro</label>
-        <input type="text" name="bairro" class="form-control" value="{{ clinica.bairro or '' }}">
+        <input type="text" name="bairro" id="bairro_clinica" class="form-control" value="{{ clinica.bairro or '' }}">
       </div>
       <div class="col-md-3">
         <label class="form-label">Cidade</label>
-        <input type="text" name="cidade" class="form-control" value="{{ clinica.cidade or '' }}">
+        <input type="text" name="cidade" id="cidade_clinica" class="form-control" value="{{ clinica.cidade or '' }}">
       </div>
       <div class="col-md-1">
         <label class="form-label">UF</label>
-        <input type="text" name="uf" class="form-control" maxlength="2" value="{{ clinica.uf or '' }}">
+        <input type="text" name="uf" id="uf_clinica" class="form-control" maxlength="2" value="{{ clinica.uf or '' }}">
       </div>
-    </div>
-  </div>
-
-  <div class="card p-4 mb-4">
-    <h5 class="mb-1">Dados fiscais</h5>
-    <p class="text-muted small mb-3">
-      Usados futuramente para identificar a clínica em uma eventual nota fiscal ao paciente.
-      Por ora só ficam salvos aqui — a emissão de nota fiscal ainda não está disponível na plataforma.
-    </p>
-    <div class="row g-3">
-      <div class="col-md-3">
-        <label class="form-label">Inscrição estadual</label>
-        <input type="text" name="inscricao_estadual" class="form-control" value="{{ clinica.inscricao_estadual or '' }}">
-      </div>
-      <div class="col-md-4">
-        <label class="form-label">Regime tributário</label>
-        <select name="regime_tributario" class="form-select">
-          <option value="">Selecione...</option>
-          {% for opcao in ["Simples Nacional", "Lucro Presumido", "Lucro Real", "MEI", "Isento"] %}
-          <option value="{{ opcao }}" {% if clinica.regime_tributario == opcao %}selected{% endif %}>{{ opcao }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label">CNAE</label>
-        <input type="text" name="cnae" class="form-control" value="{{ clinica.cnae or '' }}" placeholder="0000-0/00">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">Código IBGE do município</label>
-        <input type="text" name="codigo_ibge_municipio" class="form-control" value="{{ clinica.codigo_ibge_municipio or '' }}">
-      </div>
+      <input type="hidden" name="codigo_ibge_municipio" id="codigo_ibge_municipio_clinica" value="{{ clinica.codigo_ibge_municipio or '' }}">
     </div>
   </div>
 
   <button type="submit" class="btn btn-primary">Salvar</button>
+  <a href="{{ url_for('medico.filiais_lista') }}" class="btn btn-link">Cancelar</a>
 </form>
+
+<p class="text-muted small mb-4">
+  Inscrição estadual, regime tributário, CNAE e a configuração de emissão de NFS-e agora ficam em
+  <a href="{{ url_for('medico.clinica_dados_fiscais', filial_id=clinica.id) }}">Dados Fiscais</a>, acessível pelo
+  botão "Dados Fiscais" da linha deste local em "Meus locais de atendimento".
+</p>
+
+{# O link de auto-cadastro de pacientes saiu desta tela: o paciente é da
+   EMPRESA, então o link também é - agora fica no Painel. #}
+
+<script>
+  // Mascara fixa (mesma logica do cadastro de paciente e do novo
+  // agendamento - ver app/templates/medico/pacientes_form.html): enquanto
+  // a pessoa digita, os digitos ainda nao preenchidos ficam marcados com
+  // "_". Nenhum desses campos pode ter "maxlength" no HTML, porque a
+  // mascara ja mostra o padrao inteiro (com os "_") desde o primeiro
+  // digito.
+  function aplicarMascaraFixa(campo, padrao) {
+    if (!campo) return;
+    var maxDigitos = (padrao.match(/9/g) || []).length;
+    campo.addEventListener('input', function () {
+      var digitos = campo.value.replace(/\D/g, '').slice(0, maxDigitos);
+      if (!digitos) {
+        campo.value = '';
+        return;
+      }
+      var resultado = '';
+      var pos = 0;
+      var i;
+      for (i = 0; i < padrao.length && pos < digitos.length; i++) {
+        if (padrao[i] === '9') {
+          resultado += digitos[pos];
+          pos++;
+        } else {
+          resultado += padrao[i];
+        }
+      }
+      campo.value = resultado;
+    });
+  }
+  aplicarMascaraFixa(document.getElementById('cnpj'), '99.999.999/9999-99');
+  aplicarMascaraFixa(document.getElementById('telefone_clinica'), '(99) 99999-9999');
+  aplicarMascaraFixa(document.getElementById('cep_clinica'), '99999-999');
+
+  // Busca automatica de endereco pelo CEP via ViaCEP, assim que os 8
+  // digitos forem digitados (mesma ideia do cadastro de paciente, so que
+  // ali dispara no "blur" - aqui dispara direto ao completar o CEP,
+  // porque a mascara ja bloqueia digitar mais de 8 digitos mesmo). Os
+  // campos de endereco (rua, bairro, cidade, UF e codigo IBGE) sao
+  // preenchidos automaticamente por essa busca, mas continuam editaveis -
+  // se o ViaCEP estiver fora do ar, demorar demais ou o CEP nao for
+  // encontrado, a pessoa preenche o endereco a mao e o formulario
+  // continua salvando normalmente (a busca do CEP e so uma ajuda, nunca
+  // bloqueia o cadastro). Um timeout de 5s evita ficar "Buscando
+  // endereço..." pra sempre se a rede nao responder.
+  var campoCepClinica = document.getElementById('cep_clinica');
+  if (campoCepClinica) {
+    campoCepClinica.addEventListener('input', function () {
+      var digitos = campoCepClinica.value.replace(/\D/g, '');
+      var status = document.getElementById('cep_clinica_status');
+      if (digitos.length !== 8) {
+        status.textContent = '';
+        return;
+      }
+      status.textContent = 'Buscando endereço...';
+      var controle = ('AbortController' in window) ? new AbortController() : null;
+      var tempoEsgotado = setTimeout(function () {
+        if (controle) controle.abort();
+      }, 5000);
+      fetch('https://viacep.com.br/ws/' + digitos + '/json/', controle ? { signal: controle.signal } : {})
+        .then(function (r) { return r.json(); })
+        .then(function (dados) {
+          clearTimeout(tempoEsgotado);
+          if (dados.erro) {
+            status.textContent = 'CEP não encontrado — preencha o endereço manualmente.';
+            return;
+          }
+          document.getElementById('rua_clinica').value = dados.logradouro || '';
+          document.getElementById('bairro_clinica').value = dados.bairro || '';
+          document.getElementById('cidade_clinica').value = dados.localidade || '';
+          document.getElementById('uf_clinica').value = dados.uf || '';
+          document.getElementById('codigo_ibge_municipio_clinica').value = dados.ibge || '';
+          status.textContent = 'Endereço preenchido automaticamente pelo CEP.';
+        })
+        .catch(function () {
+          clearTimeout(tempoEsgotado);
+          status.textContent = 'Não foi possível consultar o CEP agora — preencha o endereço manualmente.';
+        });
+    });
+  }
+
+  // Telefone incompleto (ex.: só o DDD) não travava o envio - um
+  // telefone brasileiro de verdade tem 10 ou 11 dígitos.
+  function marcarTelefoneClinicaValido() {
+    var campo = document.getElementById('telefone_clinica');
+    var status = document.getElementById('telefone_clinica_status');
+    var d = campo.value.replace(/\D/g, '');
+    if (!d) { status.textContent = ''; campo.classList.remove('is-invalid'); return true; }
+    if (d.length === 10 || d.length === 11) {
+      status.textContent = '';
+      campo.classList.remove('is-invalid');
+      return true;
+    }
+    status.textContent = 'Telefone incompleto — digite o DDD e o número completos.';
+    campo.classList.add('is-invalid');
+    return false;
+  }
+  document.getElementById('telefone_clinica').addEventListener('blur', marcarTelefoneClinicaValido);
+  document.querySelector('form').addEventListener('submit', function (evento) {
+    if (!marcarTelefoneClinicaValido()) {
+      evento.preventDefault();
+      document.getElementById('telefone_clinica').focus();
+    }
+  });
+</script>
 {% endblock %}

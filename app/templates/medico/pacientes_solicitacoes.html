@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
+{% block titulo %}Cadastros pendentes{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Cadastros de pacientes aguardando aprovação</h3>
+<p class="text-muted">Pacientes que se cadastraram sozinhos pelo app. Enquanto o cadastro não é aceito, eles conseguem entrar no sistema, mas não conseguem solicitar agendamento de exames.</p>
+<div class="card p-3">
+  <table class="table table-hover">
+    <thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Data de nascimento</th><th>Cadastrado em</th><th></th></tr></thead>
+    <tbody>
+      {% for p in pendentes %}
+      <tr>
+        <td>{{ p.nome }}</td>
+        <td>{{ p.cpf }}</td>
+        <td>{{ p.telefone or '-' }}</td>
+        <td>{{ p.data_nascimento.strftime('%d/%m/%Y') if p.data_nascimento else '-' }}</td>
+        <td>{{ p.criado_em.strftime('%d/%m/%Y %H:%M') if p.criado_em else '-' }}</td>
+        <td class="d-flex gap-2">
+          <form method="post" action="{{ url_for('medico.pacientes_cadastro_decidir', paciente_id=p.id) }}">
+            <input type="hidden" name="acao" value="aceitar">
+            <button type="submit" class="btn btn-sm btn-success">Aceitar</button>
+          </form>
+          <form method="post" action="{{ url_for('medico.pacientes_cadastro_decidir', paciente_id=p.id) }}" onsubmit="return confirm('Rejeitar este cadastro?');">
+            <input type="hidden" name="acao" value="rejeitar">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Rejeitar</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted text-center">Nenhum cadastro pendente.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}Pacientes{% endblock %}
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -9,7 +10,9 @@
 </div>
 <div class="card p-3">
   <table class="table table-hover">
-    <thead><tr><th>Nome</th><th>CPF</th><th>Telefone (login)</th><th>Data de nascimento</th><th></th></tr></thead>
+    {# O paciente é da EMPRESA, não de uma filial - por isso não há coluna
+       de filial aqui; a filial aparece em cada AGENDAMENTO do paciente. #}
+    <thead><tr><th>Nome</th><th>CPF</th><th>Telefone (login)</th><th>Data de nascimento</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {% for p in pacientes %}
       <tr>
@@ -17,10 +20,19 @@
         <td>{{ p.cpf }}</td>
         <td>{{ p.telefone or '-' }}</td>
         <td>{{ p.data_nascimento.strftime('%d/%m/%Y') if p.data_nascimento else '-' }}</td>
+        <td>
+          {% if p.status_cadastro == 'aprovado' %}
+          <span class="badge bg-success">Aprovado</span>
+          {% elif p.status_cadastro == 'rejeitado' %}
+          <span class="badge bg-danger">Rejeitado</span>
+          {% else %}
+          <span class="badge bg-warning text-dark">Pendente</span>
+          {% endif %}
+        </td>
         <td><a href="{{ url_for('medico.pacientes_detalhe', paciente_id=p.id) }}" class="btn btn-sm btn-outline-secondary">Detalhes</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="text-muted text-center">Nenhum paciente cadastrado ainda.</td></tr>
+      <tr><td colspan="6" class="text-muted text-center">Nenhum paciente cadastrado ainda.</td></tr>
       {% endfor %}
     </tbody>
   </table>

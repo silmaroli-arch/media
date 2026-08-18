@@ -4,13 +4,13 @@
 <h3 class="mb-3"><i class="bi bi-chat-dots"></i> Tirar dúvidas sobre o preparo</h3>
 
 <div class="card p-4 mb-4">
-  <form method="post">
+  <form method="post" id="form-tirar-duvida">
     <div class="mb-3">
       <label class="form-label">Sobre qual exame é a sua dúvida?</label>
-      <select name="exame_id" class="form-select">
-        <option value="">Dúvida geral</option>
+      <select name="agendamento_id" id="select-exame-duvida" class="form-select">
+        <option value="" data-exame-id="">Dúvida geral</option>
         {% for a in agendamentos %}
-        <option value="{{ a.exame_id }}" {% if exame_id_selecionado == a.exame_id %}selected{% endif %}>{{ a.exame.nome }} ({{ a.data_hora.strftime('%d/%m') }})</option>
+        <option value="{{ a.id }}" data-exame-id="{{ a.exame_id }}" {% if agendamento_id_selecionado == a.id %}selected{% endif %}>{{ a.exame.nome }} ({{ a.data_hora.strftime('%d/%m') }})</option>
         {% endfor %}
       </select>
     </div>
@@ -18,16 +18,56 @@
       <label class="form-label">Sua pergunta</label>
       <div class="input-group">
         <input type="text" name="pergunta" class="form-control" placeholder='Ex: "Posso comer batata antes do exame?"' required>
-        <button type="submit" class="btn btn-success">Perguntar</button>
+        <button type="submit" class="btn btn-success" id="btn-perguntar">Perguntar</button>
       </div>
     </div>
   </form>
+  <script>
+    document.getElementById('form-tirar-duvida').addEventListener('submit', function () {
+      var botao = document.getElementById('btn-perguntar');
+      botao.disabled = true;
+      botao.innerHTML = 'Enviando...';
+    });
+  </script>
+  <script>
+    // Filtra "Suas perguntas anteriores" pra mostrar só as do exame
+    // escolhido no seletor acima - sem recarregar a página. "Dúvida
+    // geral" (sem exame nenhum selecionado) mostra só as perguntas que
+    // também não têm exame vinculado. Espera o DOM carregar porque a
+    // tabela de histórico fica mais abaixo no HTML, depois deste script.
+    document.addEventListener('DOMContentLoaded', function () {
+      var seletor = document.getElementById('select-exame-duvida');
+      var linhasHistorico = document.querySelectorAll('#historico-perguntas tbody tr[data-exame-id]');
+      var avisoVazio = document.getElementById('historico-vazio-filtro');
+
+      function filtrarHistorico() {
+        var opcaoAtual = seletor.options[seletor.selectedIndex];
+        var exameIdSelecionado = opcaoAtual ? opcaoAtual.getAttribute('data-exame-id') : '';
+        var algumaVisivel = false;
+        linhasHistorico.forEach(function (linha) {
+          var visivel = linha.getAttribute('data-exame-id') === exameIdSelecionado;
+          linha.style.display = visivel ? '' : 'none';
+          algumaVisivel = algumaVisivel || visivel;
+        });
+        if (avisoVazio) {
+          avisoVazio.style.display = algumaVisivel ? 'none' : '';
+        }
+      }
+
+      if (seletor && linhasHistorico.length) {
+        seletor.addEventListener('change', filtrarHistorico);
+        filtrarHistorico();
+      }
+    });
+  </script>
 
   {% if pergunta_enviada %}
   <div class="mt-4">
     <div class="chat-bubble-user mb-2">{{ pergunta_enviada }}</div>
     {% if resposta_ia %}
       <div class="chat-bubble-ia"><i class="bi bi-robot"></i> {{ resposta_ia }}</div>
+    {% elif origem == 'ia_aguardando' %}
+      <div class="chat-bubble-alerta"><i class="bi bi-hourglass-split"></i> Já tenho uma resposta, mas ela precisa ser revisada pelo médico antes de te enviar — assim que ele aprovar, ela aparece aqui embaixo, na sua lista de perguntas.</div>
     {% elif encaminhada %}
       <div class="chat-bubble-alerta"><i class="bi bi-hourglass-split"></i> Ainda não sei responder essa pergunta com certeza. Encaminhei para a secretaria, que vai responder em breve — e a resposta ficará salva para as próximas pessoas que perguntarem o mesmo.</div>
     {% endif %}
@@ -38,13 +78,17 @@
 <div class="card p-3">
   <h5>Suas perguntas anteriores</h5>
   {% if historico_pendentes %}
-  <table class="table table-sm">
+  <table class="table table-sm" id="historico-perguntas">
     <thead><tr><th>Pergunta</th><th>Status</th><th>Resposta</th><th></th></tr></thead>
     <tbody>
       {% for p in historico_pendentes %}
-      <tr>
+      <tr data-exame-id="{{ p.exame_id or '' }}">
         <td>{{ p.pergunta }}</td>
-        <td><span class="badge {% if p.status == 'respondida' %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ p.status }}</span></td>
+        <td>
+          <span class="badge {% if p.status == 'respondida' %}bg-success{% else %}bg-warning text-dark{% endif %}">
+            {% if p.status == 'respondida' %}respondida{% elif p.status == 'aguardando_aprovacao' %}em análise{% else %}pendente{% endif %}
+          </span>
+        </td>
         <td>{{ p.resposta or '-' }}</td>
         <td>
           <form method="post" action="{{ url_for('paciente.pergunta_remover', pergunta_id=p.id) }}" onsubmit="return confirm('Remover esta pergunta?');">
@@ -55,6 +99,7 @@
       {% endfor %}
     </tbody>
   </table>
+  <p class="text-muted mb-0" id="historico-vazio-filtro" style="display: none;">Nenhuma pergunta sobre este exame ainda.</p>
   {% else %}
   <p class="text-muted">Você ainda não fez perguntas.</p>
   {% endif %}

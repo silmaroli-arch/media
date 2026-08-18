@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}Base de conhecimento{% endblock %}
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -6,18 +7,19 @@
   <a href="{{ url_for('medico.faq_novo') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Adicionar manualmente</a>
 </div>
 <table class="table table-hover">
-  <thead><tr><th>Exame</th><th>Pergunta</th><th>Resposta</th><th>Usada</th><th>Origem</th></tr></thead>
+  <thead><tr><th>Exame</th>{{ th_filial() }}<th>Pergunta</th><th>Resposta</th><th>Usada</th><th>Origem</th></tr></thead>
   <tbody>
     {% for i in itens %}
     <tr>
       <td>{{ i.exame.nome if i.exame else 'Geral' }}</td>
+      {{ td_filial(i) }}
       <td>{{ i.pergunta }}</td>
       <td>{{ i.resposta }}</td>
       <td>{{ i.vezes_utilizada }}x</td>
       <td>{{ i.criado_por or '-' }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="5" class="text-muted text-center">Base vazia.</td></tr>
+    <tr><td colspan="{{ 6 if mostrar_filial else 5 }}" class="text-muted text-center">Base vazia.</td></tr>
     {% endfor %}
   </tbody>
 </table>

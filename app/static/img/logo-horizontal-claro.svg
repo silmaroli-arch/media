@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 200" width="680" height="200">
+  <defs>
+    <radialGradient id="glow2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowDot2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7FE9F5" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#7FE9F5" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Ícone (sem fundo, para usar sobre superfície azul) -->
+  <g>
+    <path d="M 48 150 L 48 52 L 100 104 L 152 52 L 152 150"
+          fill="none" stroke="#FFFFFF" stroke-width="20"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="86" cy="70" r="26" fill="url(#glow2)"/>
+    <path d="M 18 112 L 66 112 L 78 138 L 94 66 L 108 112 L 182 112"
+          fill="none" stroke="#22D3EE" stroke-width="9"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="94" cy="66" r="7" fill="#FFFFFF"/>
+    <circle cx="94" cy="66" r="3.2" fill="#0B3D66"/>
+    <line x1="94" y1="66" x2="94" y2="48" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+    <line x1="94" y1="66" x2="112" y2="54" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+    <line x1="94" y1="66" x2="76" y2="52" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- Nome: "Med" em branco, "IA" em ciano vivo para se destacar no azul -->
+  <text x="232" y="132" font-family="Liberation Sans, Arial, sans-serif" font-weight="700"
+        font-size="92" letter-spacing="-1"><tspan fill="#FFFFFF">Med</tspan><tspan fill="#7FE9F5">IA</tspan></text>
+
+  <!-- ponto do "I" vira um nozinho de IA (brilho sutil) -->
+  <circle cx="419" cy="60" r="14" fill="url(#glowDot2)"/>
+  <circle cx="419" cy="60" r="7.5" fill="#7FE9F5"/>
+  <circle cx="419" cy="60" r="3" fill="#0B3D66"/>
+
+  <line x1="418" y1="150" x2="522" y2="150" stroke="#7FE9F5" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+</svg>

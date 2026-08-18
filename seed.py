@@ -1,24 +1,27 @@
 """
 Popula o banco de dados com dados de exemplo para demonstração da
-plataforma multi-empresa / multi-filial:
+plataforma, 100% em cima de Grupo/GrupoMembro/GrupoPaciente (Fatia 5 -
+Empresa/Clinica/ClinicaMembro não existem mais):
 - Um usuário "dono da plataforma"
-- Duas empresas de uma filial só (Vitória e São Paulo), para demonstrar
-  isolamento de dados entre empresas diferentes
-- Uma terceira empresa com DUAS filiais, para demonstrar a funcionalidade
-  de filiais (mesma empresa, unidades diferentes) e a cobrança por médico
-- Um médico vinculado a duas filiais da mesma empresa (conta uma vez só
-  na cobrança) e outro só numa filial
-- Secretárias, pacientes, exames, agendamentos e FAQ por filial
+- Dois grupos de uma "unidade" só (Vitória e São Paulo), para demonstrar
+  isolamento de dados entre grupos diferentes
+- Um terceiro cenário com DOIS grupos que compartilham a mesma equipe
+  (Grupo Saúde Total - Centro / Praia), para demonstrar alguém com
+  vínculo ativo em mais de um grupo ao mesmo tempo (precisa escolher qual
+  está usando no momento) e a cobrança por médico
+- Um médico vinculado a dois grupos (conta uma vez em cada cobrança, já
+  que cobrança agora é por grupo) e outro só num grupo
+- Secretárias, pacientes, exames, agendamentos e FAQ por grupo
 
 Rodar com: python seed.py
 """
-from datetime import date, datetime, timedelta, time
+from datetime import date, datetime, timedelta
 
 from app import create_app
 from app.extensions import db
 from app.db_utils import resetar_banco
 from app.models import (
-    Usuario, Empresa, Clinica, ClinicaMembro, MedicoHorario, MedicoBloqueio, Paciente,
+    Usuario, Grupo, GrupoMembro, Paciente, GrupoPaciente,
     Exame, PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento,
     Agendamento, FaqItem, normalizar_telefone,
@@ -35,31 +38,11 @@ with app.app_context():
     db.session.add(dono)
     db.session.commit()
 
-    # --- Empresas ---
-    empresa_vitoria = Empresa(
-        nome="Clínica Vitória",
-        status="ativa",
-        data_vencimento=datetime.utcnow().date() + timedelta(days=20),
-    )
-    empresa_sp = Empresa(
-        nome="Clínica São Paulo",
-        status="trial",
-        data_vencimento=datetime.utcnow().date() + timedelta(days=7),
-    )
-    # Empresa com duas filiais — demonstra a funcionalidade de filiais e a
-    # cobrança por médico (contado uma vez por empresa, não por filial).
-    empresa_grupo = Empresa(
-        nome="Grupo Saúde Total",
-        status="ativa",
-        data_vencimento=datetime.utcnow().date() + timedelta(days=25),
-        valor_por_medico=150.00,
-    )
-    db.session.add_all([empresa_vitoria, empresa_sp, empresa_grupo])
-    db.session.commit()
-
-    # --- Filiais ---
-    clinica_vitoria = Clinica(
-        empresa_id=empresa_vitoria.id,
+    # --- Grupos ---
+    # Fatia 5: cada Grupo já é a própria unidade de cobrança/fiscal/escopo
+    # (equivalente a uma filial de antes) - não existe mais uma Empresa
+    # por cima agrupando vários deles.
+    grupo_vitoria = Grupo(
         nome="Clínica Vitória",
         razao_social="Clínica Vitória Diagnósticos Ltda.",
         cnpj="12.345.678/0001-90",
@@ -75,32 +58,42 @@ with app.app_context():
         regime_tributario="Simples Nacional",
         cnae="8640-2/02",
         codigo_ibge_municipio="3205309",
+        status="ativa",
+        data_vencimento=datetime.utcnow().date() + timedelta(days=20),
     )
-    clinica_sp = Clinica(
-        empresa_id=empresa_sp.id,
+    grupo_sp = Grupo(
         nome="Clínica São Paulo",
         email_contato="contato@clinicasp.com",
+        status="trial",
+        data_vencimento=datetime.utcnow().date() + timedelta(days=7),
     )
-    filial_grupo_centro = Clinica(
-        empresa_id=empresa_grupo.id,
+    # Antes "Grupo Saúde Total" era uma empresa com 2 filiais; como agora
+    # 1 Grupo = 1 unidade autônoma (decisão de negócio da Fatia 5), isso
+    # vira 2 Grupos distintos com a MESMA equipe tendo vínculo ativo nos
+    # dois - demonstra o caso de quem precisa escolher com qual Grupo
+    # trabalhar no momento (ver escolher_clinica em routes_medico.py).
+    grupo_saude_centro = Grupo(
         nome="Grupo Saúde Total - Centro",
-        cidade="Vila Velha",
-        uf="ES",
+        cidade="Vila Velha", uf="ES",
+        status="ativa",
+        data_vencimento=datetime.utcnow().date() + timedelta(days=25),
+        valor_por_medico=150.00,
     )
-    filial_grupo_praia = Clinica(
-        empresa_id=empresa_grupo.id,
+    grupo_saude_praia = Grupo(
         nome="Grupo Saúde Total - Praia",
-        cidade="Vila Velha",
-        uf="ES",
+        cidade="Vila Velha", uf="ES",
+        status="ativa",
+        data_vencimento=datetime.utcnow().date() + timedelta(days=25),
+        valor_por_medico=150.00,
     )
-    db.session.add_all([clinica_vitoria, clinica_sp, filial_grupo_centro, filial_grupo_praia])
+    db.session.add_all([grupo_vitoria, grupo_sp, grupo_saude_centro, grupo_saude_praia])
     db.session.commit()
 
     # --- Usuários da equipe ---
-    # Permissões administrativas (pacientes/equipe/filiais/dados da clínica)
-    # não são mais amarradas ao papel médico/secretária — nem toda clínica
-    # tem secretária. No seed, damos as permissões padrão de acordo com o
-    # papel (secretária = todas; médico = nenhuma), exceto onde indicado.
+    # Permissões administrativas (pacientes/equipe/dados do grupo) não são
+    # amarradas ao papel médico/secretária - nem todo grupo tem
+    # secretária. No seed, damos as permissões padrão de acordo com o
+    # papel (secretária = todas; médico = nenhuma).
     secretaria_vitoria = Usuario(nome="Ana Secretária", email="secretaria@clinicavitoria.com", tipo="secretaria")
     secretaria_vitoria.set_senha("123456")
     secretaria_vitoria.definir_permissoes_padrao()
@@ -109,20 +102,21 @@ with app.app_context():
     secretaria_sp.set_senha("123456")
     secretaria_sp.definir_permissoes_padrao()
 
-    # Este médico atende nas duas clínicas — demonstra o vínculo multi-clínica.
+    # Este médico atende nos dois grupos (Vitória e São Paulo) — demonstra
+    # o vínculo multi-grupo.
     medico_compartilhado = Usuario(nome="Dr. Carlos Andrade", email="medico@clinicavitoria.com", tipo="medico")
     medico_compartilhado.set_senha("123456")
     medico_compartilhado.definir_permissoes_padrao()
 
-    # Uma segunda médica, só na Clínica Vitória — demonstra que cada médico
+    # Uma segunda médica, só no Grupo Vitória — demonstra que cada médico
     # só cadastra/acompanha os seus próprios exames e pacientes.
     medica_vitoria2 = Usuario(nome="Dra. Fernanda Lima", email="medica2@clinicavitoria.com", tipo="medico")
     medica_vitoria2.set_senha("123456")
     medica_vitoria2.definir_permissoes_padrao()
 
-    # Equipe do Grupo Saúde Total: uma secretária que administra as duas
-    # filiais, e um médico que atende nas duas filiais do grupo — pela
-    # regra de cobrança "por empresa x médico", ele conta uma única vez.
+    # Equipe do Grupo Saúde Total: uma secretária que administra os dois
+    # grupos, e um médico que atende nos dois — pela regra de cobrança
+    # "por grupo x médico", ele conta uma vez em cada cobrança.
     secretaria_grupo = Usuario(nome="Camila Rocha", email="secretaria@gruposaude.com", tipo="secretaria")
     secretaria_grupo.set_senha("123456")
     secretaria_grupo.definir_permissoes_padrao()
@@ -137,54 +131,24 @@ with app.app_context():
     ])
     db.session.commit()
 
+    # --- Vínculos (GrupoMembro) ---
+    # O "dono" de cada grupo é quem, no fluxo real, teria se cadastrado
+    # primeiro (ver routes_auth.py:cadastro) - aqui só precisa existir
+    # um por grupo (invariante de Grupo).
     db.session.add_all([
-        ClinicaMembro(clinica_id=clinica_vitoria.id, usuario_id=secretaria_vitoria.id, ativo=True),
-        ClinicaMembro(clinica_id=clinica_sp.id, usuario_id=secretaria_sp.id, ativo=True),
-        ClinicaMembro(clinica_id=clinica_vitoria.id, usuario_id=medico_compartilhado.id, ativo=True),
-        ClinicaMembro(clinica_id=clinica_sp.id, usuario_id=medico_compartilhado.id, ativo=True),
-        ClinicaMembro(clinica_id=clinica_vitoria.id, usuario_id=medica_vitoria2.id, ativo=True),
-        ClinicaMembro(clinica_id=filial_grupo_centro.id, usuario_id=secretaria_grupo.id, ativo=True),
-        ClinicaMembro(clinica_id=filial_grupo_praia.id, usuario_id=secretaria_grupo.id, ativo=True),
-        ClinicaMembro(clinica_id=filial_grupo_centro.id, usuario_id=medico_grupo.id, ativo=True),
-        ClinicaMembro(clinica_id=filial_grupo_praia.id, usuario_id=medico_grupo.id, ativo=True),
+        GrupoMembro(grupo_id=grupo_vitoria.id, usuario_id=secretaria_vitoria.id, papel="dono", ativo=True),
+        GrupoMembro(grupo_id=grupo_vitoria.id, usuario_id=medico_compartilhado.id, papel="administrador", ativo=True),
+        GrupoMembro(grupo_id=grupo_vitoria.id, usuario_id=medica_vitoria2.id, papel="membro", ativo=True),
+
+        GrupoMembro(grupo_id=grupo_sp.id, usuario_id=secretaria_sp.id, papel="dono", ativo=True),
+        GrupoMembro(grupo_id=grupo_sp.id, usuario_id=medico_compartilhado.id, papel="membro", ativo=True),
+
+        GrupoMembro(grupo_id=grupo_saude_centro.id, usuario_id=secretaria_grupo.id, papel="dono", ativo=True),
+        GrupoMembro(grupo_id=grupo_saude_centro.id, usuario_id=medico_grupo.id, papel="administrador", ativo=True),
+
+        GrupoMembro(grupo_id=grupo_saude_praia.id, usuario_id=secretaria_grupo.id, papel="dono", ativo=True),
+        GrupoMembro(grupo_id=grupo_saude_praia.id, usuario_id=medico_grupo.id, papel="administrador", ativo=True),
     ])
-    db.session.commit()
-
-    # Horário de atendimento de exemplo, por médico (usado pelo otimizador
-    # de agenda para sugerir horários disponíveis ao paciente). Cada médico
-    # define o seu próprio horário — não existe mais um horário único por
-    # clínica.
-    def criar_horario_padrao(clinica_id, medico_id, hora_inicio=time(7, 0), hora_fim=time(18, 0),
-                              sabado=True, hora_fim_sabado=time(12, 0)):
-        for dia_idx in range(5):  # segunda a sexta
-            db.session.add(MedicoHorario(
-                clinica_id=clinica_id, medico_id=medico_id, dia_semana=dia_idx, ativo=True,
-                hora_inicio=hora_inicio, hora_fim=hora_fim,
-            ))
-        db.session.add(MedicoHorario(
-            clinica_id=clinica_id, medico_id=medico_id, dia_semana=5, ativo=sabado,  # sábado
-            hora_inicio=hora_inicio, hora_fim=hora_fim_sabado,
-        ))
-        db.session.add(MedicoHorario(clinica_id=clinica_id, medico_id=medico_id, dia_semana=6, ativo=False))  # domingo
-
-    # Dr. Carlos atende na Clínica Vitória seg-sex 7h-18h e sábado de manhã.
-    criar_horario_padrao(clinica_vitoria.id, medico_compartilhado.id)
-    # Dra. Fernanda, também na Vitória, com um horário mais restrito, pra
-    # mostrar que cada médico pode ter horários diferentes.
-    criar_horario_padrao(
-        clinica_vitoria.id, medica_vitoria2.id,
-        hora_inicio=time(13, 0), hora_fim=time(19, 0), sabado=False,
-    )
-    # Dr. Carlos também atende na São Paulo, mas ainda não cadastrou horário
-    # lá — pra mostrar que isso é opcional e pode ser preenchido depois.
-
-    # Bloqueio de agenda de exemplo: Dr. Carlos de férias num dia inteiro —
-    # o otimizador de agenda não deve sugerir horários nesse dia.
-    db.session.add(MedicoBloqueio(
-        clinica_id=clinica_vitoria.id, medico_id=medico_compartilhado.id,
-        data_inicio=datetime(2026, 12, 24, 0, 0), data_fim=datetime(2026, 12, 24, 23, 59, 59),
-        motivo="Férias", dia_inteiro=True,
-    ))
     db.session.commit()
 
     # --- Catálogo de medicamentos (compartilhado pela plataforma) ---
@@ -194,14 +158,14 @@ with app.app_context():
     db.session.add_all([med_ozempic, med_xarelto, med_clopidogrel])
     db.session.flush()
 
-    # --- Modelos de preparo (reaproveitáveis entre exames da mesma
-    # filial) e exames que os usam ---
+    # --- Modelos de preparo (reaproveitáveis entre exames do mesmo grupo)
+    # e exames que os usam ---
     def criar_modelo(
-        clinica_id, nome, instrucoes, cortes=None, medicamentos=None, observacoes_medicamentos=None,
+        grupo_id, nome, instrucoes, cortes=None, medicamentos=None, observacoes_medicamentos=None,
         medicamentos_mantidos=None, informacoes_gerais=None, alimentos=None, exames_anteriores=None,
     ):
         modelo = PreparoModelo(
-            clinica_id=clinica_id, nome=nome, instrucoes=instrucoes,
+            grupo_id=grupo_id, nome=nome, instrucoes=instrucoes,
             observacoes_medicamentos=observacoes_medicamentos,
         )
         db.session.add(modelo)
@@ -229,14 +193,16 @@ with app.app_context():
         db.session.flush()
         return modelo
 
-    def criar_exame(clinica_id, medico_id, nome, descricao, modelo):
-        exame = Exame(clinica_id=clinica_id, medico_id=medico_id, nome=nome, descricao=descricao, preparo_modelo=modelo)
+    def criar_exame(grupo_id, medico_id, nome, descricao, modelo):
+        exame = Exame(
+            grupo_id=grupo_id, medico_id=medico_id, nome=nome, descricao=descricao, preparo_modelo=modelo,
+        )
         db.session.add(exame)
         db.session.flush()
         return exame
 
     modelo_colonoscopia_vitoria = criar_modelo(
-        clinica_vitoria.id, "Colonoscopia - padrão Vitória",
+        grupo_vitoria.id, "Colonoscopia - padrão Vitória",
         "3 dias antes: evite alimentos com sementes, grãos integrais e vegetais crus.\n"
         "1 dia antes: dieta líquida (água, chás claros, caldo coado). Tome o laxante conforme prescrito.\n"
         "Evite alimentos ricos em fibra, como batata com casca, milho e feijão, nos 3 dias anteriores.",
@@ -262,7 +228,7 @@ with app.app_context():
         ],
     )
     colonoscopia_vitoria = criar_exame(
-        clinica_vitoria.id, medico_compartilhado.id, "Colonoscopia", "Exame do intestino grosso",
+        grupo_vitoria.id, medico_compartilhado.id, "Colonoscopia", "Exame do intestino grosso",
         modelo_colonoscopia_vitoria,
     )
     # A Colonoscopia também pode ser atendida pela Dra. Fernanda — demonstra
@@ -274,7 +240,7 @@ with app.app_context():
     # separado, mas o preparo é idêntico, então não precisa duplicar o
     # cadastro do preparo em cada exame.
     modelo_hidrogenio_vitoria = criar_modelo(
-        clinica_vitoria.id, "Teste de Hidrogênio/Metano Expirado - padrão",
+        grupo_vitoria.id, "Teste de Hidrogênio/Metano Expirado - padrão",
         "Deverá comparecer ao local do exame trazendo o pedido médico.\n"
         "Não deve ter realizado colonoscopia ou lavagens intestinais nas 4 semanas anteriores ao exame.\n"
         "Não utilizar laxantes e procinéticos na semana que antecede o exame.\n"
@@ -294,53 +260,53 @@ with app.app_context():
         ],
     )
     hidrogenio_lactose_vitoria = criar_exame(
-        clinica_vitoria.id, medico_compartilhado.id, "Teste do Hidrogênio - Lactose",
+        grupo_vitoria.id, medico_compartilhado.id, "Teste do Hidrogênio - Lactose",
         "Investigação de intolerância à lactose", modelo_hidrogenio_vitoria,
     )
     hidrogenio_frutose_vitoria = criar_exame(
-        clinica_vitoria.id, medico_compartilhado.id, "Teste do Hidrogênio - Frutose",
+        grupo_vitoria.id, medico_compartilhado.id, "Teste do Hidrogênio - Frutose",
         "Investigação de intolerância à frutose", modelo_hidrogenio_vitoria,
     )
     hidrogenio_sibo_vitoria = criar_exame(
-        clinica_vitoria.id, medico_compartilhado.id, "Teste do Hidrogênio - Glicose (SIBO)",
+        grupo_vitoria.id, medico_compartilhado.id, "Teste do Hidrogênio - Glicose (SIBO)",
         "Investigação de SIBO/IMO", modelo_hidrogenio_vitoria,
     )
 
     modelo_glicemia_vitoria = criar_modelo(
-        clinica_vitoria.id, "Glicemia de jejum - padrão",
+        grupo_vitoria.id, "Glicemia de jejum - padrão",
         "Não é permitido comer nenhum alimento, incluindo frutas, café com açúcar ou balas.\n"
         "Se usar insulina ou outro medicamento, converse com o médico antes de suspender o uso.",
         cortes=[("Jejum total (sólidos e líquidos)", 8)],
     )
     glicemia_vitoria = criar_exame(
-        clinica_vitoria.id, medico_compartilhado.id, "Glicemia de jejum", "Exame de sangue para medir glicose",
+        grupo_vitoria.id, medico_compartilhado.id, "Glicemia de jejum", "Exame de sangue para medir glicose",
         modelo_glicemia_vitoria,
     )
 
     modelo_hemograma_vitoria = criar_modelo(
-        clinica_vitoria.id, "Hemograma completo - padrão",
+        grupo_vitoria.id, "Hemograma completo - padrão",
         "Não é necessário jejum para este exame na maioria dos casos.\n"
         "Beba água normalmente e evite exercícios físicos intensos nas 24h anteriores.\n"
         "Se estiver tomando algum medicamento contínuo, informe a secretaria antes do exame.",
     )
     hemograma_vitoria = criar_exame(
-        clinica_vitoria.id, medica_vitoria2.id, "Hemograma completo", "Exame de sangue de rotina",
+        grupo_vitoria.id, medica_vitoria2.id, "Hemograma completo", "Exame de sangue de rotina",
         modelo_hemograma_vitoria,
     )
 
     modelo_colonoscopia_sp = criar_modelo(
-        clinica_sp.id, "Colonoscopia - padrão São Paulo",
+        grupo_sp.id, "Colonoscopia - padrão São Paulo",
         "Siga a dieta de preparo intestinal conforme orientado pela equipe da Clínica São Paulo.",
         cortes=[("Jejum total (sólidos e líquidos)", 12)],
     )
     colonoscopia_sp = criar_exame(
-        clinica_sp.id, medico_compartilhado.id, "Colonoscopia", "Exame do intestino grosso",
+        grupo_sp.id, medico_compartilhado.id, "Colonoscopia", "Exame do intestino grosso",
         modelo_colonoscopia_sp,
     )
 
     db.session.commit()
 
-    # --- Pacientes (um por clínica, para mostrar isolamento) ---
+    # --- Pacientes (um por grupo, para mostrar isolamento) ---
     # Pacientes não têm senha — o acesso é feito informando telefone e data
     # de nascimento (ver auth.login_paciente). O e-mail é só um dado de
     # contato opcional, não é mais usado para login do paciente.
@@ -350,7 +316,6 @@ with app.app_context():
     db.session.flush()
 
     joao = Paciente(
-        clinica_id=clinica_vitoria.id,
         usuario_id=usuario_joao.id,
         nome="João Pereira",
         cpf="123.456.789-00",
@@ -366,7 +331,6 @@ with app.app_context():
     db.session.flush()
 
     maria = Paciente(
-        clinica_id=clinica_sp.id,
         usuario_id=usuario_maria.id,
         nome="Maria Silva",
         cpf="987.654.321-00",
@@ -376,7 +340,7 @@ with app.app_context():
     )
     db.session.add(maria)
 
-    # Paciente exclusivo da Dra. Fernanda, na Clínica Vitória — usado para
+    # Paciente exclusivo da Dra. Fernanda, no Grupo Vitória — usado para
     # demonstrar que o Dr. Carlos não vê os pacientes de outro médico.
     telefone_pedro = normalizar_telefone("(27) 99999-1111")
     usuario_pedro = Usuario(nome="Pedro Souza", telefone=telefone_pedro, tipo="paciente")
@@ -384,7 +348,6 @@ with app.app_context():
     db.session.flush()
 
     pedro = Paciente(
-        clinica_id=clinica_vitoria.id,
         usuario_id=usuario_pedro.id,
         nome="Pedro Souza",
         cpf="111.222.333-00",
@@ -395,9 +358,17 @@ with app.app_context():
     db.session.add(pedro)
     db.session.commit()
 
+    # A associação de fato (visibilidade "é paciente deste grupo",
+    # ver medico._filtro_pacientes_da_empresa) é 100% via GrupoPaciente -
+    # paciente é uma identidade global (Fatia 5).
+    db.session.add(GrupoPaciente(grupo_id=grupo_vitoria.id, paciente_id=joao.id))
+    db.session.add(GrupoPaciente(grupo_id=grupo_sp.id, paciente_id=maria.id))
+    db.session.add(GrupoPaciente(grupo_id=grupo_vitoria.id, paciente_id=pedro.id))
+    db.session.commit()
+
     # --- Agendamentos (cada um tem um médico responsável, herdado do exame) ---
     db.session.add(Agendamento(
-        clinica_id=clinica_vitoria.id,
+        grupo_id=grupo_vitoria.id,
         paciente_id=joao.id,
         exame_id=colonoscopia_vitoria.id,
         medico_id=colonoscopia_vitoria.medico_id,
@@ -407,66 +378,63 @@ with app.app_context():
         # que já causou falhas de teste dependentes do horário real em
         # que o seed é executado.
         data_hora=datetime(2026, 8, 6, 10, 0),
-        status="agendado",
     ))
     db.session.add(Agendamento(
-        clinica_id=clinica_vitoria.id,
+        grupo_id=grupo_vitoria.id,
         paciente_id=joao.id,
         exame_id=glicemia_vitoria.id,
         medico_id=glicemia_vitoria.medico_id,
         data_hora=datetime.utcnow() - timedelta(days=10),
-        status="realizado",
+        encerrado_em=datetime.utcnow() - timedelta(days=10),
     ))
     db.session.add(Agendamento(
-        clinica_id=clinica_vitoria.id,
+        grupo_id=grupo_vitoria.id,
         paciente_id=pedro.id,
         exame_id=hemograma_vitoria.id,
         medico_id=hemograma_vitoria.medico_id,
         data_hora=datetime.utcnow() + timedelta(days=2),
-        status="agendado",
     ))
     db.session.add(Agendamento(
-        clinica_id=clinica_sp.id,
+        grupo_id=grupo_sp.id,
         paciente_id=maria.id,
         exame_id=colonoscopia_sp.id,
         medico_id=colonoscopia_sp.medico_id,
         data_hora=datetime.utcnow() + timedelta(days=3),
-        status="agendado",
     ))
     db.session.commit()
 
-    # --- Base inicial de FAQ (por clínica) ---
+    # --- Base inicial de FAQ (por grupo) ---
     db.session.add_all([
         FaqItem(
-            clinica_id=clinica_vitoria.id,
+            grupo_id=grupo_vitoria.id,
             exame_id=colonoscopia_vitoria.id,
             pergunta="Posso comer batata antes da colonoscopia?",
             resposta="Não. Batata (principalmente com casca) tem fibra e pode prejudicar a limpeza do intestino. Evite nos 3 dias antes do exame.",
             criado_por="Ana Secretária",
         ),
         FaqItem(
-            clinica_id=clinica_vitoria.id,
+            grupo_id=grupo_vitoria.id,
             exame_id=colonoscopia_vitoria.id,
             pergunta="Posso beber água durante o jejum?",
             resposta="Sim, água pura é permitida até 2 horas antes do exame.",
             criado_por="Ana Secretária",
         ),
         FaqItem(
-            clinica_id=clinica_vitoria.id,
+            grupo_id=grupo_vitoria.id,
             exame_id=glicemia_vitoria.id,
             pergunta="Posso tomar café antes da glicemia de jejum?",
             resposta="Somente café sem açúcar e sem leite, em pequena quantidade. O ideal é evitar qualquer alimento ou bebida calórica durante o jejum.",
             criado_por="Dr. Carlos Andrade",
         ),
         FaqItem(
-            clinica_id=clinica_vitoria.id,
+            grupo_id=grupo_vitoria.id,
             exame_id=None,
             pergunta="Posso tomar meus medicamentos normalmente?",
             resposta="Na maioria dos casos sim, com um pouco de água. Mas avise sempre a secretaria sobre quais medicamentos você usa, pois alguns exames exigem ajustes.",
             criado_por="Dr. Carlos Andrade",
         ),
         FaqItem(
-            clinica_id=clinica_sp.id,
+            grupo_id=grupo_sp.id,
             exame_id=colonoscopia_sp.id,
             pergunta="Posso comer normalmente até a véspera do exame?",
             resposta="Não, siga a dieta de preparo intestinal indicada pela equipe a partir de 3 dias antes.",
@@ -480,17 +448,17 @@ with app.app_context():
     print("Contas de demonstração:")
     print("  Dono da plataforma: dono@plataforma.com / 123456")
     print()
-    print("  Empresa 'Clínica Vitória' (1 filial, status: ativa):")
-    print("    Secretária: secretaria@clinicavitoria.com / 123456")
-    print("    Médico (também atua na empresa Clínica São Paulo): medico@clinicavitoria.com / 123456")
-    print("    Médica (só nesta empresa): medica2@clinicavitoria.com / 123456")
+    print("  Grupo 'Clínica Vitória' (status: ativa):")
+    print("    Secretária (dono do grupo): secretaria@clinicavitoria.com / 123456")
+    print("    Médico (também atua no grupo Clínica São Paulo): medico@clinicavitoria.com / 123456")
+    print("    Médica (só neste grupo): medica2@clinicavitoria.com / 123456")
     print("    Paciente do Dr. Carlos: telefone (27) 99999-0000 / nascimento 12/04/1985")
     print("    Paciente da Dra. Fernanda: telefone (27) 99999-1111 / nascimento 25/12/1978")
     print()
-    print("  Empresa 'Clínica São Paulo' (1 filial, status: trial):")
-    print("    Secretária: secretaria@clinicasp.com / 123456")
+    print("  Grupo 'Clínica São Paulo' (status: trial):")
+    print("    Secretária (dono do grupo): secretaria@clinicasp.com / 123456")
     print("    Paciente: telefone (11) 98888-0000 / nascimento 03/09/1990")
     print()
-    print("  Empresa 'Grupo Saúde Total' (2 filiais: Centro e Praia, status: ativa, R$150/médico):")
-    print("    Secretária (administra as duas filiais): secretaria@gruposaude.com / 123456")
-    print("    Médico (atua nas duas filiais, conta 1x na cobrança): medico@gruposaude.com / 123456")
+    print("  Grupos 'Grupo Saúde Total - Centro' e '- Praia' (status: ativa, R$150/médico cada):")
+    print("    Secretária (dono dos dois grupos): secretaria@gruposaude.com / 123456")
+    print("    Médico (administrador nos dois grupos, conta 1x em cada cobrança): medico@gruposaude.com / 123456")

@@ -1,207 +1,106 @@
 {% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}Painel{% endblock %}
 {% block conteudo %}
 <h3 class="mb-1">{% if current_user.tipo == "medico" %}Meu painel{% else %}Painel da secretaria{% endif %}</h3>
-<p class="text-muted mb-4">{{ clinica.nome }}</p>
-
-{% if etapas_configuracao_inicial and current_user.perm_dados_clinica %}
-<div class="alert alert-warning d-flex justify-content-between align-items-center">
-  <div>
-    <strong>A configuração inicial da clínica ainda não está completa.</strong>
-    Faltam {{ etapas_configuracao_inicial|length }} etapa{{ 's' if etapas_configuracao_inicial|length != 1 else '' }}:
-    {{ etapas_configuracao_inicial|map(attribute='titulo')|join(', ') }}.
-  </div>
-  <a href="{{ url_for('medico.onboarding') }}" class="btn btn-sm btn-warning text-nowrap ms-3">Continuar configuração &rarr;</a>
-</div>
-{% endif %}
+<p class="text-muted mb-4">{{ clinica.nome if clinica else current_user.nome }}</p>
 
 <div class="row g-3 mb-4">
-  <div class="col-md-3">
+  <div class="col-md-3 col-lg">
     <div class="card p-3">
       <div class="text-muted small">{% if current_user.tipo == "medico" %}Meus pacientes{% else %}Pacientes cadastrados{% endif %}</div>
       <div class="fs-3 fw-bold">{{ total_pacientes }}</div>
       <a href="{{ url_for('medico.pacientes_lista') }}" class="small">Ver pacientes</a>
     </div>
   </div>
-  <div class="col-md-3">
+  <div class="col-md-3 col-lg">
     <div class="card p-3">
       <div class="text-muted small">Perguntas pendentes de resposta</div>
       <div class="fs-3 fw-bold {% if pendentes %}text-warning{% endif %}">{{ pendentes }}</div>
       <a href="{{ url_for('medico.perguntas_pendentes') }}" class="small">Responder agora</a>
     </div>
   </div>
-  <div class="col-md-3">
-    <div class="card p-3">
-      <div class="text-muted small">Solicitações de agendamento</div>
-      <div class="fs-3 fw-bold {% if solicitacoes_pendentes %}text-warning{% endif %}">{{ solicitacoes_pendentes }}</div>
-      <a href="{{ url_for('medico.agenda_solicitacoes') }}" class="small">Ver solicitações</a>
-    </div>
-  </div>
-  <div class="col-md-3">
+  <div class="col-md-3 col-lg">
     <div class="card p-3">
       <div class="text-muted small">Ações rápidas</div>
       {% if current_user.perm_pacientes %}
       <a href="{{ url_for('medico.pacientes_novo') }}" class="btn btn-sm btn-primary mt-1">Novo paciente</a>
       {% endif %}
-      <a href="{{ url_for('medico.exames_novo') }}" class="btn btn-sm btn-outline-primary mt-1">Novo exame</a>
       <a href="{{ url_for('medico.agenda_novo') }}" class="btn btn-sm btn-outline-primary mt-1">Novo agendamento</a>
     </div>
   </div>
 </div>
 
-<div class="card p-3">
-  <h5>Próximos agendamentos</h5>
-  {% if proximos %}
-  <table class="table table-sm mt-2">
-    <thead><tr><th>Data/Hora</th><th>Paciente</th><th>Exame</th><th>Status</th></tr></thead>
-    <tbody>
-      {% for a in proximos %}
-      <tr>
-        <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
-        <td>{{ a.paciente.nome }}</td>
-        <td>{{ a.exame.nome }}</td>
-        <td><span class="badge bg-secondary">{{ a.status }}</span></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="text-muted">Nenhum agendamento futuro.</p>
-  {% endif %}
-  <a href="#agenda-completa" class="small">Ver agenda completa &darr;</a>
+{% if convites_pendentes %}
+<div class="card p-3 mb-4 border-warning">
+  <h6 class="mb-1"><i class="bi bi-envelope-exclamation me-1"></i>Convites para entrar em outros grupos</h6>
+  <p class="text-muted small mb-2">
+    Você foi convidado(a) pelo seu CPF. O vínculo só começa se você aceitar.
+  </p>
+  {% for convite in convites_pendentes %}
+  <div class="d-flex justify-content-between align-items-center border rounded p-2 mb-2">
+    <div>
+      <strong>{{ convite.grupo.nome }}</strong>
+      <span class="text-muted small">— convite de {{ convite.criado_em.strftime('%d/%m/%Y') }}</span>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('grupo.meus_convites') }}" class="btn btn-sm btn-success">Ver convite</a>
+    </div>
+  </div>
+  {% endfor %}
 </div>
+{% endif %}
 
-<div id="agenda-completa" class="mt-4">
+
+<div id="agenda-completa">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h5 class="mb-0">Agenda de exames</h5>
     <a href="{{ url_for('medico.agenda_novo') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Novo agendamento</a>
   </div>
 
   <div class="card p-3 mb-4">
-    <div class="d-flex gap-3 mb-3 small flex-wrap">
-      <span><span class="badge" style="background-color:#ffc107">&nbsp;</span> solicitado</span>
-      <span><span class="badge" style="background-color:#6c757d">&nbsp;</span> agendado</span>
-      <span><span class="badge" style="background-color:#0dcaf0">&nbsp;</span> confirmado</span>
-      <span><span class="badge" style="background-color:#198754">&nbsp;</span> realizado</span>
-      <span><span class="badge" style="background-color:#dc3545">&nbsp;</span> cancelado</span>
-    </div>
-    <div id="calendario"></div>
+    <h5>Próximos agendamentos</h5>
+    {% if proximos %}
+    <table class="table table-sm mt-2">
+      <thead><tr><th>Data/Hora</th>{{ th_filial() }}<th>Paciente</th><th>Exame</th><th>Médico</th></tr></thead>
+      <tbody>
+        {% for a in proximos %}
+        <tr>
+          <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+          {{ td_filial(a) }}
+          <td>{{ a.paciente.nome }}</td>
+          <td>{{ a.exame.nome }}</td>
+          <td>{{ a.medico.nome }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">Nenhum agendamento futuro.</p>
+    {% endif %}
   </div>
 
   <div class="card p-3">
     <h5>Lista completa</h5>
     <table class="table table-hover">
-      <thead><tr><th>Data/Hora</th><th>Paciente</th><th>Exame</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Data/Hora</th>{{ th_filial() }}<th>Paciente</th><th>Exame</th><th>Médico</th><th></th></tr></thead>
       <tbody>
         {% for a in agendamentos %}
         <tr>
           <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+          {{ td_filial(a) }}
           <td>{{ a.paciente.nome }}</td>
           <td>{{ a.exame.nome }}</td>
+          <td>{{ a.medico.nome }}</td>
           <td>
-            <span class="badge
-              {% if a.status == 'solicitado' %}bg-warning text-dark
-              {% elif a.status == 'agendado' %}bg-secondary
-              {% elif a.status == 'confirmado' %}bg-info
-              {% elif a.status == 'realizado' %}bg-success
-              {% else %}bg-danger{% endif %}">{{ a.status }}</span>
             {% if a.encerrada %}<span class="badge bg-dark">encerrado</span>{% endif %}
-          </td>
-          <td class="text-nowrap">
-            <form method="post" action="{{ url_for('medico.agenda_status', agendamento_id=a.id) }}" class="d-flex gap-1 mb-1">
-              <select name="status" class="form-select form-select-sm" style="width:auto">
-                {% for s in ['solicitado', 'agendado', 'confirmado', 'realizado', 'cancelado'] %}
-                <option value="{{ s }}" {% if s == a.status %}selected{% endif %}>{{ s }}</option>
-                {% endfor %}
-              </select>
-              <button type="submit" class="btn btn-sm btn-outline-primary">Atualizar</button>
-            </form>
-            <div class="d-flex gap-1 flex-wrap">
-              <a href="{{ url_for('medico.atendimento', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Atendimento">Atendimento</a>
-              <a href="{{ url_for('medico.resultado_upload', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Resultado">Resultado</a>
-              <a href="{{ url_for('medico.pagamento_registrar', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Pagamento">Pagamento</a>
-            </div>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="text-muted text-center">Nenhum agendamento cadastrado.</td></tr>
+        <tr><td colspan="{{ 6 if mostrar_filial else 5 }}" class="text-muted text-center">Nenhum agendamento cadastrado.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
-
-<!-- Modal com detalhes do agendamento e atualização rápida de status -->
-<div class="modal fade" id="modalAgendamento" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Detalhes do agendamento</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <p class="mb-1"><strong>Paciente:</strong> <span id="modalPaciente"></span></p>
-        <p class="mb-1"><strong>Exame:</strong> <span id="modalExame"></span></p>
-        <p class="mb-1"><strong>Data/Hora:</strong> <span id="modalDataHora"></span></p>
-        <p class="mb-3"><strong>Observações:</strong> <span id="modalObservacoes">-</span></p>
-        <form id="formModalStatus" method="post">
-          <label class="form-label">Status</label>
-          <div class="input-group">
-            <select name="status" id="modalStatusSelect" class="form-select">
-              <option value="solicitado">solicitado</option>
-              <option value="agendado">agendado</option>
-              <option value="confirmado">confirmado</option>
-              <option value="realizado">realizado</option>
-              <option value="cancelado">cancelado</option>
-            </select>
-            <button type="submit" class="btn btn-primary">Atualizar</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-</div>
-
-<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-  var elCalendario = document.getElementById('calendario');
-  var modalEl = document.getElementById('modalAgendamento');
-  var modal = new bootstrap.Modal(modalEl);
-
-  var calendario = new FullCalendar.Calendar(elCalendario, {
-    locale: 'pt-br',
-    initialView: 'dayGridMonth',
-    headerToolbar: {
-      left: 'prev,next today',
-      center: 'title',
-      right: 'dayGridMonth,timeGridWeek,listWeek'
-    },
-    buttonText: {
-      today: 'Hoje',
-      month: 'Mês',
-      week: 'Semana',
-      list: 'Lista'
-    },
-    height: 650,
-    events: "{{ url_for('medico.agenda_eventos') }}",
-    eventClick: function (info) {
-      var props = info.event.extendedProps;
-      document.getElementById('modalPaciente').textContent = props.paciente;
-      document.getElementById('modalExame').textContent = props.exame;
-      document.getElementById('modalDataHora').textContent = info.event.start.toLocaleString('pt-BR');
-      document.getElementById('modalObservacoes').textContent = props.observacoes || '-';
-      document.getElementById('modalStatusSelect').value = props.status;
-
-      var form = document.getElementById('formModalStatus');
-      form.action = "/equipe/agenda/" + info.event.id + "/status";
-
-      modal.show();
-    }
-  });
-
-  calendario.render();
-});
-</script>
 {% endblock %}

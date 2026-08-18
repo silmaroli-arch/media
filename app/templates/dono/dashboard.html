@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 {% block titulo %}Painel do dono{% endblock %}
 {% block conteudo %}
-<h3 class="mb-4">Empresas na plataforma</h3>
+<h3 class="mb-4">Grupos na plataforma</h3>
 
 <div class="row g-3 mb-4">
   <div class="col-md-3">
     <div class="card p-3">
-      <div class="text-muted small">Total de empresas</div>
+      <div class="text-muted small">Total de grupos</div>
       <div class="fs-3 fw-bold">{{ resumo.total }}</div>
     </div>
   </div>
   <div class="col-md-3">
     <div class="card p-3">
-      <div class="text-muted small">Ativas</div>
+      <div class="text-muted small">Ativos</div>
       <div class="fs-3 fw-bold text-success">{{ resumo.ativas }}</div>
     </div>
   </div>
@@ -24,7 +24,7 @@
   </div>
   <div class="col-md-3">
     <div class="card p-3">
-      <div class="text-muted small">Inadimplentes / Bloqueadas</div>
+      <div class="text-muted small">Inadimplentes / Bloqueados</div>
       <div class="fs-3 fw-bold text-danger">{{ resumo.inadimplentes + resumo.bloqueadas }}</div>
     </div>
   </div>
@@ -33,10 +33,10 @@
 <div class="card p-3 mb-4">
   <h5 class="mb-1">Configuração do trial</h5>
   <p class="text-muted small mb-3">
-    Toda empresa nova, ao se cadastrar em <code>/cadastro</code>, entra com esse número de dias de trial.
-    Quando a data de vencimento passa e a empresa ainda está em trial, o status muda automaticamente
-    para <strong>inadimplente</strong> (a empresa e suas filiais continuam acessando normalmente —
-    bloquear é sempre uma decisão sua).
+    Todo grupo novo, criado ao se cadastrar em <code>/cadastro</code> (ou ao criar um grupo adicional),
+    entra com esse número de dias de trial. Quando a data de vencimento passa e o grupo ainda está em
+    trial, o status muda automaticamente para <strong>inadimplente</strong> (o grupo continua acessando
+    normalmente — bloquear é sempre uma decisão sua).
   </p>
   <form method="post" action="{{ url_for('dono.configuracoes') }}" class="d-flex align-items-end gap-2">
     <div>
@@ -49,35 +49,35 @@
 
 <div class="card p-3">
   <table class="table table-hover">
-    <thead><tr><th>Empresa</th><th>Filiais</th><th>Médicos</th><th>Status</th><th>Vencimento</th><th>Criada em</th><th></th></tr></thead>
+    <thead><tr><th>Grupo</th><th>Membros</th><th>Médicos</th><th>Status</th><th>Vencimento</th><th>Criado em</th><th></th></tr></thead>
     <tbody>
-      {% for e in empresas %}
+      {% for g in grupos %}
       <tr>
-        <td>{{ e.nome }}</td>
-        <td>{{ e.filiais|length }}</td>
-        <td>{{ e.medicos_distintos|length }}</td>
+        <td>{{ g.nome }}</td>
+        <td>{{ g.medicos_e_secretarias|length }}</td>
+        <td>{{ g.medicos_distintos|length }}</td>
         <td>
           <span class="badge
-            {% if e.status == 'ativa' %}bg-success
-            {% elif e.status == 'trial' %}bg-info
-            {% elif e.status == 'inadimplente' %}bg-warning text-dark
-            {% else %}bg-danger{% endif %}">{{ e.status }}</span>
+            {% if g.status == 'ativa' %}bg-success
+            {% elif g.status == 'trial' %}bg-info
+            {% elif g.status == 'inadimplente' %}bg-warning text-dark
+            {% else %}bg-danger{% endif %}">{{ g.status }}</span>
         </td>
         <td>
-          {% if e.data_vencimento %}
-            {{ e.data_vencimento.strftime('%d/%m/%Y') }}
-            {% if e.data_vencimento < hoje and e.status not in ['bloqueada'] %}
+          {% if g.data_vencimento %}
+            {{ g.data_vencimento.strftime('%d/%m/%Y') }}
+            {% if g.data_vencimento < hoje and g.status not in ['bloqueada'] %}
               <span class="badge bg-warning text-dark ms-1">vencida</span>
             {% endif %}
           {% else %}
             -
           {% endif %}
         </td>
-        <td>{{ e.criado_em.strftime('%d/%m/%Y') }}</td>
-        <td><a href="{{ url_for('dono.empresa_detalhe', empresa_id=e.id) }}" class="btn btn-sm btn-outline-secondary">Gerenciar</a></td>
+        <td>{{ g.criado_em.strftime('%d/%m/%Y') }}</td>
+        <td><a href="{{ url_for('dono.grupo_detalhe', grupo_id=g.id) }}" class="btn btn-sm btn-outline-secondary">Gerenciar</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="text-muted text-center">Nenhuma empresa cadastrada ainda.</td></tr>
+      <tr><td colspan="7" class="text-muted text-center">Nenhum grupo cadastrado ainda.</td></tr>
       {% endfor %}
     </tbody>
   </table>

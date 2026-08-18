@@ -72,7 +72,8 @@
       </div>
       <div class="col-md-6">
         <label class="form-label">Telefone do acompanhante</label>
-        <input type="text" name="acompanhante_telefone" class="form-control">
+        <input type="text" inputmode="numeric" name="acompanhante_telefone" id="acompanhante_telefone" class="form-control" placeholder="(27) 99999-9999">
+        <div class="invalid-feedback" id="acompanhante_telefone_status"></div>
       </div>
     </div>
     <div class="form-text mt-2">
@@ -85,6 +86,66 @@
 </div>
 
 <script>
+  // Mascara fixa de telefone: enquanto a pessoa digita, os digitos ainda
+  // nao preenchidos ficam marcados com "_" (ex.: "(27) 999__-____"), em
+  // vez de so ir formatando os digitos ja digitados - mesma logica usada
+  // no cadastro de paciente (ver app/templates/medico/pacientes_form.html).
+  // Importante: o campo NAO pode ter "maxlength" no HTML, porque a
+  // mascara ja preenche o padrao inteiro (com os "_") desde o primeiro
+  // digito - um maxlength do tamanho do padrao bloquearia o resto da
+  // digitacao no navegador.
+  function aplicarMascaraFixa(campo, padrao) {
+    if (!campo) return;
+    var maxDigitos = (padrao.match(/9/g) || []).length;
+    campo.addEventListener('input', function () {
+      var digitos = campo.value.replace(/\D/g, '').slice(0, maxDigitos);
+      if (!digitos) {
+        campo.value = '';
+        return;
+      }
+      var resultado = '';
+      var pos = 0;
+      var i;
+      for (i = 0; i < padrao.length && pos < digitos.length; i++) {
+        if (padrao[i] === '9') {
+          resultado += digitos[pos];
+          pos++;
+        } else {
+          resultado += padrao[i];
+        }
+      }
+      campo.value = resultado;
+    });
+  }
+  aplicarMascaraFixa(document.getElementById('acompanhante_telefone'), '(99) 99999-9999');
+
+  // Telefone do acompanhante incompleto (ex.: só o DDD) não travava o
+  // envio - um telefone brasileiro de verdade tem 10 ou 11 dígitos.
+  function marcarTelefoneAcompanhanteValido() {
+    var campo = document.getElementById('acompanhante_telefone');
+    var status = document.getElementById('acompanhante_telefone_status');
+    var d = campo.value.replace(/\D/g, '');
+    if (!d) { status.textContent = ''; campo.classList.remove('is-invalid'); return true; }
+    if (d.length === 10 || d.length === 11) {
+      status.textContent = '';
+      campo.classList.remove('is-invalid');
+      return true;
+    }
+    status.textContent = 'Telefone incompleto — digite o DDD e o número completos.';
+    campo.classList.add('is-invalid');
+    return false;
+  }
+  document.getElementById('acompanhante_telefone').addEventListener('blur', marcarTelefoneAcompanhanteValido);
+  var formularioAgenda = document.querySelector('form');
+  if (formularioAgenda) {
+    formularioAgenda.addEventListener('submit', function (evento) {
+      if (!marcarTelefoneAcompanhanteValido()) {
+        evento.preventDefault();
+        document.getElementById('acompanhante_telefone').focus();
+      }
+    });
+  }
+
   // Trocar a filial ou o médico recarrega a página (via GET) só pra
   // atualizar as listas de paciente/exame — não é um envio real do
   // agendamento, que só acontece ao clicar em "Agendar".

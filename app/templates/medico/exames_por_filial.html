@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block titulo %}Associar exames{% endblock %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h3>Associar exames</h3>
+  <a href="{{ url_for('medico.exames_lista') }}" class="btn btn-outline-secondary">Voltar para Exames</a>
+</div>
+<p class="text-muted">
+  Cada associação diz <strong>qual exame</strong> está disponível, com <strong>qual médico</strong>
+  responsável. Clique em "Adicionar", preencha os campos e salve — pronto.
+</p>
+
+{# ---------- Formulário de ADICIONAR (aberto pelo botão) ---------- #}
+<details class="mb-3" id="form-adicionar" {% if not associacoes %}open{% endif %}>
+  <summary class="btn btn-primary"><i class="bi bi-plus-lg"></i> Adicionar</summary>
+  <div class="card p-3 mt-2" style="max-width: 640px;">
+    <form method="post" action="{{ url_for('medico.exames_por_filial_associar') }}">
+      <div class="mb-2">
+        <label class="form-label">Exame</label>
+        <select name="nome" class="form-select" required>
+          <option value="">Selecione o exame...</option>
+          {% for nome in nomes %}
+          <option value="{{ nome }}">{{ nome }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">
+          Exame ainda não está na lista? <a href="{{ url_for('medico.exames_novo') }}">Cadastre o exame</a> primeiro.
+        </div>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Médico</label>
+        <select name="medico_id" class="form-select" required>
+          <option value="">Selecione o médico...</option>
+          {% for m in medicos_disponiveis %}
+          <option value="{{ m.id }}">{{ m.nome }}</option>
+          {% endfor %}
+        </select>
+        {% if not medicos_disponiveis %}
+        <div class="form-text text-warning-emphasis">Nenhum médico disponível ainda (vincule pela tela Equipe).</div>
+        {% endif %}
+      </div>
+      <button type="submit" class="btn btn-primary">Salvar</button>
+    </form>
+  </div>
+</details>
+
+{# ---------- Formulário de EDITAR (aberto pelo link "Editar" da linha) ---------- #}
+{% if editar_exame %}
+{% set tem_agendamentos = editar_exame.agendamentos|length > 0 %}
+<div class="card p-3 mb-3 border-primary" style="max-width: 640px;" id="form-editar">
+  <h6 class="mb-2">Editar associação</h6>
+  {% if tem_agendamentos %}
+  <div class="alert alert-warning py-2 small">
+    Esta associação já tem agendamento(s) marcados — por isso o exame fica travado
+    (os agendamentos apontam pra ela). O médico continua editável.
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('medico.exames_por_filial_atualizar', exame_id=editar_exame.id) }}">
+    <div class="mb-2">
+      <label class="form-label">Exame</label>
+      <select name="nome" class="form-select" required {% if tem_agendamentos %}disabled{% endif %}>
+        {% for nome in nomes %}
+        <option value="{{ nome }}" {% if nome == editar_exame.nome %}selected{% endif %}>{{ nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Médico</label>
+      <select name="medico_id" class="form-select" required>
+        {% for m in medicos_disponiveis %}
+        <option value="{{ m.id }}"
+          {% if m.id == editar_exame.medico_id and editar_exame.medico_confirmado %}selected{% endif %}>{{ m.nome }}</option>
+        {% endfor %}
+      </select>
+      {% if not editar_exame.medico_confirmado %}
+      <div class="form-text text-warning-emphasis">
+        <i class="bi bi-exclamation-triangle"></i> O médico desta associação ainda não foi confirmado — escolha e salve para confirmar.
+      </div>
+      {% endif %}
+    </div>
+    <button type="submit" class="btn btn-primary">Salvar</button>
+    <a href="{{ url_for('medico.exames_por_filial') }}" class="btn btn-link">Cancelar</a>
+  </form>
+  <form method="post" action="{{ url_for('medico.exames_por_filial_excluir', exame_id=editar_exame.id) }}" class="mt-2"
+        onsubmit="return confirm('Excluir a associação de {{ editar_exame.nome }}?');">
+    <button type="submit" class="btn btn-sm btn-outline-danger">Excluir esta associação</button>
+  </form>
+</div>
+{% endif %}
+
+{# ---------- Lista das associações ---------- #}
+<div class="card p-3">
+  <table class="table table-hover align-middle">
+    <thead><tr><th>Exame</th><th>Médico</th><th></th></tr></thead>
+    <tbody>
+      {% for e in associacoes %}
+      <tr>
+        <td>{{ e.nome }}</td>
+        <td>
+          {% if e.medico_confirmado %}
+          {{ e.medico.nome }}
+          {% else %}
+          <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">
+            <i class="bi bi-exclamation-triangle"></i> não confirmado (provisório: {{ e.medico.nome }})
+          </span>
+          {% endif %}
+          {% for m in e.medicos_extra %}
+          <span class="badge bg-light text-dark border ms-1">+ {{ m.nome }}</span>
+          {% endfor %}
+        </td>
+        <td class="text-nowrap">
+          <a href="{{ url_for('medico.exames_por_filial', editar=e.id) }}#form-editar" class="btn btn-sm btn-outline-primary">Editar</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-muted text-center">Nenhuma associação ainda — clique em "Adicionar" acima.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

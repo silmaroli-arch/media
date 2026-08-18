@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block titulo %}Relatório de agenda{% endblock %}
+{% block conteudo %}
+{% set endpoint_atual = 'relatorios.agenda' %}
+{% set kwargs = {'data_inicio': data_inicio.isoformat(), 'data_fim': data_fim.isoformat(), 'medico_id': medico_id or ''} %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h3 class="mb-0">Relatório de agenda / operação</h3>
+  {% include "relatorios/_exportar.html" %}
+</div>
+
+<form method="get" class="card p-3 mb-4 no-print">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label">De</label>
+      <input type="date" name="data_inicio" class="form-control" value="{{ data_inicio.isoformat() }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Até</label>
+      <input type="date" name="data_fim" class="form-control" value="{{ data_fim.isoformat() }}">
+    </div>
+    {% if not restrito_a_si_mesmo %}
+    <div class="col-md-3">
+      <label class="form-label">Médico</label>
+      <select name="medico_id" class="form-select">
+        <option value="">Todos</option>
+        {% for m in medicos %}
+        <option value="{{ m.id }}" {% if medico_id == m.id %}selected{% endif %}>{{ m.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <div class="col-md-3">
+      <button type="submit" class="btn btn-primary w-100">Filtrar</button>
+    </div>
+  </div>
+</form>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="text-muted small">Total de agendamentos</div>
+      <div class="fs-3 fw-bold">{{ total }}</div>
+    </div>
+  </div>
+</div>
+
+{% if total %}
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="card p-3">
+      <div class="text-muted small mb-2">Por tipo de exame</div>
+      <canvas id="graficoExame" height="140"></canvas>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card p-3">
+      <div class="text-muted small mb-2">Por dia</div>
+      <canvas id="graficoDia" height="140"></canvas>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card p-3">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead>
+        <tr><th>Data/hora</th><th>Paciente</th><th>Exame</th><th>Médico</th></tr>
+      </thead>
+      <tbody>
+        {% for a in agendamentos %}
+        <tr>
+          <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+          <td>{{ a.paciente.nome }}</td>
+          <td>{{ a.exame.nome }}</td>
+          <td>{{ a.medico.nome }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-center text-muted py-4">Nenhum agendamento encontrado para este período/filtro.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if total %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById('graficoExame'), {
+  type: 'bar',
+  data: { labels: {{ por_exame.keys()|list|tojson }}, datasets: [{ label: 'Agendamentos', data: {{ por_exame.values()|list|tojson }}, backgroundColor: '#0d6efd' }] },
+  options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+});
+new Chart(document.getElementById('graficoDia'), {
+  type: 'line',
+  data: { labels: {{ por_dia.keys()|list|tojson }}, datasets: [{ label: 'Agendamentos', data: {{ por_dia.values()|list|tojson }}, borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.15)', tension: .3, fill: true }] },
+  options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+});
+</script>
+{% endif %}
+{% endblock %}

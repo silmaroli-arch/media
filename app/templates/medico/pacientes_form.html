@@ -1,9 +1,43 @@
 {% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}{% if paciente %}Editar paciente{% else %}Novo paciente{% endif %}{% endblock %}
 {% block conteudo %}
 <h3 class="mb-3">{% if paciente %}Editar cadastro de {{ paciente.nome }}{% else %}Cadastrar novo paciente{% endif %}</h3>
+
+{% if not paciente %}
+<div class="card p-3 mb-3">
+  <h6 class="mb-1"><i class="bi bi-search me-1"></i>Importar paciente pelo CPF</h6>
+  <p class="text-muted small mb-2">
+    O paciente pode já ter cadastro na plataforma (feito por ele mesmo no app, ou por outra
+    clínica). Digite o CPF: se ele existir, os dados são importados na hora — só preencha o
+    formulário completo abaixo se o CPF não for encontrado.
+  </p>
+  <form method="get" class="d-flex gap-2" style="max-width: 420px;">
+    <input type="text" inputmode="numeric" name="cpf_busca" class="form-control"
+           placeholder="000.000.000-00" value="{{ cpf_busca or '' }}">
+    <button type="submit" class="btn btn-outline-primary text-nowrap">Buscar CPF</button>
+  </form>
+  {% if encontrado %}
+  <div class="alert alert-success d-flex justify-content-between align-items-center mt-3 mb-0">
+    <div>
+      Encontramos <strong>{{ encontrado.nome }}</strong>
+      {% if encontrado.data_nascimento %}(nascimento: {{ encontrado.data_nascimento.strftime('%d/%m/%Y') }}){% endif %}
+      na plataforma.
+    </div>
+    <form method="post" action="{{ url_for('medico.pacientes_importar') }}">
+      <input type="hidden" name="cpf" value="{{ encontrado.cpf }}">
+      <button type="submit" class="btn btn-success text-nowrap">Importar para esta clínica</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="card p-4">
-  <form method="post">
+  <form method="post" id="form-paciente">
+    {# O paciente é cadastrado na EMPRESA - não se escolhe filial aqui
+       ("o cliente é só cliente"). A filial é escolhida em cada
+       agendamento, na hora de marcar a consulta. #}
     <div class="row g-3">
       <div class="col-md-6">
         <label class="form-label">Nome completo</label>
@@ -11,19 +45,22 @@
       </div>
       {% if not paciente %}
       <div class="col-md-6">
-        <label class="form-label">CPF</label>
-        <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" maxlength="14" required>
+        <label class="form-label">CPF (login de acesso do paciente)</label>
+        <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00"
+               value="{{ cpf_busca if (busca_feita and not encontrado) else '' }}" required>
       </div>
       <div class="col-md-6">
-        <label class="form-label">Telefone (login de acesso)</label>
+        <label class="form-label">Telefone</label>
         <input type="text" inputmode="numeric" name="telefone" id="telefone"
-               class="form-control" placeholder="(27) 99999-9999" maxlength="15" required>
+               class="form-control" placeholder="(27) 99999-9999" required>
+        <div class="invalid-feedback" id="telefone_status"></div>
       </div>
       <div class="col-md-6">
         <label class="form-label">Data de nascimento</label>
         <input type="text" inputmode="numeric" name="data_nascimento" id="data_nascimento"
-               class="form-control" placeholder="DD/MM/AAAA" maxlength="10" autocomplete="bday" required>
-        <div class="form-text">O paciente usa o telefone e a data de nascimento para acessar o sistema — não é preciso criar senha.</div>
+               class="form-control" placeholder="DD/MM/AAAA" autocomplete="bday" required>
+        <div class="form-text">O paciente usa o CPF e a data de nascimento para acessar o sistema — não é preciso criar senha.</div>
+        <div class="invalid-feedback" id="data_nascimento_status"></div>
       </div>
       {% else %}
       <div class="col-md-6">
@@ -31,7 +68,7 @@
         <input type="text" class="form-control" value="{{ paciente.cpf }}" disabled>
       </div>
       <div class="col-md-6">
-        <label class="form-label">Telefone (login de acesso)</label>
+        <label class="form-label">Telefone</label>
         <input type="text" class="form-control" value="{{ paciente.telefone or '' }}" disabled>
       </div>
       {% endif %}
@@ -52,12 +89,12 @@
     <div class="row g-3">
       <div class="col-md-3">
         <label class="form-label">CEP</label>
-        <input type="text" name="cep" id="cep" class="form-control" value="{{ paciente.cep if paciente else '' }}" placeholder="00000-000">
+        <input type="text" inputmode="numeric" name="cep" id="cep" class="form-control" value="{{ paciente.cep if paciente else '' }}" placeholder="00000-000">
         <div class="form-text" id="cep_status"></div>
       </div>
       <div class="col-md-7">
         <label class="form-label">Rua</label>
-        <input type="text" name="rua" id="rua" class="form-control" value="{{ paciente.rua if paciente else '' }}">
+        <input type="text" name="rua" id="rua" class="form-control bg-light" value="{{ paciente.rua if paciente else '' }}" readonly>
       </div>
       <div class="col-md-2">
         <label class="form-label">Número</label>
@@ -69,15 +106,15 @@
       </div>
       <div class="col-md-4">
         <label class="form-label">Bairro</label>
-        <input type="text" name="bairro" id="bairro" class="form-control" value="{{ paciente.bairro if paciente else '' }}">
+        <input type="text" name="bairro" id="bairro" class="form-control bg-light" value="{{ paciente.bairro if paciente else '' }}" readonly>
       </div>
       <div class="col-md-3">
         <label class="form-label">Cidade</label>
-        <input type="text" name="cidade" id="cidade" class="form-control" value="{{ paciente.cidade if paciente else '' }}">
+        <input type="text" name="cidade" id="cidade" class="form-control bg-light" value="{{ paciente.cidade if paciente else '' }}" readonly>
       </div>
       <div class="col-md-1">
         <label class="form-label">UF</label>
-        <input type="text" name="uf" id="uf" maxlength="2" class="form-control" value="{{ paciente.uf if paciente else '' }}">
+        <input type="text" name="uf" id="uf" maxlength="2" class="form-control bg-light" value="{{ paciente.uf if paciente else '' }}" readonly>
       </div>
     </div>
 
@@ -90,7 +127,8 @@
       </div>
       <div class="col-md-6">
         <label class="form-label">Telefone</label>
-        <input type="text" name="contato_emergencia_telefone" class="form-control" value="{{ paciente.contato_emergencia_telefone if paciente else '' }}">
+        <input type="text" inputmode="numeric" name="contato_emergencia_telefone" id="contato_emergencia_telefone" class="form-control" value="{{ paciente.contato_emergencia_telefone if paciente else '' }}">
+        <div class="invalid-feedback" id="contato_emergencia_telefone_status"></div>
       </div>
     </div>
 
@@ -104,60 +142,125 @@
 </div>
 
 <script>
-  // Máscaras numéricas (CPF e data de nascimento) — só existem no
-  // formulário de cadastro novo (na edição, esses campos ficam desabilitados
-  // e não têm o id abaixo).
-  var campoCpf = document.getElementById('cpf');
-  if (campoCpf) {
-    campoCpf.addEventListener('input', function () {
-      var digitos = campoCpf.value.replace(/\D/g, '').slice(0, 11);
-      var formatado = digitos;
-      if (digitos.length > 9) {
-        formatado = digitos.slice(0, 3) + '.' + digitos.slice(3, 6) + '.' + digitos.slice(6, 9) + '-' + digitos.slice(9);
-      } else if (digitos.length > 6) {
-        formatado = digitos.slice(0, 3) + '.' + digitos.slice(3, 6) + '.' + digitos.slice(6);
-      } else if (digitos.length > 3) {
-        formatado = digitos.slice(0, 3) + '.' + digitos.slice(3);
+  // Mascaras fixas: enquanto a pessoa digita, os espacos dos digitos ainda
+  // nao preenchidos ficam marcados com "_", em vez de ir aparecendo so a
+  // pontuacao dos digitos ja digitados - fica mais facil ver quantos
+  // digitos ainda faltam (ex.: "123.4__.___-__" em vez de so "123.4").
+  // "9" no padrao = uma posicao de digito; qualquer outro caractere e
+  // literal (ponto, traco, barra, parenteses, espaco).
+  function aplicarMascaraFixa(campo, padrao) {
+    if (!campo) return;
+    var maxDigitos = (padrao.match(/9/g) || []).length;
+    campo.addEventListener('input', function () {
+      var digitos = campo.value.replace(/\D/g, '').slice(0, maxDigitos);
+      if (!digitos) {
+        campo.value = '';
+        return;
       }
-      campoCpf.value = formatado;
-    });
-  }
-  var campoDataNascimento = document.getElementById('data_nascimento');
-  if (campoDataNascimento) {
-    campoDataNascimento.addEventListener('input', function () {
-      var digitos = campoDataNascimento.value.replace(/\D/g, '').slice(0, 8);
-      var formatado = digitos;
-      if (digitos.length > 4) {
-        formatado = digitos.slice(0, 2) + '/' + digitos.slice(2, 4) + '/' + digitos.slice(4);
-      } else if (digitos.length > 2) {
-        formatado = digitos.slice(0, 2) + '/' + digitos.slice(2);
+      var resultado = '';
+      var pos = 0;
+      for (var i = 0; i < padrao.length && pos < digitos.length; i++) {
+        if (padrao[i] === '9') {
+          resultado += digitos[pos];
+          pos++;
+        } else {
+          resultado += padrao[i];
+        }
       }
-      campoDataNascimento.value = formatado;
-    });
-  }
-  var campoTelefone = document.getElementById('telefone');
-  if (campoTelefone) {
-    campoTelefone.addEventListener('input', function () {
-      var digitos = campoTelefone.value.replace(/\D/g, '').slice(0, 11);
-      var formatado = digitos;
-      if (digitos.length > 6) {
-        formatado = '(' + digitos.slice(0, 2) + ') ' + digitos.slice(2, digitos.length > 10 ? 7 : 6) + '-' + digitos.slice(digitos.length > 10 ? 7 : 6);
-      } else if (digitos.length > 2) {
-        formatado = '(' + digitos.slice(0, 2) + ') ' + digitos.slice(2);
-      } else if (digitos.length > 0) {
-        formatado = '(' + digitos;
-      }
-      campoTelefone.value = formatado;
+      // Completa o resto do padrao com "_" nas posicoes de digito que
+      // ainda faltam, mantendo a pontuacao fixa visivel.
+      campo.value = resultado;
     });
   }
 
+  // Máscaras numéricas (CPF e data de nascimento) — só existem no
+  // formulário de cadastro novo (na edição, esses campos ficam desabilitados
+  // e não têm o id abaixo).
+  aplicarMascaraFixa(document.getElementById('cpf'), '999.999.999-99');
+  aplicarMascaraFixa(document.getElementById('data_nascimento'), '99/99/9999');
+  aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
+  aplicarMascaraFixa(document.getElementById('contato_emergencia_telefone'), '(99) 99999-9999');
+  aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
+
+  // Data de nascimento e CEP com máscara não travavam mais o backspace,
+  // mas deixavam enviar o formulário pela metade (ex.: só "10" no
+  // nascimento, ou CEP incompleto com rua/bairro/cidade/UF em branco) -
+  // agora confere ao sair do campo e de novo no envio.
+  var campoDataNasc = document.getElementById('data_nascimento');
+  function dataNascimentoValida(valor) {
+    var d = valor.replace(/\D/g, '');
+    if (d.length !== 8) return false;
+    var dia = parseInt(d.slice(0, 2), 10);
+    var mes = parseInt(d.slice(2, 4), 10);
+    var ano = parseInt(d.slice(4, 8), 10);
+    if (mes < 1 || mes > 12 || dia < 1 || ano < 1900) return false;
+    var data = new Date(ano, mes - 1, dia);
+    return data.getFullYear() === ano && data.getMonth() === mes - 1 && data.getDate() === dia;
+  }
+  function marcarDataNascimentoValida() {
+    if (!campoDataNasc) return true;
+    var status = document.getElementById('data_nascimento_status');
+    var d = campoDataNasc.value.replace(/\D/g, '');
+    if (!d) { status.textContent = ''; campoDataNasc.classList.remove('is-invalid'); return true; }
+    if (dataNascimentoValida(campoDataNasc.value)) {
+      status.textContent = '';
+      campoDataNasc.classList.remove('is-invalid');
+      return true;
+    }
+    status.textContent = d.length < 8
+      ? 'Data incompleta — preencha dia, mês e ano (DD/MM/AAAA).'
+      : 'Data inválida — confira o dia e o mês digitados.';
+    campoDataNasc.classList.add('is-invalid');
+    return false;
+  }
+  if (campoDataNasc) campoDataNasc.addEventListener('blur', marcarDataNascimentoValida);
+
+  // Telefone com máscara não travava mais o backspace, mas deixava
+  // enviar o formulário com só o DDD digitado (ex.: "(27") - um telefone
+  // brasileiro de verdade tem 10 ou 11 dígitos (DDD + número).
+  function marcarTelefoneValido(idCampo, idStatus, obrigatorio) {
+    var campo = document.getElementById(idCampo);
+    var status = document.getElementById(idStatus);
+    if (!campo || !status) return true;
+    var d = campo.value.replace(/\D/g, '');
+    if (!d) {
+      status.textContent = '';
+      campo.classList.remove('is-invalid');
+      return !obrigatorio;
+    }
+    if (d.length === 10 || d.length === 11) {
+      status.textContent = '';
+      campo.classList.remove('is-invalid');
+      return true;
+    }
+    status.textContent = 'Telefone incompleto — digite o DDD e o número completos.';
+    campo.classList.add('is-invalid');
+    return false;
+  }
+  if (document.getElementById('telefone')) {
+    document.getElementById('telefone').addEventListener('blur', function () {
+      marcarTelefoneValido('telefone', 'telefone_status', true);
+    });
+  }
+  document.getElementById('contato_emergencia_telefone').addEventListener('blur', function () {
+    marcarTelefoneValido('contato_emergencia_telefone', 'contato_emergencia_telefone_status', false);
+  });
+
   // Busca de endereço por CEP via ViaCEP — preenche os campos
-  // automaticamente, mas continuam editáveis (o preenchimento é só uma
-  // sugestão; a pessoa pode corrigir manualmente).
-  document.getElementById('cep').addEventListener('blur', function () {
-    var cep = this.value.replace(/\D/g, '');
+  // automaticamente; os campos de endereço (rua, bairro, cidade e UF)
+  // ficam somente leitura, preenchidos só por essa busca do CEP. O CEP é
+  // opcional, mas se começar a digitar tem que terminar os 8 números.
+  function marcarCepValido() {
+    var campo = document.getElementById('cep');
     var status = document.getElementById('cep_status');
-    if (cep.length !== 8) return;
+    var cep = campo.value.replace(/\D/g, '');
+    if (!cep) { status.textContent = ''; campo.classList.remove('is-invalid'); return true; }
+    if (cep.length !== 8) {
+      status.textContent = 'CEP incompleto — digite os 8 números.';
+      campo.classList.add('is-invalid');
+      return false;
+    }
+    campo.classList.remove('is-invalid');
     status.textContent = 'Buscando endereço...';
     fetch('https://viacep.com.br/ws/' + cep + '/json/')
       .then(function (r) { return r.json(); })
@@ -170,11 +273,36 @@
         document.getElementById('bairro').value = dados.bairro || '';
         document.getElementById('cidade').value = dados.localidade || '';
         document.getElementById('uf').value = dados.uf || '';
-        status.textContent = 'Endereço preenchido automaticamente — confira antes de salvar.';
+        status.textContent = 'Endereço preenchido automaticamente pelo CEP.';
       })
       .catch(function () {
         status.textContent = 'Não foi possível consultar o CEP agora — preencha manualmente.';
       });
+    return true;
+  }
+  document.getElementById('cep').addEventListener('blur', marcarCepValido);
+
+  // Usa o ID do formulário de cadastro, em vez de pegar genericamente o
+  // primeiro <form> da página - que era o de "Importar paciente pelo
+  // CPF" (method="get"), que vem antes na tela. Isso fazia o botão
+  // "Buscar CPF" não funcionar: a validação abaixo (telefone/data de
+  // nascimento/CEP, campos que nem existem nesse formulário de busca)
+  // barrava a busca com preventDefault() por engano.
+  document.getElementById('form-paciente').addEventListener('submit', function (evento) {
+    var dataOk = marcarDataNascimentoValida();
+    var telefoneOk = marcarTelefoneValido('telefone', 'telefone_status', true);
+    var contatoTelefoneOk = marcarTelefoneValido('contato_emergencia_telefone', 'contato_emergencia_telefone_status', false);
+    var cepDigitos = document.getElementById('cep').value.replace(/\D/g, '');
+    var cepOk = !cepDigitos || cepDigitos.length === 8;
+    if (cepDigitos && cepDigitos.length !== 8) {
+      document.getElementById('cep').classList.add('is-invalid');
+      document.getElementById('cep_status').textContent = 'CEP incompleto — digite os 8 números.';
+    }
+    if (!dataOk || !telefoneOk || !contatoTelefoneOk || !cepOk) {
+      evento.preventDefault();
+      var primeiroInvalido = document.querySelector('.is-invalid');
+      if (primeiroInvalido) primeiroInvalido.focus();
+    }
   });
 </script>
 {% endblock %}

@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block titulo %}Media{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/icone-quadrado.svg') }}">
+  <link rel="alternate icon" href="{{ url_for('static', filename='img/favicon-32.png') }}">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
@@ -16,139 +18,86 @@
     .app-sidebar .nav-group-toggle .chevron-icon { transition: transform .2s; font-size: .75rem; }
     .app-sidebar .nav-group-toggle[aria-expanded="true"] .chevron-icon { transform: rotate(180deg); }
     .app-sidebar .nav-sub .nav-link { padding-left: 2.25rem; font-size: .92rem; }
+    /* Menu lateral escondível - por padrão fica fixo (afixado/"pinado"),
+       igual sempre foi; só some quando o usuário desafixa e clica em
+       esconder (ver botão .sidebar-toggle-btn e .sidebar-pin-btn abaixo). */
+    body.sidebar-hidden .app-sidebar { display: none; }
+    .sidebar-pin-btn { background: none; border: none; color: rgba(255,255,255,.75); padding: .25rem; line-height: 1; }
+    .sidebar-pin-btn:hover { color: #fff; }
+    .sidebar-pin-btn.pinned { color: #fff; }
+    .sidebar-toggle-btn[disabled] { opacity: .35; cursor: not-allowed; }
     @media print { .no-print { display: none !important; } }
+    /* Badge de status "não compareceu" - cor própria (laranja), distinta
+       de cancelado (vermelho) e realizado (verde), usada em todas as telas
+       que mostram o status de um agendamento. */
+    .badge-nao-compareceu { background-color: #fd7e14; color: #fff; }
   </style>
 </head>
 <body>
 {% set eh_staff_logado = current_user.is_authenticated and current_user.is_staff %}
 <div class="d-flex">
   {% if eh_staff_logado %}
-  {% set grupo_pessoas = ['medico.pacientes_lista', 'medico.pacientes_novo', 'medico.pacientes_editar', 'medico.pacientes_detalhe',
-                           'medico.equipe_lista', 'medico.equipe_novo'] %}
-  {% set grupo_medico = ['medico.medico_horarios', 'medico.medico_agenda_pessoal', 'medico.medico_bloqueios'] %}
-  {% set grupo_cadastro_geral = ['medico.filiais_lista', 'medico.filiais_nova',
-                                  'medico.clinica_configuracoes'] %}
-  {% set grupo_financeiro = ['medico.descontos_lista'] %}
   {% set grupo_ia = ['medico.perguntas_pendentes', 'medico.perguntas_responder',
                       'medico.faq_lista', 'medico.faq_novo'] %}
   {% set grupo_config_exames = ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar',
+                                 'medico.exames_por_filial',
                                  'medico.preparo_modelos_lista', 'medico.preparo_modelos_novo',
-                                 'medico.preparo_modelos_editar', 'medico.preparo_modelos_importar_pdf'] %}
+                                 'medico.preparo_modelos_editar'] %}
   <nav class="app-sidebar bg-primary text-white p-3 no-print">
-    <a class="d-block text-white text-decoration-none fw-bold mb-4" href="{{ url_for('medico.dashboard') }}">
-      <i class="bi bi-heart-pulse"></i> Media
-    </a>
+    <div class="d-flex align-items-center justify-content-between mb-4">
+      <a class="d-block text-decoration-none" href="{{ url_for('medico.dashboard') }}">
+        <img src="{{ url_for('static', filename='img/logo-horizontal-claro.svg') }}" alt="MedIA" style="height: 34px;">
+      </a>
+      <button type="button" id="sidebarPinBtn" class="sidebar-pin-btn" title="Fixar o menu (impede esconder)">
+        <i class="bi bi-pin-angle-fill" id="sidebarPinIcon"></i>
+      </button>
+    </div>
     <ul class="nav nav-pills flex-column">
       <li class="nav-item mb-1">
         <a class="nav-link {% if request.endpoint == 'medico.dashboard' %}active{% endif %}" href="{{ url_for('medico.dashboard') }}">
           <i class="bi bi-speedometer2 me-2"></i>Painel
         </a>
       </li>
+      {# Trabalho compartilhado (grupo) — BBP MedIA. Camada nova, adicional
+         ao modelo de Empresa/Clínica/"locais de atendimento" abaixo (ver
+         app/routes_grupo.py); a migração completa do restante do sistema
+         para este conceito ainda está pendente. #}
       <li class="nav-item mb-1">
-        <a class="nav-link {% if request.endpoint == 'medico.agenda_solicitacoes' %}active{% endif %}" href="{{ url_for('medico.agenda_solicitacoes') }}">
-          <i class="bi bi-envelope-paper me-2"></i>Solicitações de agendamento
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('grupo.') %}active{% endif %}" href="{{ url_for('grupo.meus_grupos') }}">
+          <i class="bi bi-people me-2"></i>Grupos de trabalho
         </a>
       </li>
 
       <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuPessoas" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_pessoas else 'false' }}">
-          <span><i class="bi bi-people me-2"></i>Pessoas</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">
+          <i class="bi bi-journal-plus me-2"></i>Pacientes
         </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_pessoas %}show{% endif %}" id="menuPessoas">
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">Pacientes</a>
-            </li>
-            {% if current_user.perm_equipe %}
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.equipe') %}active{% endif %}" href="{{ url_for('medico.equipe_lista') }}">Equipe</a>
-            </li>
-            {% endif %}
-          </ul>
-        </div>
+        {# Fatia 5/reorganização de menus: "Cadastro geral" só tinha
+           "Pacientes" dentro - virou um item direto, sem submenu.
+           "Equipe" e "Meus locais de atendimento" já tinham saído do menu
+           antes (duplicados/redirects para "Grupos de trabalho" ou telas
+           sem substituto ainda no fluxo de Grupo) - as rotas continuam
+           existindo (equipe_lista/filiais_lista redirecionam; clinica_
+           configuracoes/clinica_dados_fiscais seguem acessíveis por URL
+           direta ou pelo checklist de configuração inicial), só não têm
+           link no menu. #}
       </li>
 
       <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuMedico" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_medico else 'false' }}">
-          <span><i class="bi bi-clipboard2-pulse me-2"></i>Médico</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
+        <a class="nav-link {% if request.endpoint == 'medico.medico_agenda_pessoal' %}active{% endif %}" href="{{ url_for('medico.medico_agenda_pessoal') }}">
+          <i class="bi bi-clipboard2-pulse me-2"></i>Meus exames agendados
         </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_medico %}show{% endif %}" id="menuMedico">
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.medico_horarios' %}active{% endif %}" href="{{ url_for('medico.medico_horarios') }}">Horário de atendimento</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.medico_agenda_pessoal' %}active{% endif %}" href="{{ url_for('medico.medico_agenda_pessoal') }}">Meus exames agendados</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.medico_bloqueios' %}active{% endif %}" href="{{ url_for('medico.medico_bloqueios') }}">Bloquear agenda</a>
-            </li>
-          </ul>
-        </div>
+        {# Reorganização de menus: o menu "Médico" (que só tinha "Meus
+           exames agendados" e "Minha agenda em todos os locais") deixou
+           de existir - "Meus exames agendados" virou item direto, e
+           "Minha agenda em todos os locais" saiu do menu (a rota
+           medico.minha_agenda_completa continua existindo, só sem link
+           aqui). #}
       </li>
 
-      {% if current_user.perm_filiais or current_user.perm_dados_clinica %}
-      <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuCadastroGeral" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_cadastro_geral else 'false' }}">
-          <span><i class="bi bi-journal-plus me-2"></i>Cadastro geral</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
-        </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_cadastro_geral %}show{% endif %}" id="menuCadastroGeral">
-          <ul class="nav flex-column">
-            {% if current_user.perm_filiais %}
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.filiais') %}active{% endif %}" href="{{ url_for('medico.filiais_lista') }}">Filiais</a>
-            </li>
-            {% endif %}
-            {% if current_user.perm_dados_clinica %}
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.clinica_configuracoes' %}active{% endif %}" href="{{ url_for('medico.clinica_configuracoes') }}">Dados da clínica</a>
-            </li>
-            {% endif %}
-          </ul>
-        </div>
-      </li>
-      {% endif %}
-
-      {% if current_user.perm_dados_clinica %}
-      <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuFinanceiro" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_financeiro else 'false' }}">
-          <span><i class="bi bi-cash-coin me-2"></i>Financeiro</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
-        </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_financeiro %}show{% endif %}" id="menuFinanceiro">
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.descontos_lista' %}active{% endif %}" href="{{ url_for('medico.descontos_lista') }}">Descontos</a>
-            </li>
-          </ul>
-        </div>
-      </li>
-      {% endif %}
-
-      <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuIA" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_ia else 'false' }}">
-          <span><i class="bi bi-robot me-2"></i>IA</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
-        </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_ia %}show{% endif %}" id="menuIA">
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.perguntas') %}active{% endif %}" href="{{ url_for('medico.perguntas_pendentes') }}">Perguntas dos pacientes</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">Base de conhecimento</a>
-            </li>
-          </ul>
-        </div>
-      </li>
+      {# Reorganização de menus: o menu "Relatórios" deixou de existir -
+         as rotas (relatorios.index/agenda/pacientes/desempenho_medico)
+         continuam existindo, só sem link no menu. #}
 
       <li class="nav-item mb-1">
         <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuConfigExames" role="button"
@@ -162,7 +111,28 @@
               <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">Modelos de preparo</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.exames') %}active{% endif %}" href="{{ url_for('medico.exames_lista') }}">Exames &amp; Preparo</a>
+              <a class="nav-link {% if request.endpoint in ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar'] %}active{% endif %}" href="{{ url_for('medico.exames_lista') }}">Exames &amp; Preparo</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'medico.exames_por_filial' %}active{% endif %}" href="{{ url_for('medico.exames_por_filial') }}">Associar exames entre filiais</a>
+            </li>
+          </ul>
+        </div>
+      </li>
+
+      <li class="nav-item mb-1">
+        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuIA" role="button"
+           aria-expanded="{{ 'true' if request.endpoint in grupo_ia else 'false' }}">
+          <span><i class="bi bi-robot me-2"></i>Médico + IA</span>
+          <i class="bi bi-chevron-down chevron-icon"></i>
+        </a>
+        <div class="collapse nav-sub {% if request.endpoint in grupo_ia %}show{% endif %}" id="menuIA">
+          <ul class="nav flex-column">
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.perguntas') %}active{% endif %}" href="{{ url_for('medico.perguntas_pendentes') }}">Perguntas dos pacientes</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">Base de conhecimento</a>
             </li>
           </ul>
         </div>
@@ -175,26 +145,35 @@
     {% if current_user.is_authenticated %}
     <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom bg-white no-print">
       <div class="d-flex align-items-center">
+        {% if eh_staff_logado %}
+        <button type="button" id="sidebarToggleBtn" class="btn btn-sm btn-outline-secondary sidebar-toggle-btn me-2"
+                title="Mostrar/esconder o menu lateral (fixe o menu para poder escondê-lo)">
+          <i class="bi bi-list"></i>
+        </button>
+        {% endif %}
         {% if current_user.is_dono %}
-          <a href="{{ url_for('dono.dashboard') }}" class="fw-bold text-decoration-none text-dark"><i class="bi bi-heart-pulse"></i> Media</a>
+          <a href="{{ url_for('dono.dashboard') }}" class="text-decoration-none d-inline-block"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 30px;"></a>
         {% elif not current_user.is_staff %}
           <button class="btn btn-sm btn-outline-secondary d-md-none me-2" type="button"
                   data-bs-toggle="offcanvas" data-bs-target="#menuPacienteOffcanvas" aria-controls="menuPacienteOffcanvas">
             <i class="bi bi-list"></i>
           </button>
-          <a href="{{ url_for('paciente.dashboard') }}" class="fw-bold text-decoration-none text-dark me-3"><i class="bi bi-heart-pulse"></i> Media</a>
+          <a href="{{ url_for('paciente.dashboard') }}" class="text-decoration-none d-inline-block me-3"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 30px;"></a>
           <span class="d-none d-md-inline">
             <a href="{{ url_for('paciente.dashboard') }}" class="text-decoration-none me-3">Meus exames</a>
-            <a href="{{ url_for('paciente.solicitar_agendamento') }}" class="text-decoration-none me-3">Solicitar agendamento</a>
-            <a href="{{ url_for('paciente.chat') }}" class="text-decoration-none">Tirar dúvidas</a>
+            <a href="{{ url_for('paciente.chat') }}" class="text-decoration-none me-3">Tirar dúvidas</a>
+            <a href="{{ url_for('paciente.meus_dados') }}" class="text-decoration-none">Meus dados</a>
           </span>
         {% endif %}
       </div>
       <div class="d-flex align-items-center">
-        {% if current_user.is_staff and clinica_atual_navbar %}
+        {# Mostra a EMPRESA (o que delimita os dados visíveis). A filial não
+           é mais um "local atual" — ela aparece por registro nas listas. O
+           link "trocar" só faz sentido para quem atua em mais de uma empresa. #}
+        {% if current_user.is_staff and empresa_atual_navbar %}
           <span class="text-muted small me-3">
-            <i class="bi bi-hospital"></i> {{ clinica_atual_navbar.nome }}
-            {% if clinicas_do_usuario_navbar and clinicas_do_usuario_navbar|length > 1 %}
+            <i class="bi bi-building"></i> {{ empresa_atual_navbar.nome }}
+            {% if empresas_do_usuario_navbar and empresas_do_usuario_navbar|length > 1 %}
               · <a href="{{ url_for('medico.escolher_clinica') }}" class="small">trocar</a>
             {% endif %}
           </span>
@@ -210,14 +189,14 @@
     {% if not current_user.is_staff and not current_user.is_dono %}
     <div class="offcanvas offcanvas-start no-print" tabindex="-1" id="menuPacienteOffcanvas" aria-labelledby="menuPacienteOffcanvasLabel">
       <div class="offcanvas-header border-bottom">
-        <h5 class="offcanvas-title" id="menuPacienteOffcanvasLabel"><i class="bi bi-heart-pulse"></i> Media</h5>
+        <h5 class="offcanvas-title" id="menuPacienteOffcanvasLabel"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 26px;"></h5>
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Fechar"></button>
       </div>
       <div class="offcanvas-body d-flex flex-column">
         <div class="mb-3 fw-semibold">{{ current_user.nome }}</div>
         <a href="{{ url_for('paciente.dashboard') }}" class="nav-link p-2 rounded"><i class="bi bi-clipboard2-pulse me-2"></i>Meus exames</a>
-        <a href="{{ url_for('paciente.solicitar_agendamento') }}" class="nav-link p-2 rounded"><i class="bi bi-calendar-plus me-2"></i>Solicitar agendamento</a>
         <a href="{{ url_for('paciente.chat') }}" class="nav-link p-2 rounded"><i class="bi bi-chat-dots me-2"></i>Tirar dúvidas</a>
+        <a href="{{ url_for('paciente.meus_dados') }}" class="nav-link p-2 rounded"><i class="bi bi-person-vcard me-2"></i>Meus dados</a>
         {% if current_user.tem_senha %}
         <a href="{{ url_for('auth.trocar_senha') }}" class="nav-link p-2 rounded"><i class="bi bi-key me-2"></i>Trocar senha</a>
         {% endif %}
@@ -244,5 +223,66 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+{% if eh_staff_logado %}
+<script>
+  // Menu lateral: por padrão fica fixo ("pinado"), igual sempre foi - só
+  // pode ser escondido depois que o usuário desafixa. Preferência salva no
+  // navegador (localStorage), não é algo do servidor/conta.
+  (function () {
+    var CHAVE_PINADO = "media.sidebarPinado";
+    var CHAVE_ESCONDIDO = "media.sidebarEscondido";
+
+    function estaPinado() { return localStorage.getItem(CHAVE_PINADO) !== "false"; }
+    function estaEscondido() { return localStorage.getItem(CHAVE_ESCONDIDO) === "true"; }
+
+    function aplicar() {
+      var pinado = estaPinado();
+      var escondido = !pinado && estaEscondido();
+      document.body.classList.toggle("sidebar-hidden", escondido);
+
+      var pinIcon = document.getElementById("sidebarPinIcon");
+      var pinBtn = document.getElementById("sidebarPinBtn");
+      if (pinIcon && pinBtn) {
+        pinIcon.className = pinado ? "bi bi-pin-angle-fill" : "bi bi-pin-angle";
+        pinBtn.classList.toggle("pinned", pinado);
+        pinBtn.title = pinado ? "Desafixar o menu (permite esconder)" : "Fixar o menu (impede esconder)";
+      }
+      var toggleBtn = document.getElementById("sidebarToggleBtn");
+      if (toggleBtn) {
+        toggleBtn.disabled = pinado;
+        toggleBtn.title = pinado
+          ? "Desafixe o menu (ícone de pin) para poder escondê-lo"
+          : "Mostrar/esconder o menu lateral";
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      aplicar();
+
+      var pinBtn = document.getElementById("sidebarPinBtn");
+      if (pinBtn) {
+        pinBtn.addEventListener("click", function () {
+          var novoPinado = !estaPinado();
+          localStorage.setItem(CHAVE_PINADO, novoPinado ? "true" : "false");
+          if (novoPinado) {
+            // Fixar sempre deixa o menu visível.
+            localStorage.setItem(CHAVE_ESCONDIDO, "false");
+          }
+          aplicar();
+        });
+      }
+
+      var toggleBtn = document.getElementById("sidebarToggleBtn");
+      if (toggleBtn) {
+        toggleBtn.addEventListener("click", function () {
+          if (estaPinado()) return; // não esconde enquanto estiver fixo
+          localStorage.setItem(CHAVE_ESCONDIDO, estaEscondido() ? "false" : "true");
+          aplicar();
+        });
+      }
+    });
+  })();
+</script>
+{% endif %}
 </body>
 </html>

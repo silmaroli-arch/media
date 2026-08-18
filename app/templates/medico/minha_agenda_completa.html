@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block titulo %}Minha agenda em todos os locais{% endblock %}
+{% block conteudo %}
+<h3 class="mb-1">Minha agenda em todos os locais</h3>
+<p class="text-muted mb-4">
+  Todos os seus próximos atendimentos, em todas as clínicas em que você atua — inclusive as de
+  outras empresas. Só você vê esta visão consolidada: cada clínica continua enxergando apenas a
+  agenda dela.
+</p>
+
+<div class="card p-3">
+  <table class="table table-hover">
+    <thead>
+      <tr><th>Data/hora</th><th>Local</th><th>Exame</th><th>Paciente</th></tr>
+    </thead>
+    <tbody>
+      {% for a in agendamentos %}
+      <tr>
+        <td class="text-nowrap">{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>
+          {{ a.grupo.nome if a.grupo else (a.clinica.nome if a.clinica else '—') }}
+        </td>
+        <td>{{ a.exame.nome if a.exame else '—' }}</td>
+        <td>{{ a.paciente.nome if a.paciente else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-muted text-center">Nenhum atendimento futuro em nenhum local.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
