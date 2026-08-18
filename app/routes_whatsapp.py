@@ -72,14 +72,7 @@ def _assinatura_valida():
 
     validador = RequestValidator(auth_token)
     assinatura = request.headers.get("X-Twilio-Signature", "")
-    url_usada = _url_validacao()
-    valido = validador.validate(url_usada, request.form.to_dict(), assinatura)
-    # DEBUG TEMPORÁRIO (remover depois de diagnosticar o problema de assinatura):
-    current_app.logger.warning(
-        "DEBUG whatsapp: url_usada=%r assinatura_recebida=%r valido=%r auth_token_tamanho=%d",
-        url_usada, assinatura, valido, len(auth_token),
-    )
-    return valido
+    return validador.validate(_url_validacao(), request.form.to_dict(), assinatura)
 
 
 def _twiml(texto=""):
