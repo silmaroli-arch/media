@@ -2066,7 +2066,6 @@ def perguntas_pendentes():
     # Respostas que a IA já rascunhou e estão esperando o médico revisar,
     # editar se precisar, e aprovar antes de irem para o paciente.
     aguardando_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "aguardando_aprovacao")
-    respondidas_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "respondida")
 
     if eh_medico():
         # O médico só acompanha perguntas sobre exames de sua
@@ -2077,14 +2076,29 @@ def perguntas_pendentes():
         # OUTRO médico. Ver _restringir_perguntas_para_medico.
         pendentes_q = _restringir_perguntas_para_medico(pendentes_q)
         aguardando_q = _restringir_perguntas_para_medico(aguardando_q)
-        respondidas_q = _restringir_perguntas_para_medico(respondidas_q)
 
     pendentes = pendentes_q.order_by(PerguntaPendente.criado_em.desc()).all()
     aguardando = aguardando_q.order_by(PerguntaPendente.criado_em.desc()).all()
-    respondidas = respondidas_q.order_by(PerguntaPendente.respondida_em.desc()).limit(20).all()
     return render_template(
-        "medico/perguntas.html", pendentes=pendentes, aguardando=aguardando, respondidas=respondidas,
+        "medico/perguntas.html", pendentes=pendentes, aguardando=aguardando,
     )
+
+
+@medico_bp.route("/perguntas/respondidas")
+@login_required
+@staff_required
+def perguntas_respondidas():
+    # Tela separada da fila de pendentes (que fica só com o que exige ação)
+    # para não poluir a tela principal com histórico - ver pedido do Silvan
+    # de "despoluir" a tela de perguntas pendentes.
+    escopo = filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id)
+    respondidas_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "respondida")
+
+    if eh_medico():
+        respondidas_q = _restringir_perguntas_para_medico(respondidas_q)
+
+    respondidas = respondidas_q.order_by(PerguntaPendente.respondida_em.desc()).limit(20).all()
+    return render_template("medico/perguntas_respondidas.html", respondidas=respondidas)
 
 
 @medico_bp.route("/perguntas/<int:pergunta_id>/responder", methods=["POST"])
