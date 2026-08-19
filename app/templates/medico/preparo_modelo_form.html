@@ -308,7 +308,18 @@
             extraídos preenchem o formulário pra você revisar — nada é salvo antes do Salvar.
           </p>
           <div id="alerta-erro-importar-xlsx" class="alert alert-danger d-none" role="alert"></div>
-          <input type="file" name="arquivo_xlsx" class="form-control" accept=".xlsx,.pdf" required>
+          <input type="file" name="arquivo_xlsx" id="input-arquivo-importar" class="form-control" accept=".xlsx,.pdf" required>
+          <input type="hidden" name="texto_extraido_cliente" id="input-texto-extraido-cliente">
+          <div class="form-check mt-2 d-none" id="opcao-usar-ia-wrapper">
+            <input type="checkbox" class="form-check-input" id="checkbox-usar-ia" checked>
+            <label class="form-check-label" for="checkbox-usar-ia">
+              Usar IA para extrair (recomendado — entende melhor o texto, mas tem um custo por importação)
+            </label>
+            <div class="form-text">
+              Desmarque para extrair só com regras simples, direto no navegador, sem custo nenhum —
+              tende a reconhecer menos coisas automaticamente, então revise com mais atenção depois.
+            </div>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
@@ -357,6 +368,21 @@
     if (!formImportar) return;
     var botao = document.getElementById('btn-extrair-dados');
     var alerta = document.getElementById('alerta-erro-importar-xlsx');
+    var inputArquivo = document.getElementById('input-arquivo-importar');
+    var inputTextoCliente = document.getElementById('input-texto-extraido-cliente');
+    var opcaoUsarIaWrapper = document.getElementById('opcao-usar-ia-wrapper');
+    var checkboxUsarIa = document.getElementById('checkbox-usar-ia');
+    var PDFJS_CDN_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/';
+    var pdfjsCarregado = null;
+
+    // O checkbox "Usar IA" só faz sentido pra PDF (Excel já é extração
+    // estruturada direto das colunas, sem IA nenhuma envolvida) - fica
+    // escondido pra planilha, pra não confundir.
+    inputArquivo.addEventListener('change', function () {
+      var arquivo = inputArquivo.files[0];
+      var ehPdf = arquivo && /\.pdf$/i.test(arquivo.name);
+      opcaoUsarIaWrapper.classList.toggle('d-none', !ehPdf);
+    });
 
     function mostrarErro(mensagem) {
       alerta.textContent = mensagem;
@@ -368,17 +394,77 @@
       botao.innerHTML = botao.dataset.textoOriginal;
     }
 
+    // Carrega o pdf.js (biblioteca da Mozilla para ler PDF no navegador) só
+    // quando realmente precisa dele (alguém desmarcou "Usar IA" pra um
+    // PDF) - via CDN, mesmo padrão já usado pro Bootstrap neste projeto,
+    // pra não pesar o carregamento normal da tela com uma biblioteca que a
+    // maioria das pessoas (que deixa a IA marcada) nunca vai usar.
+    function carregarPdfjs() {
+      if (pdfjsCarregado) return pdfjsCarregado;
+      pdfjsCarregado = new Promise(function (resolve, reject) {
+        var script = document.createElement('script');
+        script.src = PDFJS_CDN_BASE + 'pdf.min.js';
+        script.onload = function () {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_CDN_BASE + 'pdf.worker.min.js';
+          resolve(window.pdfjsLib);
+        };
+        script.onerror = function () { reject(new Error('pdfjs-falhou-carregar')); };
+        document.head.appendChild(script);
+      });
+      return pdfjsCarregado;
+    }
+
+    // Extrai todo o texto selecionável do PDF no navegador, uma página de
+    // cada vez - mesma ideia de app.pdf_preparo.extrair_texto (pypdf), só
+    // que rodando no cliente em vez do servidor, sem custo de IA nenhum.
+    function extrairTextoPdfNoNavegador(arquivo) {
+      return carregarPdfjs()
+        .then(function (pdfjsLib) { return arquivo.arrayBuffer().then(function (buf) { return pdfjsLib.getDocument({ data: buf }).promise; }); })
+        .then(function (pdf) {
+          var promessasPaginas = [];
+          for (var i = 1; i <= pdf.numPages; i++) {
+            promessasPaginas.push(
+              pdf.getPage(i).then(function (pagina) {
+                return pagina.getTextContent().then(function (conteudo) {
+                  return conteudo.items.map(function (item) { return item.str; }).join(' ');
+                });
+              })
+            );
+          }
+          return Promise.all(promessasPaginas);
+        })
+        .then(function (textosPorPagina) { return textosPorPagina.join('\n'); });
+    }
+
     formImportar.addEventListener('submit', function (ev) {
       ev.preventDefault();
       if (botao.disabled) return;
 
       alerta.classList.add('d-none');
+      inputTextoCliente.value = '';
       botao.disabled = true;
       botao.dataset.textoOriginal = botao.innerHTML;
       botao.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Extraindo dados...';
 
-      var dadosForm = new FormData(formImportar);
-      fetch(formImportar.action, { method: 'POST', body: dadosForm })
+      var arquivo = inputArquivo.files[0];
+      var usarExtracaoLocal = arquivo && /\.pdf$/i.test(arquivo.name) && !checkboxUsarIa.checked;
+
+      var preparacao = usarExtracaoLocal
+        ? extrairTextoPdfNoNavegador(arquivo).then(function (texto) { inputTextoCliente.value = texto; })
+        : Promise.resolve();
+
+      preparacao
+        .catch(function () {
+          // Se a extração local falhar (ex.: CDN do pdfjs bloqueado/fora do
+          // ar), segue sem o texto pronto - o servidor cai automaticamente
+          // pro caminho normal (Gemini, se configurado, ou heurística sobre
+          // o PDF original), em vez de travar a importação por completo.
+          inputTextoCliente.value = '';
+        })
+        .then(function () {
+          var dadosForm = new FormData(formImportar);
+          return fetch(formImportar.action, { method: 'POST', body: dadosForm });
+        })
         .then(function (resposta) {
           if (!resposta.ok) {
             // Erro HTTP vindo do servidor/proxy (ex.: 502/503/504) - não dá

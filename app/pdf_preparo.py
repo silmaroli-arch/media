@@ -413,16 +413,15 @@ def _sugerir_exames_anteriores(texto):
     return exames
 
 
-def extrair_sugestao_de_pdf(stream):
-    """Retorna um dicionário com uma sugestão pré-preenchida a partir do
-    texto extraído do PDF: nome sugerido, instruções (texto completo,
-    servindo de base para revisão manual), cortes de alimentação sugeridos,
-    alimentos permitidos/proibidos sugeridos, medicamentos a suspender
-    sugeridos (e os que NÃO precisam ser suspensos, individualmente),
-    exames/procedimentos anteriores proibidos sugeridos e informações
-    gerais avulsas sugeridas (incluindo, quando reconhecido, um prazo do
-    tipo "até às HH:MM da véspera do exame")."""
-    texto = extrair_texto(stream)
+def extrair_sugestao_de_texto(texto):
+    """Mesma extração heurística de `extrair_sugestao_de_pdf`, mas recebendo
+    o texto já extraído em vez do PDF em si — usada tanto pelo caminho
+    normal (texto vem do pypdf, ver `extrair_sugestao_de_pdf` abaixo) quanto
+    pelo caminho "sem IA" da importação de PDF (ver
+    `app.routes_medico.preparo_modelos_importar_xlsx`), onde o texto já vem
+    extraído pelo navegador (pdfjs) para quem prefere não usar o Gemini —
+    nesse segundo caso o servidor nunca recebe/processa o PDF em si, só o
+    texto puro."""
     linhas = [l for l in texto.splitlines() if l.strip()]
 
     return {
@@ -436,6 +435,19 @@ def extrair_sugestao_de_pdf(stream):
         "alimentos": _sugerir_alimentos(linhas, texto),
         "exames_anteriores": _sugerir_exames_anteriores(texto),
     }
+
+
+def extrair_sugestao_de_pdf(stream):
+    """Retorna um dicionário com uma sugestão pré-preenchida a partir do
+    texto extraído do PDF: nome sugerido, instruções (texto completo,
+    servindo de base para revisão manual), cortes de alimentação sugeridos,
+    alimentos permitidos/proibidos sugeridos, medicamentos a suspender
+    sugeridos (e os que NÃO precisam ser suspensos, individualmente),
+    exames/procedimentos anteriores proibidos sugeridos e informações
+    gerais avulsas sugeridas (incluindo, quando reconhecido, um prazo do
+    tipo "até às HH:MM da véspera do exame")."""
+    texto = extrair_texto(stream)
+    return extrair_sugestao_de_texto(texto)
 
 
 _CARACTERES_INVALIDOS_NOME_ABA = set('[]:*?/\\')

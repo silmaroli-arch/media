@@ -30,7 +30,7 @@ from app.clinica_utils import (
     filiais_atuais, filtro_escopo_atual,
     tem_algum_vinculo_de_grupo,
 )
-from app.pdf_preparo import extrair_sugestao_de_pdf
+from app.pdf_preparo import extrair_sugestao_de_pdf, extrair_sugestao_de_texto
 from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
@@ -1592,13 +1592,21 @@ def preparo_modelos_remover(modelo_id):
 @staff_required
 def preparo_modelos_importar_xlsx():
     """Importa um modelo de preparo a partir de um arquivo Excel (.xlsx) ou
-    PDF - PDF é lido diretamente pela IA (ver app.ia_pdf_preparo), com
-    fallback automático e silencioso pra extração heurística por regex
-    (app.pdf_preparo) se a IA não estiver configurada ou a leitura falhar
-    por qualquer motivo. Substitui o antigo fluxo em duas etapas (gerar
-    Excel a partir do PDF, revisar/ajustar no Excel, reimportar aqui) -
-    agora o PDF vem direto pra tela de revisão, igual já acontecia com o
-    Excel."""
+    PDF - PDF é lido diretamente pela IA (ver app.ia_pdf_preparo) por
+    padrão, com fallback automático e silencioso pra extração heurística
+    por regex (app.pdf_preparo) se a IA não estiver configurada ou a
+    leitura falhar por qualquer motivo. Substitui o antigo fluxo em duas
+    etapas (gerar Excel a partir do PDF, revisar/ajustar no Excel,
+    reimportar aqui) - agora o PDF vem direto pra tela de revisão, igual já
+    acontecia com o Excel.
+
+    Quem sobe o arquivo pode desmarcar "Usar IA" na tela (ver
+    medico/preparo_modelo_form.html) para evitar o custo/instabilidade do
+    Gemini - nesse caso o texto do PDF é extraído no NAVEGADOR (pdfjs, sem
+    custo nenhum pro servidor) e mandado aqui pronto no campo
+    `texto_extraido_cliente`; o servidor nunca chega a processar o PDF em
+    si nesse caminho, só aplica a mesma extração heurística de
+    app.pdf_preparo no texto recebido."""
     if request.method == "POST":
         arquivo = request.files.get("arquivo_xlsx")
         if not arquivo or not arquivo.filename:
@@ -1608,18 +1616,26 @@ def preparo_modelos_importar_xlsx():
         nome_arquivo = arquivo.filename.lower()
 
         if nome_arquivo.endswith(".pdf"):
-            pdf_bytes = arquivo.stream.read()
-            sugestao = extrair_sugestao_de_pdf_com_ia(pdf_bytes)
-            if sugestao is None:
-                try:
-                    sugestao = extrair_sugestao_de_pdf(io.BytesIO(pdf_bytes))
-                except Exception:
-                    flash(
-                        "Não foi possível ler esse PDF. Ele pode estar corrompido, protegido por senha, ou ser "
-                        "uma imagem escaneada sem texto selecionável — nesse caso, cadastre o modelo manualmente.",
-                        "danger",
-                    )
-                    return render_template("medico/preparo_modelo_importar_xlsx.html")
+            texto_extraido_cliente = (request.form.get("texto_extraido_cliente") or "").strip()
+
+            if texto_extraido_cliente:
+                # Caminho "sem IA": o texto já veio pronto do navegador
+                # (pdfjs) - nunca chama o Gemini nem sequer olha os bytes do
+                # PDF, só aplica a extração heurística por regex.
+                sugestao = extrair_sugestao_de_texto(texto_extraido_cliente)
+            else:
+                pdf_bytes = arquivo.stream.read()
+                sugestao = extrair_sugestao_de_pdf_com_ia(pdf_bytes)
+                if sugestao is None:
+                    try:
+                        sugestao = extrair_sugestao_de_pdf(io.BytesIO(pdf_bytes))
+                    except Exception:
+                        flash(
+                            "Não foi possível ler esse PDF. Ele pode estar corrompido, protegido por senha, ou ser "
+                            "uma imagem escaneada sem texto selecionável — nesse caso, cadastre o modelo manualmente.",
+                            "danger",
+                        )
+                        return render_template("medico/preparo_modelo_importar_xlsx.html")
 
             flash(
                 "Dados extraídos do PDF. Revise com cuidado antes de salvar — a extração é "
