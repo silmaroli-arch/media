@@ -6,9 +6,11 @@
   <title>{% block titulo %}Media{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/icone-quadrado.svg') }}">
   <link rel="alternate icon" href="{{ url_for('static', filename='img/favicon-32.png') }}">
-  {% if current_user.is_authenticated and current_user.is_staff %}
-  {# PWA só para a área da equipe - o paciente não instala nada, continua
-     só pelo navegador normal (ver app/static/manifest.json e sw.js). #}
+  {% if current_user.is_authenticated and current_user.tipo == "medico" %}
+  {# PWA só para o MÉDICO (decisão do Silvan: notificação é só pra ele,
+     não pra secretária/administrativo) - o paciente não instala nada,
+     continua só pelo navegador normal (ver app/static/manifest.json e
+     sw.js). #}
   <link rel="manifest" href="{{ url_for('manifest_pwa') }}">
   <meta name="theme-color" content="#1660B0">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/pwa/icon-192.png') }}">
@@ -231,7 +233,7 @@
         {% endif %}
       {% endwith %}
 
-      {% if eh_staff_logado %}
+      {% if current_user.tipo == "medico" %}
       <div id="pushAtivarBanner" class="alert alert-info d-none d-flex align-items-center justify-content-between no-print" role="alert">
         <span><i class="bi bi-bell me-2"></i>Ative as notificações para ser avisado no celular quando chegar uma pergunta nova de paciente.</span>
         <div>
@@ -308,9 +310,9 @@
   })();
 </script>
 {% endif %}
-{% if eh_staff_logado %}
+{% if current_user.tipo == "medico" %}
 <script>
-  // PWA da equipe: registra o service worker (ver app/static/sw.js) e, se
+  // PWA só do MÉDICO: registra o service worker (ver app/static/sw.js) e, se
   // notificação push estiver configurada no servidor (chaves VAPID - ver
   // gerar_chaves_vapid.py) e o navegador ainda não perguntou/recusou,
   // mostra o banner oferecendo para ativar. Sem chave pública (servidor

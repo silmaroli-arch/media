@@ -1,10 +1,12 @@
 """Notificação push (Web Push) para o PWA da equipe.
 
-Objetivo: avisar o médico/secretária no celular assim que chega uma
-pergunta nova de paciente (por WhatsApp ou pela área web), sem depender
-do WhatsApp de volta - resolve o mesmo problema que a Fatia 7 tentava
-resolver via Content Template da Twilio/Meta, mas do lado da EQUIPE (o
-paciente continua conversando pelo WhatsApp normalmente).
+Objetivo: avisar o MÉDICO no celular assim que chega uma pergunta nova de
+paciente (por WhatsApp ou pela área web), sem depender do WhatsApp de
+volta - resolve o mesmo problema que a Fatia 7 tentava resolver via
+Content Template da Twilio/Meta, mas do lado da EQUIPE (o paciente
+continua conversando pelo WhatsApp normalmente). Decisão do Silvan: só o
+médico recebe (não secretária/administrativo), mesmo que outras pessoas
+tenham vínculo ativo no mesmo Grupo (ver _usuarios_para_notificar).
 
 Como funciona: o navegador (Chrome/Edge no Android, Safari no iOS 16.4+
 com o PWA instalado na tela de início) gera uma "inscrição" (endpoint +
@@ -28,7 +30,7 @@ from flask import current_app
 from pywebpush import WebPushException, webpush
 
 from app.extensions import db
-from app.models import GrupoMembro, PushSubscription
+from app.models import GrupoMembro, PushSubscription, Usuario
 
 logger = logging.getLogger(__name__)
 
@@ -41,19 +43,29 @@ def _vapid_configurado():
 
 
 def _usuarios_para_notificar(pergunta):
-    """Quem deve ser avisado desta pergunta: todo mundo com vínculo ativo
-    no Grupo dela, ou só o próprio dono (conta solo sem Grupo ainda) -
-    mesmo par grupo_id/criado_por_id usado para filtrar quem VÊ a
-    pergunta (ver clinica_utils.filtro_escopo_atual). Simplificação
+    """Quem deve ser avisado desta pergunta: só quem é MÉDICO (tipo ==
+    "medico") - decisão do Silvan de que a notificação é só para o
+    médico, não para secretária/administrativo, mesmo que eles também
+    tenham vínculo ativo no Grupo. Entre os médicos, todo mundo com
+    vínculo ativo no Grupo dela, ou só o próprio dono da pergunta (conta
+    solo sem Grupo ainda, e só se ele mesmo for médico). Simplificação
     aceita aqui: um médico que só atende exames de outro colega também
     recebe o aviso (a restrição fina por exame só existe na LISTAGEM,
     ver routes_medico._restringir_perguntas_para_medico) - é só um alerta,
     quem abrir a lista continua vendo apenas o que tem permissão."""
     if pergunta.grupo_id:
-        membros = GrupoMembro.query.filter_by(grupo_id=pergunta.grupo_id, ativo=True).all()
+        membros = (
+            GrupoMembro.query
+            .join(Usuario, Usuario.id == GrupoMembro.usuario_id)
+            .filter(GrupoMembro.grupo_id == pergunta.grupo_id, GrupoMembro.ativo.is_(True), Usuario.tipo == "medico")
+            .all()
+        )
         return [m.usuario_id for m in membros]
     if pergunta.criado_por_id:
-        return [pergunta.criado_por_id]
+        dono = Usuario.query.get(pergunta.criado_por_id)
+        if dono and dono.tipo == "medico":
+            return [dono.id]
+        return []
     return []
 
 
