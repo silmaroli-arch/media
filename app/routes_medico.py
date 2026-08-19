@@ -1621,13 +1621,23 @@ def preparo_modelos_importar_xlsx():
                     )
                     return render_template("medico/preparo_modelo_importar_xlsx.html")
 
-            session["preparo_sugestao_importada"] = sugestao
             flash(
                 "Dados extraídos do PDF. Revise com cuidado antes de salvar — a extração é "
                 "automática e pode ter interpretado algo errado.",
                 "warning",
             )
-            return redirect(url_for("medico.preparo_modelos_novo", de_importacao=1))
+            # Renderiza a tela de revisão direto aqui (sem redirect) em vez
+            # de guardar a sugestão na sessão - o texto extraído de um PDF
+            # de preparo pode ser longo o bastante para estourar o limite
+            # de 4KB do cookie de sessão do Flask, o que já causou um 502
+            # (nginx recusando "upstream sent too big header" por causa do
+            # cookie gigante) em produção com um PDF real. Mesma tela e
+            # mesmo contexto que o GET de /preparo-modelos/novo?de_importacao=1
+            # usaria, só que sem depender do cookie para carregar o payload.
+            return render_template(
+                "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
+                medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
+            )
 
         try:
             sugestoes = extrair_sugestoes_de_xlsx(arquivo.stream)
