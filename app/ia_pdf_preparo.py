@@ -1,36 +1,54 @@
-"""Extração de sugestão de preparo a partir de um PDF usando IA (Google
-Gemini) - substitui a extração heurística por regex (`app.pdf_preparo`)
-como caminho PRINCIPAL de importação de PDF: a IA lê o conteúdo do PDF e
-devolve o mesmo formato estruturado usado pela importação de Excel (ver
-`app.xlsx_preparo`), permitindo reaproveitar a mesma tela de revisão antes
-de salvar - nada é gravado no banco até a pessoa conferir e clicar em
-"Salvar", exatamente como já acontecia com a extração por regex.
+"""Extração de sugestão de preparo a partir de um PDF usando IA - substitui
+a extração heurística por regex (`app.pdf_preparo`) como caminho PRINCIPAL
+de importação de PDF: a IA lê o conteúdo do PDF e devolve o mesmo formato
+estruturado usado pela importação de Excel (ver `app.xlsx_preparo`),
+permitindo reaproveitar a mesma tela de revisão antes de salvar - nada é
+gravado no banco até a pessoa conferir e clicar em "Salvar", exatamente
+como já acontecia com a extração por regex.
 
-Motor de IA: Google Gemini (`google-genai`), não Claude/Anthropic - trocado
-nesta rodada porque a extração de PDF é uma tarefa de leitura/estruturação
-de documento (sem o raciocínio de reconhecimento de marca farmacêutica que
-justifica usar o Sonnet no chat de dúvidas do paciente, ver
-`app.ia_preparo`) e o Gemini tem um custo por chamada bem menor para esse
-tipo de tarefa. Configurado de forma totalmente independente do
-`ia_preparo.py` (variável de ambiente própria, `GEMINI_API_KEY`) - trocar
-aqui não afeta o chat do paciente.
+Motor de IA: CADEIA de 3 provedores em ordem de preferência - Google
+Gemini primeiro (custo por chamada bem menor, adequado pra essa tarefa de
+leitura/estruturação de documento, sem o raciocínio mais caro de
+reconhecimento de marca farmacêutica que justifica o Sonnet no chat de
+dúvidas do paciente, ver `app.ia_preparo`); se o Gemini estiver
+indisponível (sem GEMINI_API_KEY configurada, ou a chamada falhar por
+qualquer motivo - rede, cota, sobrecarga persistente mesmo após as
+tentativas internas, JSON inválido), cai pro ChatGPT (OpenAI); se o
+ChatGPT também estiver indisponível pelos mesmos critérios, cai por fim
+pra Claude (Anthropic). Reaproveita as mesmas variáveis de ambiente e
+modelos padrão já usados no chat de dúvidas do paciente
+(OPENAI_API_KEY/OPENAI_MODEL, ANTHROPIC_API_KEY/ANTHROPIC_MODEL, ver
+`app.ia_preparo`) - configurado o mesmo provedor pros dois usos, sem
+custo extra de manter uma segunda chave separada. Só se os TRÊS
+falharem (ou nenhum estiver configurado) é que `extrair_sugestao_de_pdf_com_ia`
+retorna None e quem chama cai pra extração heurística por regex (ver
+abaixo) - motivo original desta cadeia: o Gemini já apresentou
+indisponibilidade real e prolongada em produção (503 "high demand"
+persistente + propagação de faturamento após criação de uma chave nova),
+e ter outros dois provedores prontos evita que a extração fique refém de
+UM fornecedor específico passando por instabilidade.
 
 Custo de tokens: por padrão manda-se só o TEXTO extraído do PDF (de graça,
 via pypdf - ver app.pdf_preparo.extrair_texto), bem mais barato que mandar
-o PDF inteiro como arquivo nativo - tanto a Claude quanto o Gemini tratam
-cada página de um PDF nativo de forma parecida com uma imagem por baixo
-dos panos, o que custa muito mais token que ler o mesmo conteúdo em texto
-puro. O PDF inteiro (nativo, lido diretamente pela IA) só é usado como
-QUEDA quando o texto extraído vier vazio/quase vazio - sinal de PDF
-escaneado/imagem, sem texto selecionável, que `extrair_texto` não
-consegue ler (ver LIMIAR_TEXTO_MINIMO abaixo).
+o PDF inteiro como arquivo nativo - as IAs tratam cada página de um PDF
+nativo de forma parecida com uma imagem por baixo dos panos, o que custa
+muito mais token que ler o mesmo conteúdo em texto puro. O PDF inteiro
+(nativo, lido diretamente pela IA) só é usado como QUEDA no Gemini quando
+o texto extraído vier vazio/quase vazio - sinal de PDF escaneado/imagem,
+sem texto selecionável, que `extrair_texto` não consegue ler (ver
+LIMIAR_TEXTO_MINIMO abaixo). O ChatGPT e a Claude, por serem só o
+fallback de um fallback (chamados bem mais raramente), recebem sempre o
+texto extraído mesmo quando curto - não implementam a leitura nativa do
+PDF escaneado por simplicidade; nesse caso (raríssimo: só ocorre quando
+Gemini falhou E o PDF é escaneado) a extração por eles tende a vir vazia,
+e o sistema cai corretamente pro extrator heurístico em seguida.
 
-Só é usada quando GEMINI_API_KEY está configurada (ver _cliente_gemini) -
-sem ela, ou se a chamada falhar por qualquer motivo (rede, PDF ilegível,
-resposta que não veio em JSON válido), `extrair_sugestao_de_pdf_com_ia`
-retorna None e quem chama deve cair de volta pra extração heurística de
-`app.pdf_preparo.extrair_sugestao_de_pdf`, que nunca lança uma exceção
-não tratada."""
+Cada provedor tem sua própria função de extração
+(`_extrair_via_gemini`/`_extrair_via_openai`/`_extrair_via_claude`), que
+levanta uma exceção em caso de falha (nunca retorna dado parcial
+silenciosamente) - a função orquestradora (`extrair_sugestao_de_pdf_com_ia`)
+tenta cada uma em ordem, loga a falha e segue pra próxima, e só desiste
+de vez (retornando None) depois de esgotar as três."""
 import io
 import json
 import logging
@@ -89,6 +107,15 @@ Regras importantes:
 - Nunca descarte uma regra real do documento só porque ela não tem um prazo numérico exato em horas/dias (ex.: um corte amarrado a um evento como "após o café da manhã" em vez de "X horas antes do exame", ou uma restrição de medicamento "conforme orientação médica" sem número de dias fixo). Nesses casos, ainda registre a regra em "informacoes_gerais" com "texto" descrevendo a condição por extenso e horas_antes/dias_antes/hora_exata como null - é melhor aparecer sem prazo calculado do que sumir da revisão da secretária/médico."""
 
 
+# Modelos padrão do ChatGPT/Claude usados como 2º e 3º provedores da
+# cadeia - as MESMAS variáveis de ambiente e valores-padrão já usados no
+# chat de dúvidas do paciente (ver app.ia_preparo.MODELO_PADRAO/
+# MODELO_OPENAI_PADRAO), de propósito: um único par de chaves/modelo por
+# provedor serve os dois usos, sem precisar manter configuração duplicada.
+MODELO_OPENAI_PADRAO = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+MODELO_ANTHROPIC_PADRAO = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+
+
 def _cliente_gemini():
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -99,8 +126,30 @@ def _cliente_gemini():
     except Exception:
         # Cobre tanto a falta da biblioteca quanto qualquer erro ao
         # construir o cliente - nunca deve derrubar a importação de PDF
-        # com um erro 500, só faz o sistema seguir sem essa IA (cai pra
-        # extração heurística de app.pdf_preparo).
+        # com um erro 500, só faz o sistema seguir sem essa IA (cai pro
+        # próximo provedor da cadeia, ver extrair_sugestao_de_pdf_com_ia).
+        return None
+
+
+def _cliente_openai():
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None
+    try:
+        import openai
+        return openai.OpenAI(api_key=api_key)
+    except Exception:
+        return None
+
+
+def _cliente_claude():
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    try:
+        import anthropic
+        return anthropic.Anthropic(api_key=api_key)
+    except Exception:
         return None
 
 
@@ -217,114 +266,186 @@ def _conteudo_mensagem(genai_types, pdf_bytes, texto_extraido):
     ]
 
 
+def _log_diagnostico(provedor, dados, finish_reason="?"):
+    """Log temporário de diagnóstico (2026-08-19, agora reaproveitado para
+    os 3 provedores): confirma se a IA está devolvendo os campos
+    estruturados vazios de propósito (ex.: limite de tokens de saída
+    cortando a resposta antes de gerar medicamentos/alimentos, ou o
+    prompt não sendo seguido em PDFs maiores/mais complexos) - sem logar
+    o conteúdo em si, só o "formato" da resposta (tamanho de cada lista),
+    o suficiente pra decidir o próximo ajuste sem expor dado de paciente/
+    preparo real no log. Remover depois que a causa for confirmada."""
+    logger.info(
+        "%s devolveu: instrucoes=%d chars, cortes=%d, medicamentos=%d, "
+        "medicamentos_mantidos=%d, informacoes_gerais=%d, alimentos=%d, "
+        "exames_anteriores=%d, finish_reason=%s",
+        provedor,
+        len((dados.get("instrucoes") or "")),
+        len(_lista(dados, "cortes")), len(_lista(dados, "medicamentos")),
+        len(_lista(dados, "medicamentos_mantidos")), len(_lista(dados, "informacoes_gerais")),
+        len(_lista(dados, "alimentos")), len(_lista(dados, "exames_anteriores")),
+        finish_reason,
+    )
+
+
+def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido):
+    """Chama o Gemini e devolve o JSON cru (dict) já parseado, ou levanta
+    uma exceção em caso de falha - quem chama (extrair_sugestao_de_pdf_com_ia)
+    decide o que fazer (cair pro próximo provedor da cadeia)."""
+    from google.genai import errors as genai_errors
+    from google.genai import types as genai_types
+
+    conteudo = _conteudo_mensagem(genai_types, pdf_bytes, texto_extraido)
+    config = genai_types.GenerateContentConfig(
+        system_instruction=PROMPT_SISTEMA,
+        # 4096 (valor anterior) se mostrou baixo demais pra preparos reais
+        # mais longos/complexos (ex.: cardápio detalhado por refeição +
+        # vários medicamentos + informações gerais) - o JSON de resposta
+        # inclui o texto de "instrucoes" (o preparo inteiro) MAIS todos os
+        # campos estruturados, então o corte no meio do JSON por atingir
+        # o limite é uma causa provável de as abas estruturadas
+        # aparecerem vazias mesmo com a chamada "dando certo" (sem erro),
+        # confirmado via log de diagnóstico em produção em 2026-08-19.
+        max_output_tokens=16384,
+    )
+
+    # O Gemini às vezes devolve 503 UNAVAILABLE ("high demand") por
+    # sobrecarga passageira do lado da Google - não é erro de código nem
+    # de configuração (confirmado em produção em 2026-08-19), então vale
+    # tentar de novo antes de desistir. NÃO tenta de novo pra outros erros
+    # (ex.: 429 de cota/crédito, 404 de modelo, JSON inválido) - só
+    # pioraria a demora sem chance de dar certo, e nesse caso é melhor
+    # cair rápido pro próximo provedor da cadeia (ChatGPT/Claude) do que
+    # insistir no mesmo provedor que já falhou.
+    #
+    # ATENÇÃO: o nginx do Elastic Beanstalk tem um timeout de proxy (ver
+    # .platform/nginx/conf.d/timeout.conf, hoje 120s) que precisa ser
+    # MAIOR que o pior caso do processo inteiro - agora que existem até 3
+    # provedores em cadeia, cada um com sua própria tentativa, o
+    # orçamento de tempo do Gemini sozinho foi reduzido de 3 para 2
+    # tentativas (1 retry, espera de 5s) - dá uma chance de superar uma
+    # sobrecarga bem passageira sem gastar o orçamento de tempo todo
+    # aqui, deixando folga pro ChatGPT/Claude serem tentados em seguida
+    # dentro do mesmo timeout de 120s.
+    tentativas = 2
+    for tentativa in range(1, tentativas + 1):
+        try:
+            resposta = cliente.models.generate_content(
+                model=MODELO_PADRAO, contents=conteudo, config=config,
+            )
+            break
+        except genai_errors.ServerError:
+            if tentativa == tentativas:
+                raise
+            logger.warning(
+                "Gemini indisponível (tentativa %d/%d), tentando de novo em %ds",
+                tentativa, tentativas, tentativa * 5,
+            )
+            time.sleep(tentativa * 5)
+
+    dados = _extrair_json(resposta.text)
+    finish_reason = (
+        getattr(resposta.candidates[0], "finish_reason", "?") if getattr(resposta, "candidates", None) else "?"
+    )
+    _log_diagnostico("Gemini", dados, finish_reason)
+    return dados
+
+
+def _extrair_via_openai(cliente, texto_extraido):
+    """2º provedor da cadeia - só é chamado se o Gemini estiver
+    indisponível (ver docstring do módulo). Sempre recebe o texto
+    extraído (nunca o PDF nativo) - ver docstring do módulo sobre essa
+    limitação intencional."""
+    resposta = cliente.chat.completions.create(
+        model=MODELO_OPENAI_PADRAO,
+        max_tokens=16384,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": PROMPT_SISTEMA},
+            {
+                "role": "user",
+                "content": (
+                    "Texto extraído do PDF de preparo (abaixo). Extraia os dados "
+                    "no formato JSON descrito nas instruções do sistema.\n\n"
+                    f"---\n{texto_extraido}\n---"
+                ),
+            },
+        ],
+    )
+    dados = _extrair_json(resposta.choices[0].message.content or "")
+    finish_reason = resposta.choices[0].finish_reason if resposta.choices else "?"
+    _log_diagnostico("ChatGPT", dados, finish_reason)
+    return dados
+
+
+def _extrair_via_claude(cliente, texto_extraido):
+    """3º e último provedor da cadeia - só é chamado se o Gemini e o
+    ChatGPT estiverem ambos indisponíveis (ver docstring do módulo).
+    Sempre recebe o texto extraído (nunca o PDF nativo) - mesma limitação
+    intencional do ChatGPT."""
+    resposta = cliente.messages.create(
+        model=MODELO_ANTHROPIC_PADRAO,
+        max_tokens=16384,
+        system=PROMPT_SISTEMA,
+        messages=[{
+            "role": "user",
+            "content": (
+                "Texto extraído do PDF de preparo (abaixo). Extraia os dados "
+                "no formato JSON descrito nas instruções do sistema.\n\n"
+                f"---\n{texto_extraido}\n---"
+            ),
+        }],
+    )
+    texto = "".join(getattr(bloco, "text", "") for bloco in resposta.content)
+    dados = _extrair_json(texto)
+    finish_reason = getattr(resposta, "stop_reason", "?")
+    _log_diagnostico("Claude", dados, finish_reason)
+    return dados
+
+
 def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
     """Retorna a sugestão estruturada (mesmo formato de
-    `app.pdf_preparo.extrair_sugestao_de_pdf`) usando o Gemini para ler o
-    conteúdo do PDF, ou None se a IA não estiver configurada ou a chamada
-    falhar por qualquer motivo (rede, PDF ilegível, resposta que não veio
-    em JSON válido) - quem chama deve cair de volta pra extração
+    `app.pdf_preparo.extrair_sugestao_de_pdf`) usando uma CADEIA de até 3
+    provedores de IA - Gemini, depois ChatGPT, depois Claude (ver
+    docstring do módulo) - ou None se nenhum estiver configurado ou os
+    três falharem por qualquer motivo (rede, PDF ilegível, resposta que
+    não veio em JSON válido). Quem chama deve cair de volta pra extração
     heurística nesse caso, nunca deixar essa falha virar um erro 500 na
-    tela. Ver o docstring do módulo sobre a estratégia de custo (texto
-    primeiro, PDF nativo só como queda para PDFs escaneados)."""
-    cliente = _cliente_gemini()
-    if cliente is None:
-        return None
-
+    tela."""
     try:
         texto_extraido = extrair_texto(io.BytesIO(pdf_bytes))
     except Exception:
         # PDF corrompido/protegido/ilegível para o pypdf - ainda vale
-        # tentar a leitura nativa pela IA antes de desistir.
+        # tentar a leitura nativa pela IA (só o Gemini faz isso, ver
+        # docstring do módulo) antes de desistir.
         texto_extraido = ""
 
-    try:
-        from google.genai import errors as genai_errors
-        from google.genai import types as genai_types
+    provedores = [
+        ("Gemini", _cliente_gemini, lambda cliente: _extrair_via_gemini(cliente, pdf_bytes, texto_extraido)),
+        ("ChatGPT", _cliente_openai, lambda cliente: _extrair_via_openai(cliente, texto_extraido)),
+        ("Claude", _cliente_claude, lambda cliente: _extrair_via_claude(cliente, texto_extraido)),
+    ]
 
-        conteudo = _conteudo_mensagem(genai_types, pdf_bytes, texto_extraido)
-        config = genai_types.GenerateContentConfig(
-            system_instruction=PROMPT_SISTEMA,
-            # 4096 (valor anterior) se mostrou baixo demais pra preparos reais
-            # mais longos/complexos (ex.: cardápio detalhado por refeição +
-            # vários medicamentos + informações gerais) - o JSON de resposta
-            # inclui o texto de "instrucoes" (o preparo inteiro) MAIS todos os
-            # campos estruturados, então o corte no meio do JSON por atingir
-            # o limite é uma causa provável de as abas estruturadas
-            # aparecerem vazias mesmo com a chamada "dando certo" (sem erro),
-            # confirmado via log de diagnóstico em produção em 2026-08-19
-            # (ver o log "Gemini devolveu: ..." logo abaixo, com o
-            # finish_reason da resposta).
-            max_output_tokens=16384,
-        )
+    for nome, obter_cliente, chamar in provedores:
+        cliente = obter_cliente()
+        if cliente is None:
+            # Provedor sem chave configurada - nem tenta, passa direto
+            # pro próximo da cadeia sem logar nada (não é uma falha, é
+            # simplesmente não estar configurado).
+            continue
+        try:
+            dados = chamar(cliente)
+            return _normalizar_sugestao(dados)
+        except Exception:
+            # Loga a causa real antes de cair pro próximo provedor - sem
+            # isso, qualquer falha (rede, cota, JSON mal formado,
+            # timeout) fica invisível e some como se a extração
+            # simplesmente não tivesse achado nada. Ver eb-engine/
+            # web.stdout do Elastic Beanstalk para diagnosticar quando a
+            # extração por IA não está funcionando como esperado.
+            logger.exception("Falha ao extrair sugestão de PDF via %s", nome)
+            continue
 
-        # O Gemini às vezes devolve 503 UNAVAILABLE ("high demand") por
-        # sobrecarga passageira do lado da Google - não é erro de código nem
-        # de configuração (confirmado em produção em 2026-08-19), então vale
-        # tentar de novo algumas vezes antes de desistir e cair pro fallback
-        # heurístico. NÃO tenta de novo pra outros erros (ex.: 429 de cota/
-        # crédito, 404 de modelo, JSON inválido) - só pioraria a demora sem
-        # chance de dar certo.
-        #
-        # ATENÇÃO: o nginx do Elastic Beanstalk tem um timeout de proxy (ver
-        # .platform/nginx/conf.d/timeout.conf) que precisa ser MAIOR que o
-        # pior caso daqui (chamada normal ao Gemini + tempo de espera entre
-        # tentativas), senão o nginx desiste primeiro e devolve 504 pro
-        # usuário mesmo que o processo Python continue tentando por trás -
-        # foi exatamente o que aconteceu em produção com 3 tentativas e
-        # espera de 5s/10s (total podia passar dos 60s padrão do nginx),
-        # quando esse timeout ainda era o padrão da plataforma. Reduzido na
-        # época pra 2 tentativas com espera curta como mitigação temporária.
-        # Agora que o timeout do nginx já foi ampliado pra 120s (ver o
-        # arquivo citado acima, confirmado funcionando em produção em
-        # 2026-08-19 com uma chamada de ~91s retornando 200 em vez de 504),
-        # há folga de sobra pra voltar às 3 tentativas com espera de 5s/10s
-        # (pior caso: 2 chamadas ao Gemini + 15s de espera, bem abaixo do
-        # limite de 120s) - dá mais chance de superar uma sobrecarga (503)
-        # passageira do lado da Google sem cair no extrator heurístico mais
-        # fraco.
-        tentativas = 3
-        for tentativa in range(1, tentativas + 1):
-            try:
-                resposta = cliente.models.generate_content(
-                    model=MODELO_PADRAO, contents=conteudo, config=config,
-                )
-                break
-            except genai_errors.ServerError:
-                if tentativa == tentativas:
-                    raise
-                logger.warning(
-                    "Gemini indisponível (tentativa %d/%d), tentando de novo em %ds",
-                    tentativa, tentativas, tentativa * 5,
-                )
-                time.sleep(tentativa * 5)
-
-        dados = _extrair_json(resposta.text)
-        # Log temporário de diagnóstico (2026-08-19): confirma se o Gemini
-        # está devolvendo os campos estruturados vazios de propósito (ex.:
-        # limite de max_output_tokens cortando a resposta antes de gerar
-        # medicamentos/alimentos, ou o prompt não sendo seguido em PDFs
-        # maiores/mais complexos) - sem logar o conteúdo em si, só o
-        # "formato" da resposta (tamanho de cada lista), o suficiente pra
-        # decidir o próximo ajuste sem expor dado de paciente/preparo real
-        # no log. Remover depois que a causa for confirmada.
-        logger.info(
-            "Gemini devolveu: instrucoes=%d chars, cortes=%d, medicamentos=%d, "
-            "medicamentos_mantidos=%d, informacoes_gerais=%d, alimentos=%d, "
-            "exames_anteriores=%d, finish_reason=%s",
-            len((dados.get("instrucoes") or "")),
-            len(_lista(dados, "cortes")), len(_lista(dados, "medicamentos")),
-            len(_lista(dados, "medicamentos_mantidos")), len(_lista(dados, "informacoes_gerais")),
-            len(_lista(dados, "alimentos")), len(_lista(dados, "exames_anteriores")),
-            getattr(resposta.candidates[0], "finish_reason", "?") if getattr(resposta, "candidates", None) else "?",
-        )
-    except Exception:
-        # Loga a causa real antes de cair silenciosamente pro fallback
-        # heurístico - sem isso, qualquer falha (rede, cota, JSON mal
-        # formado, timeout) fica invisível e some como se a extração
-        # simplesmente não tivesse achado nada. Ver eb-engine/web.stdout
-        # do Elastic Beanstalk para diagnosticar quando a extração por IA
-        # não está funcionando como esperado.
-        logger.exception("Falha ao extrair sugestão de PDF via Gemini")
-        return None
-
-    return _normalizar_sugestao(dados)
+    # Os três provedores falharam (ou nenhum está configurado) - quem
+    # chama cai pra extração heurística por regex.
+    return None
