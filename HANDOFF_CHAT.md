@@ -1,6 +1,6 @@
 # Handoff — Continuação do chat com Claude sobre o projeto Media/MedIA
 
-> Atualizado em 2026-08-18. Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
+> Atualizado em 2026-08-19. Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
 
 ## Contexto do projeto
 
@@ -47,16 +47,73 @@ Objetivo: paciente se identifica e conversa pelo WhatsApp (via Twilio) para tira
 - Webhook do Twilio Sandbox apontando para `https://dev.media.med.br/whatsapp/webhook`.
 - Variáveis de ambiente no `media-dev`: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` (`whatsapp:+14155238886`, número do Sandbox), `TWILIO_CONTENT_SID_RESPOSTA` (`HXbba11dc2527b1f4eae732b03c199bd10`).
 
-### Pendência ativa (bloqueador atual)
+### Pendência ativa (bloqueador atual) — ATUALIZADO nesta sessão
 
-O template `resposta_whatsapp` (SID acima) foi criado no Twilio Console e enviado para aprovação da Meta, mas ainda está pendente ("WhatsApp business initiated" com ícone de informação, não check verde — conferir em https://console.twilio.com/us1/develop/sms/content-template-builder). Enquanto não aprovar, o envio automático falha com "The ContentSid is Invalid"/"ContentSid Required". Pode levar de minutos a ~24h. **O sistema funciona normalmente sem isso** — a resposta sempre fica disponível ao paciente na área web também.
+**Descoberta importante**: o bloqueio real não era só "aguardando aprovação da Meta". O Silvan mandou um print do Twilio Console mostrando que a **conta Twilio está em modo Trial**, e uma conta Trial **não consegue nem submeter** um WhatsApp Sender para aprovação — mensagem exata do Twilio: "Please upgrade your account to submit a WhatsApp Sender - Looks like you are on a trial account. A paid account is required to submit a WhatsApp Sender." Ou seja, o Content Template `resposta_whatsapp` nunca vai sair do estado pendente enquanto a conta continuar Trial, independente de quanto tempo passe.
+
+O Silvan optou por **decidir/consultar antes de fazer upgrade** da conta Twilio, e nesta sessão foi feita uma pesquisa de alternativas de provedor de WhatsApp Business API, ainda **sem decisão final**:
+
+- **Meta (Cloud API direta)**: desde 1/jul/2025 a cobrança mudou de "por conversa de 24h" para **por mensagem**, com categorias Service (grátis, resposta a mensagem do cliente dentro de 24h), Utility, Authentication e Marketing (preço crescente nessa ordem). Estimativas de terceiros para o Brasil (não oficiais, confirmar no rate card real): Utility ~R$0,04–0,05, Authentication ~R$0,15–0,19, Marketing ~R$0,31–0,38 por mensagem. **O rate card oficial só fica visível dentro de `business.facebook.com/wa/manage` depois que a empresa tiver uma Meta Business Account com um número do WhatsApp Business já registrado/verificado** — o Silvan confirmou que ainda não tem esse número, então esse passo específico (checar o rate card oficial) ainda não pôde ser feito.
+- **Zenvia e Blip/Take Blip**: ambos cobram em Real (BRL), o que resolve a reclamação do Silvan sobre o preço da Twilio ser em dólar. Preços pesquisados nos sites oficiais nesta sessão (conferir sempre o valor atual, muda com frequência).
+- **Gateways não-oficiais** (ex.: Whapi.Cloud, que automatizam o WhatsApp Web/app comum em vez de usar a API oficial): descartados como opção — violam os Termos de Serviço do WhatsApp e têm risco real de banimento do número, inaceitável para um sistema de saúde.
+- Toda opção (Twilio, Zenvia, Blip, ou Meta direto) **exige o mesmo pré-requisito de base**: uma Meta Business Account + um número de telefone dedicado ao WhatsApp Business (sem WhatsApp pessoal ativo nele) + verificação de negócio da Meta — isso ainda não foi feito.
+- Uma dúvida em aberto, levantada pelo Silvan e ainda sem resposta: se existe um serviço de terceiro que já tem número próprio pronto (sem precisar registrar/verificar um número do zero) e que faça a ponte com o MedIA. Ficou combinado **perguntar diretamente pra Zenvia/Blip** se eles oferecem isso — ainda não perguntado.
+
+**Nada disso foi decidido ainda.** Ao retomar, o próximo passo é o Silvan decidir entre: (a) fazer upgrade da conta Twilio para paga e seguir com o Content Template já criado, (b) migrar para Zenvia ou Blip (cobrança em Real, mas processo de registro de número provavelmente do zero também), ou (c) usar a Meta Cloud API diretamente. **O sistema funciona normalmente sem isso** — a resposta sempre fica disponível ao paciente na área web também, e agora (ver Fatia 8 abaixo) a equipe pode ser avisada por notificação push no celular, sem depender do WhatsApp de volta.
 
 ### Próximos passos sugeridos
 
-- Confirmar aprovação do Content Template e testar de ponta a ponta (perguntar pelo WhatsApp → responder em `/equipe/perguntas` → confirmar chegada automática).
+- Decidir o provedor de WhatsApp (Twilio pago vs. Zenvia vs. Blip vs. Meta direto) e, se aplicável, perguntar a Zenvia/Blip sobre número já pronto.
+- Registrar/verificar o número do WhatsApp Business na Meta (pré-requisito de qualquer caminho escolhido).
+- Confirmar aprovação do Content Template (se seguir com Twilio) e testar de ponta a ponta.
 - Repetir configuração de HTTPS/variáveis de ambiente para `media-qa` e `media-prod` quando for hora de promover essa fatia.
 - Continuar a Fatia 6.
 - Avaliar se vale criar um segundo Content Template com o menu embutido (3 variáveis) para reaprovação futura.
+
+## Fatia 8 — PWA da equipe com notificação push (nova nesta sessão)
+
+Enquanto o bloqueio do WhatsApp (acima) fica em aberto, o Silvan pediu uma forma alternativa de avisar a equipe sem depender do WhatsApp de volta: um **PWA (Progressive Web App)** que o médico instala no celular e recebe notificação push nativa do navegador quando chega uma pergunta nova de paciente — o paciente continua conversando 100% pelo WhatsApp normalmente, só a notificação do lado da equipe é que passou a ter esse canal extra.
+
+### Decisões de escopo (confirmadas com o Silvan)
+
+- Só para a equipe (médico), nunca para o paciente — o paciente não usa o PWA.
+- Notificação push nativa do navegador (Web Push / VAPID), não um app nativo de loja de aplicativos.
+- **Só médico recebe, nunca secretária/administrativo** — mesmo que ambos tenham vínculo ativo no mesmo Grupo.
+- **Dentro dos médicos, só quem é responsável pelo exame daquela pergunta específica é avisado** — a mesma regra que já existia para decidir o que aparece na tela `/equipe/perguntas` de cada médico (`_restringir_perguntas_para_medico`): médico principal do exame (`Exame.medico_id`) + médicos extra (`Exame.medicos_extra`); para pergunta geral (sem exame vinculado), só médicos com a permissão `perm_pacientes`.
+
+### O que foi implementado
+
+- **`app/models.py`**: novo modelo `PushSubscription` (guarda a inscrição push de cada navegador/aparelho: `endpoint`, `p256dh`, `auth`, vinculado a um `usuario_id`).
+- **`app/push_notificacoes.py`** (novo): módulo central — `notificar_equipe_nova_pergunta(pergunta)` calcula quem deve ser avisado (`_usuarios_para_notificar`, replicando a regra de `_restringir_perguntas_para_medico`) e envia a notificação via `pywebpush`. Chamado logo após criar uma `PerguntaPendente` nova em `app/routes_paciente.py` (chat do paciente) e `app/whatsapp_conversa.py` (pergunta feita pelo WhatsApp). Sem as variáveis VAPID configuradas, a função não faz nada (mesmo padrão de "falha aberta" já usado no envio de WhatsApp).
+- **`app/static/manifest.json`** e **`app/static/sw.js`** (novos): manifesto do PWA (nome, ícones, tela inicial `/equipe/perguntas`) e o service worker (registra o push, mostra a notificação, abre a tela certa ao clicar). Ícones gerados em `app/static/img/pwa/`.
+- **`app/routes_medico.py`**: 3 rotas novas (`/equipe/push/vapid-public-key`, `/equipe/push/subscribe`, `/equipe/push/unsubscribe`) para o navegador buscar a chave pública e registrar/remover a inscrição.
+- **`app/templates/base.html`**: para usuários com `tipo == "medico"`, carrega o manifesto do PWA, registra o service worker e mostra um banner ("Ative as notificações para ser avisado no celular...") com botão para autorizar — nada disso aparece para secretária/administrativo.
+- **`app/__init__.py`**: rotas `/sw.js` e `/manifest.json` na raiz (exigência técnica do padrão PWA) e leitura das 3 variáveis de ambiente VAPID.
+- **`gerar_chaves_vapid.py`** (novo, raiz do repo): script para gerar o par de chaves VAPID (rodar só uma vez — gerar de novo invalida toda inscrição já feita pela equipe).
+- **`migrar_banco.py`**: criação da tabela `push_subscriptions`.
+- **`requirements.txt`**: `pywebpush` (mais `setuptools<71`, necessário para uma dependência dele instalar corretamente).
+
+### Configuração feita em `media-dev`
+
+3 variáveis de ambiente novas no Elastic Beanstalk, geradas pelo script acima e **já configuradas pelo Silvan** ("Chaves salvas"):
+- `VAPID_PUBLIC_KEY`
+- `VAPID_PRIVATE_KEY`
+- `VAPID_CLAIM_EMAIL` (`mailto:contato@inflor.com.br`)
+
+### Como instalar no celular (orientado ao Silvan)
+
+- **Android/Chrome**: abrir o site, tocar em "Ativar notificações" no banner (ou usar o menu do navegador → "Adicionar à tela inicial" para instalar como app). Push funciona mesmo só pelo navegador, sem precisar instalar.
+- **iPhone/Safari**: **precisa iOS 16.4 ou mais recente E o PWA precisa estar de fato instalado na tela de início** via Safari → botão Compartilhar → "Adicionar à Tela de Início". Só abrir pelo navegador (sem instalar) **não** ativa push no iOS — diferente do Android.
+
+### Pendência ativa (bug reportado, NÃO resolvido)
+
+O Silvan testou no iPhone (mandou uma pergunta de teste) e a notificação **não chegou**. Isso ficou sem diagnóstico — a conversa foi interrompida antes de conseguir confirmar com ele: (a) se o banner "Ativar notificações" foi tocado e a permissão foi de fato concedida; (b) a versão do iOS; (c) se o PWA estava genuinamente instalado na tela de início (não só aberto numa aba do Safari); (d) — possibilidade nova, depois do ajuste fino de escopo por exame — se a pergunta de teste era de um exame do qual aquele médico específico não é responsável, caso em que a notificação corretamente NÃO deveria disparar (esse ajuste de escopo foi implementado depois do teste do Silvan, então a ordem dos eventos importa para o diagnóstico). **Retomar esse diagnóstico é o próximo passo mais importante desta fatia.**
+
+## Otimização de custo — importação de PDF de preparo
+
+O Silvan notou que importar um PDF para virar modelo de preparo estava consumindo muitos tokens de IA, e perguntou se importar uma imagem PNG em vez de PDF seria mais leve. A causa raiz real (diferente da hipótese inicial) é que a Claude processa cada página de um PDF nativo de forma parecida com uma imagem por baixo dos panos — PNG teria custo igual ou pior, não menor.
+
+**Correção implementada** em `app/ia_pdf_preparo.py`: antes de mandar o PDF inteiro pra IA, o sistema agora tenta extrair o texto puro do PDF de graça (reaproveitando `app.pdf_preparo.extrair_texto`, que já existia) e manda **só o texto** para a IA — bem mais barato. O PDF nativo (caminho caro) só é usado como fallback quando o texto extraído vier vazio ou quase vazio (sinal de PDF escaneado/imagem, sem texto selecionável). Verificado com um PDF de texto normal (usa só o caminho barato) e um PDF simulando digitalização (cai corretamente no fallback).
 
 ## Como continuar
 
