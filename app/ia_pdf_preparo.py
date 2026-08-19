@@ -271,9 +271,18 @@ def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
         # tentativas), senão o nginx desiste primeiro e devolve 504 pro
         # usuário mesmo que o processo Python continue tentando por trás -
         # foi exatamente o que aconteceu em produção com 3 tentativas e
-        # espera de 5s/10s (total podia passar dos 60s padrão do nginx).
-        # Por isso esse número foi reduzido pra 2 tentativas com espera curta.
-        tentativas = 2
+        # espera de 5s/10s (total podia passar dos 60s padrão do nginx),
+        # quando esse timeout ainda era o padrão da plataforma. Reduzido na
+        # época pra 2 tentativas com espera curta como mitigação temporária.
+        # Agora que o timeout do nginx já foi ampliado pra 120s (ver o
+        # arquivo citado acima, confirmado funcionando em produção em
+        # 2026-08-19 com uma chamada de ~91s retornando 200 em vez de 504),
+        # há folga de sobra pra voltar às 3 tentativas com espera de 5s/10s
+        # (pior caso: 2 chamadas ao Gemini + 15s de espera, bem abaixo do
+        # limite de 120s) - dá mais chance de superar uma sobrecarga (503)
+        # passageira do lado da Google sem cair no extrator heurístico mais
+        # fraco.
+        tentativas = 3
         for tentativa in range(1, tentativas + 1):
             try:
                 resposta = cliente.models.generate_content(
