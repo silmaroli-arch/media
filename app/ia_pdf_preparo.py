@@ -1,12 +1,20 @@
 """Extração de sugestão de preparo a partir de um PDF usando IA (Claude) -
 substitui a extração heurística por regex (`app.pdf_preparo`) como caminho
-PRINCIPAL de importação de PDF: a Claude lê o PDF nativamente (inclusive
-PDFs escaneados/imagem, que a extração de texto puro de `app.pdf_preparo`
-não consegue interpretar) e devolve o mesmo formato estruturado usado pela
-importação de Excel (ver `app.xlsx_preparo`), permitindo reaproveitar a
-mesma tela de revisão antes de salvar - nada é gravado no banco até a
-pessoa conferir e clicar em "Salvar", exatamente como já acontecia com a
-extração por regex.
+PRINCIPAL de importação de PDF: a Claude lê o conteúdo do PDF e devolve o
+mesmo formato estruturado usado pela importação de Excel (ver
+`app.xlsx_preparo`), permitindo reaproveitar a mesma tela de revisão antes
+de salvar - nada é gravado no banco até a pessoa conferir e clicar em
+"Salvar", exatamente como já acontecia com a extração por regex.
+
+Custo de tokens: por padrão manda-se só o TEXTO extraído do PDF (de graça,
+via pypdf - ver app.pdf_preparo.extrair_texto), bem mais barato que mandar
+o PDF inteiro como "document" - a Claude trata cada página de um PDF
+nativo de forma parecida com uma imagem por baixo dos panos, o que custa
+muito mais token que ler o mesmo conteúdo em texto puro. O PDF inteiro
+(nativo, lido diretamente pela IA) só é usado como QUEDA quando o texto
+extraído vier vazio/quase vazio - sinal de PDF escaneado/imagem, sem texto
+selecionável, que `extrair_texto` não consegue ler (ver LIMIAR_TEXTO_MINIMO
+abaixo).
 
 Só é usada quando ANTHROPIC_API_KEY está configurada (ver
 app.ia_preparo._cliente_anthropic) - sem ela, ou se a chamada falhar por
@@ -16,9 +24,17 @@ cair de volta pra extração heurística de
 `app.pdf_preparo.extrair_sugestao_de_pdf`, que nunca lança uma exceção
 não tratada."""
 import base64
+import io
 import json
 
 from app.ia_preparo import MODELO_PADRAO, _cliente_anthropic
+from app.pdf_preparo import extrair_texto
+
+# Abaixo desse número de caracteres de texto extraído, o PDF é tratado como
+# "sem texto selecionável o suficiente" (provavelmente escaneado/imagem) -
+# nesse caso manda-se o PDF inteiro pra IA ler nativamente, mesmo custando
+# mais token, porque não há alternativa mais barata pra ler o conteúdo.
+LIMIAR_TEXTO_MINIMO = 200
 
 PROMPT_SISTEMA = """Você é um assistente que lê documentos de preparo para exames médicos (ex.: colonoscopia, endoscopia, exames de imagem) e extrai as regras num formato estruturado (JSON), para uma secretária ou médico revisar e cadastrar no sistema.
 
@@ -104,16 +120,60 @@ def _normalizar_sugestao(dados):
     }
 
 
+def _conteudo_mensagem(pdf_bytes, texto_extraido):
+    """Monta o(s) bloco(s) de conteúdo da mensagem pra IA: texto extraído
+    (barato) quando houver o suficiente, ou o PDF inteiro como "document"
+    nativo (caro, tratado quase como imagem por página) só quando o texto
+    vier vazio/quase vazio - ver LIMIAR_TEXTO_MINIMO e o motivo disso no
+    docstring do módulo."""
+    if len(texto_extraido.strip()) >= LIMIAR_TEXTO_MINIMO:
+        return [{
+            "type": "text",
+            "text": (
+                "Texto extraído do PDF de preparo (abaixo). Extraia os dados "
+                "no formato JSON descrito nas instruções do sistema.\n\n"
+                f"---\n{texto_extraido}\n---"
+            ),
+        }]
+    return [
+        {
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": base64.b64encode(pdf_bytes).decode("ascii"),
+            },
+        },
+        {
+            "type": "text",
+            "text": (
+                "O texto extraído deste PDF veio vazio ou quase vazio (provavelmente é um "
+                "PDF escaneado/imagem) - leia o documento diretamente e extraia os dados de "
+                "preparo no formato JSON descrito nas instruções do sistema."
+            ),
+        },
+    ]
+
+
 def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
     """Retorna a sugestão estruturada (mesmo formato de
     `app.pdf_preparo.extrair_sugestao_de_pdf`) usando a Claude para ler o
-    PDF, ou None se a IA não estiver configurada ou a chamada falhar por
-    qualquer motivo (rede, PDF ilegível, resposta que não veio em JSON
-    válido) - quem chama deve cair de volta pra extração heurística nesse
-    caso, nunca deixar essa falha virar um erro 500 na tela."""
+    conteúdo do PDF, ou None se a IA não estiver configurada ou a chamada
+    falhar por qualquer motivo (rede, PDF ilegível, resposta que não veio
+    em JSON válido) - quem chama deve cair de volta pra extração
+    heurística nesse caso, nunca deixar essa falha virar um erro 500 na
+    tela. Ver o docstring do módulo sobre a estratégia de custo (texto
+    primeiro, PDF nativo só como queda para PDFs escaneados)."""
     cliente = _cliente_anthropic()
     if cliente is None:
         return None
+
+    try:
+        texto_extraido = extrair_texto(io.BytesIO(pdf_bytes))
+    except Exception:
+        # PDF corrompido/protegido/ilegível para o pypdf - ainda vale
+        # tentar a leitura nativa pela IA antes de desistir.
+        texto_extraido = ""
 
     try:
         resposta = cliente.messages.create(
@@ -122,20 +182,7 @@ def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
             system=PROMPT_SISTEMA,
             messages=[{
                 "role": "user",
-                "content": [
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": base64.b64encode(pdf_bytes).decode("ascii"),
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": "Extraia os dados de preparo deste PDF no formato JSON descrito nas instruções do sistema.",
-                    },
-                ],
+                "content": _conteudo_mensagem(pdf_bytes, texto_extraido),
             }],
         )
         dados = _extrair_json(resposta.content[0].text)
