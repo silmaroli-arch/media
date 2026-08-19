@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import warnings
 from datetime import datetime
@@ -8,6 +9,22 @@ from flask import Flask
 from app.extensions import db, login_manager
 
 load_dotenv()  # lê variáveis do arquivo .env, se existir
+
+
+def _configurar_logging():
+    """Sem isso, o logger raiz do Python fica no nível padrão (WARNING) e
+    qualquer `logger.info(...)` da aplicação é descartado silenciosamente -
+    foi o que aconteceu com o log de diagnóstico de
+    `app.ia_pdf_preparo.extrair_sugestao_de_pdf_com_ia` (2026-08-19): mesmo
+    numa chamada bem-sucedida ao Gemini, a linha "Gemini devolveu: ..." não
+    aparecia no `web.stdout.log` do Elastic Beanstalk, dando a falsa
+    impressão de que a chamada nunca tinha sido concluída. Configurado no
+    nível INFO pro logger raiz (afeta todo `logging.getLogger(__name__)` da
+    aplicação que ainda não tiver handler próprio)."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
 
 def _formatar_data_br(dt_utc):
@@ -135,6 +152,8 @@ def _resolver_uri_banco(base_dir: str) -> str:
 
 
 def create_app():
+    _configurar_logging()
+
     app = Flask(__name__)
     base_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "chave-secreta-para-demonstracao-troque-em-producao")
