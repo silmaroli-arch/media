@@ -9,6 +9,7 @@ pypdf==3.17.4
 openpyxl==3.1.5
 anthropic==0.120.2  # opcional: só é usado se ANTHROPIC_API_KEY estiver configurada (ver app/ia_preparo.py)
 openai==1.109.1  # opcional: só é usado se OPENAI_API_KEY estiver configurada (ver app/ia_preparo.py). OBS: versoes <1.55 quebram com o httpx atual (TypeError: proxies) - nao rebaixar sem checar isso.
+google-genai>=1.0  # opcional: só é usado se GEMINI_API_KEY estiver configurada, para a extração de PDF de preparo (ver app/ia_pdf_preparo.py) - mais barato que a Claude para essa tarefa de leitura de documento
 reportlab==4.4.10  # usado no PDF de contingencia da NFS-e (app/nfse_nacional.py) e no test_smoke.py
 cryptography>=42.0  # criptografia dos dados fiscais sensiveis (ver app/cripto_fiscal.py) e leitura do certificado .pfx
 lxml>=5.0  # montagem/assinatura do XML do DPS na emissao de NFS-e (ver app/nfse_nacional.py)

@@ -1,34 +1,49 @@
-"""Extração de sugestão de preparo a partir de um PDF usando IA (Claude) -
-substitui a extração heurística por regex (`app.pdf_preparo`) como caminho
-PRINCIPAL de importação de PDF: a Claude lê o conteúdo do PDF e devolve o
-mesmo formato estruturado usado pela importação de Excel (ver
+"""Extração de sugestão de preparo a partir de um PDF usando IA (Google
+Gemini) - substitui a extração heurística por regex (`app.pdf_preparo`)
+como caminho PRINCIPAL de importação de PDF: a IA lê o conteúdo do PDF e
+devolve o mesmo formato estruturado usado pela importação de Excel (ver
 `app.xlsx_preparo`), permitindo reaproveitar a mesma tela de revisão antes
 de salvar - nada é gravado no banco até a pessoa conferir e clicar em
 "Salvar", exatamente como já acontecia com a extração por regex.
 
+Motor de IA: Google Gemini (`google-genai`), não Claude/Anthropic - trocado
+nesta rodada porque a extração de PDF é uma tarefa de leitura/estruturação
+de documento (sem o raciocínio de reconhecimento de marca farmacêutica que
+justifica usar o Sonnet no chat de dúvidas do paciente, ver
+`app.ia_preparo`) e o Gemini tem um custo por chamada bem menor para esse
+tipo de tarefa. Configurado de forma totalmente independente do
+`ia_preparo.py` (variável de ambiente própria, `GEMINI_API_KEY`) - trocar
+aqui não afeta o chat do paciente.
+
 Custo de tokens: por padrão manda-se só o TEXTO extraído do PDF (de graça,
 via pypdf - ver app.pdf_preparo.extrair_texto), bem mais barato que mandar
-o PDF inteiro como "document" - a Claude trata cada página de um PDF
-nativo de forma parecida com uma imagem por baixo dos panos, o que custa
-muito mais token que ler o mesmo conteúdo em texto puro. O PDF inteiro
-(nativo, lido diretamente pela IA) só é usado como QUEDA quando o texto
-extraído vier vazio/quase vazio - sinal de PDF escaneado/imagem, sem texto
-selecionável, que `extrair_texto` não consegue ler (ver LIMIAR_TEXTO_MINIMO
-abaixo).
+o PDF inteiro como arquivo nativo - tanto a Claude quanto o Gemini tratam
+cada página de um PDF nativo de forma parecida com uma imagem por baixo
+dos panos, o que custa muito mais token que ler o mesmo conteúdo em texto
+puro. O PDF inteiro (nativo, lido diretamente pela IA) só é usado como
+QUEDA quando o texto extraído vier vazio/quase vazio - sinal de PDF
+escaneado/imagem, sem texto selecionável, que `extrair_texto` não
+consegue ler (ver LIMIAR_TEXTO_MINIMO abaixo).
 
-Só é usada quando ANTHROPIC_API_KEY está configurada (ver
-app.ia_preparo._cliente_anthropic) - sem ela, ou se a chamada falhar por
-qualquer motivo (rede, PDF ilegível, resposta que não veio em JSON
-válido), `extrair_sugestao_de_pdf_com_ia` retorna None e quem chama deve
-cair de volta pra extração heurística de
+Só é usada quando GEMINI_API_KEY está configurada (ver _cliente_gemini) -
+sem ela, ou se a chamada falhar por qualquer motivo (rede, PDF ilegível,
+resposta que não veio em JSON válido), `extrair_sugestao_de_pdf_com_ia`
+retorna None e quem chama deve cair de volta pra extração heurística de
 `app.pdf_preparo.extrair_sugestao_de_pdf`, que nunca lança uma exceção
 não tratada."""
-import base64
 import io
 import json
+import os
 
-from app.ia_preparo import MODELO_PADRAO, _cliente_anthropic
 from app.pdf_preparo import extrair_texto
+
+# Pode ser trocado por variável de ambiente sem precisar mexer no código —
+# útil pra ajustar custo/qualidade sem um novo deploy. O Flash é o modelo
+# mais barato/rápido da família Gemini, adequado pra essa tarefa de
+# extração estruturada (não exige o raciocínio mais caro de reconhecimento
+# de marca comercial que o chat de dúvidas do paciente precisa, esse
+# continua na Claude - ver app.ia_preparo).
+MODELO_PADRAO = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 # Abaixo desse número de caracteres de texto extraído, o PDF é tratado como
 # "sem texto selecionável o suficiente" (provavelmente escaneado/imagem) -
@@ -55,6 +70,21 @@ Regras importantes:
 - Extraia SOMENTE o que está explícito no texto - não deduza prazos ou regras que não estão escritos.
 - Se um campo não se aplica, use uma lista vazia [] ou null - nunca omita a chave.
 - "instrucoes" deve conter o texto completo relevante, mesmo que partes dele também apareçam de forma estruturada em outros campos - é a base da revisão manual."""
+
+
+def _cliente_gemini():
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return None
+    try:
+        from google import genai
+        return genai.Client(api_key=api_key)
+    except Exception:
+        # Cobre tanto a falta da biblioteca quanto qualquer erro ao
+        # construir o cliente - nunca deve derrubar a importação de PDF
+        # com um erro 500, só faz o sistema seguir sem essa IA (cai pra
+        # extração heurística de app.pdf_preparo).
+        return None
 
 
 def _extrair_json(texto):
@@ -120,51 +150,38 @@ def _normalizar_sugestao(dados):
     }
 
 
-def _conteudo_mensagem(pdf_bytes, texto_extraido):
-    """Monta o(s) bloco(s) de conteúdo da mensagem pra IA: texto extraído
-    (barato) quando houver o suficiente, ou o PDF inteiro como "document"
-    nativo (caro, tratado quase como imagem por página) só quando o texto
-    vier vazio/quase vazio - ver LIMIAR_TEXTO_MINIMO e o motivo disso no
-    docstring do módulo."""
+def _conteudo_mensagem(genai_types, pdf_bytes, texto_extraido):
+    """Monta a lista de partes da mensagem pra IA: texto extraído (barato)
+    quando houver o suficiente, ou o PDF inteiro como arquivo nativo (caro,
+    tratado quase como imagem por página) só quando o texto vier vazio/
+    quase vazio - ver LIMIAR_TEXTO_MINIMO e o motivo disso no docstring do
+    módulo."""
     if len(texto_extraido.strip()) >= LIMIAR_TEXTO_MINIMO:
-        return [{
-            "type": "text",
-            "text": (
-                "Texto extraído do PDF de preparo (abaixo). Extraia os dados "
-                "no formato JSON descrito nas instruções do sistema.\n\n"
-                f"---\n{texto_extraido}\n---"
-            ),
-        }]
+        return [
+            "Texto extraído do PDF de preparo (abaixo). Extraia os dados "
+            "no formato JSON descrito nas instruções do sistema.\n\n"
+            f"---\n{texto_extraido}\n---"
+        ]
     return [
-        {
-            "type": "document",
-            "source": {
-                "type": "base64",
-                "media_type": "application/pdf",
-                "data": base64.b64encode(pdf_bytes).decode("ascii"),
-            },
-        },
-        {
-            "type": "text",
-            "text": (
-                "O texto extraído deste PDF veio vazio ou quase vazio (provavelmente é um "
-                "PDF escaneado/imagem) - leia o documento diretamente e extraia os dados de "
-                "preparo no formato JSON descrito nas instruções do sistema."
-            ),
-        },
+        genai_types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+        (
+            "O texto extraído deste PDF veio vazio ou quase vazio (provavelmente é um "
+            "PDF escaneado/imagem) - leia o documento diretamente e extraia os dados de "
+            "preparo no formato JSON descrito nas instruções do sistema."
+        ),
     ]
 
 
 def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
     """Retorna a sugestão estruturada (mesmo formato de
-    `app.pdf_preparo.extrair_sugestao_de_pdf`) usando a Claude para ler o
+    `app.pdf_preparo.extrair_sugestao_de_pdf`) usando o Gemini para ler o
     conteúdo do PDF, ou None se a IA não estiver configurada ou a chamada
     falhar por qualquer motivo (rede, PDF ilegível, resposta que não veio
     em JSON válido) - quem chama deve cair de volta pra extração
     heurística nesse caso, nunca deixar essa falha virar um erro 500 na
     tela. Ver o docstring do módulo sobre a estratégia de custo (texto
     primeiro, PDF nativo só como queda para PDFs escaneados)."""
-    cliente = _cliente_anthropic()
+    cliente = _cliente_gemini()
     if cliente is None:
         return None
 
@@ -176,16 +193,17 @@ def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
         texto_extraido = ""
 
     try:
-        resposta = cliente.messages.create(
+        from google.genai import types as genai_types
+
+        resposta = cliente.models.generate_content(
             model=MODELO_PADRAO,
-            max_tokens=4096,
-            system=PROMPT_SISTEMA,
-            messages=[{
-                "role": "user",
-                "content": _conteudo_mensagem(pdf_bytes, texto_extraido),
-            }],
+            contents=_conteudo_mensagem(genai_types, pdf_bytes, texto_extraido),
+            config=genai_types.GenerateContentConfig(
+                system_instruction=PROMPT_SISTEMA,
+                max_output_tokens=4096,
+            ),
         )
-        dados = _extrair_json(resposta.content[0].text)
+        dados = _extrair_json(resposta.text)
     except Exception:
         return None
 
