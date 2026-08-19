@@ -33,9 +33,12 @@ retorna None e quem chama deve cair de volta pra extração heurística de
 não tratada."""
 import io
 import json
+import logging
 import os
 
 from app.pdf_preparo import extrair_texto
+
+logger = logging.getLogger(__name__)
 
 # Pode ser trocado por variável de ambiente sem precisar mexer no código —
 # útil pra ajustar custo/qualidade sem um novo deploy. O Flash é o modelo
@@ -235,6 +238,13 @@ def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
         )
         dados = _extrair_json(resposta.text)
     except Exception:
+        # Loga a causa real antes de cair silenciosamente pro fallback
+        # heurístico - sem isso, qualquer falha (rede, cota, JSON mal
+        # formado, timeout) fica invisível e some como se a extração
+        # simplesmente não tivesse achado nada. Ver eb-engine/web.stdout
+        # do Elastic Beanstalk para diagnosticar quando a extração por IA
+        # não está funcionando como esperado.
+        logger.exception("Falha ao extrair sugestão de PDF via Gemini")
         return None
 
     return _normalizar_sugestao(dados)
