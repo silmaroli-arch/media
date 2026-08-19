@@ -69,7 +69,9 @@ Regras importantes:
 - NUNCA invente informação que não está no documento - isso é um preparo médico real, um dado inventado pode colocar a saúde de um paciente em risco.
 - Extraia SOMENTE o que está explícito no texto - não deduza prazos ou regras que não estão escritos.
 - Se um campo não se aplica, use uma lista vazia [] ou null - nunca omita a chave.
-- "instrucoes" deve conter o texto completo relevante, mesmo que partes dele também apareçam de forma estruturada em outros campos - é a base da revisão manual."""
+- "instrucoes" deve conter o texto completo relevante, mesmo que partes dele também apareçam de forma estruturada em outros campos - é a base da revisão manual.
+- Muitos documentos descrevem a dieta como um CARDÁPIO POR REFEIÇÃO (ex.: "Café da manhã: bebidas permitidas: água, chá de ervas...; bebidas a serem evitadas: café, chá mate...", repetindo para almoço, lanche, jantar, ceia), em vez de uma lista simples de "alimento: proibido". NÃO deixe de extrair esses itens para "alimentos" só porque estão descritos em parágrafo/tabela por refeição - quebre cada alimento/bebida citado (mesmo os agrupados numa mesma frase, como "água, chá de ervas, água de coco") em um item separado de "alimentos", com "permitido" de acordo com o texto (permitidos vs. "a serem evitados"/proibidos). Quando o cardápio inteiro for de um dia específico relativo ao exame (ex.: "esquema alimentar do dia anterior ao exame"), preencha "dias_antes" desse dia para cada item (ex.: "dia anterior ao exame" = dias_antes: 1), mesmo sem uma hora exata.
+- Nunca descarte uma regra real do documento só porque ela não tem um prazo numérico exato em horas/dias (ex.: um corte amarrado a um evento como "após o café da manhã" em vez de "X horas antes do exame", ou uma restrição de medicamento "conforme orientação médica" sem número de dias fixo). Nesses casos, ainda registre a regra em "informacoes_gerais" com "texto" descrevendo a condição por extenso e horas_antes/dias_antes/hora_exata como null - é melhor aparecer sem prazo calculado do que sumir da revisão da secretária/médico."""
 
 
 def _cliente_gemini():
