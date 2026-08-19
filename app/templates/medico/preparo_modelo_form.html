@@ -296,7 +296,7 @@
 <div class="modal fade" id="modal-importar-xlsx" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
-      <form method="post" action="{{ url_for('medico.preparo_modelos_importar_xlsx') }}" enctype="multipart/form-data">
+      <form method="post" action="{{ url_for('medico.preparo_modelos_importar_xlsx') }}" enctype="multipart/form-data" id="form-importar-xlsx">
         <div class="modal-header">
           <h6 class="modal-title"><i class="bi bi-file-earmark-arrow-up"></i> Importar de um Excel ou PDF</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -311,7 +311,7 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Extrair dados</button>
+          <button type="submit" class="btn btn-primary" id="btn-extrair-dados">Extrair dados</button>
         </div>
       </form>
     </div>
@@ -336,6 +336,25 @@
       }
     }
   });
+
+  // Evita duplo clique/duplo envio no popup de importar Excel/PDF - a
+  // extração por PDF agora chama a IA (Gemini) de verdade, então pode
+  // demorar alguns segundos, tempo suficiente pra alguém clicar de novo
+  // "Extrair dados" achando que não funcionou. Sem isso, cada clique extra
+  // dispara uma nova chamada à IA em paralelo (gasto de token em dobro) e a
+  // resposta que chegar por último "vence", sem nenhum aviso de que já
+  // tinha uma extração em andamento.
+  (function () {
+    var formImportar = document.getElementById('form-importar-xlsx');
+    if (!formImportar) return;
+    formImportar.addEventListener('submit', function () {
+      var botao = document.getElementById('btn-extrair-dados');
+      if (botao.disabled) return;
+      botao.disabled = true;
+      botao.dataset.textoOriginal = botao.innerHTML;
+      botao.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Extraindo dados...';
+    });
+  })();
 
   function adicionarCorte() {
     var div = document.createElement('div');
