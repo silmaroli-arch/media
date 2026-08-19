@@ -35,6 +35,7 @@ import io
 import json
 import logging
 import os
+import time
 
 from app.pdf_preparo import extrair_texto
 
@@ -237,16 +238,38 @@ def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
         texto_extraido = ""
 
     try:
+        from google.genai import errors as genai_errors
         from google.genai import types as genai_types
 
-        resposta = cliente.models.generate_content(
-            model=MODELO_PADRAO,
-            contents=_conteudo_mensagem(genai_types, pdf_bytes, texto_extraido),
-            config=genai_types.GenerateContentConfig(
-                system_instruction=PROMPT_SISTEMA,
-                max_output_tokens=4096,
-            ),
+        conteudo = _conteudo_mensagem(genai_types, pdf_bytes, texto_extraido)
+        config = genai_types.GenerateContentConfig(
+            system_instruction=PROMPT_SISTEMA,
+            max_output_tokens=4096,
         )
+
+        # O Gemini às vezes devolve 503 UNAVAILABLE ("high demand") por
+        # sobrecarga passageira do lado da Google - não é erro de código nem
+        # de configuração (confirmado em produção em 2026-08-19), então vale
+        # tentar de novo algumas vezes antes de desistir e cair pro fallback
+        # heurístico. NÃO tenta de novo pra outros erros (ex.: 429 de cota/
+        # crédito, 404 de modelo, JSON inválido) - só pioraria a demora sem
+        # chance de dar certo.
+        tentativas = 3
+        for tentativa in range(1, tentativas + 1):
+            try:
+                resposta = cliente.models.generate_content(
+                    model=MODELO_PADRAO, contents=conteudo, config=config,
+                )
+                break
+            except genai_errors.ServerError:
+                if tentativa == tentativas:
+                    raise
+                logger.warning(
+                    "Gemini indisponível (tentativa %d/%d), tentando de novo em %ds",
+                    tentativa, tentativas, tentativa * 5,
+                )
+                time.sleep(tentativa * 5)
+
         dados = _extrair_json(resposta.text)
     except Exception:
         # Loga a causa real antes de cair silenciosamente pro fallback
