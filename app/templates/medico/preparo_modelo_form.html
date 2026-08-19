@@ -307,6 +307,7 @@
             Horas antes/Hora exata, ou um PDF com o preparo (lido diretamente por IA). Os dados
             extraídos preenchem o formulário pra você revisar — nada é salvo antes do Salvar.
           </p>
+          <div id="alerta-erro-importar-xlsx" class="alert alert-danger d-none" role="alert"></div>
           <input type="file" name="arquivo_xlsx" class="form-control" accept=".xlsx,.pdf" required>
         </div>
         <div class="modal-footer">
@@ -344,15 +345,77 @@
   // dispara uma nova chamada à IA em paralelo (gasto de token em dobro) e a
   // resposta que chegar por último "vence", sem nenhum aviso de que já
   // tinha uma extração em andamento.
+  //
+  // Usa fetch em vez de deixar o form navegar sozinho porque um erro ANTES
+  // de chegar no Flask (ex.: 504 Gateway Timeout do nginx, se o Gemini
+  // demorar demais) não vem como uma página da nossa aplicação - vem como a
+  // página de erro crua do servidor, sem nenhum aviso amigável. Com fetch dá
+  // pra detectar isso e mostrar uma mensagem clara no próprio popup, sem
+  // levar a pessoa pra uma tela em branco/feia.
   (function () {
     var formImportar = document.getElementById('form-importar-xlsx');
     if (!formImportar) return;
-    formImportar.addEventListener('submit', function () {
-      var botao = document.getElementById('btn-extrair-dados');
+    var botao = document.getElementById('btn-extrair-dados');
+    var alerta = document.getElementById('alerta-erro-importar-xlsx');
+
+    function mostrarErro(mensagem) {
+      alerta.textContent = mensagem;
+      alerta.classList.remove('d-none');
+    }
+
+    function restaurarBotao() {
+      botao.disabled = false;
+      botao.innerHTML = botao.dataset.textoOriginal;
+    }
+
+    formImportar.addEventListener('submit', function (ev) {
+      ev.preventDefault();
       if (botao.disabled) return;
+
+      alerta.classList.add('d-none');
       botao.disabled = true;
       botao.dataset.textoOriginal = botao.innerHTML;
       botao.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Extraindo dados...';
+
+      var dadosForm = new FormData(formImportar);
+      fetch(formImportar.action, { method: 'POST', body: dadosForm })
+        .then(function (resposta) {
+          if (!resposta.ok) {
+            // Erro HTTP vindo do servidor/proxy (ex.: 502/503/504) - não dá
+            // pra confiar no corpo da resposta (pode ser a página crua do
+            // nginx, não HTML da nossa aplicação).
+            throw new Error('http-' + resposta.status);
+          }
+          return resposta.text();
+        })
+        .then(function (html) {
+          // Sucesso (200): a resposta é a própria página (de revisão, com os
+          // dados extraídos, ou de volta pro popup com um flash de erro
+          // tratado pelo Flask) - substitui a página inteira por ela, mesmo
+          // efeito de deixar o form navegar normalmente.
+          document.open();
+          document.write(html);
+          document.close();
+        })
+        .catch(function (erro) {
+          restaurarBotao();
+          if (erro.message === 'http-504') {
+            mostrarErro(
+              'A extração demorou mais do que o esperado e o servidor encerrou a espera (erro 504). ' +
+              'Isso pode acontecer quando a IA está sobrecarregada. Tente novamente em alguns instantes ' +
+              '— se persistir, cadastre o modelo manualmente.'
+            );
+          } else if (erro.message && erro.message.indexOf('http-') === 0) {
+            mostrarErro(
+              'O servidor teve um problema ao processar o arquivo (erro ' + erro.message.replace('http-', '') +
+              '). Tente novamente em alguns instantes — se persistir, cadastre o modelo manualmente.'
+            );
+          } else {
+            mostrarErro(
+              'Não foi possível concluir a extração — verifique sua conexão com a internet e tente novamente.'
+            );
+          }
+        });
     });
   })();
 

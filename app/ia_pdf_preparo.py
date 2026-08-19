@@ -254,7 +254,16 @@ def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
         # heurístico. NÃO tenta de novo pra outros erros (ex.: 429 de cota/
         # crédito, 404 de modelo, JSON inválido) - só pioraria a demora sem
         # chance de dar certo.
-        tentativas = 3
+        #
+        # ATENÇÃO: o nginx do Elastic Beanstalk tem um timeout de proxy (ver
+        # .platform/nginx/conf.d/timeout.conf) que precisa ser MAIOR que o
+        # pior caso daqui (chamada normal ao Gemini + tempo de espera entre
+        # tentativas), senão o nginx desiste primeiro e devolve 504 pro
+        # usuário mesmo que o processo Python continue tentando por trás -
+        # foi exatamente o que aconteceu em produção com 3 tentativas e
+        # espera de 5s/10s (total podia passar dos 60s padrão do nginx).
+        # Por isso esse número foi reduzido pra 2 tentativas com espera curta.
+        tentativas = 2
         for tentativa in range(1, tentativas + 1):
             try:
                 resposta = cliente.models.generate_content(
