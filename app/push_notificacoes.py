@@ -43,27 +43,38 @@ def _vapid_configurado():
 
 
 def _usuarios_para_notificar(pergunta):
-    """Quem deve ser avisado desta pergunta: só quem é MÉDICO (tipo ==
-    "medico") - decisão do Silvan de que a notificação é só para o
-    médico, não para secretária/administrativo, mesmo que eles também
-    tenham vínculo ativo no Grupo. Entre os médicos, todo mundo com
-    vínculo ativo no Grupo dela, ou só o próprio dono da pergunta (conta
-    solo sem Grupo ainda, e só se ele mesmo for médico). Simplificação
-    aceita aqui: um médico que só atende exames de outro colega também
-    recebe o aviso (a restrição fina por exame só existe na LISTAGEM,
-    ver routes_medico._restringir_perguntas_para_medico) - é só um alerta,
-    quem abrir a lista continua vendo apenas o que tem permissão."""
+    """Quem deve ser avisado desta pergunta: só o(s) MÉDICO(S) responsável
+    (is) pelo exame dela - o médico principal (Exame.medico_id) mais os
+    médicos "extra" associados (Exame.medicos_extra, ver Exame.medicos) -
+    ou, quando a pergunta é GERAL (sem exame associado), os médicos do
+    Grupo que também administram pacientes (perm_pacientes), já que só
+    esses veem pergunta sem exame na tela de perguntas. Esta é a MESMA
+    regra usada para decidir o que aparece na listagem de cada médico
+    (ver routes_medico._restringir_perguntas_para_medico) - a
+    notificação não pode ser mais ampla que o que a pessoa realmente
+    pode ver e responder."""
+    if pergunta.exame_id:
+        exame = pergunta.exame
+        return [m.id for m in exame.medicos] if exame else []
+
+    # Pergunta geral (sem exame) - só médicos com perm_pacientes, dentro
+    # do mesmo Grupo (ou o próprio dono, se for uma conta solo).
     if pergunta.grupo_id:
         membros = (
             GrupoMembro.query
             .join(Usuario, Usuario.id == GrupoMembro.usuario_id)
-            .filter(GrupoMembro.grupo_id == pergunta.grupo_id, GrupoMembro.ativo.is_(True), Usuario.tipo == "medico")
+            .filter(
+                GrupoMembro.grupo_id == pergunta.grupo_id,
+                GrupoMembro.ativo.is_(True),
+                Usuario.tipo == "medico",
+                Usuario.perm_pacientes.is_(True),
+            )
             .all()
         )
         return [m.usuario_id for m in membros]
     if pergunta.criado_por_id:
         dono = Usuario.query.get(pergunta.criado_por_id)
-        if dono and dono.tipo == "medico":
+        if dono and dono.tipo == "medico" and dono.perm_pacientes:
             return [dono.id]
         return []
     return []
