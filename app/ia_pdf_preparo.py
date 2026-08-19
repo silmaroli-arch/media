@@ -106,7 +106,39 @@ def _normalizar_sugestao(dados):
     """Preenche valores padrão e descarta itens malformados vindos da IA -
     nunca confia cegamente no shape da resposta, mesmo pedindo JSON
     estrito no prompt (ver mesmo cuidado em app.xlsx_preparo/pdf_preparo,
-    que também nunca assumem um dado ausente/errado como impossível)."""
+    que também nunca assumem um dado ausente/errado como impossível).
+
+    Medicamentos a suspender SEM um prazo em dias explícito (ex.: "suspender
+    alguns dias antes, conforme orientação do médico que prescreveu" - sem
+    número fixo) não têm como virar uma linha estruturada: o campo
+    PreparoMedicamentoSuspenso.dias_antes é obrigatório no banco (não dá pra
+    calcular "a partir de quando" sem um número). Em vez de descartar esse
+    medicamento silenciosamente da tela de revisão (o que já aconteceu e
+    escondeu informação real de um preparo), ele é preservado como texto em
+    "observacoes_medicamentos" - continua visível pra pessoa revisar e
+    cadastrar manualmente se quiser, mesmo sem virar item da lista."""
+    medicamentos_com_prazo = []
+    nomes_sem_prazo = []
+    for m in _lista(dados, "medicamentos"):
+        if not isinstance(m, dict) or not m.get("nome"):
+            continue
+        if m.get("dias_antes") is not None:
+            medicamentos_com_prazo.append(
+                {"nome": m.get("nome"), "dias_antes": m.get("dias_antes"), "categoria": m.get("categoria") or None}
+            )
+        else:
+            nomes_sem_prazo.append(m.get("nome"))
+
+    observacoes_medicamentos = (dados.get("observacoes_medicamentos") or "").strip() or None
+    if nomes_sem_prazo:
+        aviso_sem_prazo = (
+            "Medicamentos citados no documento sem prazo fixo em dias (revisar manualmente): "
+            + ", ".join(nomes_sem_prazo)
+        )
+        observacoes_medicamentos = (
+            f"{observacoes_medicamentos}\n\n{aviso_sem_prazo}" if observacoes_medicamentos else aviso_sem_prazo
+        )
+
     return {
         "nome_sugerido": dados.get("nome_sugerido") or None,
         "instrucoes": (dados.get("instrucoes") or "").strip(),
@@ -115,17 +147,13 @@ def _normalizar_sugestao(dados):
             for c in _lista(dados, "cortes")
             if isinstance(c, dict) and c.get("descricao") and c.get("horas_antes") is not None
         ],
-        "medicamentos": [
-            {"nome": m.get("nome"), "dias_antes": m.get("dias_antes"), "categoria": m.get("categoria") or None}
-            for m in _lista(dados, "medicamentos")
-            if isinstance(m, dict) and m.get("nome") and m.get("dias_antes") is not None
-        ],
+        "medicamentos": medicamentos_com_prazo,
         "medicamentos_mantidos": [
             {"nome": m.get("nome"), "observacao": m.get("observacao") or None}
             for m in _lista(dados, "medicamentos_mantidos")
             if isinstance(m, dict) and m.get("nome")
         ],
-        "observacoes_medicamentos": dados.get("observacoes_medicamentos") or None,
+        "observacoes_medicamentos": observacoes_medicamentos,
         "informacoes_gerais": [
             {
                 "texto": i.get("texto"), "horas_antes": i.get("horas_antes"),
