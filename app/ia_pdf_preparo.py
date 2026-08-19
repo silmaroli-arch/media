@@ -244,7 +244,17 @@ def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
         conteudo = _conteudo_mensagem(genai_types, pdf_bytes, texto_extraido)
         config = genai_types.GenerateContentConfig(
             system_instruction=PROMPT_SISTEMA,
-            max_output_tokens=4096,
+            # 4096 (valor anterior) se mostrou baixo demais pra preparos reais
+            # mais longos/complexos (ex.: cardápio detalhado por refeição +
+            # vários medicamentos + informações gerais) - o JSON de resposta
+            # inclui o texto de "instrucoes" (o preparo inteiro) MAIS todos os
+            # campos estruturados, então o corte no meio do JSON por atingir
+            # o limite é uma causa provável de as abas estruturadas
+            # aparecerem vazias mesmo com a chamada "dando certo" (sem erro),
+            # confirmado via log de diagnóstico em produção em 2026-08-19
+            # (ver o log "Gemini devolveu: ..." logo abaixo, com o
+            # finish_reason da resposta).
+            max_output_tokens=16384,
         )
 
         # O Gemini às vezes devolve 503 UNAVAILABLE ("high demand") por
@@ -280,6 +290,24 @@ def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
                 time.sleep(tentativa * 5)
 
         dados = _extrair_json(resposta.text)
+        # Log temporário de diagnóstico (2026-08-19): confirma se o Gemini
+        # está devolvendo os campos estruturados vazios de propósito (ex.:
+        # limite de max_output_tokens cortando a resposta antes de gerar
+        # medicamentos/alimentos, ou o prompt não sendo seguido em PDFs
+        # maiores/mais complexos) - sem logar o conteúdo em si, só o
+        # "formato" da resposta (tamanho de cada lista), o suficiente pra
+        # decidir o próximo ajuste sem expor dado de paciente/preparo real
+        # no log. Remover depois que a causa for confirmada.
+        logger.info(
+            "Gemini devolveu: instrucoes=%d chars, cortes=%d, medicamentos=%d, "
+            "medicamentos_mantidos=%d, informacoes_gerais=%d, alimentos=%d, "
+            "exames_anteriores=%d, finish_reason=%s",
+            len((dados.get("instrucoes") or "")),
+            len(_lista(dados, "cortes")), len(_lista(dados, "medicamentos")),
+            len(_lista(dados, "medicamentos_mantidos")), len(_lista(dados, "informacoes_gerais")),
+            len(_lista(dados, "alimentos")), len(_lista(dados, "exames_anteriores")),
+            getattr(resposta.candidates[0], "finish_reason", "?") if getattr(resposta, "candidates", None) else "?",
+        )
     except Exception:
         # Loga a causa real antes de cair silenciosamente pro fallback
         # heurístico - sem isso, qualquer falha (rede, cota, JSON mal
