@@ -46,7 +46,18 @@ logger = logging.getLogger(__name__)
 # extração estruturada (não exige o raciocínio mais caro de reconhecimento
 # de marca comercial que o chat de dúvidas do paciente precisa, esse
 # continua na Claude - ver app.ia_preparo).
-MODELO_PADRAO = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+#
+# ATENÇÃO: "gemini-2.5-flash" (usado até aqui) passou a devolver 404 ("This
+# model ... is no longer available to new users") para a conta/projeto do
+# Silvan - confirmado via log real de produção em 2026-08-19. Esse 404
+# fazia a extração cair SEMPRE (e silenciosamente) para o fallback
+# heurístico por regex, desde o dia da troca para o Gemini - por isso
+# nenhum PDF real importava nada de medicamentos/alimentos estruturado,
+# não era um problema de prompt. Trocado para "gemini-flash-latest", que
+# aponta pro Flash mais recente disponível sem fixar uma versão que a
+# Google pode descontinuar por conta de novo (evita repetir esse mesmo
+# problema no futuro).
+MODELO_PADRAO = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
 
 # Abaixo desse número de caracteres de texto extraído, o PDF é tratado como
 # "sem texto selecionável o suficiente" (provavelmente escaneado/imagem) -
