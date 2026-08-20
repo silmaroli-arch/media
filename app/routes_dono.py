@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente
 from app.clinica_utils import verificar_vencimento_grupo
 
 dono_bp = Blueprint("dono", __name__, url_prefix="/dono")
@@ -143,3 +143,83 @@ def grupo_desbloquear(grupo_id):
     db.session.commit()
     flash(f"Acesso do grupo '{grupo.nome}' foi restabelecido.", "success")
     return redirect(url_for("dono.grupo_detalhe", grupo_id=grupo.id))
+
+
+@dono_bp.route("/custo-ia")
+@login_required
+@dono_required
+def custo_ia():
+    """Painel de custo ESTIMADO das chamadas de IA (Gemini/ChatGPT/Claude),
+    somado por quem gerou cada chamada - um Usuario da equipe/médico (ao
+    importar um PDF de preparo, ver app.ia_pdf_preparo) ou um Paciente
+    (ao usar o chat de dúvidas, ver app.ia_preparo). Ver app.custo_ia
+    para o cálculo do custo (a partir da contagem de tokens devolvida
+    por cada API - nenhum provedor devolve o valor em dólares direto) e
+    app.models.ChamadaIA para o que fica registrado por chamada.
+
+    Soma tudo em memória (não em SQL) de propósito - o volume de
+    chamadas de IA de uma clínica é baixo o bastante pra isso não pesar,
+    e evita ter que lidar com agregação de custo NULL (modelo sem preço
+    cadastrado na tabela, ver `preco_desconhecido`) direto na query."""
+    todas = ChamadaIA.query.order_by(ChamadaIA.criado_em.desc()).all()
+
+    por_pessoa = {}
+    for c in todas:
+        if c.usuario_id:
+            chave = ("usuario", c.usuario_id)
+            nome = c.usuario.nome if c.usuario else f"Usuário #{c.usuario_id} (removido)"
+        else:
+            chave = ("paciente", c.paciente_id)
+            nome = c.paciente.nome if c.paciente else f"Paciente #{c.paciente_id} (removido)"
+
+        item = por_pessoa.setdefault(chave, {
+            "tipo": chave[0], "id": chave[1], "nome": nome,
+            "total_chamadas": 0, "custo_total": 0.0, "tem_custo_desconhecido": False,
+            "ultima_chamada_em": c.criado_em,
+        })
+        item["total_chamadas"] += 1
+        if c.custo_estimado_usd is not None:
+            item["custo_total"] += float(c.custo_estimado_usd)
+        if c.preco_desconhecido:
+            item["tem_custo_desconhecido"] = True
+
+    linhas = sorted(por_pessoa.values(), key=lambda i: i["custo_total"], reverse=True)
+    custo_total_geral = sum(i["custo_total"] for i in linhas)
+    tem_custo_desconhecido_geral = any(i["tem_custo_desconhecido"] for i in linhas)
+
+    return render_template(
+        "dono/custo_ia.html", linhas=linhas, custo_total_geral=custo_total_geral,
+        tem_custo_desconhecido_geral=tem_custo_desconhecido_geral,
+    )
+
+
+@dono_bp.route("/custo-ia/usuario/<int:usuario_id>")
+@login_required
+@dono_required
+def custo_ia_usuario(usuario_id):
+    """Detalhe das chamadas de IA feitas por um Usuario da equipe (ao
+    importar PDFs de preparo) - ver `custo_ia` acima."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    chamadas = (
+        ChamadaIA.query.filter_by(usuario_id=usuario_id)
+        .order_by(ChamadaIA.criado_em.desc()).all()
+    )
+    return render_template(
+        "dono/custo_ia_detalhe.html", pessoa_nome=usuario.nome, chamadas=chamadas,
+    )
+
+
+@dono_bp.route("/custo-ia/paciente/<int:paciente_id>")
+@login_required
+@dono_required
+def custo_ia_paciente(paciente_id):
+    """Detalhe das chamadas de IA feitas em nome de um Paciente (ao usar
+    o chat de dúvidas) - ver `custo_ia` acima."""
+    paciente = Paciente.query.get_or_404(paciente_id)
+    chamadas = (
+        ChamadaIA.query.filter_by(paciente_id=paciente_id)
+        .order_by(ChamadaIA.criado_em.desc()).all()
+    )
+    return render_template(
+        "dono/custo_ia_detalhe.html", pessoa_nome=paciente.nome, chamadas=chamadas,
+    )

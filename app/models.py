@@ -1251,6 +1251,52 @@ class PushSubscription(db.Model):
     usuario = db.relationship("Usuario")
 
 
+class ChamadaIA(db.Model):
+    """Um registro por chamada feita a um provedor de IA (Gemini, ChatGPT
+    ou Claude) - alimenta o painel de custo estimado por usuário na área
+    do dono da plataforma (ver app.routes_dono). Cobre as duas
+    funcionalidades que chamam IA hoje: a importação de PDF de preparo
+    (app.ia_pdf_preparo, iniciada por um Usuario da equipe/médico - ver
+    `usuario_id`) e o chat de dúvidas do paciente (app.ia_preparo,
+    iniciado pelo próprio Paciente - ver `paciente_id`); cada linha tem
+    só um dos dois preenchidos.
+
+    Gravado mesmo quando a chamada FALHA (ex.: resposta que não veio em
+    JSON válido), desde que a API tenha de fato respondido (ou seja,
+    gerou custo real) - só chamadas que nunca chegaram a receber
+    resposta (erro de rede/autenticação antes disso) não geram registro,
+    porque não haveria como saber quantos tokens foram cobrados.
+
+    O custo é uma ESTIMATIVA calculada a partir da contagem de tokens
+    devolvida pela própria API e uma tabela de preços mantida à mão (ver
+    app.custo_ia.PRECOS_POR_MILHAO_TOKENS) - nenhum provedor devolve o
+    valor em dólares na resposta, só o valor real aparece no painel de
+    faturamento de cada um (Google AI Studio / OpenAI / Anthropic
+    Console). Quando o modelo que respondeu não está cadastrado na
+    tabela de preços (ex.: uma versão nova lançada pelo provedor),
+    `custo_estimado_usd` fica None e `preco_desconhecido` marca True, em
+    vez de arriscar mostrar um valor errado."""
+    __tablename__ = "chamadas_ia"
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
+    paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=True)
+    # "importacao_pdf_preparo" | "chat_duvida_paciente"
+    tipo_uso = db.Column(db.String(40), nullable=False)
+    # "Gemini" | "ChatGPT" | "Claude"
+    provedor = db.Column(db.String(20), nullable=False)
+    modelo = db.Column(db.String(80), nullable=True)
+    tokens_entrada = db.Column(db.Integer, nullable=True)
+    tokens_saida = db.Column(db.Integer, nullable=True)
+    custo_estimado_usd = db.Column(db.Numeric(12, 6), nullable=True)
+    preco_desconhecido = db.Column(db.Boolean, nullable=False, default=False)
+    sucesso = db.Column(db.Boolean, nullable=False, default=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship("Usuario")
+    paciente = db.relationship("Paciente")
+
+
 class HistoricoDeploy(db.Model):
     """Um registro por deploy realizado neste ambiente (media-dev, media-qa
     ou media-prod - cada um tem seu proprio banco, entao cada um acumula

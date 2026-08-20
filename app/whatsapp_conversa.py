@@ -236,7 +236,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     exame = agendamento.exame if agendamento else None
     grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame, agendamento)
 
-    resultado_ia = responder_com_ia(pergunta_texto, exame) if exame else None
+    resultado_ia = responder_com_ia(pergunta_texto, exame, paciente_id=paciente.id) if exame else None
     resposta_final = None
     origem = None
     pergunta_pendente_criada = None

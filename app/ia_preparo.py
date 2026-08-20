@@ -28,6 +28,8 @@ secretaria, exatamente como quando a correspondência por palavra-chave
 não encontra nada."""
 import os
 
+from app.custo_ia import registrar_chamada_ia
+
 MARCADOR_NAO_SEI = "NAO_SEI_ENCAMINHAR"
 
 # Pode ser trocado por variável de ambiente sem precisar mexer no código —
@@ -199,7 +201,7 @@ def _formatar_contexto_preparo(exame):
     return "\n".join(partes)
 
 
-def _perguntar_claude(cliente, pergunta_usuario, contexto):
+def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None):
     try:
         mensagem = cliente.messages.create(
             model=MODELO_PADRAO,
@@ -211,14 +213,23 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto):
             }],
         )
     except Exception:
+        # Nunca chegou a receber resposta (rede, chave inválida, limite de
+        # uso etc.) - sem custo real pra registrar, ver docstring de
+        # app.custo_ia.registrar_chamada_ia.
         return None
+    uso = getattr(mensagem, "usage", None)
+    registrar_chamada_ia(
+        "chat_duvida_paciente", "Claude", getattr(mensagem, "model", MODELO_PADRAO),
+        getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
+        sucesso=True, paciente_id=paciente_id,
+    )
     texto = "".join(getattr(bloco, "text", "") for bloco in mensagem.content).strip()
     if not texto or MARCADOR_NAO_SEI in texto:
         return None
     return texto
 
 
-def _perguntar_chatgpt(cliente, pergunta_usuario, contexto):
+def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None):
     try:
         resposta = cliente.chat.completions.create(
             model=MODELO_OPENAI_PADRAO,
@@ -233,13 +244,19 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto):
         )
     except Exception:
         return None
+    uso = getattr(resposta, "usage", None)
+    registrar_chamada_ia(
+        "chat_duvida_paciente", "ChatGPT", getattr(resposta, "model", MODELO_OPENAI_PADRAO),
+        getattr(uso, "prompt_tokens", None), getattr(uso, "completion_tokens", None),
+        sucesso=True, paciente_id=paciente_id,
+    )
     texto = (resposta.choices[0].message.content or "").strip()
     if not texto or MARCADOR_NAO_SEI in texto:
         return None
     return texto
 
 
-def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b):
+def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=None):
     """Quando as duas IAs respondem, usa uma chamada extra rápida e barata
     (Claude Haiku, poucos tokens) só para CLASSIFICAR se as duas respostas
     passam a mesma orientação prática ao paciente - não reescreve nem
@@ -266,13 +283,19 @@ def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b):
                 "content": f"Resposta 1: {resposta_a}\n\nResposta 2: {resposta_b}",
             }],
         )
+        uso = getattr(veredito, "usage", None)
+        registrar_chamada_ia(
+            "chat_duvida_paciente", "Claude", getattr(veredito, "model", MODELO_PADRAO),
+            getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
+            sucesso=True, paciente_id=paciente_id,
+        )
         texto = "".join(getattr(bloco, "text", "") for bloco in veredito.content).strip().upper()
         return texto.startswith("NAO")
     except Exception:
         return True
 
 
-def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, resposta_b):
+def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, resposta_b, paciente_id=None):
     """Quando as duas IAs respondem de forma divergente, usa uma chamada
     extra à Claude para propor UMA única resposta final que já concilia
     as duas — em vez de só colar as duas respostas lado a lado, tenta de
@@ -319,13 +342,19 @@ def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, respos
                 ),
             }],
         )
+        uso = getattr(sintese, "usage", None)
+        registrar_chamada_ia(
+            "chat_duvida_paciente", "Claude", getattr(sintese, "model", MODELO_PADRAO),
+            getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
+            sucesso=True, paciente_id=paciente_id,
+        )
         texto = "".join(getattr(bloco, "text", "") for bloco in sintese.content).strip()
         return texto or None
     except Exception:
         return None
 
 
-def responder_com_ia(pergunta_usuario, exame):
+def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
     """Tenta responder a pergunta do paciente usando IA, com o preparo do
     exame como contexto. Quando tanto ANTHROPIC_API_KEY quanto
     OPENAI_API_KEY estão configuradas, consulta as DUAS (Claude e
@@ -334,6 +363,12 @@ def responder_com_ia(pergunta_usuario, exame):
     rascunho final junta as duas lado a lado com um aviso, para o médico
     revisar com mais atenção antes de aprovar. Com só uma das chaves
     configurada, funciona com aquela IA sozinha, exatamente como antes.
+
+    `paciente_id` (opcional) é só pra registrar de quem é o custo de cada
+    chamada feita aqui dentro (ver app.custo_ia.registrar_chamada_ia,
+    usado pelo painel de custo na área do dono) - não afeta a resposta
+    de forma nenhuma, e pode ser omitido sem quebrar nada (só deixa de
+    saber a quem atribuir aquele custo no painel).
 
     Retorna um dicionário {"final": ..., "claude": ..., "chatgpt": ...} —
     "claude" e "chatgpt" são as respostas cruas de cada IA (para a tela de
@@ -353,15 +388,17 @@ def responder_com_ia(pergunta_usuario, exame):
     contexto = _formatar_contexto_preparo(exame)
 
     resposta_claude = (
-        _perguntar_claude(cliente_anthropic, pergunta_usuario, contexto) if cliente_anthropic else None
+        _perguntar_claude(cliente_anthropic, pergunta_usuario, contexto, paciente_id) if cliente_anthropic else None
     )
     resposta_chatgpt = (
-        _perguntar_chatgpt(cliente_openai, pergunta_usuario, contexto) if cliente_openai else None
+        _perguntar_chatgpt(cliente_openai, pergunta_usuario, contexto, paciente_id) if cliente_openai else None
     )
 
     if resposta_claude and resposta_chatgpt:
-        if _respostas_divergem(cliente_anthropic, resposta_claude, resposta_chatgpt):
-            sintese = _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_claude, resposta_chatgpt)
+        if _respostas_divergem(cliente_anthropic, resposta_claude, resposta_chatgpt, paciente_id):
+            sintese = _sintetizar_resposta(
+                cliente_anthropic, pergunta_usuario, resposta_claude, resposta_chatgpt, paciente_id,
+            )
             if sintese:
                 # O rascunho final é o próprio texto sintetizado, já pronto
                 # para envio ao paciente — as respostas individuais do

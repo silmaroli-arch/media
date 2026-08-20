@@ -288,10 +288,17 @@ def _log_diagnostico(provedor, dados, finish_reason="?"):
     )
 
 
-def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido):
+def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido, uso):
     """Chama o Gemini e devolve o JSON cru (dict) já parseado, ou levanta
     uma exceção em caso de falha - quem chama (extrair_sugestao_de_pdf_com_ia)
-    decide o que fazer (cair pro próximo provedor da cadeia)."""
+    decide o que fazer (cair pro próximo provedor da cadeia).
+
+    `uso` é um dict mutável que esta função preenche assim que recebe uma
+    resposta da API (modelo/tokens de entrada/tokens de saída) - fica
+    preenchido MESMO que a extração do JSON falhe depois (a chamada já
+    gerou custo real de qualquer forma). Ver app.custo_ia e
+    app.routes_medico._registrar_uso_de_ia_do_pdf, que persiste isso
+    depois de cada tentativa."""
     from google.genai import errors as genai_errors
     from google.genai import types as genai_types
 
@@ -343,6 +350,11 @@ def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido):
             )
             time.sleep(tentativa * 5)
 
+    meta = getattr(resposta, "usage_metadata", None)
+    uso["modelo"] = getattr(resposta, "model_version", None) or MODELO_PADRAO
+    uso["tokens_entrada"] = getattr(meta, "prompt_token_count", None)
+    uso["tokens_saida"] = getattr(meta, "candidates_token_count", None)
+
     dados = _extrair_json(resposta.text)
     finish_reason = (
         getattr(resposta.candidates[0], "finish_reason", "?") if getattr(resposta, "candidates", None) else "?"
@@ -351,11 +363,11 @@ def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido):
     return dados
 
 
-def _extrair_via_openai(cliente, texto_extraido):
+def _extrair_via_openai(cliente, texto_extraido, uso):
     """2º provedor da cadeia - só é chamado se o Gemini estiver
     indisponível (ver docstring do módulo). Sempre recebe o texto
     extraído (nunca o PDF nativo) - ver docstring do módulo sobre essa
-    limitação intencional."""
+    limitação intencional. `uso`: ver docstring de _extrair_via_gemini."""
     resposta = cliente.chat.completions.create(
         model=MODELO_OPENAI_PADRAO,
         max_tokens=16384,
@@ -372,17 +384,22 @@ def _extrair_via_openai(cliente, texto_extraido):
             },
         ],
     )
+    meta = getattr(resposta, "usage", None)
+    uso["modelo"] = getattr(resposta, "model", None) or MODELO_OPENAI_PADRAO
+    uso["tokens_entrada"] = getattr(meta, "prompt_tokens", None)
+    uso["tokens_saida"] = getattr(meta, "completion_tokens", None)
+
     dados = _extrair_json(resposta.choices[0].message.content or "")
     finish_reason = resposta.choices[0].finish_reason if resposta.choices else "?"
     _log_diagnostico("ChatGPT", dados, finish_reason)
     return dados
 
 
-def _extrair_via_claude(cliente, texto_extraido):
+def _extrair_via_claude(cliente, texto_extraido, uso):
     """3º e último provedor da cadeia - só é chamado se o Gemini e o
     ChatGPT estiverem ambos indisponíveis (ver docstring do módulo).
     Sempre recebe o texto extraído (nunca o PDF nativo) - mesma limitação
-    intencional do ChatGPT."""
+    intencional do ChatGPT. `uso`: ver docstring de _extrair_via_gemini."""
     resposta = cliente.messages.create(
         model=MODELO_ANTHROPIC_PADRAO,
         max_tokens=16384,
@@ -396,11 +413,93 @@ def _extrair_via_claude(cliente, texto_extraido):
             ),
         }],
     )
+    meta = getattr(resposta, "usage", None)
+    uso["modelo"] = getattr(resposta, "model", None) or MODELO_ANTHROPIC_PADRAO
+    uso["tokens_entrada"] = getattr(meta, "input_tokens", None)
+    uso["tokens_saida"] = getattr(meta, "output_tokens", None)
+
     texto = "".join(getattr(bloco, "text", "") for bloco in resposta.content)
     dados = _extrair_json(texto)
     finish_reason = getattr(resposta, "stop_reason", "?")
     _log_diagnostico("Claude", dados, finish_reason)
     return dados
+
+
+def extrair_sugestao_de_pdf_com_ia_stream(pdf_bytes):
+    """Versão em generator de `extrair_sugestao_de_pdf_com_ia`, que também
+    avisa (via yield) qual provedor está sendo tentado ANTES de cada
+    chamada - usada pela tela de importação (ver
+    `app.routes_medico._importar_pdf_com_progresso`) pra mostrar em tempo
+    real um rótulo tipo "Tentando extrair com: Gemini..." enquanto a
+    pessoa espera, em vez de um spinner genérico sem informação nenhuma
+    durante os até ~120s que a cadeia inteira pode levar.
+
+    Cada item gerado é uma tupla `(evento, valor)`:
+    - `("tentando", nome_do_provedor)` - emitido logo antes de chamar
+      aquele provedor (mesmo que ele acabe falhando em seguida).
+    - `("uso", {"provedor":..., "modelo":..., "tokens_entrada":...,
+      "tokens_saida":...})` - emitido logo depois de QUALQUER tentativa
+      que chegou a receber uma resposta da API (mesmo que a extração do
+      JSON tenha falhado depois - a chamada em si já gerou custo real).
+      Usado por quem chama pra persistir o custo estimado de cada
+      chamada (ver app.custo_ia e app.routes_medico), nunca emitido pra
+      um provedor que nem chegou a ser tentado (sem chave configurada)
+      ou que falhou antes de qualquer resposta (erro de rede/conexão).
+    - `("resultado", sugestao_ou_none)` - sempre o ÚLTIMO item gerado,
+      com o resultado final (já normalizado) ou `None` se os três
+      provedores falharem/não estiverem configurados.
+
+    `extrair_sugestao_de_pdf_com_ia` (sem streaming) é só um wrapper fino
+    sobre este generator, mantido para quem não precisa do progresso
+    (ex.: os testes automatizados) - ele ignora os eventos "uso", então
+    quem usa essa versão simples não tem o custo registrado."""
+    try:
+        texto_extraido = extrair_texto(io.BytesIO(pdf_bytes))
+    except Exception:
+        # PDF corrompido/protegido/ilegível para o pypdf - ainda vale
+        # tentar a leitura nativa pela IA (só o Gemini faz isso, ver
+        # docstring do módulo) antes de desistir.
+        texto_extraido = ""
+
+    provedores = [
+        ("Gemini", _cliente_gemini, lambda cliente, uso: _extrair_via_gemini(cliente, pdf_bytes, texto_extraido, uso)),
+        ("ChatGPT", _cliente_openai, lambda cliente, uso: _extrair_via_openai(cliente, texto_extraido, uso)),
+        ("Claude", _cliente_claude, lambda cliente, uso: _extrair_via_claude(cliente, texto_extraido, uso)),
+    ]
+
+    for nome, obter_cliente, chamar in provedores:
+        cliente = obter_cliente()
+        if cliente is None:
+            # Provedor sem chave configurada - nem tenta, passa direto
+            # pro próximo da cadeia sem logar nada nem avisar progresso
+            # (não é uma falha, é simplesmente não estar configurado).
+            continue
+        yield ("tentando", nome)
+        uso = {"modelo": None, "tokens_entrada": None, "tokens_saida": None}
+        try:
+            dados = chamar(cliente, uso)
+            if uso["modelo"] is not None:
+                yield ("uso", {"provedor": nome, **uso})
+            yield ("resultado", _normalizar_sugestao(dados))
+            return
+        except Exception:
+            # Loga a causa real antes de cair pro próximo provedor - sem
+            # isso, qualquer falha (rede, cota, JSON mal formado,
+            # timeout) fica invisível e some como se a extração
+            # simplesmente não tivesse achado nada. Ver eb-engine/
+            # web.stdout do Elastic Beanstalk para diagnosticar quando a
+            # extração por IA não está funcionando como esperado.
+            if uso["modelo"] is not None:
+                # Chegou a receber resposta da API (o custo já foi
+                # gerado), mas algo depois disso falhou (ex.: JSON
+                # inválido) - ainda vale registrar o uso/custo real.
+                yield ("uso", {"provedor": nome, **uso})
+            logger.exception("Falha ao extrair sugestão de PDF via %s", nome)
+            continue
+
+    # Os três provedores falharam (ou nenhum está configurado) - quem
+    # chama cai pra extração heurística por regex.
+    yield ("resultado", None)
 
 
 def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
@@ -411,41 +510,14 @@ def extrair_sugestao_de_pdf_com_ia(pdf_bytes):
     três falharem por qualquer motivo (rede, PDF ilegível, resposta que
     não veio em JSON válido). Quem chama deve cair de volta pra extração
     heurística nesse caso, nunca deixar essa falha virar um erro 500 na
-    tela."""
-    try:
-        texto_extraido = extrair_texto(io.BytesIO(pdf_bytes))
-    except Exception:
-        # PDF corrompido/protegido/ilegível para o pypdf - ainda vale
-        # tentar a leitura nativa pela IA (só o Gemini faz isso, ver
-        # docstring do módulo) antes de desistir.
-        texto_extraido = ""
+    tela.
 
-    provedores = [
-        ("Gemini", _cliente_gemini, lambda cliente: _extrair_via_gemini(cliente, pdf_bytes, texto_extraido)),
-        ("ChatGPT", _cliente_openai, lambda cliente: _extrair_via_openai(cliente, texto_extraido)),
-        ("Claude", _cliente_claude, lambda cliente: _extrair_via_claude(cliente, texto_extraido)),
-    ]
-
-    for nome, obter_cliente, chamar in provedores:
-        cliente = obter_cliente()
-        if cliente is None:
-            # Provedor sem chave configurada - nem tenta, passa direto
-            # pro próximo da cadeia sem logar nada (não é uma falha, é
-            # simplesmente não estar configurado).
-            continue
-        try:
-            dados = chamar(cliente)
-            return _normalizar_sugestao(dados)
-        except Exception:
-            # Loga a causa real antes de cair pro próximo provedor - sem
-            # isso, qualquer falha (rede, cota, JSON mal formado,
-            # timeout) fica invisível e some como se a extração
-            # simplesmente não tivesse achado nada. Ver eb-engine/
-            # web.stdout do Elastic Beanstalk para diagnosticar quando a
-            # extração por IA não está funcionando como esperado.
-            logger.exception("Falha ao extrair sugestão de PDF via %s", nome)
-            continue
-
-    # Os três provedores falharam (ou nenhum está configurado) - quem
-    # chama cai pra extração heurística por regex.
-    return None
+    Versão sem streaming de progresso - só drena
+    `extrair_sugestao_de_pdf_com_ia_stream` até o fim e devolve o
+    resultado. Usar a versão em generator diretamente quando for preciso
+    mostrar qual provedor está sendo tentado em tempo real."""
+    resultado = None
+    for evento, valor in extrair_sugestao_de_pdf_com_ia_stream(pdf_bytes):
+        if evento == "resultado":
+            resultado = valor
+    return resultado

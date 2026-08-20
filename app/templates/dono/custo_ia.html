@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block titulo %}Custo estimado de IA{% endblock %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0">Custo estimado de IA</h3>
+  <a href="{{ url_for('dono.dashboard') }}" class="btn btn-link">Voltar</a>
+</div>
+
+<p class="text-muted small">
+  Estimativa calculada a partir da quantidade de tokens que cada chamada consumiu (Gemini, ChatGPT ou
+  Claude), aplicando o preço público de cada provedor por token. Nenhuma das APIs devolve o valor em
+  dólares diretamente — para o valor real de faturamento, consulte o painel de cada provedor (Google AI
+  Studio, OpenAI, Anthropic Console). Cobre as duas funcionalidades que usam IA hoje: a importação de PDF
+  de preparo (feita por alguém da equipe) e o chat de dúvidas do paciente.
+</p>
+
+{% if tem_custo_desconhecido_geral %}
+<div class="alert alert-warning small">
+  Algumas chamadas usaram um modelo que ainda não está na tabela de preços do sistema (ex.: uma versão
+  nova lançada pelo provedor) — o custo dessas aparece como "desconhecido" em vez de um valor estimado,
+  para não arriscar mostrar um número errado. A tabela de preços precisa ser atualizada manualmente
+  (ver <code>app/custo_ia.py</code>).
+</div>
+{% endif %}
+
+<div class="card p-3 mb-4" style="max-width: 320px;">
+  <div class="text-muted small">Custo total estimado</div>
+  <div class="fs-3 fw-bold">US$ {{ "%.4f"|format(custo_total_geral) }}</div>
+</div>
+
+<div class="card p-3">
+  <table class="table table-hover">
+    <thead>
+      <tr>
+        <th>Quem</th>
+        <th>Tipo</th>
+        <th>Chamadas</th>
+        <th>Custo estimado</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas %}
+      <tr>
+        <td>{{ l.nome }}</td>
+        <td>
+          {% if l.tipo == "usuario" %}
+            <span class="badge bg-secondary">Equipe</span>
+          {% else %}
+            <span class="badge bg-info text-dark">Paciente</span>
+          {% endif %}
+        </td>
+        <td>{{ l.total_chamadas }}</td>
+        <td>
+          US$ {{ "%.4f"|format(l.custo_total) }}
+          {% if l.tem_custo_desconhecido %}
+            <span class="badge bg-warning text-dark ms-1" title="Uma ou mais chamadas com modelo sem preço cadastrado">parcial</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if l.tipo == "usuario" %}
+            <a href="{{ url_for('dono.custo_ia_usuario', usuario_id=l.id) }}" class="btn btn-sm btn-outline-secondary">Ver chamadas</a>
+          {% else %}
+            <a href="{{ url_for('dono.custo_ia_paciente', paciente_id=l.id) }}" class="btn btn-sm btn-outline-secondary">Ver chamadas</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted text-center">Nenhuma chamada de IA registrada ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

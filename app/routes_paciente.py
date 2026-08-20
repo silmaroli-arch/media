@@ -250,7 +250,10 @@ def chat():
             # conhecimento (FaqItem), igual a uma resposta manual. Cada
             # pergunta continua sendo encaminhada à IA de novo, mesmo que
             # pareça repetida — não há atalho pela FAQ aqui.
-            resultado_ia = responder_com_ia(pergunta_enviada, exame_selecionado) if exame_selecionado else None
+            resultado_ia = (
+                responder_com_ia(pergunta_enviada, exame_selecionado, paciente_id=paciente.id)
+                if exame_selecionado else None
+            )
             grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame_selecionado, agendamento_selecionado)
 
             if resultado_ia and resultado_ia["final"]:

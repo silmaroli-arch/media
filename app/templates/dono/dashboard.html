@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block titulo %}Painel do dono{% endblock %}
 {% block conteudo %}
-<h3 class="mb-4">Grupos na plataforma</h3>
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0">Grupos na plataforma</h3>
+  <a href="{{ url_for('dono.custo_ia') }}" class="btn btn-outline-secondary btn-sm">Custo estimado de IA</a>
+</div>
 
 <div class="row g-3 mb-4">
   <div class="col-md-3">

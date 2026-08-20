@@ -33,6 +33,7 @@ from app.clinica_utils import (
 )
 from app.pdf_preparo import extrair_sugestao_de_pdf, extrair_sugestao_de_texto
 from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
+from app.custo_ia import registrar_chamada_ia
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -1588,17 +1589,59 @@ def preparo_modelos_remover(modelo_id):
     return redirect(url_for("medico.preparo_modelos_lista"))
 
 
+def _processar_stream_de_ia_pdf(pdf_bytes):
+    """Envolve `extrair_sugestao_de_pdf_com_ia_stream` persistindo um
+    `ChamadaIA` (ver app.custo_ia, e o painel de custo por usuário em
+    app.routes_dono) pra cada chamada que chegou a gerar custo real -
+    repassa pra quem chama só os eventos "tentando"/"resultado" (os
+    únicos que importam pra montar a tela de revisão), consumindo o
+    evento "uso" aqui dentro.
+
+    O sucesso/falha de cada chamada só é conhecido UM evento depois (ver
+    docstring de extrair_sugestao_de_pdf_com_ia_stream) - por isso o uso
+    fica "pendente" até o próximo "tentando" (senha de que o anterior
+    falhou) ou "resultado" (que já diz se aquele uso foi o vencedor).
+
+    Usado tanto pelo caminho síncrono (`_extrair_via_cadeia_de_ia`)
+    quanto pelo caminho com streaming de progresso
+    (`_importar_pdf_com_progresso`) - assim o registro de custo não fica
+    duplicado entre os dois."""
+    uso_pendente = None
+
+    def _persistir(sucesso):
+        registrar_chamada_ia(
+            "importacao_pdf_preparo", uso_pendente["provedor"], uso_pendente["modelo"],
+            uso_pendente["tokens_entrada"], uso_pendente["tokens_saida"],
+            sucesso=sucesso, usuario_id=current_user.id,
+        )
+        db.session.commit()
+
+    for evento, valor in extrair_sugestao_de_pdf_com_ia_stream(pdf_bytes):
+        if evento == "tentando":
+            if uso_pendente:
+                _persistir(sucesso=False)
+                uso_pendente = None
+            yield (evento, valor)
+        elif evento == "uso":
+            uso_pendente = valor
+        elif evento == "resultado":
+            if uso_pendente:
+                _persistir(sucesso=valor is not None)
+                uso_pendente = None
+            yield (evento, valor)
+
+
 def _extrair_via_cadeia_de_ia(pdf_bytes):
-    """Drena `extrair_sugestao_de_pdf_com_ia_stream` até o fim, sem
-    streaming de progresso (usado no caminho síncrono de sempre, ex.:
-    chamada direta à rota sem JS/fetch, ou nos testes automatizados).
-    Devolve `(sugestao, provedor_usado)` - `provedor_usado` é o nome do
-    provedor que efetivamente teve sucesso (ex.: "Gemini"), ou None se
-    nenhum provedor devolveu dado (quem chama cai pra extração
-    heurística por regex nesse caso)."""
+    """Drena `_processar_stream_de_ia_pdf` até o fim, sem streaming de
+    progresso (usado no caminho síncrono de sempre, ex.: chamada direta
+    à rota sem JS/fetch, ou nos testes automatizados). Devolve
+    `(sugestao, provedor_usado)` - `provedor_usado` é o nome do provedor
+    que efetivamente teve sucesso (ex.: "Gemini"), ou None se nenhum
+    provedor devolveu dado (quem chama cai pra extração heurística por
+    regex nesse caso)."""
     ultimo_provedor_tentado = None
     sugestao = None
-    for evento, valor in extrair_sugestao_de_pdf_com_ia_stream(pdf_bytes):
+    for evento, valor in _processar_stream_de_ia_pdf(pdf_bytes):
         if evento == "tentando":
             ultimo_provedor_tentado = valor
         elif evento == "resultado":
@@ -1658,7 +1701,7 @@ def _importar_pdf_com_progresso(pdf_bytes):
     corpo inteiro."""
     ultimo_provedor_tentado = None
     sugestao = None
-    for evento, valor in extrair_sugestao_de_pdf_com_ia_stream(pdf_bytes):
+    for evento, valor in _processar_stream_de_ia_pdf(pdf_bytes):
         if evento == "tentando":
             ultimo_provedor_tentado = valor
             yield f"data: {json.dumps({'provedor': valor})}\n\n"
