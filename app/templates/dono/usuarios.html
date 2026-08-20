@@ -21,6 +21,8 @@
         <th>Tipo</th>
         <th>Grupo(s) de trabalho</th>
         <th>Cadastrado em</th>
+        <th>Custo estimado de IA</th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -37,9 +39,25 @@
           {% endif %}
         </td>
         <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
+        <td>
+          {% if l.custo %}
+            US$ {{ "%.4f"|format(l.custo.custo_total) }}
+            <span class="text-muted small">({{ l.custo.total_chamadas }} chamada{{ "s" if l.custo.total_chamadas != 1 else "" }})</span>
+            {% if l.custo.tem_custo_desconhecido %}
+              <span class="badge bg-warning text-dark ms-1" title="Uma ou mais chamadas com modelo sem preço cadastrado">parcial</span>
+            {% endif %}
+          {% else %}
+            <span class="text-muted small">sem chamadas</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if l.custo %}
+            <a href="{{ url_for('dono.custo_ia_usuario', usuario_id=l.usuario.id) }}" class="btn btn-sm btn-outline-secondary">Ver chamadas</a>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
+      <tr><td colspan="7" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
       {% endfor %}
     </tbody>
   </table>
