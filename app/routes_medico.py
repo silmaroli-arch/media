@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import re
 import secrets
@@ -8,7 +9,7 @@ from functools import wraps
 
 from flask import (
     Blueprint, render_template, redirect, url_for, request, flash, session,
-    current_app, jsonify,
+    current_app, jsonify, Response, stream_with_context,
 )
 from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
@@ -31,7 +32,7 @@ from app.clinica_utils import (
     tem_algum_vinculo_de_grupo,
 )
 from app.pdf_preparo import extrair_sugestao_de_pdf, extrair_sugestao_de_texto
-from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia
+from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -1587,6 +1588,102 @@ def preparo_modelos_remover(modelo_id):
     return redirect(url_for("medico.preparo_modelos_lista"))
 
 
+def _extrair_via_cadeia_de_ia(pdf_bytes):
+    """Drena `extrair_sugestao_de_pdf_com_ia_stream` até o fim, sem
+    streaming de progresso (usado no caminho síncrono de sempre, ex.:
+    chamada direta à rota sem JS/fetch, ou nos testes automatizados).
+    Devolve `(sugestao, provedor_usado)` - `provedor_usado` é o nome do
+    provedor que efetivamente teve sucesso (ex.: "Gemini"), ou None se
+    nenhum provedor devolveu dado (quem chama cai pra extração
+    heurística por regex nesse caso)."""
+    ultimo_provedor_tentado = None
+    sugestao = None
+    for evento, valor in extrair_sugestao_de_pdf_com_ia_stream(pdf_bytes):
+        if evento == "tentando":
+            ultimo_provedor_tentado = valor
+        elif evento == "resultado":
+            sugestao = valor
+    provedor_usado = ultimo_provedor_tentado if sugestao is not None else None
+    return sugestao, provedor_usado
+
+
+def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None):
+    """Mensagem + tela de revisão comuns aos três caminhos de importação
+    de PDF (com IA via streaming de progresso, com IA sem streaming, e
+    sem IA/extração local no navegador). `provedor_usado` (ex.: "Gemini")
+    aparece no aviso pra quem importou saber qual IA realmente
+    respondeu, já que agora existem 3 provedores possíveis na cadeia
+    (ver app.ia_pdf_preparo)."""
+    if provedor_usado:
+        flash(
+            f"Dados extraídos do PDF via {provedor_usado}. Revise com cuidado antes de salvar — "
+            "a extração é automática e pode ter interpretado algo errado.",
+            "warning",
+        )
+    else:
+        flash(
+            "Dados extraídos do PDF. Revise com cuidado antes de salvar — a extração é "
+            "automática e pode ter interpretado algo errado.",
+            "warning",
+        )
+    # Renderiza a tela de revisão direto aqui (sem redirect) em vez de
+    # guardar a sugestão na sessão - o texto extraído de um PDF de preparo
+    # pode ser longo o bastante para estourar o limite de 4KB do cookie de
+    # sessão do Flask, o que já causou um 502 (nginx recusando "upstream
+    # sent too big header" por causa do cookie gigante) em produção com um
+    # PDF real. Mesma tela e mesmo contexto que o GET de
+    # /preparo-modelos/novo?de_importacao=1 usaria, só que sem depender do
+    # cookie para carregar o payload.
+    return render_template(
+        "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
+        medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
+    )
+
+
+def _importar_pdf_com_progresso(pdf_bytes):
+    """Generator usado como corpo de uma resposta em streaming (ver a
+    rota `preparo_modelos_importar_xlsx`, campo `mostrar_progresso_ia`) -
+    emite um evento de progresso (formato "Server-Sent Events"
+    simplificado, texto puro) logo antes de cada tentativa de provedor
+    de IA, e por fim um evento "final" com a página de revisão já
+    renderizada (ou de volta pro formulário de importação, com um flash
+    de erro, se nem a IA nem a extração heurística conseguirem ler o
+    PDF).
+
+    O parseamento no navegador é feito manualmente via
+    `response.body.getReader()` (ver o JS em
+    medico/preparo_modelo_form.html) - não é EventSource de verdade (que
+    só suporta GET), é só o mesmo formato de texto reaproveitado sobre
+    uma resposta de POST comum, lido aos pedaços em vez de esperar o
+    corpo inteiro."""
+    ultimo_provedor_tentado = None
+    sugestao = None
+    for evento, valor in extrair_sugestao_de_pdf_com_ia_stream(pdf_bytes):
+        if evento == "tentando":
+            ultimo_provedor_tentado = valor
+            yield f"data: {json.dumps({'provedor': valor})}\n\n"
+        elif evento == "resultado":
+            sugestao = valor
+
+    provedor_usado = ultimo_provedor_tentado if sugestao is not None else None
+
+    if sugestao is None:
+        try:
+            sugestao = extrair_sugestao_de_pdf(io.BytesIO(pdf_bytes))
+        except Exception:
+            flash(
+                "Não foi possível ler esse PDF. Ele pode estar corrompido, protegido por senha, ou ser "
+                "uma imagem escaneada sem texto selecionável — nesse caso, cadastre o modelo manualmente.",
+                "danger",
+            )
+            html = render_template("medico/preparo_modelo_importar_xlsx.html")
+            yield f"event: final\ndata: {json.dumps({'html': html})}\n\n"
+            return
+
+    html = _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado)
+    yield f"event: final\ndata: {json.dumps({'html': html})}\n\n"
+
+
 @medico_bp.route("/preparo-modelos/importar-xlsx", methods=["GET", "POST"])
 @login_required
 @staff_required
@@ -1623,37 +1720,37 @@ def preparo_modelos_importar_xlsx():
                 # (pdfjs) - nunca chama o Gemini nem sequer olha os bytes do
                 # PDF, só aplica a extração heurística por regex.
                 sugestao = extrair_sugestao_de_texto(texto_extraido_cliente)
-            else:
-                pdf_bytes = arquivo.stream.read()
-                sugestao = extrair_sugestao_de_pdf_com_ia(pdf_bytes)
-                if sugestao is None:
-                    try:
-                        sugestao = extrair_sugestao_de_pdf(io.BytesIO(pdf_bytes))
-                    except Exception:
-                        flash(
-                            "Não foi possível ler esse PDF. Ele pode estar corrompido, protegido por senha, ou ser "
-                            "uma imagem escaneada sem texto selecionável — nesse caso, cadastre o modelo manualmente.",
-                            "danger",
-                        )
-                        return render_template("medico/preparo_modelo_importar_xlsx.html")
+                return _renderizar_revisao_de_preparo_importado(sugestao)
 
-            flash(
-                "Dados extraídos do PDF. Revise com cuidado antes de salvar — a extração é "
-                "automática e pode ter interpretado algo errado.",
-                "warning",
-            )
-            # Renderiza a tela de revisão direto aqui (sem redirect) em vez
-            # de guardar a sugestão na sessão - o texto extraído de um PDF
-            # de preparo pode ser longo o bastante para estourar o limite
-            # de 4KB do cookie de sessão do Flask, o que já causou um 502
-            # (nginx recusando "upstream sent too big header" por causa do
-            # cookie gigante) em produção com um PDF real. Mesma tela e
-            # mesmo contexto que o GET de /preparo-modelos/novo?de_importacao=1
-            # usaria, só que sem depender do cookie para carregar o payload.
-            return render_template(
-                "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
-                medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
-            )
+            pdf_bytes = arquivo.stream.read()
+
+            # A tela de importação (ver medico/preparo_modelo_form.html)
+            # manda esse campo só quando o próprio JS está no controle da
+            # submissão (fetch, não navegação normal do form) - é o que
+            # permite mostrar em tempo real qual provedor de IA está sendo
+            # tentado (Gemini/ChatGPT/Claude), em vez de um spinner
+            # genérico parado por até ~120s. Sem esse campo (ex.: chamada
+            # direta à rota, como nos testes automatizados, ou navegador
+            # com JS desabilitado), cai no caminho de sempre, síncrono e
+            # sem streaming.
+            if request.form.get("mostrar_progresso_ia") == "1":
+                return Response(
+                    stream_with_context(_importar_pdf_com_progresso(pdf_bytes)),
+                    mimetype="text/event-stream",
+                )
+
+            sugestao, provedor_usado = _extrair_via_cadeia_de_ia(pdf_bytes)
+            if sugestao is None:
+                try:
+                    sugestao = extrair_sugestao_de_pdf(io.BytesIO(pdf_bytes))
+                except Exception:
+                    flash(
+                        "Não foi possível ler esse PDF. Ele pode estar corrompido, protegido por senha, ou ser "
+                        "uma imagem escaneada sem texto selecionável — nesse caso, cadastre o modelo manualmente.",
+                        "danger",
+                    )
+                    return render_template("medico/preparo_modelo_importar_xlsx.html")
+            return _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado)
 
         try:
             sugestoes = extrair_sugestoes_de_xlsx(arquivo.stream)

@@ -436,6 +436,67 @@
         .then(function (textosPorPagina) { return textosPorPagina.join('\n'); });
     }
 
+    // Lê a resposta em streaming (ver app.routes_medico._importar_pdf_com_progresso)
+    // e atualiza o texto do botão com o nome do provedor de IA sendo
+    // tentado no momento (Gemini/ChatGPT/Claude) - sem isso, a única pista
+    // durante os até ~120s que a cadeia inteira pode levar seria um
+    // spinner genérico "Extraindo dados...", sem indicar se está
+    // travado ou progredindo pra outro provedor depois de uma falha.
+    // Não é EventSource de verdade (só suporta GET) - é um parser manual
+    // do mesmo formato de texto ("data: {...}\n\n" / "event: final\n"),
+    // lido aos pedaços via response.body.getReader().
+    function lerRespostaComProgressoDeIa(resposta) {
+      var reader = resposta.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+      var htmlFinal = null;
+
+      function processarBlocos() {
+        var blocos = buffer.split('\n\n');
+        buffer = blocos.pop(); // pedaço incompleto no fim, espera o próximo chunk
+        blocos.forEach(function (bloco) {
+          if (!bloco.trim()) return;
+          var tipoEvento = 'message';
+          var linhaDados = '';
+          bloco.split('\n').forEach(function (linha) {
+            if (linha.indexOf('event:') === 0) tipoEvento = linha.slice(6).trim();
+            else if (linha.indexOf('data:') === 0) linhaDados = linha.slice(5).trim();
+          });
+          if (!linhaDados) return;
+          var dados;
+          try { dados = JSON.parse(linhaDados); } catch (erroParse) { return; }
+          if (tipoEvento === 'final') {
+            htmlFinal = dados.html;
+          } else if (dados.provedor) {
+            botao.innerHTML =
+              '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Tentando extrair com ' +
+              dados.provedor + '...';
+          }
+        });
+      }
+
+      function lerProximoPedaco() {
+        return reader.read().then(function (resultado) {
+          if (resultado.done) {
+            buffer += decoder.decode();
+            processarBlocos();
+            if (htmlFinal === null) {
+              // Streaming terminou sem nunca mandar o evento "final" -
+              // conexão cortada no meio (ex.: proxy encerrando por
+              // timeout sem chegar a devolver um status HTTP de erro).
+              throw new Error('stream-incompleto');
+            }
+            return htmlFinal;
+          }
+          buffer += decoder.decode(resultado.value, { stream: true });
+          processarBlocos();
+          return lerProximoPedaco();
+        });
+      }
+
+      return lerProximoPedaco();
+    }
+
     formImportar.addEventListener('submit', function (ev) {
       ev.preventDefault();
       if (botao.disabled) return;
@@ -453,6 +514,13 @@
         ? extrairTextoPdfNoNavegador(arquivo).then(function (texto) { inputTextoCliente.value = texto; })
         : Promise.resolve();
 
+      // Mostra em tempo real qual provedor de IA (Gemini/ChatGPT/Claude)
+      // está sendo tentado no momento - só faz sentido quando o servidor
+      // vai mesmo chamar alguma IA (PDF com "Usar IA" marcado); pro Excel
+      // e pro PDF sem IA a resposta é instantânea, sem chamada nenhuma,
+      // então nem vale streaming.
+      var vaiChamarIa = arquivo && /\.pdf$/i.test(arquivo.name) && !usarExtracaoLocal;
+
       preparacao
         .catch(function () {
           // Se a extração local falhar (ex.: CDN do pdfjs bloqueado/fora do
@@ -463,6 +531,9 @@
         })
         .then(function () {
           var dadosForm = new FormData(formImportar);
+          if (vaiChamarIa) {
+            dadosForm.set('mostrar_progresso_ia', '1');
+          }
           return fetch(formImportar.action, { method: 'POST', body: dadosForm });
         })
         .then(function (resposta) {
@@ -471,6 +542,9 @@
             // pra confiar no corpo da resposta (pode ser a página crua do
             // nginx, não HTML da nossa aplicação).
             throw new Error('http-' + resposta.status);
+          }
+          if (vaiChamarIa && resposta.body && resposta.body.getReader) {
+            return lerRespostaComProgressoDeIa(resposta);
           }
           return resposta.text();
         })
