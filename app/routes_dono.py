@@ -158,7 +158,13 @@ def usuarios():
     dashboard principal (`dashboard`, acima) só lista Grupos e itera os
     membros de cada um - uma conta solo nunca aparece ali, ficando
     completamente invisível pro dono da plataforma. Esta tela cobre esse
-    ponto cego, listando a partir do Usuario direto, não do Grupo."""
+    ponto cego, listando a partir do Usuario direto, não do Grupo.
+
+    Já traz junto o custo estimado de IA de cada usuário (ver
+    app.custo_ia e app.models.ChamadaIA) - cada linha tem um botão que
+    abre o detalhe das chamadas individuais daquele usuário
+    (`custo_ia_usuario`, mesma tela usada pelo painel de custo em
+    `custo_ia`)."""
     lista_usuarios = (
         Usuario.query.filter(Usuario.tipo.in_(["medico", "secretaria"]))
         .order_by(Usuario.criado_em.desc()).all()
@@ -168,8 +174,21 @@ def usuarios():
     for gm in GrupoMembro.query.filter(GrupoMembro.ativo.is_(True)).all():
         nomes_de_grupo_por_usuario.setdefault(gm.usuario_id, []).append(gm.grupo.nome)
 
+    custo_por_usuario = {}
+    for c in ChamadaIA.query.filter(ChamadaIA.usuario_id.isnot(None)).all():
+        item = custo_por_usuario.setdefault(c.usuario_id, {"total_chamadas": 0, "custo_total": 0.0, "tem_custo_desconhecido": False})
+        item["total_chamadas"] += 1
+        if c.custo_estimado_usd is not None:
+            item["custo_total"] += float(c.custo_estimado_usd)
+        if c.preco_desconhecido:
+            item["tem_custo_desconhecido"] = True
+
     linhas = [
-        {"usuario": u, "grupos": nomes_de_grupo_por_usuario.get(u.id, [])}
+        {
+            "usuario": u,
+            "grupos": nomes_de_grupo_por_usuario.get(u.id, []),
+            "custo": custo_por_usuario.get(u.id),
+        }
         for u in lista_usuarios
     ]
 
