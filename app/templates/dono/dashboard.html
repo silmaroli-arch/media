@@ -3,7 +3,10 @@
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h3 class="mb-0">Grupos na plataforma</h3>
-  <a href="{{ url_for('dono.custo_ia') }}" class="btn btn-outline-secondary btn-sm">Custo estimado de IA</a>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('dono.usuarios') }}" class="btn btn-outline-secondary btn-sm">Usuários cadastrados</a>
+    <a href="{{ url_for('dono.custo_ia') }}" class="btn btn-outline-secondary btn-sm">Custo estimado de IA</a>
+  </div>
 </div>
 
 <div class="row g-3 mb-4">

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block titulo %}Usuários cadastrados{% endblock %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0">Usuários cadastrados (equipe)</h3>
+  <a href="{{ url_for('dono.dashboard') }}" class="btn btn-link">Voltar</a>
+</div>
+
+<p class="text-muted small">
+  Todas as contas de médico(a)/secretário(a) da plataforma, independente de terem um grupo de trabalho ou
+  não — desde que uma conta nova deixou de criar um grupo automaticamente, ela pode existir "solo" (usa o
+  sistema sozinha, sem trial/vencimento/bloqueio) e não aparece na lista de Grupos.
+</p>
+
+<div class="card p-3">
+  <table class="table table-hover">
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>E-mail</th>
+        <th>Tipo</th>
+        <th>Grupo(s) de trabalho</th>
+        <th>Cadastrado em</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas %}
+      <tr>
+        <td>{{ l.usuario.nome }}</td>
+        <td>{{ l.usuario.email or "-" }}</td>
+        <td>{{ "Médico(a)" if l.usuario.tipo == "medico" else "Secretário(a)" }}</td>
+        <td>
+          {% if l.grupos %}
+            {{ l.grupos|join(", ") }}
+          {% else %}
+            <span class="badge bg-secondary">conta solo</span>
+          {% endif %}
+        </td>
+        <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

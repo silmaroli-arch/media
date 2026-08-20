@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro
 from app.clinica_utils import verificar_vencimento_grupo
 
 dono_bp = Blueprint("dono", __name__, url_prefix="/dono")
@@ -143,6 +143,37 @@ def grupo_desbloquear(grupo_id):
     db.session.commit()
     flash(f"Acesso do grupo '{grupo.nome}' foi restabelecido.", "success")
     return redirect(url_for("dono.grupo_detalhe", grupo_id=grupo.id))
+
+
+@dono_bp.route("/usuarios")
+@login_required
+@dono_required
+def usuarios():
+    """Lista TODOS os usuários da equipe (médico/secretária) cadastrados
+    na plataforma - independente de terem um Grupo de trabalho ou não.
+
+    Importante desde a Fatia 6 (ver docstring de app.routes_auth.cadastro):
+    uma conta pode existir "solo", sem nenhum Grupo, plenamente usável
+    (cadastra paciente/exame/agendamento com escopo pessoal). O
+    dashboard principal (`dashboard`, acima) só lista Grupos e itera os
+    membros de cada um - uma conta solo nunca aparece ali, ficando
+    completamente invisível pro dono da plataforma. Esta tela cobre esse
+    ponto cego, listando a partir do Usuario direto, não do Grupo."""
+    lista_usuarios = (
+        Usuario.query.filter(Usuario.tipo.in_(["medico", "secretaria"]))
+        .order_by(Usuario.criado_em.desc()).all()
+    )
+
+    nomes_de_grupo_por_usuario = {}
+    for gm in GrupoMembro.query.filter(GrupoMembro.ativo.is_(True)).all():
+        nomes_de_grupo_por_usuario.setdefault(gm.usuario_id, []).append(gm.grupo.nome)
+
+    linhas = [
+        {"usuario": u, "grupos": nomes_de_grupo_por_usuario.get(u.id, [])}
+        for u in lista_usuarios
+    ]
+
+    return render_template("dono/usuarios.html", linhas=linhas)
 
 
 @dono_bp.route("/custo-ia")
