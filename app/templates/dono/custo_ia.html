@@ -9,9 +9,9 @@
 <p class="text-muted small">
   Estimativa calculada a partir da quantidade de tokens que cada chamada consumiu (Gemini, ChatGPT ou
   Claude), aplicando o preço público de cada provedor por token. Nenhuma das APIs devolve o valor em
-  dólares diretamente — para o valor real de faturamento, consulte o painel de cada provedor (Google AI
-  Studio, OpenAI, Anthropic Console). Cobre as duas funcionalidades que usam IA hoje: a importação de PDF
-  de preparo (feita por alguém da equipe) e o chat de dúvidas do paciente.
+  dólares nem o saldo da conta diretamente — para o saldo de crédito e o valor real de faturamento, use
+  os links abaixo para o painel de cada provedor. Cobre as duas funcionalidades que usam IA hoje: a
+  importação de PDF de preparo (feita por alguém da equipe) e o chat de dúvidas do paciente.
 </p>
 
 {% if tem_custo_desconhecido_geral %}
@@ -27,6 +27,26 @@
   <div class="text-muted small">Custo total estimado</div>
   <div class="fs-3 fw-bold">US$ {{ "%.4f"|format(custo_total_geral) }}</div>
   <div class="text-muted small">R$ {{ "%.4f"|format(custo_total_geral|usd_para_brl) }}</div>
+</div>
+
+<div class="card p-3 mb-4">
+  <h6 class="mb-2">Ver saldo/gasto real em cada provedor</h6>
+  <p class="text-muted small mb-2">
+    O valor acima é uma ESTIMATIVA (ver explicação no topo da página) — para o saldo de crédito e o
+    gasto real cobrado por cada provedor, acesse direto o painel de cada um (login próprio, fora deste
+    sistema):
+  </p>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="https://aistudio.google.com/usage" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+      Google AI Studio (Gemini) <i class="bi bi-box-arrow-up-right"></i>
+    </a>
+    <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+      OpenAI Platform (ChatGPT) <i class="bi bi-box-arrow-up-right"></i>
+    </a>
+    <a href="https://platform.claude.com/settings/billing" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+      Claude Platform (Anthropic) <i class="bi bi-box-arrow-up-right"></i>
+    </a>
+  </div>
 </div>
 
 <details class="card p-3 mb-4">
