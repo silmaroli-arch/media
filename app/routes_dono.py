@@ -21,6 +21,41 @@ def dono_required(f):
     return decorado
 
 
+def _usuarios_com_custo():
+    """Monta a lista de todo Usuario da equipe (médico/secretária),
+    junto com o(s) grupo(s) de trabalho de cada um (ou nenhum, pra uma
+    conta "solo" - ver Fatia 6) e o custo estimado de IA (ver
+    app.custo_ia/app.models.ChamadaIA). Usado tanto no dashboard
+    principal quanto na tela `usuarios` (mantida como um link direto pra
+    essa mesma lista, sem o resto do dashboard)."""
+    lista_usuarios = (
+        Usuario.query.filter(Usuario.tipo.in_(["medico", "secretaria"]))
+        .order_by(Usuario.criado_em.desc()).all()
+    )
+
+    nomes_de_grupo_por_usuario = {}
+    for gm in GrupoMembro.query.filter(GrupoMembro.ativo.is_(True)).all():
+        nomes_de_grupo_por_usuario.setdefault(gm.usuario_id, []).append(gm.grupo.nome)
+
+    custo_por_usuario = {}
+    for c in ChamadaIA.query.filter(ChamadaIA.usuario_id.isnot(None)).all():
+        item = custo_por_usuario.setdefault(c.usuario_id, {"total_chamadas": 0, "custo_total": 0.0, "tem_custo_desconhecido": False})
+        item["total_chamadas"] += 1
+        if c.custo_estimado_usd is not None:
+            item["custo_total"] += float(c.custo_estimado_usd)
+        if c.preco_desconhecido:
+            item["tem_custo_desconhecido"] = True
+
+    return [
+        {
+            "usuario": u,
+            "grupos": nomes_de_grupo_por_usuario.get(u.id, []),
+            "custo": custo_por_usuario.get(u.id),
+        }
+        for u in lista_usuarios
+    ]
+
+
 @dono_bp.route("/")
 @login_required
 @dono_required
@@ -46,8 +81,18 @@ def dashboard():
 
     config = PlataformaConfig.obter()
 
+    # Desde a Fatia 6, uma conta pode existir "solo" (sem Grupo nenhum) -
+    # por isso os números de Grupo acima ficam zerados/baixos mesmo com
+    # gente cadastrada de verdade e usando o sistema normalmente. Traz a
+    # lista de usuários (com o custo de IA de cada um) direto aqui no
+    # dashboard principal, pra não dar a impressão de que "não tem
+    # ninguém cadastrado" - ver `_usuarios_com_custo` acima.
+    linhas_usuarios = _usuarios_com_custo()
+    custo_total_usuarios = sum(l["custo"]["custo_total"] for l in linhas_usuarios if l["custo"])
+
     return render_template(
         "dono/dashboard.html", grupos=grupos, resumo=resumo, hoje=date.today(), config=config,
+        linhas_usuarios=linhas_usuarios, custo_total_usuarios=custo_total_usuarios,
     )
 
 
@@ -164,35 +209,12 @@ def usuarios():
     app.custo_ia e app.models.ChamadaIA) - cada linha tem um botão que
     abre o detalhe das chamadas individuais daquele usuário
     (`custo_ia_usuario`, mesma tela usada pelo painel de custo em
-    `custo_ia`)."""
-    lista_usuarios = (
-        Usuario.query.filter(Usuario.tipo.in_(["medico", "secretaria"]))
-        .order_by(Usuario.criado_em.desc()).all()
-    )
+    `custo_ia`).
 
-    nomes_de_grupo_por_usuario = {}
-    for gm in GrupoMembro.query.filter(GrupoMembro.ativo.is_(True)).all():
-        nomes_de_grupo_por_usuario.setdefault(gm.usuario_id, []).append(gm.grupo.nome)
-
-    custo_por_usuario = {}
-    for c in ChamadaIA.query.filter(ChamadaIA.usuario_id.isnot(None)).all():
-        item = custo_por_usuario.setdefault(c.usuario_id, {"total_chamadas": 0, "custo_total": 0.0, "tem_custo_desconhecido": False})
-        item["total_chamadas"] += 1
-        if c.custo_estimado_usd is not None:
-            item["custo_total"] += float(c.custo_estimado_usd)
-        if c.preco_desconhecido:
-            item["tem_custo_desconhecido"] = True
-
-    linhas = [
-        {
-            "usuario": u,
-            "grupos": nomes_de_grupo_por_usuario.get(u.id, []),
-            "custo": custo_por_usuario.get(u.id),
-        }
-        for u in lista_usuarios
-    ]
-
-    return render_template("dono/usuarios.html", linhas=linhas)
+    Desde que essa lista passou a aparecer também direto no dashboard
+    principal (ver `dashboard` acima), esta rota serve como um link pra
+    ver SÓ essa lista, sem o restante da tela de Grupos."""
+    return render_template("dono/usuarios.html", linhas=_usuarios_com_custo())
 
 
 @dono_bp.route("/custo-ia")

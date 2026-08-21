@@ -2,13 +2,94 @@
 {% block titulo %}Painel do dono{% endblock %}
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h3 class="mb-0">Grupos na plataforma</h3>
+  <h3 class="mb-0">Painel do dono</h3>
   <div class="d-flex gap-2">
-    <a href="{{ url_for('dono.usuarios') }}" class="btn btn-outline-secondary btn-sm">Usuários cadastrados</a>
     <a href="{{ url_for('dono.custo_ia') }}" class="btn btn-outline-secondary btn-sm">Custo estimado de IA</a>
   </div>
 </div>
 
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card p-3">
+      <div class="text-muted small">Usuários cadastrados (equipe)</div>
+      <div class="fs-3 fw-bold">{{ linhas_usuarios|length }}</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card p-3">
+      <div class="text-muted small">Grupos de trabalho criados</div>
+      <div class="fs-3 fw-bold">{{ resumo.total }}</div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card p-3">
+      <div class="text-muted small">Custo estimado de IA (total)</div>
+      <div class="fs-3 fw-bold">US$ {{ "%.4f"|format(custo_total_usuarios) }}</div>
+    </div>
+  </div>
+</div>
+
+<h5 class="mb-3">Usuários cadastrados</h5>
+<p class="text-muted small">
+  Todas as contas de médico(a)/secretário(a) da plataforma, independente de terem um grupo de trabalho ou
+  não — desde que uma conta nova deixou de criar um grupo automaticamente, ela pode existir "solo" (usa o
+  sistema sozinha, sem trial/vencimento/bloqueio), por isso os números de Grupo abaixo podem ficar baixos/
+  zerados mesmo com gente cadastrada e usando o sistema normalmente.
+</p>
+<div class="card p-3 mb-4">
+  <div class="table-responsive">
+  <table class="table table-hover">
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Custo estimado de IA</th>
+        <th></th>
+        <th>E-mail</th>
+        <th>Tipo</th>
+        <th>Grupo(s) de trabalho</th>
+        <th>Cadastrado em</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas_usuarios %}
+      <tr>
+        <td>{{ l.usuario.nome }}</td>
+        <td>
+          {% if l.custo %}
+            US$ {{ "%.4f"|format(l.custo.custo_total) }}
+            <span class="text-muted small">({{ l.custo.total_chamadas }} chamada{{ "s" if l.custo.total_chamadas != 1 else "" }})</span>
+            {% if l.custo.tem_custo_desconhecido %}
+              <span class="badge bg-warning text-dark ms-1" title="Uma ou mais chamadas com modelo sem preço cadastrado">parcial</span>
+            {% endif %}
+          {% else %}
+            <span class="text-muted small">sem chamadas</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if l.custo %}
+            <a href="{{ url_for('dono.custo_ia_usuario', usuario_id=l.usuario.id) }}" class="btn btn-sm btn-outline-secondary text-nowrap">Ver chamadas</a>
+          {% endif %}
+        </td>
+        <td>{{ l.usuario.email or "-" }}</td>
+        <td>{{ "Médico(a)" if l.usuario.tipo == "medico" else "Secretário(a)" }}</td>
+        <td>
+          {% if l.grupos %}
+            {{ l.grupos|join(", ") }}
+          {% else %}
+            <span class="badge bg-secondary">conta solo</span>
+          {% endif %}
+        </td>
+        <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<h5 class="mb-3">Grupos na plataforma</h5>
 <div class="row g-3 mb-4">
   <div class="col-md-3">
     <div class="card p-3">
