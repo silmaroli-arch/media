@@ -42,9 +42,7 @@
           {% endif %}
         </td>
         <td>
-          {% if l.custo %}
-            <a href="{{ url_for('dono.custo_ia_usuario', usuario_id=l.usuario.id) }}" class="btn btn-sm btn-outline-secondary text-nowrap">Ver chamadas</a>
-          {% endif %}
+          <a href="{{ url_for('dono.custo_ia_usuario', usuario_id=l.usuario.id) }}" class="btn btn-sm btn-outline-secondary text-nowrap">Ver chamadas</a>
         </td>
         <td>{{ l.usuario.email or "-" }}</td>
         <td>{{ "Médico(a)" if l.usuario.tipo == "medico" else "Secretário(a)" }}</td>
