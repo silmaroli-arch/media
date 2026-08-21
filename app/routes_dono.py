@@ -113,6 +113,40 @@ def configuracoes():
     return redirect(url_for("dono.dashboard"))
 
 
+# As 3 IAs suportadas hoje no chat de dúvidas do paciente (ver
+# app.ia_preparo._PROVEDORES_CHAT) - mantido também aqui para validar o
+# formulário sem precisar importar app.ia_preparo (evita import cruzado
+# desnecessário; são só nomes/strings, não lógica).
+PROVEDORES_CHAT_VALIDOS = ("Gemini", "ChatGPT", "Claude")
+
+
+@dono_bp.route("/configuracoes/ia-chat", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_ia_chat():
+    """Escolhe quais 2 das 3 IAs (Gemini/ChatGPT/Claude) respondem o chat
+    de dúvidas do paciente - ver PlataformaConfig.ia_chat_provedor_1/2 e
+    app.ia_preparo.responder_com_ia. A Claude continua sempre fazendo o
+    papel de árbitro/síntese quando as duas divergem, mesmo se não for
+    uma das duas escolhidas aqui - ver comentário em responder_com_ia."""
+    config = PlataformaConfig.obter()
+    provedor_1 = request.form.get("ia_chat_provedor_1")
+    provedor_2 = request.form.get("ia_chat_provedor_2")
+
+    if provedor_1 not in PROVEDORES_CHAT_VALIDOS or provedor_2 not in PROVEDORES_CHAT_VALIDOS:
+        flash("Selecione duas IAs válidas.", "danger")
+        return redirect(url_for("dono.dashboard"))
+    if provedor_1 == provedor_2:
+        flash("Escolha duas IAs diferentes para responder o chat de dúvidas.", "danger")
+        return redirect(url_for("dono.dashboard"))
+
+    config.ia_chat_provedor_1 = provedor_1
+    config.ia_chat_provedor_2 = provedor_2
+    db.session.commit()
+    flash(f"Chat de dúvidas do paciente agora responde com {provedor_1} e {provedor_2}.", "success")
+    return redirect(url_for("dono.dashboard"))
+
+
 @dono_bp.route("/grupos/<int:grupo_id>")
 @login_required
 @dono_required

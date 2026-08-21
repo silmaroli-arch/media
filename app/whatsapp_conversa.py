@@ -251,8 +251,9 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             pergunta=pergunta_texto,
             status="aguardando_aprovacao",
             resposta_sugerida_ia=resultado_ia["final"],
-            resposta_bruta_claude=resultado_ia["claude"],
-            resposta_bruta_chatgpt=resultado_ia["chatgpt"],
+            resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
+            resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
+            resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
             telefone_whatsapp=telefone,
         )
         db.session.add(pergunta_pendente_criada)

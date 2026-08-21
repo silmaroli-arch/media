@@ -83,19 +83,25 @@ def calcular_custo_usd(modelo, tokens_entrada, tokens_saida):
 
 def registrar_chamada_ia(
     tipo_uso, provedor, modelo, tokens_entrada, tokens_saida, sucesso,
-    usuario_id=None, paciente_id=None,
+    usuario_id=None, paciente_id=None, resposta_final_usada=None,
 ):
     """Persiste um `ChamadaIA` com o custo estimado já calculado - chamar
     logo depois de CADA tentativa a um provedor que chegou a receber uma
     resposta da API (mesmo que a chamada tenha falhado depois, ex.: JSON
     inválido - a chamada em si já gerou custo real no provedor). Não
     faz `db.session.commit()` sozinho - quem chama decide quando
-    persistir, junto com o resto da transação da requisição."""
+    persistir, junto com o resto da transação da requisição.
+
+    Devolve o objeto `ChamadaIA` criado (já adicionado à sessão, mas ainda
+    não commitado) - usado por app.ia_preparo.responder_com_ia para
+    marcar `resposta_final_usada` DEPOIS de decidir qual IA "venceu",
+    já que isso só é sabido depois que as duas IAs já responderam (a
+    própria chamada de registro acontece antes dessa decisão)."""
     from app.extensions import db
     from app.models import ChamadaIA
 
     custo = calcular_custo_usd(modelo, tokens_entrada, tokens_saida)
-    db.session.add(ChamadaIA(
+    chamada = ChamadaIA(
         usuario_id=usuario_id,
         paciente_id=paciente_id,
         tipo_uso=tipo_uso,
@@ -106,4 +112,7 @@ def registrar_chamada_ia(
         custo_estimado_usd=custo,
         preco_desconhecido=modelo is not None and custo is None,
         sucesso=sucesso,
-    ))
+        resposta_final_usada=resposta_final_usada,
+    )
+    db.session.add(chamada)
+    return chamada

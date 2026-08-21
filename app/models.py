@@ -25,12 +25,21 @@ class PlataformaConfig(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     # Quantos dias de trial uma clínica nova recebe ao se cadastrar.
     trial_dias = db.Column(db.Integer, nullable=False, default=14)
+    # Quais 2 das 3 IAs (Gemini/ChatGPT/Claude) respondem o chat de dúvidas
+    # do paciente (ver app.ia_preparo.responder_com_ia) - configurável pelo
+    # dono em /dono/configuracoes, junto com a tabela de preço por token em
+    # /dono/custo-ia para decidir com base em custo. A Claude continua
+    # SEMPRE fazendo o papel de árbitro/síntese quando as duas respostas
+    # divergem, mesmo quando não é uma das duas escolhidas aqui (decisão do
+    # dono, 2026-08-21) - ver comentário em responder_com_ia.
+    ia_chat_provedor_1 = db.Column(db.String(20), nullable=False, default="Claude")
+    ia_chat_provedor_2 = db.Column(db.String(20), nullable=False, default="ChatGPT")
 
     @classmethod
     def obter(cls):
         config = cls.query.first()
         if not config:
-            config = cls(trial_dias=14)
+            config = cls(trial_dias=14, ia_chat_provedor_1="Claude", ia_chat_provedor_2="ChatGPT")
             db.session.add(config)
             db.session.commit()
         return config
@@ -1220,6 +1229,11 @@ class PerguntaPendente(db.Model):
     # respondeu a esta pergunta específica.
     resposta_bruta_claude = db.Column(db.Text)
     resposta_bruta_chatgpt = db.Column(db.Text)
+    # Terceira coluna (Gemini) desde que o dono passou a poder escolher
+    # quais 2 das 3 IAs respondem o chat (ver PlataformaConfig.ia_chat_*) -
+    # só uma das três fica em branco por pergunta (a que não foi
+    # escolhida), nunca as três com conteúdo.
+    resposta_bruta_gemini = db.Column(db.Text)
     resposta = db.Column(db.Text)
     respondida_por = db.Column(db.String(150))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
@@ -1291,6 +1305,17 @@ class ChamadaIA(db.Model):
     custo_estimado_usd = db.Column(db.Numeric(12, 6), nullable=True)
     preco_desconhecido = db.Column(db.Boolean, nullable=False, default=False)
     sucesso = db.Column(db.Boolean, nullable=False, default=False)
+    # Só usado em tipo_uso == "chat_duvida_paciente", nas chamadas que são
+    # candidatas a resposta (Gemini/ChatGPT/Claude respondendo a pergunta
+    # em si — não as chamadas de arbitragem/síntese, que ficam None aqui
+    # por não se aplicar): True quando o texto desta chamada específica
+    # acabou (total ou parcialmente, via síntese/concatenação) na resposta
+    # que foi mostrada ao médico para aprovação; False quando foi
+    # consultada mas descartada (a outra IA venceu). None nas demais
+    # linhas (arbitragem/síntese, e todo o fluxo de importação de PDF, que
+    # já usa `sucesso` para esse mesmo propósito) - ver
+    # app.ia_preparo.responder_com_ia e dono/custo_ia_detalhe.html.
+    resposta_final_usada = db.Column(db.Boolean, nullable=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     usuario = db.relationship("Usuario")

@@ -86,11 +86,24 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS contato_emergencia_telefone VARCH
 -- PerguntaPendente.resposta_sugerida_ia em app/models.py).
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_sugerida_ia TEXT;
 
--- Guarda a resposta "crua" de cada IA (Claude e ChatGPT) separada do
--- rascunho final, pra tela de aprovação mostrar as duas lado a lado além
--- da junção (ver app.ia_preparo.responder_com_ia e medico/perguntas.html).
+-- Guarda a resposta "crua" de cada IA (Claude, ChatGPT e, desde que o
+-- dono passou a poder escolher quais 2 das 3 respondem, também Gemini)
+-- separada do rascunho final, pra tela de aprovação mostrar as duas lado
+-- a lado além da junção (ver app.ia_preparo.responder_com_ia e
+-- medico/perguntas.html).
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_claude TEXT;
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_chatgpt TEXT;
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_gemini TEXT;
+
+-- Quais 2 das 3 IAs respondem o chat de dúvidas do paciente, escolhidas
+-- pelo dono (ver app.models.PlataformaConfig, app.ia_preparo).
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS ia_chat_provedor_1 VARCHAR(20) NOT NULL DEFAULT 'Claude';
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS ia_chat_provedor_2 VARCHAR(20) NOT NULL DEFAULT 'ChatGPT';
+
+-- Marca, por chamada de IA do chat de dúvidas, se o texto dela acabou
+-- (total ou parcialmente) na resposta mostrada ao médico - ver
+-- app.models.ChamadaIA.resposta_final_usada.
+ALTER TABLE chamadas_ia ADD COLUMN IF NOT EXISTS resposta_final_usada BOOLEAN;
 
 -- Vinculo entre pergunta do chat e o agendamento/consulta especifico
 -- (ver ChatMensagem.agendamento_id em app/models.py) - permite ao medico

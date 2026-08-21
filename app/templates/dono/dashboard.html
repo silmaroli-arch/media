@@ -133,6 +133,36 @@
   </form>
 </div>
 
+<div class="card p-3 mb-4">
+  <h5 class="mb-1">IAs que respondem o chat de dúvidas do paciente</h5>
+  <p class="text-muted small mb-3">
+    Escolha quais 2 das 3 IAs disponíveis (Gemini, ChatGPT, Claude) respondem as dúvidas dos pacientes —
+    as duas são consultadas e comparadas antes de qualquer rascunho ir para a aprovação do médico. A
+    Claude continua sempre fazendo o papel de árbitro (decidindo se as duas respostas concordam e, se não,
+    propondo uma síntese), mesmo quando não é uma das duas escolhidas aqui. Veja o
+    <a href="{{ url_for('dono.custo_ia') }}">preço por token de cada uma</a> antes de decidir.
+  </p>
+  <form method="post" action="{{ url_for('dono.configuracoes_ia_chat') }}" class="d-flex align-items-end gap-2 flex-wrap">
+    <div>
+      <label class="form-label small mb-0">IA 1</label>
+      <select name="ia_chat_provedor_1" class="form-select" style="max-width: 160px">
+        {% for p in ["Gemini", "ChatGPT", "Claude"] %}
+        <option value="{{ p }}" {% if config.ia_chat_provedor_1 == p %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label small mb-0">IA 2</label>
+      <select name="ia_chat_provedor_2" class="form-select" style="max-width: 160px">
+        {% for p in ["Gemini", "ChatGPT", "Claude"] %}
+        <option value="{{ p }}" {% if config.ia_chat_provedor_2 == p %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Salvar</button>
+  </form>
+</div>
+
 <div class="card p-3">
   <table class="table table-hover">
     <thead><tr><th>Grupo</th><th>Membros</th><th>Médicos</th><th>Status</th><th>Vencimento</th><th>Criado em</th><th></th></tr></thead>

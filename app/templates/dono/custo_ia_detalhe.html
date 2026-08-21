@@ -42,7 +42,13 @@
           {% endif %}
         </td>
         <td>
-          {% if c.sucesso %}
+          {% if c.tipo_uso == "chat_duvida_paciente" and c.resposta_final_usada is not none %}
+            {% if c.resposta_final_usada %}
+              <span class="badge bg-success" title="O texto desta chamada acabou (total ou parcialmente) na resposta mostrada ao médico">usada na resposta</span>
+            {% else %}
+              <span class="badge bg-secondary" title="Consultada, mas a outra IA venceu (as duas concordaram e esta não foi a escolhida)">consultada, não usada</span>
+            {% endif %}
+          {% elif c.sucesso %}
             <span class="badge bg-success">ok</span>
           {% else %}
             <span class="badge bg-secondary" title="Resposta recebida (gerou custo), mas não foi a que acabou sendo usada">não aproveitada</span>

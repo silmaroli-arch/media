@@ -268,9 +268,11 @@ def chat():
                     resposta_sugerida_ia=resultado_ia["final"],
                     # Guardadas à parte para a tela de aprovação mostrar a
                     # resposta de cada IA lado a lado, além da junção
-                    # (ver medico/perguntas.html).
-                    resposta_bruta_claude=resultado_ia["claude"],
-                    resposta_bruta_chatgpt=resultado_ia["chatgpt"],
+                    # (ver medico/perguntas.html) - só as 2 escolhidas pelo
+                    # dono vêm preenchidas (ver app.ia_preparo.responder_com_ia).
+                    resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
+                    resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
+                    resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
                 )
                 db.session.add(pendente)
                 db.session.commit()

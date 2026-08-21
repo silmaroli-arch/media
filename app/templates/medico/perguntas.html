@@ -47,15 +47,30 @@
           <div id="aguardando-{{ p.id }}" class="accordion-collapse collapse show" data-bs-parent="#accordionAguardando">
             <div class="accordion-body">
               <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
+                {# Só mostra coluna pra IA que o dono escolheu pra esta pergunta
+                   (ver PlataformaConfig.ia_chat_provedor_1/2 em /dono/configuracoes) -
+                   normalmente 2 das 3 colunas abaixo ficam sem conteúdo (a IA
+                   que não foi escolhida naquele momento), e por isso ficam
+                   escondidas em vez de aparecer vazias/com "—". #}
                 <div class="row g-3 mb-2">
+                  {% if p.resposta_bruta_gemini %}
+                  <div class="col-md-4">
+                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do Gemini</label>
+                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_gemini }}</div>
+                  </div>
+                  {% endif %}
+                  {% if p.resposta_bruta_chatgpt %}
                   <div class="col-md-4">
                     <label class="form-label small text-muted mb-1 fw-semibold">Resposta do ChatGPT</label>
-                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_chatgpt or "—" }}</div>
+                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_chatgpt }}</div>
                   </div>
+                  {% endif %}
+                  {% if p.resposta_bruta_claude %}
                   <div class="col-md-4">
                     <label class="form-label small text-muted mb-1 fw-semibold">Resposta do Claude</label>
-                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_claude or "—" }}</div>
+                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_claude }}</div>
                   </div>
+                  {% endif %}
                   <div class="col-md-4">
                     <label class="form-label small text-muted mb-1 fw-semibold">Rascunho final (edite se precisar)</label>
                     <textarea name="resposta" class="form-control h-100" style="min-height: 8rem;" required>{{ p.resposta_sugerida_ia }}</textarea>
