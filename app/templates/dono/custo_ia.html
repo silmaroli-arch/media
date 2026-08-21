@@ -29,6 +29,41 @@
   <div class="text-muted small">R$ {{ "%.4f"|format(custo_total_geral|usd_para_brl) }}</div>
 </div>
 
+<details class="card p-3 mb-4">
+  <summary class="fw-bold" style="cursor: pointer;">Ver tabela de preço por token de cada IA</summary>
+  <p class="text-muted small mt-2 mb-2">
+    Preço público cobrado por cada provedor, por 1 milhão de tokens — é a partir daqui que o custo
+    estimado de cada chamada é calculado (ver <code>app/custo_ia.py</code>). Cotação usada para reais:
+    US$ 1,00 = R$ {{ "%.2f"|format(cotacao_usd_brl) }} (fixa, revisada manualmente).
+  </p>
+  <div class="table-responsive">
+  <table class="table table-sm table-hover mb-0">
+    <thead>
+      <tr>
+        <th>Modelo</th>
+        <th>Entrada (por 1M tokens)</th>
+        <th>Saída (por 1M tokens)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in precos_por_token %}
+      <tr>
+        <td class="small text-muted">{{ p.modelo }}</td>
+        <td>
+          US$ {{ "%.4f"|format(p.preco_entrada_usd) }}
+          <span class="text-muted small">(R$ {{ "%.4f"|format(p.preco_entrada_usd * cotacao_usd_brl) }})</span>
+        </td>
+        <td>
+          US$ {{ "%.4f"|format(p.preco_saida_usd) }}
+          <span class="text-muted small">(R$ {{ "%.4f"|format(p.preco_saida_usd * cotacao_usd_brl) }})</span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</details>
+
 <div class="card p-3">
   <table class="table table-hover">
     <thead>

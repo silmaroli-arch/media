@@ -7,6 +7,7 @@ from flask_login import login_required, current_user
 from app.extensions import db
 from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro
 from app.clinica_utils import verificar_vencimento_grupo
+from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 
 dono_bp = Blueprint("dono", __name__, url_prefix="/dono")
 
@@ -259,9 +260,25 @@ def custo_ia():
     custo_total_geral = sum(i["custo_total"] for i in linhas)
     tem_custo_desconhecido_geral = any(i["tem_custo_desconhecido"] for i in linhas)
 
+    # Tabela de preços por token, só para consulta (ver app.custo_ia) -
+    # ordenada por modelo, pra quem quiser conferir/entender de onde vem
+    # cada valor estimado acima, sem precisar abrir o código.
+    precos_por_token = sorted(
+        (
+            {
+                "modelo": modelo,
+                "preco_entrada_usd": preco_entrada,
+                "preco_saida_usd": preco_saida,
+            }
+            for modelo, (preco_entrada, preco_saida) in PRECOS_POR_MILHAO_TOKENS.items()
+        ),
+        key=lambda i: i["modelo"],
+    )
+
     return render_template(
         "dono/custo_ia.html", linhas=linhas, custo_total_geral=custo_total_geral,
         tem_custo_desconhecido_geral=tem_custo_desconhecido_geral,
+        precos_por_token=precos_por_token, cotacao_usd_brl=COTACAO_USD_PARA_BRL,
     )
 
 
