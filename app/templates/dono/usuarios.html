@@ -13,32 +13,23 @@
 </p>
 
 <div class="card p-3">
+  <div class="table-responsive">
   <table class="table table-hover">
     <thead>
       <tr>
         <th>Nome</th>
+        <th>Custo estimado de IA</th>
+        <th></th>
         <th>E-mail</th>
         <th>Tipo</th>
         <th>Grupo(s) de trabalho</th>
         <th>Cadastrado em</th>
-        <th>Custo estimado de IA</th>
-        <th></th>
       </tr>
     </thead>
     <tbody>
       {% for l in linhas %}
       <tr>
         <td>{{ l.usuario.nome }}</td>
-        <td>{{ l.usuario.email or "-" }}</td>
-        <td>{{ "Médico(a)" if l.usuario.tipo == "medico" else "Secretário(a)" }}</td>
-        <td>
-          {% if l.grupos %}
-            {{ l.grupos|join(", ") }}
-          {% else %}
-            <span class="badge bg-secondary">conta solo</span>
-          {% endif %}
-        </td>
-        <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
         <td>
           {% if l.custo %}
             US$ {{ "%.4f"|format(l.custo.custo_total) }}
@@ -52,14 +43,25 @@
         </td>
         <td>
           {% if l.custo %}
-            <a href="{{ url_for('dono.custo_ia_usuario', usuario_id=l.usuario.id) }}" class="btn btn-sm btn-outline-secondary">Ver chamadas</a>
+            <a href="{{ url_for('dono.custo_ia_usuario', usuario_id=l.usuario.id) }}" class="btn btn-sm btn-outline-secondary text-nowrap">Ver chamadas</a>
           {% endif %}
         </td>
+        <td>{{ l.usuario.email or "-" }}</td>
+        <td>{{ "Médico(a)" if l.usuario.tipo == "medico" else "Secretário(a)" }}</td>
+        <td>
+          {% if l.grupos %}
+            {{ l.grupos|join(", ") }}
+          {% else %}
+            <span class="badge bg-secondary">conta solo</span>
+          {% endif %}
+        </td>
+        <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
       </tr>
       {% else %}
       <tr><td colspan="7" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endblock %}
