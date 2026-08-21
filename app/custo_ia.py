@@ -48,6 +48,22 @@ PRECOS_POR_MILHAO_TOKENS = {
 }
 
 
+# Cotação fixa USD -> BRL, mantida à mão (nenhum provedor de IA cobra em
+# reais, e não vale a pena chamar uma API de cotação em tempo real só pra
+# uma exibição estimada) - revisar de tempos em tempos junto com a tabela
+# de preços acima. Ver ptax do Banco Central ou cotação comercial de
+# qualquer banco/corretora para atualizar.
+COTACAO_USD_PARA_BRL = 5.40
+
+
+def calcular_custo_brl(modelo, tokens_entrada, tokens_saida):
+    """Mesma estimativa de `calcular_custo_usd`, convertida pra reais pela
+    cotação fixa acima - devolve None nos mesmos casos (modelo não
+    cadastrado ou tokens ausentes)."""
+    custo_usd = calcular_custo_usd(modelo, tokens_entrada, tokens_saida)
+    return custo_usd * COTACAO_USD_PARA_BRL if custo_usd is not None else None
+
+
 def calcular_custo_usd(modelo, tokens_entrada, tokens_saida):
     """Devolve o custo estimado em dólares pra uma chamada, ou None se o
     modelo não estiver na tabela de preços acima (ex.: uma versão nova

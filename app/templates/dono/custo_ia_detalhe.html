@@ -36,6 +36,7 @@
         <td>
           {% if c.custo_estimado_usd is not none %}
             US$ {{ "%.6f"|format(c.custo_estimado_usd) }}
+            <span class="text-muted small">(R$ {{ "%.6f"|format(c.custo_estimado_usd|usd_para_brl) }})</span>
           {% else %}
             <span class="text-muted" title="Modelo sem preço cadastrado na tabela do sistema">desconhecido</span>
           {% endif %}

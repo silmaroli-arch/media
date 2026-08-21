@@ -25,6 +25,7 @@
     <div class="card p-3">
       <div class="text-muted small">Custo estimado de IA (total)</div>
       <div class="fs-3 fw-bold">US$ {{ "%.4f"|format(custo_total_usuarios) }}</div>
+      <div class="text-muted small">R$ {{ "%.4f"|format(custo_total_usuarios|usd_para_brl) }}</div>
     </div>
   </div>
 </div>
@@ -57,7 +58,7 @@
         <td>
           {% if l.custo %}
             US$ {{ "%.4f"|format(l.custo.custo_total) }}
-            <span class="text-muted small">({{ l.custo.total_chamadas }} chamada{{ "s" if l.custo.total_chamadas != 1 else "" }})</span>
+            <span class="text-muted small">(R$ {{ "%.4f"|format(l.custo.custo_total|usd_para_brl) }} · {{ l.custo.total_chamadas }} chamada{{ "s" if l.custo.total_chamadas != 1 else "" }})</span>
             {% if l.custo.tem_custo_desconhecido %}
               <span class="badge bg-warning text-dark ms-1" title="Uma ou mais chamadas com modelo sem preço cadastrado">parcial</span>
             {% endif %}

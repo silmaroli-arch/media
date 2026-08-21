@@ -225,6 +225,19 @@ def create_app():
             return valor.strftime("%H:%M")
         return str(valor)
 
+    @app.template_filter("usd_para_brl")
+    def usd_para_brl(valor_usd):
+        """Converte um valor em dólares (custo estimado de IA, ver
+        app.custo_ia) pra reais, pela cotação fixa mantida em
+        app.custo_ia.COTACAO_USD_PARA_BRL — usado nos painéis do dono pra
+        mostrar o custo estimado nas duas moedas, já que ninguém no Brasil
+        pensa em dólar no dia a dia. `None` passa direto (custo
+        desconhecido continua desconhecido nas duas moedas)."""
+        from app.custo_ia import COTACAO_USD_PARA_BRL
+        if valor_usd is None:
+            return None
+        return valor_usd * COTACAO_USD_PARA_BRL
+
     @app.context_processor
     def injetar_contexto_clinica():
         """Disponibiliza em todos os templates o GRUPO atual (o que

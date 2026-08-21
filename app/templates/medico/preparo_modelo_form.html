@@ -308,6 +308,10 @@
             extraídos preenchem o formulário pra você revisar — nada é salvo antes do Salvar.
           </p>
           <div id="alerta-erro-importar-xlsx" class="alert alert-danger d-none" role="alert"></div>
+          <div id="aviso-progresso-ia" class="alert alert-warning fw-bold text-center d-none" role="status">
+            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+            <span id="aviso-progresso-ia-texto"></span>
+          </div>
           <input type="file" name="arquivo_xlsx" id="input-arquivo-importar" class="form-control" accept=".xlsx,.pdf" required>
           <input type="hidden" name="texto_extraido_cliente" id="input-texto-extraido-cliente">
           <div class="form-check mt-2 d-none" id="opcao-usar-ia-wrapper">
@@ -368,6 +372,8 @@
     if (!formImportar) return;
     var botao = document.getElementById('btn-extrair-dados');
     var alerta = document.getElementById('alerta-erro-importar-xlsx');
+    var avisoProgressoIa = document.getElementById('aviso-progresso-ia');
+    var avisoProgressoIaTexto = document.getElementById('aviso-progresso-ia-texto');
     var inputArquivo = document.getElementById('input-arquivo-importar');
     var inputTextoCliente = document.getElementById('input-texto-extraido-cliente');
     var opcaoUsarIaWrapper = document.getElementById('opcao-usar-ia-wrapper');
@@ -392,6 +398,17 @@
     function restaurarBotao() {
       botao.disabled = false;
       botao.innerHTML = botao.dataset.textoOriginal;
+      avisoProgressoIa.classList.add('d-none');
+    }
+
+    // Deixa bem visível qual IA está sendo tentada no momento - além do
+    // texto (discreto) dentro do botão, mostra um aviso grande e destacado
+    // no corpo do popup, já que o processo pode levar bastante tempo e a
+    // pessoa precisa perceber que algo está de fato acontecendo (e qual
+    // provedor), não só um spinner genérico.
+    function mostrarProgressoDeIa(provedor) {
+      avisoProgressoIaTexto.textContent = 'Tentando extrair os dados com ' + provedor + '... isso pode levar até 1 minuto.';
+      avisoProgressoIa.classList.remove('d-none');
     }
 
     // Carrega o pdf.js (biblioteca da Mozilla para ler PDF no navegador) só
@@ -471,6 +488,7 @@
             botao.innerHTML =
               '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Tentando extrair com ' +
               dados.provedor + '...';
+            mostrarProgressoDeIa(dados.provedor);
           }
         });
       }

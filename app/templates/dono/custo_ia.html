@@ -26,6 +26,7 @@
 <div class="card p-3 mb-4" style="max-width: 320px;">
   <div class="text-muted small">Custo total estimado</div>
   <div class="fs-3 fw-bold">US$ {{ "%.4f"|format(custo_total_geral) }}</div>
+  <div class="text-muted small">R$ {{ "%.4f"|format(custo_total_geral|usd_para_brl) }}</div>
 </div>
 
 <div class="card p-3">
@@ -53,6 +54,7 @@
         <td>{{ l.total_chamadas }}</td>
         <td>
           US$ {{ "%.4f"|format(l.custo_total) }}
+          <span class="text-muted small">(R$ {{ "%.4f"|format(l.custo_total|usd_para_brl) }})</span>
           {% if l.tem_custo_desconhecido %}
             <span class="badge bg-warning text-dark ms-1" title="Uma ou mais chamadas com modelo sem preço cadastrado">parcial</span>
           {% endif %}
