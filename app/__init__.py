@@ -236,7 +236,14 @@ def create_app():
         from app.custo_ia import COTACAO_USD_PARA_BRL
         if valor_usd is None:
             return None
-        return valor_usd * COTACAO_USD_PARA_BRL
+        # `valor_usd` pode vir como `Decimal` quando lido direto de uma
+        # coluna `db.Numeric` (ex.: ChamadaIA.custo_estimado_usd em
+        # dono/custo_ia_detalhe.html) em vez de já ter passado por
+        # `float()` (como os totais somados em Python em routes_dono.py) -
+        # Decimal * float é um TypeError em Python (visto em produção,
+        # 2026-08-21: 500 ao abrir o detalhe de chamadas de um usuário com
+        # custo real registrado). `float()` aqui cobre os dois casos.
+        return float(valor_usd) * COTACAO_USD_PARA_BRL
 
     @app.context_processor
     def injetar_contexto_clinica():
