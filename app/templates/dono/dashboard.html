@@ -4,217 +4,271 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h3 class="mb-0">Painel do dono</h3>
   <div class="d-flex gap-2">
-    <a href="{{ url_for('dono.custo_ia') }}" class="btn btn-outline-secondary btn-sm">Custo estimado de IA</a>
+    <a href="{{ url_for('dono.custo_ia') }}" class="btn btn-outline-secondary btn-sm">Custo estimado de IA (detalhado)</a>
   </div>
 </div>
 
-<div class="row g-3 mb-4">
-  <div class="col-md-4">
-    <div class="card p-3">
-      <div class="text-muted small">Usuários cadastrados (equipe)</div>
-      <div class="fs-3 fw-bold">{{ linhas_usuarios|length }}</div>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="card p-3">
-      <div class="text-muted small">Grupos de trabalho criados</div>
-      <div class="fs-3 fw-bold">{{ resumo.total }}</div>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="card p-3">
-      <div class="text-muted small">Custo estimado de IA (total)</div>
-      <div class="fs-3 fw-bold">US$ {{ "%.4f"|format(custo_total_usuarios) }}</div>
-      <div class="text-muted small">R$ {{ "%.4f"|format(custo_total_usuarios|usd_para_brl) }}</div>
-    </div>
-  </div>
-</div>
+{# Reorganização em abas (pedido do Silvan: "muita informação na tela
+   principal") - o conteúdo continua todo aqui, só dividido em abas em vez
+   de tudo empilhado numa página só. São abas client-side (Bootstrap
+   nav-tabs, sem rota nova nem reload) - todos os links/forms/urls
+   continuam exatamente como estavam antes, só reagrupados. #}
+<ul class="nav nav-tabs mb-4" id="donoTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="tab-visao-geral" data-bs-toggle="tab" data-bs-target="#painel-visao-geral" type="button" role="tab" aria-controls="painel-visao-geral" aria-selected="true">
+      <i class="bi bi-speedometer2 me-1"></i>Visão geral
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-usuarios" data-bs-toggle="tab" data-bs-target="#painel-usuarios" type="button" role="tab" aria-controls="painel-usuarios" aria-selected="false">
+      <i class="bi bi-people me-1"></i>Usuários
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-grupos" data-bs-toggle="tab" data-bs-target="#painel-grupos" type="button" role="tab" aria-controls="painel-grupos" aria-selected="false">
+      <i class="bi bi-diagram-3 me-1"></i>Grupos
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-custo-ia" data-bs-toggle="tab" data-bs-target="#painel-custo-ia" type="button" role="tab" aria-controls="painel-custo-ia" aria-selected="false">
+      <i class="bi bi-robot me-1"></i>Custo de IA
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-config" data-bs-toggle="tab" data-bs-target="#painel-config" type="button" role="tab" aria-controls="painel-config" aria-selected="false">
+      <i class="bi bi-sliders me-1"></i>Configurações
+    </button>
+  </li>
+</ul>
 
-<div class="card p-3 mb-4">
-  <h6 class="mb-2">Ver saldo/gasto real em cada provedor</h6>
-  <p class="text-muted small mb-2">
-    O valor acima é uma ESTIMATIVA — para o saldo de crédito e o gasto real cobrado por cada provedor,
-    acesse direto o painel de cada um (login próprio, fora deste sistema):
-  </p>
-  <div class="d-flex flex-wrap gap-2">
-    <a href="https://aistudio.google.com/usage" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
-      Google AI Studio (Gemini) <i class="bi bi-box-arrow-up-right"></i>
-    </a>
-    <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
-      OpenAI Platform (ChatGPT) <i class="bi bi-box-arrow-up-right"></i>
-    </a>
-    <a href="https://platform.claude.com/settings/billing" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
-      Claude Platform (Anthropic) <i class="bi bi-box-arrow-up-right"></i>
-    </a>
-  </div>
-</div>
+<div class="tab-content" id="donoTabsContent">
 
-<h5 class="mb-3">Usuários cadastrados</h5>
-<p class="text-muted small">
-  Todas as contas de médico(a)/secretário(a) da plataforma, independente de terem um grupo de trabalho ou
-  não — desde que uma conta nova deixou de criar um grupo automaticamente, ela pode existir "solo" (usa o
-  sistema sozinha, sem trial/vencimento/bloqueio), por isso os números de Grupo abaixo podem ficar baixos/
-  zerados mesmo com gente cadastrada e usando o sistema normalmente.
-</p>
-<div class="card p-3 mb-4">
-  <div class="table-responsive">
-  <table class="table table-hover">
-    <thead>
-      <tr>
-        <th>Nome</th>
-        <th>Custo estimado de IA</th>
-        <th></th>
-        <th>E-mail</th>
-        <th>Tipo</th>
-        <th>Grupo(s) de trabalho</th>
-        <th>Cadastrado em</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for l in linhas_usuarios %}
-      <tr>
-        <td>{{ l.usuario.nome }}</td>
-        <td>
-          {% if l.custo %}
-            US$ {{ "%.4f"|format(l.custo.custo_total) }}
-            <span class="text-muted small">(R$ {{ "%.4f"|format(l.custo.custo_total|usd_para_brl) }} · {{ l.custo.total_chamadas }} chamada{{ "s" if l.custo.total_chamadas != 1 else "" }})</span>
-            {% if l.custo.tem_custo_desconhecido %}
-              <span class="badge bg-warning text-dark ms-1" title="Uma ou mais chamadas com modelo sem preço cadastrado">parcial</span>
-            {% endif %}
+  <div class="tab-pane fade show active" id="painel-visao-geral" role="tabpanel" aria-labelledby="tab-visao-geral">
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <div class="card p-3">
+          <div class="text-muted small">Usuários cadastrados (equipe)</div>
+          <div class="fs-3 fw-bold">{{ linhas_usuarios|length }}</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card p-3">
+          <div class="text-muted small">Grupos de trabalho criados</div>
+          <div class="fs-3 fw-bold">{{ resumo.total }}</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card p-3">
+          <div class="text-muted small">Custo estimado de IA (total)</div>
+          <div class="fs-3 fw-bold">US$ {{ "%.4f"|format(custo_total_usuarios) }}</div>
+          <div class="text-muted small">R$ {{ "%.4f"|format(custo_total_usuarios|usd_para_brl) }}</div>
+        </div>
+      </div>
+    </div>
+
+    <h5 class="mb-3">Grupos na plataforma</h5>
+    <div class="row g-3">
+      <div class="col-md-3">
+        <div class="card p-3">
+          <div class="text-muted small">Total de grupos</div>
+          <div class="fs-3 fw-bold">{{ resumo.total }}</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card p-3">
+          <div class="text-muted small">Ativos</div>
+          <div class="fs-3 fw-bold text-success">{{ resumo.ativas }}</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card p-3">
+          <div class="text-muted small">Em trial</div>
+          <div class="fs-3 fw-bold text-info">{{ resumo.trial }}</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card p-3">
+          <div class="text-muted small">Inadimplentes / Bloqueados</div>
+          <div class="fs-3 fw-bold text-danger">{{ resumo.inadimplentes + resumo.bloqueadas }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-pane fade" id="painel-usuarios" role="tabpanel" aria-labelledby="tab-usuarios">
+    <h5 class="mb-3">Usuários cadastrados</h5>
+    <p class="text-muted small">
+      Todas as contas de médico(a)/secretário(a) da plataforma, independente de terem um grupo de trabalho ou
+      não — desde que uma conta nova deixou de criar um grupo automaticamente, ela pode existir "solo" (usa o
+      sistema sozinha, sem trial/vencimento/bloqueio), por isso os números de Grupo abaixo podem ficar baixos/
+      zerados mesmo com gente cadastrada e usando o sistema normalmente.
+    </p>
+    <div class="card p-3">
+      <div class="table-responsive">
+      <table class="table table-hover">
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Custo estimado de IA</th>
+            <th></th>
+            <th>E-mail</th>
+            <th>Tipo</th>
+            <th>Grupo(s) de trabalho</th>
+            <th>Cadastrado em</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in linhas_usuarios %}
+          <tr>
+            <td>{{ l.usuario.nome }}</td>
+            <td>
+              {% if l.custo %}
+                US$ {{ "%.4f"|format(l.custo.custo_total) }}
+                <span class="text-muted small">(R$ {{ "%.4f"|format(l.custo.custo_total|usd_para_brl) }} · {{ l.custo.total_chamadas }} chamada{{ "s" if l.custo.total_chamadas != 1 else "" }})</span>
+                {% if l.custo.tem_custo_desconhecido %}
+                  <span class="badge bg-warning text-dark ms-1" title="Uma ou mais chamadas com modelo sem preço cadastrado">parcial</span>
+                {% endif %}
+              {% else %}
+                <span class="text-muted small">sem chamadas</span>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{{ url_for('dono.custo_ia_usuario', usuario_id=l.usuario.id) }}" class="btn btn-sm btn-outline-secondary text-nowrap">Ver chamadas</a>
+            </td>
+            <td>{{ l.usuario.email or "-" }}</td>
+            <td>{{ "Médico(a)" if l.usuario.tipo == "medico" else "Secretário(a)" }}</td>
+            <td>
+              {% if l.grupos %}
+                {{ l.grupos|join(", ") }}
+              {% else %}
+                <span class="badge bg-secondary">conta solo</span>
+              {% endif %}
+            </td>
+            <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
+          </tr>
           {% else %}
-            <span class="text-muted small">sem chamadas</span>
-          {% endif %}
-        </td>
-        <td>
-          <a href="{{ url_for('dono.custo_ia_usuario', usuario_id=l.usuario.id) }}" class="btn btn-sm btn-outline-secondary text-nowrap">Ver chamadas</a>
-        </td>
-        <td>{{ l.usuario.email or "-" }}</td>
-        <td>{{ "Médico(a)" if l.usuario.tipo == "medico" else "Secretário(a)" }}</td>
-        <td>
-          {% if l.grupos %}
-            {{ l.grupos|join(", ") }}
+          <tr><td colspan="7" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-pane fade" id="painel-grupos" role="tabpanel" aria-labelledby="tab-grupos">
+    <h5 class="mb-3">Grupos na plataforma</h5>
+    <div class="card p-3">
+      <table class="table table-hover">
+        <thead><tr><th>Grupo</th><th>Membros</th><th>Médicos</th><th>Status</th><th>Vencimento</th><th>Criado em</th><th></th></tr></thead>
+        <tbody>
+          {% for g in grupos %}
+          <tr>
+            <td>{{ g.nome }}</td>
+            <td>{{ g.medicos_e_secretarias|length }}</td>
+            <td>{{ g.medicos_distintos|length }}</td>
+            <td>
+              <span class="badge
+                {% if g.status == 'ativa' %}bg-success
+                {% elif g.status == 'trial' %}bg-info
+                {% elif g.status == 'inadimplente' %}bg-warning text-dark
+                {% else %}bg-danger{% endif %}">{{ g.status }}</span>
+            </td>
+            <td>
+              {% if g.data_vencimento %}
+                {{ g.data_vencimento.strftime('%d/%m/%Y') }}
+                {% if g.data_vencimento < hoje and g.status not in ['bloqueada'] %}
+                  <span class="badge bg-warning text-dark ms-1">vencida</span>
+                {% endif %}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>{{ g.criado_em.strftime('%d/%m/%Y') }}</td>
+            <td><a href="{{ url_for('dono.grupo_detalhe', grupo_id=g.id) }}" class="btn btn-sm btn-outline-secondary">Gerenciar</a></td>
+          </tr>
           {% else %}
-            <span class="badge bg-secondary">conta solo</span>
-          {% endif %}
-        </td>
-        <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="7" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+          <tr><td colspan="7" class="text-muted text-center">Nenhum grupo cadastrado ainda.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
-</div>
 
-<h5 class="mb-3">Grupos na plataforma</h5>
-<div class="row g-3 mb-4">
-  <div class="col-md-3">
+  <div class="tab-pane fade" id="painel-custo-ia" role="tabpanel" aria-labelledby="tab-custo-ia">
+    <p class="text-muted small">
+      Veja a estimativa de custo por usuário na aba "Usuários", ou o
+      <a href="{{ url_for('dono.custo_ia') }}">detalhamento completo por pessoa e chamada</a>
+      (inclui a tabela de preço por token de cada IA).
+    </p>
     <div class="card p-3">
-      <div class="text-muted small">Total de grupos</div>
-      <div class="fs-3 fw-bold">{{ resumo.total }}</div>
+      <h6 class="mb-2">Ver saldo/gasto real em cada provedor</h6>
+      <p class="text-muted small mb-2">
+        As estimativas acima são calculadas a partir dos tokens consumidos — para o saldo de crédito e o
+        gasto real cobrado por cada provedor, acesse direto o painel de cada um (login próprio, fora deste
+        sistema):
+      </p>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="https://aistudio.google.com/usage" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+          Google AI Studio (Gemini) <i class="bi bi-box-arrow-up-right"></i>
+        </a>
+        <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+          OpenAI Platform (ChatGPT) <i class="bi bi-box-arrow-up-right"></i>
+        </a>
+        <a href="https://platform.claude.com/settings/billing" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+          Claude Platform (Anthropic) <i class="bi bi-box-arrow-up-right"></i>
+        </a>
+      </div>
     </div>
   </div>
-  <div class="col-md-3">
-    <div class="card p-3">
-      <div class="text-muted small">Ativos</div>
-      <div class="fs-3 fw-bold text-success">{{ resumo.ativas }}</div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card p-3">
-      <div class="text-muted small">Em trial</div>
-      <div class="fs-3 fw-bold text-info">{{ resumo.trial }}</div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card p-3">
-      <div class="text-muted small">Inadimplentes / Bloqueados</div>
-      <div class="fs-3 fw-bold text-danger">{{ resumo.inadimplentes + resumo.bloqueadas }}</div>
-    </div>
-  </div>
-</div>
 
-<div class="card p-3 mb-4">
-  <h5 class="mb-1">Configuração do trial</h5>
-  <p class="text-muted small mb-3">
-    Todo grupo novo, criado ao se cadastrar em <code>/cadastro</code> (ou ao criar um grupo adicional),
-    entra com esse número de dias de trial. Quando a data de vencimento passa e o grupo ainda está em
-    trial, o status muda automaticamente para <strong>inadimplente</strong> (o grupo continua acessando
-    normalmente — bloquear é sempre uma decisão sua).
-  </p>
-  <form method="post" action="{{ url_for('dono.configuracoes') }}" class="d-flex align-items-end gap-2">
-    <div>
-      <label class="form-label small mb-0">Dias de trial</label>
-      <input type="number" name="trial_dias" min="1" class="form-control" style="max-width: 120px" value="{{ config.trial_dias }}" required>
+  <div class="tab-pane fade" id="painel-config" role="tabpanel" aria-labelledby="tab-config">
+    <div class="card p-3 mb-4">
+      <h5 class="mb-1">Configuração do trial</h5>
+      <p class="text-muted small mb-3">
+        Todo grupo novo, criado ao se cadastrar em <code>/cadastro</code> (ou ao criar um grupo adicional),
+        entra com esse número de dias de trial. Quando a data de vencimento passa e o grupo ainda está em
+        trial, o status muda automaticamente para <strong>inadimplente</strong> (o grupo continua acessando
+        normalmente — bloquear é sempre uma decisão sua).
+      </p>
+      <form method="post" action="{{ url_for('dono.configuracoes') }}" class="d-flex align-items-end gap-2">
+        <div>
+          <label class="form-label small mb-0">Dias de trial</label>
+          <input type="number" name="trial_dias" min="1" class="form-control" style="max-width: 120px" value="{{ config.trial_dias }}" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </form>
     </div>
-    <button type="submit" class="btn btn-primary">Salvar</button>
-  </form>
-</div>
 
-<div class="card p-3 mb-4">
-  <h5 class="mb-1">IAs que respondem o chat de dúvidas do paciente</h5>
-  <p class="text-muted small mb-3">
-    Escolha quais 2 das 3 IAs disponíveis (Gemini, ChatGPT, Claude) respondem as dúvidas dos pacientes —
-    as duas são consultadas e comparadas antes de qualquer rascunho ir para a aprovação do médico. A
-    Claude continua sempre fazendo o papel de árbitro (decidindo se as duas respostas concordam e, se não,
-    propondo uma síntese), mesmo quando não é uma das duas escolhidas aqui. Veja o
-    <a href="{{ url_for('dono.custo_ia') }}">preço por token de cada uma</a> antes de decidir.
-  </p>
-  <form method="post" action="{{ url_for('dono.configuracoes_ia_chat') }}" class="d-flex align-items-end gap-2 flex-wrap">
-    <div>
-      <label class="form-label small mb-0">IA 1</label>
-      <select name="ia_chat_provedor_1" class="form-select" style="max-width: 160px">
-        {% for p in ["Gemini", "ChatGPT", "Claude"] %}
-        <option value="{{ p }}" {% if config.ia_chat_provedor_1 == p %}selected{% endif %}>{{ p }}</option>
-        {% endfor %}
-      </select>
+    <div class="card p-3">
+      <h5 class="mb-1">IAs que respondem o chat de dúvidas do paciente</h5>
+      <p class="text-muted small mb-3">
+        Escolha quais 2 das 3 IAs disponíveis (Gemini, ChatGPT, Claude) respondem as dúvidas dos pacientes —
+        as duas são consultadas e comparadas antes de qualquer rascunho ir para a aprovação do médico. A
+        Claude continua sempre fazendo o papel de árbitro (decidindo se as duas respostas concordam e, se não,
+        propondo uma síntese), mesmo quando não é uma das duas escolhidas aqui. Veja o
+        <a href="{{ url_for('dono.custo_ia') }}">preço por token de cada uma</a> antes de decidir.
+      </p>
+      <form method="post" action="{{ url_for('dono.configuracoes_ia_chat') }}" class="d-flex align-items-end gap-2 flex-wrap">
+        <div>
+          <label class="form-label small mb-0">IA 1</label>
+          <select name="ia_chat_provedor_1" class="form-select" style="max-width: 160px">
+            {% for p in ["Gemini", "ChatGPT", "Claude"] %}
+            <option value="{{ p }}" {% if config.ia_chat_provedor_1 == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label small mb-0">IA 2</label>
+          <select name="ia_chat_provedor_2" class="form-select" style="max-width: 160px">
+            {% for p in ["Gemini", "ChatGPT", "Claude"] %}
+            <option value="{{ p }}" {% if config.ia_chat_provedor_2 == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </form>
     </div>
-    <div>
-      <label class="form-label small mb-0">IA 2</label>
-      <select name="ia_chat_provedor_2" class="form-select" style="max-width: 160px">
-        {% for p in ["Gemini", "ChatGPT", "Claude"] %}
-        <option value="{{ p }}" {% if config.ia_chat_provedor_2 == p %}selected{% endif %}>{{ p }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <button type="submit" class="btn btn-primary">Salvar</button>
-  </form>
-</div>
+  </div>
 
-<div class="card p-3">
-  <table class="table table-hover">
-    <thead><tr><th>Grupo</th><th>Membros</th><th>Médicos</th><th>Status</th><th>Vencimento</th><th>Criado em</th><th></th></tr></thead>
-    <tbody>
-      {% for g in grupos %}
-      <tr>
-        <td>{{ g.nome }}</td>
-        <td>{{ g.medicos_e_secretarias|length }}</td>
-        <td>{{ g.medicos_distintos|length }}</td>
-        <td>
-          <span class="badge
-            {% if g.status == 'ativa' %}bg-success
-            {% elif g.status == 'trial' %}bg-info
-            {% elif g.status == 'inadimplente' %}bg-warning text-dark
-            {% else %}bg-danger{% endif %}">{{ g.status }}</span>
-        </td>
-        <td>
-          {% if g.data_vencimento %}
-            {{ g.data_vencimento.strftime('%d/%m/%Y') }}
-            {% if g.data_vencimento < hoje and g.status not in ['bloqueada'] %}
-              <span class="badge bg-warning text-dark ms-1">vencida</span>
-            {% endif %}
-          {% else %}
-            -
-          {% endif %}
-        </td>
-        <td>{{ g.criado_em.strftime('%d/%m/%Y') }}</td>
-        <td><a href="{{ url_for('dono.grupo_detalhe', grupo_id=g.id) }}" class="btn btn-sm btn-outline-secondary">Gerenciar</a></td>
-      </tr>
-      {% else %}
-      <tr><td colspan="7" class="text-muted text-center">Nenhum grupo cadastrado ainda.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
 </div>
 {% endblock %}
