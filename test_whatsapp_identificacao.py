@@ -5,7 +5,7 @@ CPF, depois a data), escolha do exame em foco quando há mais de um
 ativo, o menu de opções (ver preparo / fazer pergunta / trocar de exame)
 e expiração da sessão de conversa por inatividade — direto na camada de
 lógica (sem passar pelo webhook/Twilio, que já tem seu próprio teste de
-assinatura em test_whatsapp_webhook_assinatura.py). O fluxo completo de
+assinatura (Meta Cloud API) em test_whatsapp_webhook_assinatura.py). O fluxo completo de
 "2) Fazer uma pergunta" (IA/FAQ/alimento/medicamento/encaminhamento) tem
 seu próprio teste em test_whatsapp_pergunta.py - aqui só confirma que a
 opção 2 entra no modo de "aguardando a pergunta"."""
@@ -26,8 +26,12 @@ def checar(nome, condicao):
 
 with app.app_context():
     checar(
-        'normalizar_telefone_whatsapp remove o prefixo "whatsapp:"',
-        normalizar_telefone_whatsapp("whatsapp:+5527999998888") == "+5527999998888",
+        "normalizar_telefone_whatsapp acrescenta o \"+\" (a Meta manda só dígitos, sem prefixo)",
+        normalizar_telefone_whatsapp("5527999998888") == "+5527999998888",
+    )
+    checar(
+        "normalizar_telefone_whatsapp não duplica o \"+\" se já vier com ele",
+        normalizar_telefone_whatsapp("+5527999998888") == "+5527999998888",
     )
 
     telefone_joao = "+5527900001111"

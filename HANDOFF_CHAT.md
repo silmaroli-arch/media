@@ -11,7 +11,7 @@
 - Sem framework de migração: alterações de schema são feitas manualmente em `migrar_banco.py` (comandos `ALTER TABLE ... ADD/DROP COLUMN IF [NOT] EXISTS`, idempotentes), executados automaticamente a cada deploy via `.platform/hooks/predeploy/01_migrar_banco.sh`.
   - **Cuidado**: o parser desse script quebra o SQL por `;` de forma simples. Comentários no arquivo NÃO podem conter `;` no meio do texto, ou o deploy quebra com `psycopg.errors.SyntaxError`.
 - Testes: arquivos `test_*.py` na raiz do repo, executados diretamente com `python test_arquivo.py` (não é pytest) contra um banco Postgres local recriado do zero + `seed.py` (popula dados de demonstração).
-- **Nunca** compartilhar o conteúdo do `.env` (chaves Twilio/OpenAI/Anthropic/Gemini, string de conexão do banco) fora dos canais seguros da empresa.
+- **Nunca** compartilhar o conteúdo do `.env` (chaves Meta/OpenAI/Anthropic/Gemini, string de conexão do banco) fora dos canais seguros da empresa.
 
 ## Migração de arquitetura (Fatias 1–6) — concluída em sua maior parte
 
@@ -22,13 +22,24 @@ O sistema passou por uma reformulação profunda: o conceito antigo de "Empresa/
 - **Fatia 7 (WhatsApp)**: frente mais recente e ativa — ver detalhe abaixo.
 - Débito técnico conhecido da Fatia 5: a antiga tela de editar membro da equipe (nome/CPF/endereço/CRM) não tem equivalente ainda no fluxo novo baseado em Grupo.
 
-## Fatia 7 — Área de WhatsApp (em andamento)
+## Fatia 7 — Área de WhatsApp (em andamento — migrada para Meta Cloud API direta)
 
-Objetivo: paciente se identifica e conversa pelo WhatsApp (via Twilio) para tirar dúvidas sobre preparo de exame; a equipe responde pelo `/equipe/perguntas` o que a IA não resolveu, e a resposta pode voltar automaticamente pelo WhatsApp.
+Objetivo: paciente se identifica e conversa pelo WhatsApp para tirar dúvidas sobre preparo de exame; a equipe responde pelo `/equipe/perguntas` o que a IA não resolveu, e a resposta pode voltar automaticamente pelo WhatsApp.
 
-### O que já está pronto e funcionando em `media-dev`
+**Decisão tomada (sessão de 2026-08-24)**: depois de comparar custo/complexidade
+(Twilio cobra uma sobretaxa própria por mensagem além da tarifa da Meta; indo direto à
+Meta essa sobretaxa some, mas a aplicação passa a lidar sozinha com retry/templates/erros
+que a Twilio abstraía), **o Silvan decidiu migrar de Twilio para a Meta Cloud API
+direta**. A migração já foi **implementada e testada nesta sessão** (código pronto,
+42/42 testes passando) — ver `PLANO_WHATSAPP.md`, seção "Migração para Meta Cloud API
+direta", para o detalhe técnico completo. Falta só o Silvan configurar a conta/
+credenciais reais na Meta (checklist abaixo) para o recurso voltar a funcionar em
+`media-dev` — sem essas variáveis, o envio/recebimento fica pulado (mesmo comportamento
+de "falha aberta" que já existia com a Twilio), não quebra o resto do sistema.
 
-1. **Schema e webhook**: `ConversaWhatsapp` (estado da conversa por telefone, expira em 4h), `ChatMensagem.canal`, validação de assinatura Twilio no webhook (`app/routes_whatsapp.py`).
+### O que já está pronto (lógica de conversa, inalterada pela migração de provedor)
+
+1. **Schema**: `ConversaWhatsapp` (estado da conversa por telefone, expira em 4h), `ChatMensagem.canal`.
 2. **Identificação do paciente em duas mensagens**: primeiro CPF (aceita com ou sem máscara, valida só formato — não dígito verificador, pois é busca de cadastro já existente), depois data de nascimento.
 3. **Menu de opções dinâmico** (`app/whatsapp_conversa.py`, função `_menu_opcoes`):
    - "1) Ver informações do preparo"
@@ -36,37 +47,59 @@ Objetivo: paciente se identifica e conversa pelo WhatsApp (via Twilio) para tira
    - "3) Trocar de exame" — só aparece se o paciente tiver mais de um exame ativo.
    - **Enquanto o paciente tem uma `PerguntaPendente` sem resposta** (status `pendente` ou `aguardando_aprovacao`), o menu inteiro fica escondido — qualquer mensagem recebe só o aviso "Sua pergunta ainda está sendo respondida pela equipe..." (`_tem_pergunta_pendente`). O menu volta a aparecer normalmente assim que a pergunta é respondida.
 4. **Fazer uma pergunta pelo WhatsApp** reaproveita o mesmo motor de IA/FAQ da área web do paciente (`_responder_pergunta`): tenta IA primeiro (fica pendente de aprovação da equipe), depois FAQ cadastrada, depois respostas prontas de alimento/medicamento, por último cria `PerguntaPendente` para resposta manual.
-5. **Resposta automática de volta pelo WhatsApp** (`app/whatsapp_envio.py` + `app/routes_medico.py:perguntas_responder`): quando a equipe responde uma pergunta que veio do WhatsApp, tenta mandar a resposta de volta automaticamente pelo mesmo número via API de envio da Twilio.
-   - Usa um **Content Template** da Twilio (`TWILIO_CONTENT_SID_RESPOSTA`) porque o WhatsApp exige template aprovado pela Meta para mensagens iniciadas pela empresa fora da janela de 24h da última mensagem do paciente. Texto livre (`body`) só funciona dentro dessa janela — mantido como fallback.
-   - **O texto exibido ao paciente quando o template está configurado vem do próprio template aprovado na Twilio, não do parâmetro `body` do código.** O template atual (`resposta_whatsapp`) só tem `{{1}}`=pergunta e `{{2}}`=resposta — **não inclui o menu**; adicionar o menu exigiria um novo template com 3 variáveis e nova rodada de aprovação da Meta (decisão do Silvan: adiado por ora). O paciente volta a ver o menu normalmente na próxima mensagem que mandar depois da resposta.
+5. **Resposta automática de volta pelo WhatsApp** (`app/whatsapp_envio.py` + `app/routes_medico.py:perguntas_responder`): quando a equipe responde uma pergunta que veio do WhatsApp, tenta mandar a resposta de volta automaticamente pelo mesmo número, agora via Graph API da Meta direto.
+   - Usa um **template aprovado na Meta** (`WHATSAPP_META_TEMPLATE_RESPOSTA`) porque o WhatsApp exige template aprovado para mensagens iniciadas pela empresa fora da janela de 24h da última mensagem do paciente. Texto livre só funciona dentro dessa janela — mantido como fallback.
+   - **O texto exibido ao paciente quando o template está configurado vem do próprio template aprovado, não do texto livre do código.** O template atual (2 variáveis: `{{1}}`=pergunta, `{{2}}`=resposta) **não inclui o menu**; adicionar o menu exigiria um novo template com 3 variáveis e nova rodada de aprovação (decisão do Silvan: adiado por ora). O paciente volta a ver o menu normalmente na próxima mensagem que mandar depois da resposta.
 
-### Infraestrutura configurada
+### O que MUDOU na migração desta sessão (Twilio → Meta direta)
+
+- `app/routes_whatsapp.py` (webhook): agora precisa de handshake **GET** de verificação
+  (`hub.mode`/`hub.verify_token`/`hub.challenge`), e valida a assinatura de cada **POST**
+  via `X-Hub-Signature-256` (HMAC-SHA256 do corpo cru, com o App Secret) em vez do
+  `X-Twilio-Signature` da Twilio. Payload é JSON aninhado
+  (`entry[].changes[].value.messages[]`), não mais form-encoded.
+- `app/whatsapp_envio.py` (envio): chama `POST /{phone_number_id}/messages` na Graph API
+  da Meta direto (usando `requests`, já uma dependência do projeto), em vez do SDK
+  `twilio` (removido de `requirements.txt`).
+- `app/whatsapp_conversa.py`: `normalizar_telefone_whatsapp` ajustado — a Meta manda o
+  remetente como dígitos puros (ex.: `"5527999998888"`), sem o prefixo `"whatsapp:"` que
+  a Twilio usava.
+- Testes: `test_whatsapp_webhook_assinatura.py` reescrito para o novo formato (GET de
+  verificação + POST com HMAC-SHA256); `test_whatsapp_identificacao.py` e
+  `test_whatsapp_pergunta.py` não mudaram (testam só a lógica de conversa, que é
+  independente do provedor). Suíte inteira: 42/42 passando.
+- Variáveis de ambiente novas (ver `.env.example`): `WHATSAPP_META_VERIFY_TOKEN`,
+  `WHATSAPP_META_APP_SECRET`, `WHATSAPP_META_ACCESS_TOKEN`,
+  `WHATSAPP_META_PHONE_NUMBER_ID`, `WHATSAPP_META_TEMPLATE_RESPOSTA` (opcional),
+  `WHATSAPP_META_TEMPLATE_IDIOMA` (opcional), `WHATSAPP_META_API_VERSION` (opcional). As
+  antigas `TWILIO_*`/`WHATSAPP_URL_PUBLICA` deixam de ser usadas.
+
+### Infraestrutura já configurada (continua valendo)
 
 - HTTPS habilitado no ALB do `media-dev` — certificado ACM para `dev.media.med.br`.
 - DNS migrado do Registro.br para Cloudflare (Registro.br não permite CNAMEs customizados e redirect automático ao mesmo tempo).
-- Webhook do Twilio Sandbox apontando para `https://dev.media.med.br/whatsapp/webhook`.
-- Variáveis de ambiente no `media-dev`: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` (`whatsapp:+14155238886`, número do Sandbox), `TWILIO_CONTENT_SID_RESPOSTA` (`HXbba11dc2527b1f4eae732b03c199bd10`).
 
-### Pendência ativa (bloqueador atual) — ATUALIZADO nesta sessão
+### Pendência ativa (bloqueador atual)
 
-**Descoberta importante**: o bloqueio real não era só "aguardando aprovação da Meta". O Silvan mandou um print do Twilio Console mostrando que a **conta Twilio está em modo Trial**, e uma conta Trial **não consegue nem submeter** um WhatsApp Sender para aprovação — mensagem exata do Twilio: "Please upgrade your account to submit a WhatsApp Sender - Looks like you are on a trial account. A paid account is required to submit a WhatsApp Sender." Ou seja, o Content Template `resposta_whatsapp` nunca vai sair do estado pendente enquanto a conta continuar Trial, independente de quanto tempo passe.
+O código da migração está pronto, mas **nenhuma credencial real da Meta existe ainda** —
+o Silvan precisa (não pode ser feito por mim, política de segurança):
 
-O Silvan optou por **decidir/consultar antes de fazer upgrade** da conta Twilio, e nesta sessão foi feita uma pesquisa de alternativas de provedor de WhatsApp Business API, ainda **sem decisão final**:
+1. Criar um app Meta (tipo "Business") em developers.facebook.com, adicionar o produto WhatsApp.
+2. Completar a verificação do Meta Business Manager (CNPJ etc.) e vincular o número de telefone dedicado.
+3. Gerar o token de acesso permanente (System User) e anotar o Phone Number ID.
+4. Pegar o App Secret do app e escolher um Verify Token.
+5. Cadastrar a URL do webhook + Verify Token em WhatsApp Manager > Webhooks, assinando o campo `messages`.
+6. Registrar e esperar aprovação do template de resposta (mesmo texto/variáveis do template antigo da Twilio).
+7. Configurar as 4-7 variáveis de ambiente novas no Elastic Beanstalk (`media-dev`, depois `media-qa`/`media-prod`).
 
-- **Meta (Cloud API direta)**: desde 1/jul/2025 a cobrança mudou de "por conversa de 24h" para **por mensagem**, com categorias Service (grátis, resposta a mensagem do cliente dentro de 24h), Utility, Authentication e Marketing (preço crescente nessa ordem). Estimativas de terceiros para o Brasil (não oficiais, confirmar no rate card real): Utility ~R$0,04–0,05, Authentication ~R$0,15–0,19, Marketing ~R$0,31–0,38 por mensagem. **O rate card oficial só fica visível dentro de `business.facebook.com/wa/manage` depois que a empresa tiver uma Meta Business Account com um número do WhatsApp Business já registrado/verificado** — o Silvan confirmou que ainda não tem esse número, então esse passo específico (checar o rate card oficial) ainda não pôde ser feito.
-- **Zenvia e Blip/Take Blip**: ambos cobram em Real (BRL), o que resolve a reclamação do Silvan sobre o preço da Twilio ser em dólar. Preços pesquisados nos sites oficiais nesta sessão (conferir sempre o valor atual, muda com frequência).
-- **Gateways não-oficiais** (ex.: Whapi.Cloud, que automatizam o WhatsApp Web/app comum em vez de usar a API oficial): descartados como opção — violam os Termos de Serviço do WhatsApp e têm risco real de banimento do número, inaceitável para um sistema de saúde.
-- Toda opção (Twilio, Zenvia, Blip, ou Meta direto) **exige o mesmo pré-requisito de base**: uma Meta Business Account + um número de telefone dedicado ao WhatsApp Business (sem WhatsApp pessoal ativo nele) + verificação de negócio da Meta — isso ainda não foi feito.
-- Uma dúvida em aberto, levantada pelo Silvan e ainda sem resposta: se existe um serviço de terceiro que já tem número próprio pronto (sem precisar registrar/verificar um número do zero) e que faça a ponte com o MedIA. Ficou combinado **perguntar diretamente pra Zenvia/Blip** se eles oferecem isso — ainda não perguntado.
-
-**Nada disso foi decidido ainda.** Ao retomar, o próximo passo é o Silvan decidir entre: (a) fazer upgrade da conta Twilio para paga e seguir com o Content Template já criado, (b) migrar para Zenvia ou Blip (cobrança em Real, mas processo de registro de número provavelmente do zero também), ou (c) usar a Meta Cloud API diretamente. **O sistema funciona normalmente sem isso** — a resposta sempre fica disponível ao paciente na área web também, e agora (ver Fatia 8 abaixo) a equipe pode ser avisada por notificação push no celular, sem depender do WhatsApp de volta.
+Ver checklist completo com links e detalhe de cada passo em `PLANO_WHATSAPP.md`.
 
 ### Próximos passos sugeridos
 
-- Decidir o provedor de WhatsApp (Twilio pago vs. Zenvia vs. Blip vs. Meta direto) e, se aplicável, perguntar a Zenvia/Blip sobre número já pronto.
-- Registrar/verificar o número do WhatsApp Business na Meta (pré-requisito de qualquer caminho escolhido).
-- Confirmar aprovação do Content Template (se seguir com Twilio) e testar de ponta a ponta.
-- Repetir configuração de HTTPS/variáveis de ambiente para `media-qa` e `media-prod` quando for hora de promover essa fatia.
+- Silvan completar o checklist de credenciais Meta acima.
+- Depois de configurado: teste de ponta a ponta em `media-dev` (mandar mensagem real de
+  um celular de teste, confirmar handshake do webhook, confirmar resposta automática).
+- Repetir configuração de variáveis de ambiente para `media-qa` e `media-prod` quando for hora de promover essa fatia.
 - Continuar a Fatia 6.
 - Avaliar se vale criar um segundo Content Template com o menu embutido (3 variáveis) para reaprovação futura.
 

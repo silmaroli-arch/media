@@ -167,7 +167,7 @@ def create_app():
     # gerar_chaves_vapid.py) - sem essas 3 variáveis configuradas, o
     # recurso fica desligado sozinho (nenhuma rota quebra, o front-end só
     # não tenta se inscrever - mesmo padrão de "falha aberta" usado no
-    # WhatsApp/whatsapp_envio.py quando as chaves da Twilio não existem).
+    # WhatsApp/whatsapp_envio.py quando as chaves da Meta não existem).
     app.config["VAPID_PUBLIC_KEY"] = os.environ.get("VAPID_PUBLIC_KEY")
     app.config["VAPID_PRIVATE_KEY"] = os.environ.get("VAPID_PRIVATE_KEY")
     app.config["VAPID_CLAIM_EMAIL"] = os.environ.get("VAPID_CLAIM_EMAIL")

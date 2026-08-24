@@ -3,7 +3,7 @@
 Objetivo: avisar o MÉDICO no celular assim que chega uma pergunta nova de
 paciente (por WhatsApp ou pela área web), sem depender do WhatsApp de
 volta - resolve o mesmo problema que a Fatia 7 tentava resolver via
-Content Template da Twilio/Meta, mas do lado da EQUIPE (o paciente
+template aprovado na Meta, mas do lado da EQUIPE (o paciente
 continua conversando pelo WhatsApp normalmente). Decisão do Silvan: só o
 médico recebe (não secretária/administrativo), mesmo que outras pessoas
 tenham vínculo ativo no mesmo Grupo (ver _usuarios_para_notificar).

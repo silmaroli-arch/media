@@ -35,12 +35,18 @@ from app.routes_paciente import _resolver_ancora
 
 
 def normalizar_telefone_whatsapp(remetente_bruto):
-    """A Twilio manda o remetente como "whatsapp:+5527999998888" - guarda
-    só o número em E.164, sem o prefixo do canal (que é sempre "whatsapp"
-    neste projeto, já que não há outro canal por trás do mesmo webhook)."""
+    """A Meta (WhatsApp Cloud API) manda o remetente como dígitos apenas,
+    com código do país, SEM o "+" na frente (ex.: "5527999998888", campo
+    "from" de cada mensagem em value.messages[] - ver
+    app/routes_whatsapp.py) - normaliza sempre para E.164 (com "+"), que é
+    o formato usado no resto do sistema (Paciente.telefone,
+    PerguntaPendente.telefone_whatsapp, ConversaWhatsapp.telefone)."""
     if not remetente_bruto:
         return None
-    return remetente_bruto.replace("whatsapp:", "").strip()
+    numero = remetente_bruto.strip()
+    if not numero:
+        return None
+    return numero if numero.startswith("+") else f"+{numero}"
 
 
 def _extrair_cpf(texto):

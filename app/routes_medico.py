@@ -2320,8 +2320,8 @@ def perguntas_responder(pergunta_id):
     if pergunta.telefone_whatsapp:
         from app.whatsapp_envio import enviar_mensagem_whatsapp
 
-        # Nota: o texto de fato exibido ao paciente vem do Content
-        # Template aprovado na Twilio (ver TWILIO_CONTENT_SID_RESPOSTA em
+        # Nota: o texto de fato exibido ao paciente vem do template
+        # aprovado na Meta (ver WHATSAPP_META_TEMPLATE_RESPOSTA em
         # app/whatsapp_envio.py) quando ele está configurado - hoje esse
         # template só tem pergunta+resposta, sem o menu de opções (ver
         # PLANO_WHATSAPP.md/decisão do Silvan: adicionar o menu exigiria
