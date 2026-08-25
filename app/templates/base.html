@@ -43,6 +43,13 @@
        de cancelado (vermelho) e realizado (verde), usada em todas as telas
        que mostram o status de um agendamento. */
     .badge-nao-compareceu { background-color: #fd7e14; color: #fff; }
+    /* Faixa de instrução (iOS) e botão de instalar (Android) para o app
+       completo - mesmo padrão usado no Portal de atendimento (ver
+       portal/atendimento.html). Escondidos por padrão; o JS no fim da
+       página decide qual mostrar (nunca os dois juntos). */
+    #appAvisoInstalarIos, #appAvisoInstalarAndroid { display: none; }
+    #appAvisoInstalarIos.mostrar, #appAvisoInstalarAndroid.mostrar { display: flex; }
+    .aviso-instalar-icone { font-size: 1.4rem; line-height: 1; }
   </style>
 </head>
 <body>
@@ -244,6 +251,33 @@
       {% endwith %}
 
       {% if current_user.tipo == "medico" %}
+      {# iOS (Safari) não tem nenhuma forma de instalar sozinho - o máximo
+         possível é ensinar o passo a passo manual (ver script no fim da
+         página, que decide quando mostrar isto: só no Safari do
+         iPhone/iPad, e só se ainda não foi instalado nem dispensado
+         antes). Mesmo padrão já usado no Portal de atendimento rápido
+         (ver portal/atendimento.html). #}
+      <div id="appAvisoInstalarIos" class="alert alert-primary align-items-start mb-3 no-print">
+        <span class="aviso-instalar-icone me-2">📲</span>
+        <div class="flex-grow-1">
+          <strong>Deixe o MedIA como um atalho na tela de início</strong>
+          <div class="small mt-1">
+            Toque no ícone de compartilhar <strong>⎋</strong> na barra do Safari (embaixo, ou em cima em alguns modelos) e depois em <strong>"Adicionar à Tela de Início"</strong>. Assim você abre direto no app com um toque, sem passar pelo navegador.
+          </div>
+        </div>
+        <button type="button" class="btn-close ms-2" aria-label="Fechar" onclick="dispensarAppAvisoInstalarIos()"></button>
+      </div>
+
+      {# Android (Chrome) tem uma API de instalação de verdade - o botão só
+         aparece quando o navegador sinaliza (evento beforeinstallprompt)
+         que a instalação é possível (ver script no fim da página). #}
+      <div id="appAvisoInstalarAndroid" class="alert alert-primary align-items-center mb-3 no-print">
+        <span class="aviso-instalar-icone me-2">📲</span>
+        <div class="flex-grow-1 small">Instale o MedIA como um app, com um toque, para abrir direto da tela de início.</div>
+        <button type="button" class="btn btn-primary btn-sm ms-2" onclick="instalarAppAndroid()">Instalar app</button>
+        <button type="button" class="btn-close ms-2" aria-label="Fechar" onclick="dispensarAppAvisoInstalarAndroid()"></button>
+      </div>
+
       <div id="pushAtivarBanner" class="alert alert-info d-none d-flex align-items-center justify-content-between no-print" role="alert">
         <span><i class="bi bi-bell me-2"></i>Ative as notificações para ser avisado no celular quando chegar uma pergunta nova de paciente.</span>
         <div>
@@ -321,6 +355,69 @@
 </script>
 {% endif %}
 {% if current_user.tipo == "medico" %}
+<script>
+  // Faixa de instalação do app completo (iOS: instrução manual; Android:
+  // botão real de instalação) - mesmo padrão/mesma lógica já usada no
+  // Portal de atendimento rápido (ver portal/atendimento.html). Chaves de
+  // localStorage própias (prefixo "app_"), independentes das do Portal -
+  // dispensar o aviso num não dispensa no outro, já que são atalhos
+  // diferentes que a pessoa pode querer criar em momentos diferentes.
+  (function () {
+    function jaInstalado() {
+      return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    }
+
+    if (jaInstalado()) return;
+
+    // --- iOS: sem API de instalação, só o aviso com o passo a passo. ---
+    var eIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (eIos) {
+      var dispensadoIos = false;
+      try { dispensadoIos = localStorage.getItem("app_aviso_instalar_ios_dispensado") === "1"; } catch (e) { /* navegação privada etc. - só não mostra a persistência, sem quebrar a página */ }
+      if (!dispensadoIos) {
+        var avisoIos = document.getElementById("appAvisoInstalarIos");
+        if (avisoIos) avisoIos.classList.add("mostrar");
+      }
+    }
+
+    // --- Android/Chrome: API real de instalação (beforeinstallprompt). ---
+    var eventoInstalacaoApp = null;
+    window.addEventListener("beforeinstallprompt", function (evento) {
+      evento.preventDefault();
+      eventoInstalacaoApp = evento;
+      var dispensadoAndroid = false;
+      try { dispensadoAndroid = localStorage.getItem("app_aviso_instalar_android_dispensado") === "1"; } catch (e) { /* idem acima */ }
+      if (!dispensadoAndroid) {
+        var avisoAndroid = document.getElementById("appAvisoInstalarAndroid");
+        if (avisoAndroid) avisoAndroid.classList.add("mostrar");
+      }
+    });
+
+    window.instalarAppAndroid = function () {
+      var avisoAndroid = document.getElementById("appAvisoInstalarAndroid");
+      if (avisoAndroid) avisoAndroid.classList.remove("mostrar");
+      if (!eventoInstalacaoApp) return;
+      eventoInstalacaoApp.prompt();
+      // A escolha (aceitar/recusar) fica só em eventoInstalacaoApp.userChoice -
+      // não precisamos agir sobre ela: se aceitar, o próprio Chrome cria o
+      // atalho; se recusar, o botão simplesmente não aparece de novo até a
+      // próxima vez que o Chrome decidir sinalizar o evento.
+      eventoInstalacaoApp = null;
+    };
+  })();
+
+  function dispensarAppAvisoInstalarIos() {
+    var aviso = document.getElementById("appAvisoInstalarIos");
+    if (aviso) aviso.classList.remove("mostrar");
+    try { localStorage.setItem("app_aviso_instalar_ios_dispensado", "1"); } catch (e) { /* navegação privada etc. */ }
+  }
+
+  function dispensarAppAvisoInstalarAndroid() {
+    var aviso = document.getElementById("appAvisoInstalarAndroid");
+    if (aviso) aviso.classList.remove("mostrar");
+    try { localStorage.setItem("app_aviso_instalar_android_dispensado", "1"); } catch (e) { /* navegação privada etc. */ }
+  }
+</script>
 <script>
   // PWA só do MÉDICO: registra o service worker (ver app/static/sw.js) e, se
   // notificação push estiver configurada no servidor (chaves VAPID - ver
