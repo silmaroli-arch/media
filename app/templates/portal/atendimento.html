@@ -30,6 +30,14 @@
     .portal-topbar { background-color: #1660B0; }
     .historico-item { border-left: 3px solid #dee2e6; padding-left: .75rem; margin-bottom: .5rem; }
     .historico-item small { display: block; color: #6c757d; }
+    /* Layout simples e direto: cada pergunta é um bloco de campo:valor
+       (Paciente:, Pergunta: etc.), sem cartão/badge - ver pedido do
+       Silvan de "tela mais simples". */
+    .pergunta-simples { background: #fff; border-radius: .5rem; padding: 1rem 1.25rem; margin-bottom: 1.25rem; border-left: 4px solid #dee2e6; }
+    .pergunta-simples.aguardando-ia { border-left-color: #ffc107; }
+    .pergunta-simples.sem-ia { border-left-color: #dc3545; }
+    .pergunta-simples .campo { margin-bottom: .4rem; }
+    .rotulo { font-weight: 600; color: #495057; }
     /* Faixa de instrução (iOS) e botão de instalar (Android) - ver script
        no fim da página. Escondidos por padrão; o JS decide qual mostrar
        (nunca os dois juntos) e o CSS só cuida da aparência. */
@@ -106,8 +114,8 @@
             {% for m in mensagens_paciente %}
               <div class="historico-item">
                 <small>{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}{% if m.exame %} · {{ m.exame.nome }}{% endif %}</small>
-                <div><strong>P:</strong> {{ m.pergunta }}</div>
-                {% if m.resposta %}<div><strong>R:</strong> {{ m.resposta }}</div>{% endif %}
+                <div><span class="rotulo">Pergunta:</span> {{ m.pergunta }}</div>
+                {% if m.resposta %}<div><span class="rotulo">Resposta:</span> {{ m.resposta }}</div>{% endif %}
               </div>
             {% endfor %}
           </div>
@@ -115,51 +123,46 @@
       {% endif %}
     {% endmacro %}
 
+    {% macro campo(rotulo, valor) %}
+      <div class="campo"><span class="rotulo">{{ rotulo }}:</span> {{ valor }}</div>
+    {% endmacro %}
+
     {% if aguardando %}
-      <h5 class="mt-2"><i class="bi bi-robot"></i> Respostas da IA aguardando aprovação
-        <span class="badge bg-warning text-dark">{{ aguardando|length }}</span>
-      </h5>
       {% for p in aguardando %}
-        <div class="card border-warning mb-3">
-          <div class="card-body">
-            <div class="mb-2"><strong>{{ p.paciente.nome }}</strong> {% if p.exame %}<span class="badge bg-light text-dark">{{ p.exame.nome }}</span>{% endif %}
-              <span class="text-muted small">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+        <div class="pergunta-simples aguardando-ia">
+          {{ campo("Paciente", p.paciente.nome) }}
+          {{ campo("Exame", p.exame.nome if p.exame else "Geral (sem exame)") }}
+          {{ campo("Pergunta", p.pergunta) }}
+          {{ campo("Recebida em", p.criado_em.strftime('%d/%m/%Y %H:%M')) }}
+          {{ historico(p.paciente_id) }}
+          <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
+            <input type="hidden" name="origem" value="portal">
+            <div class="campo">
+              <span class="rotulo">Sugestão da IA (edite se precisar)</span>
+              <textarea name="resposta" class="form-control mt-1" rows="3" required>{{ p.resposta_sugerida_ia }}</textarea>
             </div>
-            <p>"{{ p.pergunta }}"</p>
-            {{ historico(p.paciente_id) }}
-            <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
-              <input type="hidden" name="origem" value="portal">
-              <div class="mb-2">
-                <label class="form-label small text-muted mb-1">Rascunho da IA (edite se precisar)</label>
-                <textarea name="resposta" class="form-control" rows="3" required>{{ p.resposta_sugerida_ia }}</textarea>
-              </div>
-              <button type="submit" class="btn btn-info btn-sm">Aprovar e enviar ao paciente</button>
-            </form>
-          </div>
+            <button type="submit" class="btn btn-info btn-sm mt-1">Aprovar e enviar ao paciente</button>
+          </form>
         </div>
       {% endfor %}
     {% endif %}
 
     {% if pendentes %}
-      <h5 class="mt-3">Perguntas sem rascunho da IA
-        <span class="badge bg-danger">{{ pendentes|length }}</span>
-      </h5>
       {% for p in pendentes %}
-        <div class="card border-danger mb-3">
-          <div class="card-body">
-            <div class="mb-2"><strong>{{ p.paciente.nome }}</strong> {% if p.exame %}<span class="badge bg-light text-dark">{{ p.exame.nome }}</span>{% endif %}
-              <span class="text-muted small">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+        <div class="pergunta-simples sem-ia">
+          {{ campo("Paciente", p.paciente.nome) }}
+          {{ campo("Exame", p.exame.nome if p.exame else "Geral (sem exame)") }}
+          {{ campo("Pergunta", p.pergunta) }}
+          {{ campo("Recebida em", p.criado_em.strftime('%d/%m/%Y %H:%M')) }}
+          {{ historico(p.paciente_id) }}
+          <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
+            <input type="hidden" name="origem" value="portal">
+            <div class="campo">
+              <span class="rotulo">Resposta</span>
+              <textarea name="resposta" class="form-control mt-1" rows="2" placeholder="Digite a resposta..." required></textarea>
             </div>
-            <p>"{{ p.pergunta }}"</p>
-            {{ historico(p.paciente_id) }}
-            <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
-              <input type="hidden" name="origem" value="portal">
-              <div class="mb-2">
-                <textarea name="resposta" class="form-control" rows="2" placeholder="Digite a resposta..." required></textarea>
-              </div>
-              <button type="submit" class="btn btn-primary btn-sm">Responder e ensinar a IA</button>
-            </form>
-          </div>
+            <button type="submit" class="btn btn-primary btn-sm mt-1">Responder e ensinar a IA</button>
+          </form>
         </div>
       {% endfor %}
     {% endif %}
