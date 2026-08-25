@@ -29,7 +29,7 @@ from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
     empresa_atual, empresas_do_usuario, selecionar_empresa,
     filiais_atuais, filtro_escopo_atual,
-    tem_algum_vinculo_de_grupo,
+    tem_algum_vinculo_de_grupo, proximo_seguro,
 )
 from app.pdf_preparo import extrair_sugestao_de_pdf, extrair_sugestao_de_texto
 from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
@@ -167,7 +167,14 @@ def staff_required(f):
         if empresa_atual() is None:
             if clinicas_do_usuario():
                 # Ambíguo: 2+ Grupos ativos e nenhum selecionado ainda.
-                return redirect(url_for("medico.escolher_clinica"))
+                # Propaga a URL que a pessoa estava tentando acessar (ex.:
+                # /equipe/portal, ver medico.portal_atendimento) - sem
+                # isso, quem tem vínculo em mais de um Grupo sempre caía
+                # no painel principal depois de escolher a empresa, mesmo
+                # tendo entrado por um atalho direto pra uma tela
+                # específica (ver medico.escolher_clinica, que lê esse
+                # parâmetro de volta).
+                return redirect(url_for("medico.escolher_clinica", next=request.path))
             if tem_algum_vinculo_de_grupo():
                 # Tem Grupo(s), mas todos bloqueados - continua barrado.
                 logout_user()
@@ -284,9 +291,17 @@ def escolher_clinica():
     registro. Esta tela só aparece no caso raro de a pessoa ter vínculo em
     mais de uma empresa (tenants diferentes); com uma só, é automático.
 
-    O nome da rota (e a URL) foi mantido para não quebrar links antigos."""
+    O nome da rota (e a URL) foi mantido para não quebrar links antigos.
+
+    Propaga "next" (ver app.clinica_utils.proximo_seguro e
+    routes_auth.py:login) - quem chegou aqui via staff_required por ter
+    vínculo em mais de um Grupo (ex.: tentando abrir um atalho direto pra
+    /equipe/portal) volta pro destino original depois de escolher a
+    empresa, em vez de sempre cair no painel principal."""
     if not current_user.is_staff:
         return redirect(url_for("index"))
+
+    destino = proximo_seguro(request.values.get("next"))
 
     clinicas = clinicas_do_usuario()
 
@@ -304,20 +319,20 @@ def escolher_clinica():
     if request.method == "POST":
         empresa_id = request.form.get("empresa_id", type=int)
         if empresa_id and selecionar_empresa(empresa_id):
-            return redirect(url_for("medico.dashboard"))
+            return redirect(destino or url_for("medico.dashboard"))
         # Compatibilidade com links/formulários antigos que mandavam uma
         # filial: passa a valer só como filial padrão de formulário (e
         # define a empresa dela) — não filtra mais nada.
         clinica_id = request.form.get("clinica_id", type=int)
         if clinica_id and selecionar_clinica(clinica_id):
-            return redirect(url_for("medico.dashboard"))
+            return redirect(destino or url_for("medico.dashboard"))
         flash("Empresa inválida.", "danger")
 
     if len(empresas) == 1:
         selecionar_empresa(empresas[0].id)
-        return redirect(url_for("medico.dashboard"))
+        return redirect(destino or url_for("medico.dashboard"))
 
-    return render_template("medico/escolher_clinica.html", empresas=empresas)
+    return render_template("medico/escolher_clinica.html", empresas=empresas, proximo=destino)
 
 
 @medico_bp.route("/")

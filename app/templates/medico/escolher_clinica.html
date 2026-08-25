@@ -18,6 +18,12 @@
         dados de todos os seus locais de atendimento juntos — não é preciso trocar de local.
       </p>
       <form method="post">
+        {# Propaga o "next" que trouxe a pessoa até aqui (ver
+           staff_required/escolher_clinica em app/routes_medico.py) - sem
+           isso, quem entra por um atalho direto (ex.: /equipe/portal) e
+           tem vínculo em mais de uma empresa sempre cairia no painel
+           principal depois de escolher, perdendo o destino original. #}
+        {% if proximo %}<input type="hidden" name="next" value="{{ proximo }}">{% endif %}
         <div class="list-group">
           {% for e in empresas %}
           <label class="list-group-item d-flex align-items-center gap-2">

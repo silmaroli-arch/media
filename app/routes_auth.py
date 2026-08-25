@@ -1,32 +1,18 @@
 import re
 from datetime import datetime
-from urllib.parse import urlparse
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, session
 from flask_login import login_user, logout_user, login_required, current_user
 
 from app.extensions import db
 from app.models import Usuario, Paciente, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+# `proximo_seguro` mora em clinica_utils.py (compartilhado com
+# routes_medico.py:escolher_clinica, que precisa do mesmo tratamento pra
+# não perder o destino original de quem tem vínculo em mais de um Grupo -
+# ver staff_required/escolher_clinica).
+from app.clinica_utils import proximo_seguro as _proximo_seguro
 
 auth_bp = Blueprint("auth", __name__)
-
-
-def _proximo_seguro(destino_bruto):
-    """Valida o parâmetro "next" (usado pelo @login_required do
-    Flask-Login, e propagado pelo formulário de login em auth/login.html)
-    antes de redirecionar - só aceita um caminho relativo do próprio site
-    (nunca um domínio externo, o que abriria um open redirect). Usado para
-    o médico conseguir criar um atalho direto pra uma tela específica (ex.:
-    /equipe/portal, ver medico.portal_atendimento) que, ao logar, cai
-    direto nela em vez de sempre ir para o painel principal (index())."""
-    if not destino_bruto:
-        return None
-    se_e_absoluto_ou_protocolo_relativo = urlparse(destino_bruto).netloc or urlparse(destino_bruto).scheme
-    if se_e_absoluto_ou_protocolo_relativo:
-        return None
-    if not destino_bruto.startswith("/") or destino_bruto.startswith("//"):
-        return None
-    return destino_bruto
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])

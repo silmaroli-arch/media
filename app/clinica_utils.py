@@ -25,11 +25,34 @@ A sessão guarda o Grupo ativo em session['empresa_id'] (nome antigo,
 mantido só pra não invalidar sessões já abertas). session['clinica_id']
 não é mais usado (não existe mais "filial padrão" distinta do Grupo).
 """
+from urllib.parse import urlparse
+
 from flask import session
 from flask_login import current_user
 
 from app.extensions import db
 from app.models import GrupoMembro
+
+
+def proximo_seguro(destino_bruto):
+    """Valida o parâmetro "next" (usado pelo @login_required do
+    Flask-Login e propagado por auth/login.html e
+    medico/escolher_clinica.html) antes de redirecionar - só aceita um
+    caminho relativo do próprio site (nunca um domínio externo, o que
+    abriria um open redirect). Usado para o médico conseguir criar um
+    atalho direto pra uma tela específica (ex.: /equipe/portal, ver
+    medico.portal_atendimento) que, ao logar - mesmo passando pela tela de
+    escolha de empresa (ver medico.escolher_clinica/staff_required, para
+    quem tem vínculo em mais de um Grupo) -, cai direto nela em vez de
+    sempre ir para o painel principal (index())."""
+    if not destino_bruto:
+        return None
+    se_e_absoluto_ou_protocolo_relativo = urlparse(destino_bruto).netloc or urlparse(destino_bruto).scheme
+    if se_e_absoluto_ou_protocolo_relativo:
+        return None
+    if not destino_bruto.startswith("/") or destino_bruto.startswith("//"):
+        return None
+    return destino_bruto
 
 
 def verificar_vencimento_empresa(grupo):
