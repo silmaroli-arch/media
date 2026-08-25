@@ -2,7 +2,7 @@
 {% block titulo %}{% if exame %}Editar exame{% else %}Novo exame{% endif %}{% endblock %}
 {% block conteudo %}
 {% if wizard %}
-<p class="text-muted small mb-1">Passo 4 de 4 — Criar sua conta</p>
+<p class="text-muted small mb-1">Passo 3 de 3 — Primeiros passos</p>
 <div class="progress mb-3" style="height: 6px; max-width: 640px;">
   <div class="progress-bar" role="progressbar" style="width: 100%;"></div>
 </div>
@@ -93,7 +93,7 @@
     </div>
     <button type="submit" class="btn btn-primary">Salvar{% if wizard %} e concluir{% endif %}</button>
     {% if wizard %}
-    <a href="{{ url_for('medico.dashboard') }}" class="btn btn-link">Pular esta etapa</a>
+    <a href="{{ url_for('medico.primeiros_passos') }}" class="btn btn-link">Pular esta etapa</a>
     {% else %}
     <a href="{{ url_for('medico.exames_lista') }}" class="btn btn-link">Cancelar</a>
     {% endif %}

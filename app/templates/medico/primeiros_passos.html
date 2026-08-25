@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block titulo %}Primeiros passos{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Primeiros passos</h3>
+<p class="text-muted">
+  Um checklist rápido pra você aproveitar melhor o MedIA — faça na ordem que preferir, quando quiser.
+</p>
+
+<div class="card p-3 mb-3">
+  <div class="d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center">
+      <span class="me-3" style="font-size: 1.6rem;">📲</span>
+      <div>
+        <strong>Atalho na tela de início</strong>
+        <div class="text-muted small">Abra o MedIA direto do celular, sem passar pelo navegador.</div>
+      </div>
+    </div>
+    <a href="{{ url_for('medico.atalhos') }}" class="btn btn-outline-primary btn-sm text-nowrap ms-3">Ver instruções</a>
+  </div>
+</div>
+
+{% if current_user.tipo == "medico" %}
+<div class="card p-3 mb-3">
+  <div class="d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center">
+      <span class="me-3" style="font-size: 1.6rem;">{{ "✅" if tem_preparo else "📝" }}</span>
+      <div>
+        <strong>Modelo de preparo</strong>
+        <div class="text-muted small">
+          {% if tem_preparo %}
+          Você já tem pelo menos um modelo cadastrado.
+          {% else %}
+          O texto de instruções que o paciente recebe antes de um exame (dieta, jejum, medicações).
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% if tem_preparo %}
+    <a href="{{ url_for('medico.preparo_modelos_lista') }}" class="btn btn-outline-secondary btn-sm text-nowrap ms-3">Ver modelos</a>
+    {% else %}
+    <a href="{{ url_for('medico.preparo_modelos_novo') }}" class="btn btn-outline-primary btn-sm text-nowrap ms-3">Cadastrar agora</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card p-3 mb-3">
+  <div class="d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center">
+      <span class="me-3" style="font-size: 1.6rem;">{{ "✅" if tem_exame else "🩺" }}</span>
+      <div>
+        <strong>Exame</strong>
+        <div class="text-muted small">
+          {% if tem_exame %}
+          Você já tem pelo menos um exame cadastrado.
+          {% else %}
+          Cadastre os exames/procedimentos que você oferece, com o modelo de preparo de cada um.
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% if tem_exame %}
+    <a href="{{ url_for('medico.exames_lista') }}" class="btn btn-outline-secondary btn-sm text-nowrap ms-3">Ver exames</a>
+    {% else %}
+    <a href="{{ url_for('medico.exames_novo') }}" class="btn btn-outline-primary btn-sm text-nowrap ms-3">Cadastrar agora</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

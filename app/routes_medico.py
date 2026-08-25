@@ -335,6 +335,47 @@ def escolher_clinica():
     return render_template("medico/escolher_clinica.html", empresas=empresas, proximo=destino)
 
 
+@medico_bp.route("/primeiros-passos")
+@login_required
+@staff_required
+def primeiros_passos():
+    """"Primeiros passos" - checklist opcional, acessível a qualquer
+    momento pelo menu lateral (não é mais forçado logo após o cadastro,
+    ver auth.cadastro): atalho na tela de início (médico e secretária) e,
+    só para médico(a), modelo de preparo e exame - cada item mostra se já
+    foi feito (com base no que a pessoa já tem cadastrado) e permite
+    pular pra qualquer outro a qualquer momento (ver medico.atalhos /
+    preparo_modelos_novo / exames_novo, que aceitam o parâmetro
+    "wizard=1" pra encadear um item no próximo)."""
+    tem_preparo = tem_exame = False
+    if eh_medico():
+        tem_preparo = PreparoModelo.query.filter(
+            filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
+        ).first() is not None
+        tem_exame = Exame.query.filter(
+            filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id)
+        ).first() is not None
+    return render_template("medico/primeiros_passos.html", tem_preparo=tem_preparo, tem_exame=tem_exame)
+
+
+@medico_bp.route("/primeiros-passos/atalhos", methods=["GET", "POST"])
+@login_required
+@staff_required
+def atalhos():
+    """Item "Atalho na tela de início" do checklist "Primeiros passos"
+    (ver primeiros_passos() acima): tela única mostrando como adicionar o
+    atalho (iOS: passo a passo manual; Android: botão real via
+    beforeinstallprompt), igual pra médico(a) ou secretário(a). Acessível
+    quantas vezes quiser pelo menu - sem gate de localStorage nem estado
+    de "já visto" (diferente do aviso "de sempre" em base.html)."""
+    if request.method == "POST":
+        if current_user.tipo == "medico":
+            return redirect(url_for("medico.preparo_modelos_novo", wizard=1))
+        return redirect(url_for("medico.primeiros_passos"))
+
+    return render_template("medico/atalhos.html")
+
+
 @medico_bp.route("/")
 @login_required
 @staff_required
@@ -815,8 +856,9 @@ def exames_novo():
     if eh_medico():
         modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
 
-    # Passo 4 (último) do wizard de cadastro (ver auth.cadastro_atalhos e
-    # preparo_modelos_novo) - mesmo idioma de "wizard=1" via query/hidden.
+    # Último passo do checklist "Primeiros passos" (ver medico.atalhos
+    # e preparo_modelos_novo, acessado pelo menu, não mais forçado após o
+    # cadastro) - mesmo idioma de "wizard=1" via query/hidden.
     wizard = request.values.get("wizard") == "1"
 
     if request.method == "POST":
@@ -906,12 +948,12 @@ def exames_novo():
 
         if wizard:
             flash(
-                f"Tudo pronto, {current_user.nome}! Sua conta, o modelo de preparo e o exame já estão "
-                'cadastrados. Defina o médico responsável e o preço deste exame em "Exames por filial" '
-                "quando quiser começar a agendar.",
+                f"Tudo pronto, {current_user.nome}! O modelo de preparo e o exame já estão cadastrados. "
+                'Defina o médico responsável e o preço deste exame em "Exames por filial" quando '
+                "quiser começar a agendar.",
                 "success",
             )
-            return redirect(url_for("medico.dashboard"))
+            return redirect(url_for("medico.primeiros_passos"))
 
         flash(
             "Exame cadastrado com sucesso. Defina o médico responsável e o preço em "
@@ -1512,10 +1554,10 @@ def preparo_modelos_novo():
     if request.method == "GET" and request.args.get("de_importacao"):
         sugestao = session.pop("preparo_sugestao_importada", None)
 
-    # Passo 3 do wizard de cadastro (ver auth.cadastro_atalhos) - viajado
-    # via query string no GET e hidden field no POST (mesmo idioma já usado
-    # pelo campo "origem" em perguntas_responder). Só médico(a) passa por
-    # aqui vindo do wizard (secretária pula direto pro dashboard).
+    # Passo do checklist "Primeiros passos" (ver medico.atalhos) -
+    # viajado via query string no GET e hidden field no POST (mesmo idioma
+    # já usado pelo campo "origem" em perguntas_responder). Acessado pelo
+    # menu, a qualquer momento - não é mais forçado logo após o cadastro.
     wizard = request.values.get("wizard") == "1"
 
     if request.method == "POST":
@@ -1558,7 +1600,7 @@ def preparo_modelos_novo():
 
         flash("Modelo de preparo cadastrado com sucesso.", "success")
         if wizard:
-            # Passo 4 do wizard - cadastro de exame (ver exames_novo).
+            # Próximo item do checklist - cadastro de exame (ver exames_novo).
             return redirect(url_for("medico.exames_novo", wizard=1))
         return redirect(url_for("medico.preparo_modelos_lista"))
 

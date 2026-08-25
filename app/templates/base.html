@@ -78,6 +78,16 @@
           <i class="bi bi-speedometer2 me-2"></i>Painel
         </a>
       </li>
+
+      {# Checklist opcional (atalho na tela de início, modelo de preparo,
+         exame) - acessível a qualquer momento, não é mais forçado logo
+         após o cadastro (ver auth.cadastro / medico.primeiros_passos). #}
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if request.endpoint in ['medico.primeiros_passos', 'medico.atalhos'] %}active{% endif %}" href="{{ url_for('medico.primeiros_passos') }}">
+          <i class="bi bi-rocket-takeoff me-2"></i>Primeiros passos
+        </a>
+      </li>
+
       {# Trabalho compartilhado (grupo) — BBP MedIA. Camada nova, adicional
          ao modelo de Empresa/Clínica/"locais de atendimento" abaixo (ver
          app/routes_grupo.py); a migração completa do restante do sistema
