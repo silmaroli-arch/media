@@ -36,6 +36,8 @@ secretaria, exatamente como quando a correspondência por palavra-chave
 não encontra nada."""
 import os
 
+from flask import current_app
+
 from app.custo_ia import registrar_chamada_ia
 
 MARCADOR_NAO_SEI = "NAO_SEI_ENCAMINHAR"
@@ -249,7 +251,13 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None):
     except Exception:
         # Nunca chegou a receber resposta (rede, chave inválida, limite de
         # uso etc.) - sem custo real pra registrar, ver docstring de
-        # app.custo_ia.registrar_chamada_ia.
+        # app.custo_ia.registrar_chamada_ia. Registra no log só para dar
+        # visibilidade (antes esse tipo de falha era totalmente
+        # silencioso - nem aparecia no painel de custo do dono, já que
+        # nenhuma chamada com custo chegou a acontecer) - não muda o
+        # comportamento (a pergunta continua caindo pros outros
+        # caminhos de sempre).
+        current_app.logger.exception("Falha ao consultar a Claude para responder pergunta do paciente")
         return None, None
     uso = getattr(mensagem, "usage", None)
     chamada = registrar_chamada_ia(
@@ -279,6 +287,7 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None):
             ],
         )
     except Exception:
+        current_app.logger.exception("Falha ao consultar o ChatGPT para responder pergunta do paciente")
         return None, None
     uso = getattr(resposta, "usage", None)
     chamada = registrar_chamada_ia(
@@ -311,6 +320,7 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None):
             ),
         )
     except Exception:
+        current_app.logger.exception("Falha ao consultar o Gemini para responder pergunta do paciente")
         return None, None
     uso = getattr(resposta, "usage_metadata", None)
     chamada = registrar_chamada_ia(
