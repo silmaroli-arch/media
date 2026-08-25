@@ -1,7 +1,19 @@
 {% extends "base.html" %}
 {% block titulo %}{% if modelo %}Editar modelo de preparo{% else %}Novo modelo de preparo{% endif %}{% endblock %}
 {% block conteudo %}
-<h3 class="mb-3">{% if modelo %}Editar modelo de preparo{% else %}Novo modelo de preparo{% endif %}</h3>
+{% if wizard %}
+<p class="text-muted small mb-1">Passo 3 de 4 — Criar sua conta</p>
+<div class="progress mb-3" style="height: 6px; max-width: 640px;">
+  <div class="progress-bar" role="progressbar" style="width: 75%;"></div>
+</div>
+{% endif %}
+<h3 class="mb-3">{% if modelo %}Editar modelo de preparo{% elif wizard %}Cadastre seu primeiro modelo de preparo{% else %}Novo modelo de preparo{% endif %}</h3>
+{% if wizard %}
+<p class="text-muted">
+  Modelo de preparo é o texto de instruções que o paciente recebe antes de um exame (ex.: dieta,
+  jejum, medicações). Você pode pular esta etapa agora e cadastrar depois, em "Modelos de preparo".
+</p>
+{% endif %}
 
 {% if sugestao %}
 <div class="alert alert-warning">
@@ -34,6 +46,7 @@
 
 <div class="card p-4">
   <form method="post" id="form-preparo">
+    {% if wizard %}<input type="hidden" name="wizard" value="1">{% endif %}
     {# Modelo de preparo é genérico - vale para qualquer local de atendimento
        da empresa, por isso não pede (nem mostra) filial aqui. #}
 
@@ -285,8 +298,12 @@
     </div>
 
     <hr>
-    <button type="submit" class="btn btn-primary">Salvar</button>
+    <button type="submit" class="btn btn-primary">Salvar{% if wizard %} e continuar{% endif %}</button>
+    {% if wizard %}
+    <a href="{{ url_for('medico.exames_novo', wizard=1) }}" class="btn btn-link">Pular esta etapa</a>
+    {% else %}
     <a href="{{ url_for('medico.preparo_modelos_lista') }}" class="btn btn-link">Cancelar</a>
+    {% endif %}
   </form>
 </div>
 

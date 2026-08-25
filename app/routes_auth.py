@@ -321,9 +321,33 @@ def cadastro():
             f"Conta criada com sucesso, {usuario.nome}! Bem-vindo(a) ao MedIA.",
             "success",
         )
-        return redirect(url_for("medico.dashboard"))
+        # Passo 1 do wizard de cadastro concluído - próxima parada é o
+        # passo 2 (atalhos), ver cadastro_atalhos() logo abaixo.
+        return redirect(url_for("auth.cadastro_atalhos"))
 
     return render_template("auth/cadastro.html")
+
+
+@auth_bp.route("/cadastro/atalhos", methods=["GET", "POST"])
+@login_required
+def cadastro_atalhos():
+    """Passo 2 do wizard de cadastro público (ver cadastro() acima): tela
+    única mostrando como adicionar o atalho na tela de início (iOS:
+    passo a passo manual; Android: botão real via beforeinstallprompt),
+    igual pra médico(a) ou secretário(a). Diferente do aviso "de sempre"
+    em base.html, aqui não há gate de localStorage nem botão de
+    dispensar de vez - é só uma etapa do fluxo, mostrada uma única vez
+    logo após criar a conta.
+
+    Passos 3 (modelo de preparo) e 4 (exame) só existem pra quem se
+    cadastrou como médico(a) - secretário(a) segue direto pro dashboard
+    (confirmado com o Silvan: "Secretária só passa pelo passo 1 e 2")."""
+    if request.method == "POST":
+        if current_user.tipo == "medico":
+            return redirect(url_for("medico.preparo_modelos_novo", wizard=1))
+        return redirect(url_for("medico.dashboard"))
+
+    return render_template("auth/cadastro_atalhos.html")
 
 
 def _parse_data_nascimento(valor_str):

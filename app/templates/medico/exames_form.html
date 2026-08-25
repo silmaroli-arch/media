@@ -1,9 +1,16 @@
 {% extends "base.html" %}
 {% block titulo %}{% if exame %}Editar exame{% else %}Novo exame{% endif %}{% endblock %}
 {% block conteudo %}
-<h3 class="mb-3">{% if exame %}Editar exame{% else %}Cadastrar novo exame{% endif %}</h3>
+{% if wizard %}
+<p class="text-muted small mb-1">Passo 4 de 4 — Criar sua conta</p>
+<div class="progress mb-3" style="height: 6px; max-width: 640px;">
+  <div class="progress-bar" role="progressbar" style="width: 100%;"></div>
+</div>
+{% endif %}
+<h3 class="mb-3">{% if exame %}Editar exame{% elif wizard %}Cadastre seu primeiro exame{% else %}Cadastrar novo exame{% endif %}</h3>
 <div class="card p-4">
   <form method="post">
+    {% if wizard %}<input type="hidden" name="wizard" value="1">{% endif %}
     {% if exame and mostrar_filial %}
     <p class="text-muted small">Local de atendimento: <strong>{{ exame.clinica.nome }}</strong></p>
     {% endif %}
@@ -84,8 +91,12 @@
         numa aba separada e depois voltar aqui para escolhê-lo.
       </div>
     </div>
-    <button type="submit" class="btn btn-primary">Salvar</button>
+    <button type="submit" class="btn btn-primary">Salvar{% if wizard %} e concluir{% endif %}</button>
+    {% if wizard %}
+    <a href="{{ url_for('medico.dashboard') }}" class="btn btn-link">Pular esta etapa</a>
+    {% else %}
     <a href="{{ url_for('medico.exames_lista') }}" class="btn btn-link">Cancelar</a>
+    {% endif %}
   </form>
 </div>
 {% endblock %}

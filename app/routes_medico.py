@@ -815,6 +815,10 @@ def exames_novo():
     if eh_medico():
         modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
 
+    # Passo 4 (último) do wizard de cadastro (ver auth.cadastro_atalhos e
+    # preparo_modelos_novo) - mesmo idioma de "wizard=1" via query/hidden.
+    wizard = request.values.get("wizard") == "1"
+
     if request.method == "POST":
         # O cadastro de exame é genérico - só define nome/descrição/duração/
         # preparo, sem escolher filial nem médico responsável. Quem atende
@@ -843,7 +847,7 @@ def exames_novo():
             medico_id = medicos[0].id
         else:
             flash("Cadastre um médico na equipe antes de criar exames.", "danger")
-            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos, wizard=wizard)
 
         # É obrigatório escolher uma opção no cadastro - mas a opção pode ser
         # "nenhum" (procedimento simples, sem instrução prévia, ex.: uma
@@ -857,20 +861,20 @@ def exames_novo():
             modelo = next((m for m in modelos if str(m.id) == preparo_modelo_raw), None)
             if not modelo:
                 flash("Escolha um modelo de preparo válido, ou \"Nenhum\".", "danger")
-                return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+                return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos, wizard=wizard)
         else:
             flash("Escolha uma opção de modelo de preparo (pode ser \"Nenhum\").", "danger")
-            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos, wizard=wizard)
 
         if not nome:
             flash("Nome do exame é obrigatório.", "danger")
-            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos, wizard=wizard)
 
         if Exame.query.filter(
             filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id), Exame.nome == nome
         ).first():
             flash("Já existe um exame com esse nome.", "danger")
-            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos, wizard=wizard)
 
         # Preço fica de fora do cadastro genérico - é definido depois, por
         # local de atendimento, em "Exames por filial" (mesmo esquema que já
@@ -900,6 +904,15 @@ def exames_novo():
         db.session.add(exame)
         db.session.commit()
 
+        if wizard:
+            flash(
+                f"Tudo pronto, {current_user.nome}! Sua conta, o modelo de preparo e o exame já estão "
+                'cadastrados. Defina o médico responsável e o preço deste exame em "Exames por filial" '
+                "quando quiser começar a agendar.",
+                "success",
+            )
+            return redirect(url_for("medico.dashboard"))
+
         flash(
             "Exame cadastrado com sucesso. Defina o médico responsável e o preço em "
             '"Exames por filial", antes de agendar.',
@@ -907,7 +920,7 @@ def exames_novo():
         )
         return redirect(url_for("medico.exames_lista"))
 
-    return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+    return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos, wizard=wizard)
 
 
 @medico_bp.route("/exames/<int:exame_id>/editar", methods=["GET", "POST"])
@@ -1499,6 +1512,12 @@ def preparo_modelos_novo():
     if request.method == "GET" and request.args.get("de_importacao"):
         sugestao = session.pop("preparo_sugestao_importada", None)
 
+    # Passo 3 do wizard de cadastro (ver auth.cadastro_atalhos) - viajado
+    # via query string no GET e hidden field no POST (mesmo idioma já usado
+    # pelo campo "origem" em perguntas_responder). Só médico(a) passa por
+    # aqui vindo do wizard (secretária pula direto pro dashboard).
+    wizard = request.values.get("wizard") == "1"
+
     if request.method == "POST":
         # Modelo de preparo é genérico - não pertence a uma filial específica,
         # e sim à empresa como um todo (fica disponível em qualquer exame de
@@ -1516,13 +1535,13 @@ def preparo_modelos_novo():
 
         if not nome or not instrucoes:
             flash("Nome do modelo e instruções são obrigatórios.", "danger")
-            return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+            return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(), wizard=wizard)
 
         if PreparoModelo.query.filter(
             filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id), PreparoModelo.nome == nome
         ).first():
             flash("Já existe um modelo de preparo com esse nome.", "danger")
-            return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+            return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(), wizard=wizard)
 
         modelo = PreparoModelo(
             grupo_id=filial.id if filial else None,
@@ -1538,9 +1557,12 @@ def preparo_modelos_novo():
         db.session.commit()
 
         flash("Modelo de preparo cadastrado com sucesso.", "success")
+        if wizard:
+            # Passo 4 do wizard - cadastro de exame (ver exames_novo).
+            return redirect(url_for("medico.exames_novo", wizard=1))
         return redirect(url_for("medico.preparo_modelos_lista"))
 
-    return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+    return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(), wizard=wizard)
 
 
 @medico_bp.route("/preparo-modelos/<int:modelo_id>/editar", methods=["GET", "POST"])

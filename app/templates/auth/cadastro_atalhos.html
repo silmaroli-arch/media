@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block titulo %}Adicionar atalho{% endblock %}
+{% block conteudo %}
+<div class="card p-4" style="max-width: 640px; margin: 0 auto;">
+  <p class="text-muted small mb-1">Passo 2 de {% if current_user.tipo == "medico" %}4{% else %}2{% endif %} — Criar sua conta</p>
+  <div class="progress mb-4" style="height: 6px;">
+    <div class="progress-bar" role="progressbar"
+         style="width: {% if current_user.tipo == 'medico' %}50%{% else %}100%{% endif %};"></div>
+  </div>
+
+  <h3 class="mb-3">Deixe o MedIA à mão</h3>
+  <p class="text-muted">
+    Antes de continuar, vale a pena adicionar um atalho do MedIA na tela de início do seu celular —
+    assim você (ou sua equipe) abre direto no app, sem precisar procurar o link no navegador.
+  </p>
+
+  <div id="wizardAvisoIos" class="alert alert-primary align-items-start mb-3" style="display: none;">
+    <div class="d-flex">
+      <span class="me-2" style="font-size: 1.4rem; line-height: 1;">📲</span>
+      <div>
+        <strong>No iPhone/iPad (Safari)</strong>
+        <div class="small mt-1">
+          Toque no ícone de compartilhar <strong>⎋</strong> na barra do Safari (embaixo, ou em cima em
+          alguns modelos) e depois em <strong>"Adicionar à Tela de Início"</strong>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="wizardAvisoAndroid" class="alert alert-primary align-items-center mb-3" style="display: none;">
+    <div class="d-flex align-items-center justify-content-between w-100">
+      <div class="small">Instale o MedIA como um app, com um toque.</div>
+      <button type="button" class="btn btn-primary btn-sm ms-2" onclick="wizardInstalarAndroid()">Instalar app</button>
+    </div>
+  </div>
+
+  <div id="wizardAvisoGenerico" class="alert alert-secondary mb-3" style="display: none;">
+    <div class="small">
+      Você também pode adicionar um atalho pelo menu do seu navegador (procure por
+      "Adicionar à tela inicial" ou "Instalar app"). Pode fazer isso a qualquer momento — não é
+      obrigatório agora.
+    </div>
+  </div>
+
+  <form method="post">
+    <button type="submit" class="btn btn-primary">Continuar</button>
+  </form>
+</div>
+
+<script>
+  (function () {
+    function jaInstalado() {
+      return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    }
+    if (jaInstalado()) return;
+
+    var eIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (eIos) {
+      var avisoIos = document.getElementById("wizardAvisoIos");
+      if (avisoIos) avisoIos.style.display = "flex";
+    } else {
+      var avisoGenerico = document.getElementById("wizardAvisoGenerico");
+      if (avisoGenerico) avisoGenerico.style.display = "block";
+    }
+
+    var eventoInstalacaoApp = null;
+    window.addEventListener("beforeinstallprompt", function (evento) {
+      evento.preventDefault();
+      eventoInstalacaoApp = evento;
+      var avisoAndroid = document.getElementById("wizardAvisoAndroid");
+      var avisoGenerico = document.getElementById("wizardAvisoGenerico");
+      if (avisoAndroid) avisoAndroid.style.display = "flex";
+      if (avisoGenerico) avisoGenerico.style.display = "none";
+    });
+
+    window.wizardInstalarAndroid = function () {
+      var avisoAndroid = document.getElementById("wizardAvisoAndroid");
+      if (avisoAndroid) avisoAndroid.style.display = "none";
+      if (!eventoInstalacaoApp) return;
+      eventoInstalacaoApp.prompt();
+      eventoInstalacaoApp = null;
+    };
+  })();
+</script>
+{% endblock %}
