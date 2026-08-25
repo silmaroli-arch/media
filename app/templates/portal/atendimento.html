@@ -53,14 +53,6 @@
       <span class="d-none d-sm-inline text-white-50">— {{ current_user.nome }}</span>
     </div>
     <div>
-      {# Botão de atualizar: recarrega a mesma página (nova consulta ao
-         banco) - a tela não se atualiza sozinha, então isso é o jeito do
-         médico conferir se chegou pergunta nova sem precisar sair e
-         voltar. Link simples (não JS) de propósito - funciona igual tanto
-         no navegador normal quanto no atalho instalado (standalone). #}
-      <a class="btn btn-sm btn-outline-light me-2" href="{{ url_for('medico.portal_atendimento') }}" title="Buscar perguntas novas">
-        <i class="bi bi-arrow-clockwise"></i> Atualizar
-      </a>
       <a class="btn btn-sm btn-outline-light me-2" href="{{ url_for('medico.dashboard') }}">Abrir o app completo</a>
       <a class="btn btn-sm btn-outline-light" href="{{ url_for('auth.logout') }}">Sair</a>
     </div>
@@ -97,6 +89,16 @@
         <div class="alert alert-{{ 'danger' if categoria == 'danger' else categoria }}">{{ mensagem }}</div>
       {% endfor %}
     {% endwith %}
+
+    {# Botão de atualizar: recarrega a mesma página (nova consulta ao
+       banco) - a tela não se atualiza sozinha, então isso é o jeito do
+       médico conferir se chegou pergunta nova sem precisar sair e voltar.
+       Fica bem em cima da lista de perguntas, grande, de propósito -
+       ver pedido do Silvan. Link simples (não JS) - funciona igual tanto
+       no navegador normal quanto no atalho instalado (standalone). #}
+    <a class="btn btn-primary btn-lg w-100 mb-4" href="{{ url_for('medico.portal_atendimento') }}">
+      <i class="bi bi-arrow-clockwise"></i> Atualizar perguntas
+    </a>
 
     {% set total_pendente = (aguardando|length) + (pendentes|length) %}
     {% if total_pendente > 0 %}
