@@ -2267,10 +2267,63 @@ def perguntas_respondidas():
     return render_template("medico/perguntas_respondidas.html", respondidas=respondidas)
 
 
+@medico_bp.route("/portal")
+@login_required
+@staff_required
+def portal_atendimento():
+    """Portal de atendimento rápido: versão enxuta da fila de perguntas
+    pendentes (mesmos dados de medico.perguntas_pendentes, mesmo login e
+    permissões), sem o menu/barra lateral do app completo — pensada para o
+    médico deixar como um atalho separado na tela de início do celular e
+    abrir só para responder rápido, sem navegar pelo resto do sistema. É um
+    acesso ADICIONAL: o painel completo continua funcionando normalmente,
+    nada muda para quem usa só o menu de sempre."""
+    escopo = filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id)
+    pendentes_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "pendente")
+    aguardando_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "aguardando_aprovacao")
+
+    if eh_medico():
+        pendentes_q = _restringir_perguntas_para_medico(pendentes_q)
+        aguardando_q = _restringir_perguntas_para_medico(aguardando_q)
+
+    pendentes = pendentes_q.order_by(PerguntaPendente.criado_em.desc()).all()
+    aguardando = aguardando_q.order_by(PerguntaPendente.criado_em.desc()).all()
+
+    # Histórico de conversas do paciente (mesma fonte usada em
+    # medico.atendimento, aqui sem filtrar por agendamento específico) - dá
+    # contexto pro médico antes de responder, sem precisar abrir o app
+    # completo. Limitação já existente (não introduzida aqui): para
+    # perguntas encaminhadas (origem "pendente"/"ia_aguardando"), o campo
+    # ChatMensagem.resposta fica em branco mesmo depois de respondidas — a
+    # resposta de verdade mora em PerguntaPendente.resposta, mostrada à
+    # parte no card da própria pergunta.
+    historico_por_paciente = {}
+    for p in pendentes + aguardando:
+        if p.paciente_id not in historico_por_paciente:
+            historico_por_paciente[p.paciente_id] = (
+                ChatMensagem.query.filter_by(paciente_id=p.paciente_id)
+                .order_by(ChatMensagem.criado_em.desc())
+                .limit(15)
+                .all()
+            )
+
+    return render_template(
+        "portal/atendimento.html",
+        pendentes=pendentes, aguardando=aguardando,
+        historico_por_paciente=historico_por_paciente,
+    )
+
+
 @medico_bp.route("/perguntas/<int:pergunta_id>/responder", methods=["POST"])
 @login_required
 @staff_required
 def perguntas_responder(pergunta_id):
+    # Formulário pode vir tanto da tela cheia (medico/perguntas.html) quanto
+    # do portal de atendimento rápido (portal/atendimento.html, ver
+    # medico.portal_atendimento) - o campo oculto "origem" no form decide
+    # para onde voltar depois, sem duplicar esta rota.
+    destino = "medico.portal_atendimento" if request.form.get("origem") == "portal" else "medico.perguntas_pendentes"
+
     pergunta = PerguntaPendente.query.filter(
         PerguntaPendente.id == pergunta_id,
         filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id),
@@ -2285,13 +2338,13 @@ def perguntas_responder(pergunta_id):
         geral_administravel = pergunta.exame is None and current_user.perm_pacientes
         if not exame_proprio and not geral_administravel:
             flash("Você só pode responder perguntas sobre os seus próprios exames.", "danger")
-            return redirect(url_for("medico.perguntas_pendentes"))
+            return redirect(url_for(destino))
 
     resposta = request.form.get("resposta", "").strip()
 
     if not resposta:
         flash("Digite uma resposta antes de salvar.", "danger")
-        return redirect(url_for("medico.perguntas_pendentes"))
+        return redirect(url_for(destino))
 
     pergunta.resposta = resposta
     pergunta.status = "respondida"
@@ -2336,7 +2389,7 @@ def perguntas_responder(pergunta_id):
         )
 
     flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
-    return redirect(url_for("medico.perguntas_pendentes"))
+    return redirect(url_for(destino))
 
 
 # ---------- Base de FAQ (consulta/gestão manual) ----------

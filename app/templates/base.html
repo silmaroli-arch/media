@@ -150,6 +150,16 @@
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">Base de conhecimento</a>
             </li>
+            {# Atalho adicional (não substitui o acesso normal acima): tela
+               enxuta, sem menu, só com as perguntas pendentes + histórico -
+               pensada para o médico salvar como atalho separado na tela de
+               início do celular e abrir rapidinho pra responder. Abre em
+               nova aba porque tem sua própria barra de topo/navegação. #}
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('medico.portal_atendimento') }}" target="_blank" rel="noopener">
+                <i class="bi bi-box-arrow-up-right me-1"></i>Portal de atendimento rápido
+              </a>
+            </li>
           </ul>
         </div>
       </li>
