@@ -6,6 +6,16 @@
     <div class="card p-4 mt-5">
       <div class="text-center mb-3"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 52px;"></div>
       <form method="post">
+        {# Propaga o "next" (ver auth.login/_proximo_seguro em
+           app/routes_auth.py) - permite que um atalho direto pra uma tela
+           específica (ex.: o Portal de Atendimento Rápido do médico) caia
+           direto nela depois do login, em vez de sempre ir pro painel
+           principal. request.values cobre tanto a query string (GET, 1ª
+           vez que a tela aparece) quanto este mesmo campo oculto
+           reenviado (POST, se a senha for digitada errada e a tela for
+           mostrada de novo). #}
+        {% set proximo = request.values.get('next', '') %}
+        {% if proximo %}<input type="hidden" name="next" value="{{ proximo }}">{% endif %}
         <div class="mb-3">
           <label class="form-label">CPF ou e-mail</label>
           <input type="text" name="identificador" class="form-control" placeholder="000.000.000-00" required autofocus>

@@ -1,5 +1,6 @@
 import re
 from datetime import datetime
+from urllib.parse import urlparse
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, session
 from flask_login import login_user, logout_user, login_required, current_user
@@ -10,10 +11,28 @@ from app.models import Usuario, Paciente, normalizar_telefone, encontrar_conta_p
 auth_bp = Blueprint("auth", __name__)
 
 
+def _proximo_seguro(destino_bruto):
+    """Valida o parâmetro "next" (usado pelo @login_required do
+    Flask-Login, e propagado pelo formulário de login em auth/login.html)
+    antes de redirecionar - só aceita um caminho relativo do próprio site
+    (nunca um domínio externo, o que abriria um open redirect). Usado para
+    o médico conseguir criar um atalho direto pra uma tela específica (ex.:
+    /equipe/portal, ver medico.portal_atendimento) que, ao logar, cai
+    direto nela em vez de sempre ir para o painel principal (index())."""
+    if not destino_bruto:
+        return None
+    se_e_absoluto_ou_protocolo_relativo = urlparse(destino_bruto).netloc or urlparse(destino_bruto).scheme
+    if se_e_absoluto_ou_protocolo_relativo:
+        return None
+    if not destino_bruto.startswith("/") or destino_bruto.startswith("//"):
+        return None
+    return destino_bruto
+
+
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(_proximo_seguro(request.args.get("next")) or url_for("index"))
 
     if request.method == "POST":
         # BBP MedIA (tela 5.1.2): login do sistema principal por CPF +
@@ -42,7 +61,7 @@ def login():
             session.pop("clinica_id", None)
             session.pop("grupo_ativo_id", None)
             login_user(usuario)
-            return redirect(url_for("index"))
+            return redirect(_proximo_seguro(request.values.get("next")) or url_for("index"))
 
         flash("CPF/e-mail ou senha inválidos.", "danger")
 
