@@ -35,10 +35,31 @@
     </div>
   </div>
 
-  <div id="wizardAvisoGenerico" class="alert alert-secondary mb-3" style="display: none;">
+  <div id="wizardAvisoAndroidGenerico" class="alert alert-secondary mb-3" style="display: none;">
     <div class="small">
-      Você também pode adicionar um atalho pelo menu do seu navegador (procure por
-      "Adicionar à tela inicial" ou "Instalar app").
+      Se o botão "Instalar app" não aparecer aqui em cima, procure no menu <strong>⋮</strong> (três
+      pontinhos) do Chrome e escolha <strong>"Instalar app"</strong> ou <strong>"Adicionar à tela
+      inicial"</strong>.
+    </div>
+  </div>
+
+  <div id="wizardAvisoDesktop" class="alert alert-secondary mb-3" style="display: none;">
+    <div class="small">
+      <strong>Você está num computador ou tablet</strong> — dá pra instalar o MedIA aqui também, mas
+      isso não é a mesma coisa que o atalho no celular.
+      <ul class="mb-2 mt-2">
+        <li>
+          Para instalar <strong>neste computador</strong>: procure o ícone de instalação
+          (geralmente <strong>⊕</strong> ou uma tela com uma seta) do lado direito da barra de
+          endereço do Chrome ou Edge, ou abra o menu <strong>⋮</strong> e escolha
+          <strong>"Instalar app"</strong> (ou "Instalar MedIA...").
+        </li>
+        <li>
+          Para adicionar o atalho <strong>na tela de início do celular</strong>, abra este mesmo
+          link direto no navegador do celular — Safari no iPhone, ou Chrome no Android — e volte
+          nesta página por lá.
+        </li>
+      </ul>
     </div>
   </div>
 
@@ -56,12 +77,21 @@
     if (jaInstalado()) return;
 
     var eIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    // Distingue Android (celular, sem "Mobile" nem sempre confiável em
+    // tablets - mas o suficiente pra separar "provavelmente celular" de
+    // "provavelmente computador/tablet maior") de desktop, pra dar uma
+    // mensagem certa em cada caso enquanto o botão real de instalar
+    // (beforeinstallprompt, abaixo) ainda não apareceu.
+    var eAndroid = /Android/.test(navigator.userAgent);
     if (eIos) {
       var avisoIos = document.getElementById("wizardAvisoIos");
       if (avisoIos) avisoIos.style.display = "flex";
+    } else if (eAndroid) {
+      var avisoAndroidGenerico = document.getElementById("wizardAvisoAndroidGenerico");
+      if (avisoAndroidGenerico) avisoAndroidGenerico.style.display = "block";
     } else {
-      var avisoGenerico = document.getElementById("wizardAvisoGenerico");
-      if (avisoGenerico) avisoGenerico.style.display = "block";
+      var avisoDesktop = document.getElementById("wizardAvisoDesktop");
+      if (avisoDesktop) avisoDesktop.style.display = "block";
     }
 
     var eventoInstalacaoApp = null;
@@ -69,9 +99,11 @@
       evento.preventDefault();
       eventoInstalacaoApp = evento;
       var avisoAndroid = document.getElementById("wizardAvisoAndroid");
-      var avisoGenerico = document.getElementById("wizardAvisoGenerico");
+      var avisoAndroidGenerico = document.getElementById("wizardAvisoAndroidGenerico");
+      var avisoDesktop = document.getElementById("wizardAvisoDesktop");
       if (avisoAndroid) avisoAndroid.style.display = "flex";
-      if (avisoGenerico) avisoGenerico.style.display = "none";
+      if (avisoAndroidGenerico) avisoAndroidGenerico.style.display = "none";
+      if (avisoDesktop) avisoDesktop.style.display = "none";
     });
 
     window.wizardInstalarAndroid = function () {
