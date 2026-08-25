@@ -260,6 +260,11 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
             resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
             resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
+            # Nomes das IAs que deram erro de chamada nesta pergunta (ver
+            # app.ia_preparo.responder_com_ia) - mostrado como aviso na
+            # tela de aprovação, mesmo quando a reserva "tapou o buraco"
+            # e o rascunho final saiu normal (ver medico/perguntas.html).
+            ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
             telefone_whatsapp=telefone,
         )
         db.session.add(pergunta_pendente_criada)
@@ -286,6 +291,10 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 paciente_id=paciente.id,
                 exame_id=exame.id if exame else None,
                 pergunta=pergunta_texto,
+                # Mesmo sem nenhum rascunho da IA, vale registrar se foi
+                # porque alguma delas deu erro de chamada - ver
+                # app.ia_preparo.responder_com_ia.
+                ias_com_erro=(",".join(resultado_ia.get("falhas") or []) or None) if resultado_ia else None,
                 telefone_whatsapp=telefone,
             )
             db.session.add(pergunta_pendente_criada)

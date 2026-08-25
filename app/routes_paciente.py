@@ -273,6 +273,12 @@ def chat():
                     resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
                     resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
                     resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
+                    # Nomes das IAs que deram erro de chamada nesta
+                    # pergunta (ver app.ia_preparo.responder_com_ia) -
+                    # mostrado como aviso na tela de aprovação, mesmo
+                    # quando a reserva "tapou o buraco" e o rascunho final
+                    # saiu normal (ver medico/perguntas.html).
+                    ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
                 )
                 db.session.add(pendente)
                 db.session.commit()
@@ -314,6 +320,11 @@ def chat():
                         paciente_id=paciente.id,
                         exame_id=exame_id_selecionado,
                         pergunta=pergunta_enviada,
+                        # Mesmo sem nenhum rascunho da IA (nenhuma das
+                        # escolhidas respondeu), vale registrar se foi
+                        # porque alguma delas deu erro de chamada - ver
+                        # app.ia_preparo.responder_com_ia.
+                        ias_com_erro=(",".join(resultado_ia.get("falhas") or []) or None) if resultado_ia else None,
                     )
                     db.session.add(pendente)
                     db.session.commit()

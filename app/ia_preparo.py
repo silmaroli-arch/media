@@ -495,7 +495,7 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
     saber a quem atribuir aquele custo no painel).
 
     Retorna um dicionário {"final": ..., "por_provedor": {"Claude": ...,
-    "ChatGPT": ..., "Gemini": ...}} — "por_provedor" tem a resposta crua
+    "ChatGPT": ..., "Gemini": ...}, "falhas": [...]} — "por_provedor" tem a resposta crua
     de cada IA consultada (None para a que não foi escolhida, ou não
     respondeu a esta pergunta), usado por app.routes_paciente e
     app.whatsapp_conversa para preencher os 3 campos
@@ -523,7 +523,17 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
     falha. Se as duas escolhidas falharem na mesma pergunta, a reserva só
     é acionada uma vez (evita gastar 2x a mesma chamada à toa); nesse caso
     o rascunho final acaba dependendo só da resposta da reserva, como se
-    ela fosse a única IA disponível."""
+    ela fosse a única IA disponível.
+
+    "falhas" é a lista dos nomes das IAs que tiveram um erro de chamada de
+    verdade nesta pergunta (0, 1, 2 ou os 3 nomes, na ordem em que
+    falharam) — inclui tanto uma das duas escolhidas quanto a própria
+    reserva, se ela também falhar. Pensado para persistir em
+    PerguntaPendente.ias_com_erro (ver app.routes_paciente/
+    app.whatsapp_conversa) e mostrar ao médico na tela de aprovação (ver
+    medico/perguntas.html) que uma IA configurada deu erro nesta pergunta
+    específica — mesmo quando a reserva "tapou o buraco" e o rascunho
+    final saiu normal, sem nenhum outro sinal visível do problema."""
     from app.models import PlataformaConfig
 
     config = PlataformaConfig.obter()
@@ -540,7 +550,7 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
     if not tentou_a and not tentou_b:
         # Nenhuma das duas escolhidas tem API key configurada - não é
         # "falha", é "não configurada", não faz sentido acionar reserva.
-        return {"final": None, "por_provedor": respostas_por_provedor}
+        return {"final": None, "por_provedor": respostas_por_provedor, "falhas": []}
 
     nome_efetivo_a, nome_efetivo_b = provedor_a, provedor_b
 
@@ -553,6 +563,18 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
     falhou_a = tentou_a and resposta_a is None and chamada_a is None
     falhou_b = tentou_b and resposta_b is None and chamada_b is None
 
+    # Nomes das IAs que falharam de verdade nesta pergunta - devolvido pra
+    # quem chamou persistir em PerguntaPendente.ias_com_erro (ver
+    # app.routes_paciente/app.whatsapp_conversa) e mostrar ao médico na
+    # tela de aprovação (ver medico/perguntas.html), mesmo quando uma
+    # reserva "tapou o buraco" e o médico nem percebeu que uma das IAs
+    # escolhidas deu erro nesta pergunta específica.
+    falhas = []
+    if falhou_a:
+        falhas.append(provedor_a)
+    if falhou_b:
+        falhas.append(provedor_b)
+
     if falhou_a or falhou_b:
         current_app.logger.warning(
             "IA configurada (%s) falhou ao responder pergunta do paciente - tentando %s (não escolhida) como reserva",
@@ -560,6 +582,10 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
         )
         resposta_c, chamada_c, tentou_c = _tentar_provedor(provedor_c, pergunta_usuario, contexto, paciente_id)
         reserva_respondeu = tentou_c and (resposta_c is not None or chamada_c is not None)
+        if tentou_c and not reserva_respondeu:
+            # A reserva também falhou de verdade - registra pra aparecer
+            # na tela do médico igual às outras.
+            falhas.append(provedor_c)
         if reserva_respondeu and falhou_a:
             resposta_a, chamada_a, nome_efetivo_a = resposta_c, chamada_c, provedor_c
         elif reserva_respondeu and falhou_b:
@@ -629,4 +655,4 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
         if chamada_b:
             chamada_b.resposta_final_usada = bool(resposta_b)
 
-    return {"final": final, "por_provedor": respostas_por_provedor}
+    return {"final": final, "por_provedor": respostas_por_provedor, "falhas": falhas}

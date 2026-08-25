@@ -291,6 +291,12 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     auth VARCHAR(255) NOT NULL,
     criado_em TIMESTAMP
 );
+
+-- Reserva automática entre IAs (2026-08-25, ver app.ia_preparo.
+-- responder_com_ia): nomes das IAs que deram erro de chamada de verdade
+-- ao responder cada pergunta, separados por vírgula - mostrado como
+-- aviso na tela de aprovação do médico (ver medico/perguntas.html).
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS ias_com_erro VARCHAR(60);
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

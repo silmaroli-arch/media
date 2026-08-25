@@ -37,15 +37,28 @@
         {% for p in aguardando %}
         <div class="accordion-item border-warning">
           <h2 class="accordion-header">
-            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#aguardando-{{ p.id }}">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#aguardando-{{ p.id }}" aria-expanded="false" aria-controls="aguardando-{{ p.id }}">
               <span class="me-2"><strong>{{ p.paciente.nome }}</strong> — "<strong>{{ p.pergunta }}</strong>"</span>
               {% if p.exame %}<span class="badge bg-light text-dark me-2">{{ p.exame.nome }}</span>{% endif %}
               {{ badge_filial(p) }}
+              {% if p.ias_com_erro %}
+              <span class="badge bg-danger-subtle text-danger border border-danger-subtle me-2" title="Essa(s) IA(s) deu(ram) erro de chamada ao responder esta pergunta">
+                <i class="bi bi-exclamation-triangle"></i> {{ p.ias_com_erro.replace(',', ', ') }} falhou
+              </span>
+              {% endif %}
               <span class="text-muted small ms-2">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
             </button>
           </h2>
-          <div id="aguardando-{{ p.id }}" class="accordion-collapse collapse show" data-bs-parent="#accordionAguardando">
+          <div id="aguardando-{{ p.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionAguardando">
             <div class="accordion-body">
+              {% if p.ias_com_erro %}
+              <div class="alert alert-warning py-2 small mb-3">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <strong>{{ p.ias_com_erro.replace(',', ' e ') }}</strong>
+                {{ "deram" if ',' in p.ias_com_erro else "deu" }} erro de chamada ao responder esta pergunta específica
+                (indisponibilidade momentânea do provedor) — o rascunho abaixo usa a resposta de outra IA disponível no momento.
+              </div>
+              {% endif %}
               <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
                 {# Só mostra coluna pra IA que o dono escolheu pra esta pergunta
                    (ver PlataformaConfig.ia_chat_provedor_1/2 em /dono/configuracoes) -
@@ -95,15 +108,28 @@
     {% for p in pendentes %}
     <div class="accordion-item border-danger">
       <h2 class="accordion-header">
-        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#pendente-{{ p.id }}">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#pendente-{{ p.id }}" aria-expanded="false" aria-controls="pendente-{{ p.id }}">
           <span class="me-2"><strong>{{ p.paciente.nome }}</strong> — "<strong>{{ p.pergunta }}</strong>"</span>
           {% if p.exame %}<span class="badge bg-light text-dark me-2">{{ p.exame.nome }}</span>{% endif %}
           {{ badge_filial(p) }}
+          {% if p.ias_com_erro %}
+          <span class="badge bg-danger-subtle text-danger border border-danger-subtle me-2" title="Essa(s) IA(s) deu(ram) erro de chamada ao tentar responder esta pergunta">
+            <i class="bi bi-exclamation-triangle"></i> {{ p.ias_com_erro.replace(',', ', ') }} falhou
+          </span>
+          {% endif %}
           <span class="text-muted small ms-2">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
         </button>
       </h2>
-      <div id="pendente-{{ p.id }}" class="accordion-collapse collapse show" data-bs-parent="#accordionPendentes">
+      <div id="pendente-{{ p.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionPendentes">
         <div class="accordion-body">
+          {% if p.ias_com_erro %}
+          <div class="alert alert-warning py-2 small mb-3">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <strong>{{ p.ias_com_erro.replace(',', ' e ') }}</strong>
+            {{ "deram" if ',' in p.ias_com_erro else "deu" }} erro de chamada ao tentar responder esta pergunta —
+            por isso não há nenhum rascunho pronto, e ela caiu direto pra fila da secretaria/médico.
+          </div>
+          {% endif %}
           <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
             <div class="mb-2">
               <textarea name="resposta" class="form-control" rows="2" placeholder="Digite a resposta que será enviada ao paciente e salva na base de conhecimento..." required></textarea>

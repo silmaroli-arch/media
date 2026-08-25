@@ -1234,6 +1234,15 @@ class PerguntaPendente(db.Model):
     # só uma das três fica em branco por pergunta (a que não foi
     # escolhida), nunca as três com conteúdo.
     resposta_bruta_gemini = db.Column(db.Text)
+    # Nomes das IAs que deram erro de chamada de verdade ao responder esta
+    # pergunta (ver app.ia_preparo.responder_com_ia, chave "falhas") -
+    # separados por vírgula (ex.: "Gemini" ou "Gemini,ChatGPT"), None
+    # quando nenhuma falhou ou quando a pergunta não passou pela IA (sem
+    # exame selecionado). Mostrado como aviso na tela de aprovação (ver
+    # medico/perguntas.html) mesmo quando uma reserva "tapou o buraco" e o
+    # rascunho final saiu normal - o médico continua tendo visibilidade de
+    # que uma IA configurada falhou nesta pergunta específica.
+    ias_com_erro = db.Column(db.String(60), nullable=True)
     resposta = db.Column(db.Text)
     respondida_por = db.Column(db.String(150))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
