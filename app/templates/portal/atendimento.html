@@ -135,10 +135,18 @@
           {{ campo("Pergunta", p.pergunta) }}
           {{ campo("Recebida em", p.criado_em.strftime('%d/%m/%Y %H:%M')) }}
           {{ historico(p.paciente_id) }}
+          {# Só mostra a coluna da IA que o dono escolheu pra esta pergunta
+             (ver PlataformaConfig.ia_chat_provedor_1/2 em /dono/configuracoes) -
+             normalmente 1 das 3 fica em branco (a que não foi escolhida
+             naquele momento), por isso fica escondida em vez de aparecer
+             vazia/com "—" - mesmo critério já usado em medico/perguntas.html. #}
+          {% if p.resposta_bruta_gemini %}{{ campo("Sugestão do Gemini", p.resposta_bruta_gemini) }}{% endif %}
+          {% if p.resposta_bruta_chatgpt %}{{ campo("Sugestão do ChatGPT", p.resposta_bruta_chatgpt) }}{% endif %}
+          {% if p.resposta_bruta_claude %}{{ campo("Sugestão do Claude", p.resposta_bruta_claude) }}{% endif %}
           <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
             <input type="hidden" name="origem" value="portal">
             <div class="campo">
-              <span class="rotulo">Sugestão da IA (edite se precisar)</span>
+              <span class="rotulo">Rascunho final (edite se precisar)</span>
               <textarea name="resposta" class="form-control mt-1" rows="3" required>{{ p.resposta_sugerida_ia }}</textarea>
             </div>
             <button type="submit" class="btn btn-info btn-sm mt-1">Aprovar e enviar ao paciente</button>
