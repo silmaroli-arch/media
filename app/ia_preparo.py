@@ -449,6 +449,22 @@ _PROVEDORES_CHAT = {
 CAMPO_RESPOSTA_BRUTA = {"Claude": "claude", "ChatGPT": "chatgpt", "Gemini": "gemini"}
 
 
+def _tentar_provedor(nome_provedor, pergunta_usuario, contexto, paciente_id=None):
+    """Cria o cliente do provedor indicado (se a API key dele estiver
+    configurada) e tenta obter uma resposta. Retorna
+    `(texto_ou_None, chamada_ou_None, tentou_bool)` - `tentou_bool`
+    distingue "provedor sem API key configurada" (False - nem tentou) de
+    "tinha API key e a chamada foi feita" (True, mesmo que tenha
+    falhado) - usado por responder_com_ia para decidir quando vale a pena
+    acionar a reserva (ver logo abaixo)."""
+    cliente_factory, perguntar = _PROVEDORES_CHAT[nome_provedor]
+    cliente = cliente_factory()
+    if not cliente:
+        return None, None, False
+    texto, chamada = perguntar(cliente, pergunta_usuario, contexto, paciente_id)
+    return texto, chamada, True
+
+
 def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
     """Tenta responder a pergunta do paciente usando IA, com o preparo do
     exame como contexto. As duas IAs que respondem são escolhidas pelo
@@ -489,45 +505,76 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
     PerguntaPendente.resposta_sugerida_ia (já com a lógica de reforço
     mútuo acima aplicada) - vem None quando: nenhuma das duas IAs
     escolhidas está configurada; a(s) chamada(s) falharam (rede, limite
-    de uso etc.); ou a(s) IA(s) sinalizaram que não têm certeza. Quando
-    "final" é None, a pergunta segue para a correspondência por
-    palavra-chave e, por fim, para a fila da secretaria — o comportamento
-    de antes não muda."""
+    de uso etc.) mesmo depois da reserva (ver abaixo); ou a(s) IA(s)
+    sinalizaram que não têm certeza. Quando "final" é None, a pergunta
+    segue para a correspondência por palavra-chave e, por fim, para a
+    fila da secretaria — o comportamento de antes não muda.
+
+    Reserva automática (2026-08-25): quando uma das duas IAs escolhidas
+    pelo dono tem API key configurada mas a chamada falha de verdade (erro
+    de rede/API - ex.: o 503 "high demand" que o Gemini apresenta em
+    picos, ver `_tentar_provedor`), a terceira IA (a que o dono NÃO
+    escolheu) é chamada como reserva para esta pergunta específica, desde
+    que ela também tenha API key configurada. Se a reserva responder, a
+    resposta dela ocupa o lugar da que falhou (inclusive no campo
+    `por_provedor` correspondente, para o médico ver claramente qual IA
+    respondeu de fato). Isso é diferente de "provedor não escolhido" (que
+    nunca é chamado) - só entra em ação quando uma das duas escolhidas
+    falha. Se as duas escolhidas falharem na mesma pergunta, a reserva só
+    é acionada uma vez (evita gastar 2x a mesma chamada à toa); nesse caso
+    o rascunho final acaba dependendo só da resposta da reserva, como se
+    ela fosse a única IA disponível."""
     from app.models import PlataformaConfig
 
     config = PlataformaConfig.obter()
     provedor_a = config.ia_chat_provedor_1 or "Claude"
     provedor_b = config.ia_chat_provedor_2 or "ChatGPT"
-
-    cliente_a_factory, perguntar_a = _PROVEDORES_CHAT[provedor_a]
-    cliente_b_factory, perguntar_b = _PROVEDORES_CHAT[provedor_b]
-    cliente_a = cliente_a_factory()
-    cliente_b = cliente_b_factory()
-
-    # Cliente da Claude para o papel de árbitro/conciliadora (ver docstring
-    # acima) - reaproveita o cliente já criado se Claude for uma das duas
-    # respondentes, senão cria um cliente Anthropic só para esse papel.
-    if provedor_a == "Claude":
-        cliente_arbitro = cliente_a
-    elif provedor_b == "Claude":
-        cliente_arbitro = cliente_b
-    else:
-        cliente_arbitro = _cliente_anthropic()
+    provedor_c = next(nome for nome in _PROVEDORES_CHAT if nome not in (provedor_a, provedor_b))
 
     respostas_por_provedor = {"Claude": None, "ChatGPT": None, "Gemini": None}
-    if not cliente_a and not cliente_b:
-        return {"final": None, "por_provedor": respostas_por_provedor}
-
     contexto = _formatar_contexto_preparo(exame)
 
-    resposta_a, chamada_a = (
-        perguntar_a(cliente_a, pergunta_usuario, contexto, paciente_id) if cliente_a else (None, None)
-    )
-    resposta_b, chamada_b = (
-        perguntar_b(cliente_b, pergunta_usuario, contexto, paciente_id) if cliente_b else (None, None)
-    )
-    respostas_por_provedor[provedor_a] = resposta_a
-    respostas_por_provedor[provedor_b] = resposta_b
+    resposta_a, chamada_a, tentou_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id)
+    resposta_b, chamada_b, tentou_b = _tentar_provedor(provedor_b, pergunta_usuario, contexto, paciente_id)
+
+    if not tentou_a and not tentou_b:
+        # Nenhuma das duas escolhidas tem API key configurada - não é
+        # "falha", é "não configurada", não faz sentido acionar reserva.
+        return {"final": None, "por_provedor": respostas_por_provedor}
+
+    nome_efetivo_a, nome_efetivo_b = provedor_a, provedor_b
+
+    # Uma IA "falhou de verdade" quando tinha cliente (tentou_x=True) mas
+    # não voltou nem resposta nem ChamadaIA registrado - ver
+    # _perguntar_claude/_perguntar_chatgpt/_perguntar_gemini, que só
+    # devolvem (None, None) nesse caso; (None, chamada) é "respondeu mas
+    # sinalizou que não tem certeza", isso não é falha e não aciona
+    # reserva.
+    falhou_a = tentou_a and resposta_a is None and chamada_a is None
+    falhou_b = tentou_b and resposta_b is None and chamada_b is None
+
+    if falhou_a or falhou_b:
+        current_app.logger.warning(
+            "IA configurada (%s) falhou ao responder pergunta do paciente - tentando %s (não escolhida) como reserva",
+            provedor_a if falhou_a else provedor_b, provedor_c,
+        )
+        resposta_c, chamada_c, tentou_c = _tentar_provedor(provedor_c, pergunta_usuario, contexto, paciente_id)
+        reserva_respondeu = tentou_c and (resposta_c is not None or chamada_c is not None)
+        if reserva_respondeu and falhou_a:
+            resposta_a, chamada_a, nome_efetivo_a = resposta_c, chamada_c, provedor_c
+        elif reserva_respondeu and falhou_b:
+            resposta_b, chamada_b, nome_efetivo_b = resposta_c, chamada_c, provedor_c
+
+    respostas_por_provedor[nome_efetivo_a] = resposta_a
+    respostas_por_provedor[nome_efetivo_b] = resposta_b
+
+    # Cliente da Claude para o papel de árbitro/conciliadora (ver docstring
+    # acima) - construído à parte (independente de quem respondeu como
+    # escolhida ou como reserva) porque `_tentar_provedor` não expõe o
+    # cliente que criou por dentro; o custo de instanciar um segundo
+    # cliente Anthropic quando Claude já respondeu é desprezível (não é
+    # uma chamada de API, só a construção do objeto cliente).
+    cliente_arbitro = _cliente_anthropic()
 
     if resposta_a and resposta_b:
         if _respostas_divergem(cliente_arbitro, resposta_a, resposta_b, paciente_id):
@@ -553,11 +600,11 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
                 # Aqui as duas respostas cruas aparecem LITERALMENTE no
                 # texto final, então as duas contaram.
                 final = (
-                    f"⚠️ As duas IAs consultadas ({provedor_a} e {provedor_b}) deram respostas "
+                    f"⚠️ As duas IAs consultadas ({nome_efetivo_a} e {nome_efetivo_b}) deram respostas "
                     "diferentes para esta pergunta — revise com atenção antes de "
                     "aprovar.\n\n"
-                    f"Resposta do {provedor_a}:\n{resposta_a}\n\n"
-                    f"Resposta do {provedor_b}:\n{resposta_b}"
+                    f"Resposta do {nome_efetivo_a}:\n{resposta_a}\n\n"
+                    f"Resposta do {nome_efetivo_b}:\n{resposta_b}"
                 )
                 if chamada_a:
                     chamada_a.resposta_final_usada = True
