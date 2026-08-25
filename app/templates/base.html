@@ -39,6 +39,41 @@
     .sidebar-pin-btn.pinned { color: #fff; }
     .sidebar-toggle-btn[disabled] { opacity: .35; cursor: not-allowed; }
     @media print { .no-print { display: none !important; } }
+    /* Mobile-first: em telas pequenas o menu vira uma GAVETA (off-canvas)
+       que abre por cima do conteúdo, em vez de ficar sempre fixo ao lado
+       ocupando espaço - antes disso o menu de 250px brigava com a tela
+       do celular, deixando quase nada de espaço pro conteúdo. Acima do
+       breakpoint (tablet/desktop) o comportamento continua o de sempre
+       (pino/esconder, ver script no fim da página). */
+    @media (max-width: 767.98px) {
+      .app-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        width: 82vw;
+        max-width: 300px;
+        overflow-y: auto;
+        transform: translateX(-100%);
+        transition: transform .25s ease-in-out;
+        z-index: 1045;
+        box-shadow: 2px 0 18px rgba(0,0,0,.35);
+      }
+      body.sidebar-mobile-open .app-sidebar { transform: translateX(0); }
+      .sidebar-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.45);
+        z-index: 1040;
+      }
+      body.sidebar-mobile-open .sidebar-backdrop { display: block; }
+      body.sidebar-mobile-open { overflow: hidden; }
+      /* Pino ("fixar o menu") é um conceito de desktop - no celular o
+         menu é sempre uma gaveta que abre/fecha, então o botão de pino
+         some e o botão de hamburguer no topo nunca fica desabilitado. */
+      .sidebar-pin-btn { display: none; }
+    }
     /* Badge de status "não compareceu" - cor própria (laranja), distinta
        de cancelado (vermelho) e realizado (verde), usada em todas as telas
        que mostram o status de um agendamento. */
@@ -182,6 +217,11 @@
       </li>
     </ul>
   </nav>
+  {# Fundo escurecido atrás da gaveta do menu no celular - toque nele
+     fecha o menu (ver CSS/JS: só aparece quando body tem a classe
+     "sidebar-mobile-open", e só existe visualmente abaixo do breakpoint
+     mobile). #}
+  <div class="sidebar-backdrop no-print" onclick="fecharMenuMobileSidebar()"></div>
   {% endif %}
 
   <div class="flex-grow-1 d-flex flex-column" style="min-height: 100vh;">
@@ -311,11 +351,37 @@
   (function () {
     var CHAVE_PINADO = "media.sidebarPinado";
     var CHAVE_ESCONDIDO = "media.sidebarEscondido";
+    // Mesmo breakpoint do CSS acima (767.98px) - abaixo disso o menu vira
+    // gaveta (sidebar-mobile-open) e o conceito de "pino" não existe.
+    var mqMobile = window.matchMedia("(max-width: 767.98px)");
 
     function estaPinado() { return localStorage.getItem(CHAVE_PINADO) !== "false"; }
     function estaEscondido() { return localStorage.getItem(CHAVE_ESCONDIDO) === "true"; }
 
+    function fecharMenuMobile() { document.body.classList.remove("sidebar-mobile-open"); }
+    function abrirMenuMobile() { document.body.classList.add("sidebar-mobile-open"); }
+    // Usado pelo onclick do fundo escurecido (ver o <div class="sidebar-backdrop">).
+    window.fecharMenuMobileSidebar = fecharMenuMobile;
+
     function aplicar() {
+      if (mqMobile.matches) {
+        // No celular não existe "pino" - o menu é sempre uma gaveta que
+        // abre/fecha por cima do conteúdo (ver abrirMenuMobile acima) e o
+        // botão de hamburguer no topo nunca fica desabilitado.
+        document.body.classList.remove("sidebar-hidden");
+        var toggleBtnMobile = document.getElementById("sidebarToggleBtn");
+        if (toggleBtnMobile) {
+          toggleBtnMobile.disabled = false;
+          toggleBtnMobile.title = "Abrir/fechar o menu";
+        }
+        return;
+      }
+
+      // Trocando de celular pra tablet/desktop (ex.: girar o aparelho) -
+      // garante que a gaveta não fique "presa" aberta com o layout de
+      // desktop por baixo.
+      fecharMenuMobile();
+
       var pinado = estaPinado();
       var escondido = !pinado && estaEscondido();
       document.body.classList.toggle("sidebar-hidden", escondido);
@@ -338,10 +404,16 @@
 
     document.addEventListener("DOMContentLoaded", function () {
       aplicar();
+      if (mqMobile.addEventListener) {
+        mqMobile.addEventListener("change", aplicar);
+      } else if (mqMobile.addListener) {
+        mqMobile.addListener(aplicar); // Safari antigo
+      }
 
       var pinBtn = document.getElementById("sidebarPinBtn");
       if (pinBtn) {
         pinBtn.addEventListener("click", function () {
+          if (mqMobile.matches) return; // sem pino no celular
           var novoPinado = !estaPinado();
           localStorage.setItem(CHAVE_PINADO, novoPinado ? "true" : "false");
           if (novoPinado) {
@@ -355,9 +427,27 @@
       var toggleBtn = document.getElementById("sidebarToggleBtn");
       if (toggleBtn) {
         toggleBtn.addEventListener("click", function () {
+          if (mqMobile.matches) {
+            if (document.body.classList.contains("sidebar-mobile-open")) {
+              fecharMenuMobile();
+            } else {
+              abrirMenuMobile();
+            }
+            return;
+          }
           if (estaPinado()) return; // não esconde enquanto estiver fixo
           localStorage.setItem(CHAVE_ESCONDIDO, estaEscondido() ? "false" : "true");
           aplicar();
+        });
+      }
+
+      // Fecha a gaveta ao navegar de verdade (não ao abrir/fechar um
+      // submenu como "Configuração de exames"/"Médico + IA", que usam
+      // data-bs-toggle="collapse" e têm a classe nav-group-toggle).
+      var linksDeNavegacao = document.querySelectorAll(".app-sidebar a.nav-link:not(.nav-group-toggle)");
+      for (var i = 0; i < linksDeNavegacao.length; i++) {
+        linksDeNavegacao[i].addEventListener("click", function () {
+          if (mqMobile.matches) fecharMenuMobile();
         });
       }
     });
