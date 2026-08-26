@@ -22,7 +22,6 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
   <style>
-    .app-sidebar { width: 250px; min-height: 100vh; flex-shrink: 0; }
     .app-sidebar .nav-link { color: rgba(255,255,255,.85); }
     .app-sidebar .nav-link.active,
     .app-sidebar .nav-link:hover { color: #fff; background-color: rgba(255,255,255,.12); border-radius: .375rem; }
@@ -30,49 +29,43 @@
     .app-sidebar .nav-group-toggle .chevron-icon { transition: transform .2s; font-size: .75rem; }
     .app-sidebar .nav-group-toggle[aria-expanded="true"] .chevron-icon { transform: rotate(180deg); }
     .app-sidebar .nav-sub .nav-link { padding-left: 2.25rem; font-size: .92rem; }
-    /* Menu lateral escondível - por padrão fica fixo (afixado/"pinado"),
-       igual sempre foi; só some quando o usuário desafixa e clica em
-       esconder (ver botão .sidebar-toggle-btn e .sidebar-pin-btn abaixo). */
-    body.sidebar-hidden .app-sidebar { display: none; }
-    .sidebar-pin-btn { background: none; border: none; color: rgba(255,255,255,.75); padding: .25rem; line-height: 1; }
-    .sidebar-pin-btn:hover { color: #fff; }
-    .sidebar-pin-btn.pinned { color: #fff; }
-    .sidebar-toggle-btn[disabled] { opacity: .35; cursor: not-allowed; }
     @media print { .no-print { display: none !important; } }
-    /* Mobile-first: em telas pequenas o menu vira uma GAVETA (off-canvas)
-       que abre por cima do conteúdo, em vez de ficar sempre fixo ao lado
-       ocupando espaço - antes disso o menu de 250px brigava com a tela
-       do celular, deixando quase nada de espaço pro conteúdo. Acima do
-       breakpoint (tablet/desktop) o comportamento continua o de sempre
-       (pino/esconder, ver script no fim da página). */
-    @media (max-width: 767.98px) {
-      .app-sidebar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        height: 100vh;
-        width: 82vw;
-        max-width: 300px;
-        overflow-y: auto;
-        transform: translateX(-100%);
-        transition: transform .25s ease-in-out;
-        z-index: 1045;
-        box-shadow: 2px 0 18px rgba(0,0,0,.35);
-      }
-      body.sidebar-mobile-open .app-sidebar { transform: translateX(0); }
-      .sidebar-backdrop {
-        display: none;
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,.45);
-        z-index: 1040;
-      }
-      body.sidebar-mobile-open .sidebar-backdrop { display: block; }
-      body.sidebar-mobile-open { overflow: hidden; }
-      /* Pino ("fixar o menu") é um conceito de desktop - no celular o
-         menu é sempre uma gaveta que abre/fecha, então o botão de pino
-         some e o botão de hamburguer no topo nunca fica desabilitado. */
-      .sidebar-pin-btn { display: none; }
+    /* Menu em GAVETA (off-canvas) em qualquer tamanho de tela - fica
+       escondido por padrão e abre por cima do conteúdo ao clicar no
+       hamburguer (#sidebarToggleBtn), fechando ao clicar de novo, no
+       fundo escurecido (.sidebar-backdrop) ou num link de navegação (ver
+       script no fim da página). Isto era só o comportamento do celular
+       (a pedido do Silvan) e passou a valer também em tablet/desktop, no
+       lugar do antigo menu fixo com botão de "pino" - o pedido foi
+       justamente unificar os dois. */
+    .app-sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 100vh;
+      width: 82vw;
+      max-width: 300px;
+      overflow-y: auto;
+      transform: translateX(-100%);
+      transition: transform .25s ease-in-out;
+      z-index: 1045;
+      box-shadow: 2px 0 18px rgba(0,0,0,.35);
+    }
+    body.sidebar-open .app-sidebar { transform: translateX(0); }
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 1040;
+    }
+    body.sidebar-open .sidebar-backdrop { display: block; }
+    body.sidebar-open { overflow: hidden; }
+    /* Em telas maiores a gaveta pode ficar mais larga que os 82vw pensados
+       pro celular, já que sobra espaço - mas sempre fixa (max-width),
+       nunca ocupando a tela toda. */
+    @media (min-width: 576px) {
+      .app-sidebar { width: 300px; }
     }
     /* Badge de status "não compareceu" - cor própria (laranja), distinta
        de cancelado (vermelho) e realizado (verde), usada em todas as telas
@@ -93,7 +86,8 @@
   {% if eh_staff_logado %}
   {% set grupo_ia = ['medico.perguntas_pendentes', 'medico.perguntas_responder',
                       'medico.perguntas_respondidas',
-                      'medico.faq_lista', 'medico.faq_novo'] %}
+                      'medico.faq_lista', 'medico.faq_novo',
+                      'medico.portal_atendimento'] %}
   {% set grupo_config_exames = ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar',
                                  'medico.exames_por_filial',
                                  'medico.preparo_modelos_lista', 'medico.preparo_modelos_novo',
@@ -103,9 +97,7 @@
       <a class="d-block text-decoration-none" href="{{ url_for('medico.dashboard') }}">
         <img src="{{ url_for('static', filename='img/logo-horizontal-claro.svg') }}" alt="MedIA" style="height: 34px;">
       </a>
-      <button type="button" id="sidebarPinBtn" class="sidebar-pin-btn" title="Fixar o menu (impede esconder)">
-        <i class="bi bi-pin-angle-fill" id="sidebarPinIcon"></i>
-      </button>
+      <button type="button" class="btn-close btn-close-white no-print" aria-label="Fechar o menu" onclick="fecharMenuSidebar()"></button>
     </div>
     {# No celular, o médico usa uma versão bem reduzida do app: só "Meus
        exames agendados" e "Portal de atendimento" (pedido do Silvan - "no
@@ -231,15 +223,17 @@
               <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">Base de conhecimento</a>
             </li>
             {# Atalho adicional (não substitui o acesso normal acima): tela
-               enxuta, sem menu, só com as perguntas pendentes + histórico -
-               pensada para o médico salvar como atalho separado na tela de
-               início do celular e abrir rapidinho pra responder. Abre em
-               nova aba porque tem sua própria barra de topo/navegação -
-               em telas menores (celular do médico) esse item some daqui
-               (todo o "Médico + IA" fica oculto) e um link equivalente,
-               sem abrir nova aba, aparece direto no menu (ver acima). #}
+               enxuta, só com as perguntas pendentes + histórico - pensada
+               para o médico salvar como atalho separado na tela de início
+               do celular e abrir rapidinho pra responder. Usa o mesmo
+               menu/barra de topo do resto do app (portal/atendimento.html
+               também estende base.html) - por isso navega na mesma aba,
+               como qualquer outro item do menu. Em telas menores (celular
+               do médico) esse item some daqui (todo o "Médico + IA" fica
+               oculto) e um link equivalente aparece direto no menu (ver
+               acima). #}
             <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('medico.portal_atendimento') }}" target="_blank" rel="noopener">
+              <a class="nav-link {% if request.endpoint == 'medico.portal_atendimento' %}active{% endif %}" href="{{ url_for('medico.portal_atendimento') }}">
                 <i class="bi bi-box-arrow-up-right me-1"></i>Portal de atendimento rápido
               </a>
             </li>
@@ -248,11 +242,9 @@
       </li>
     </ul>
   </nav>
-  {# Fundo escurecido atrás da gaveta do menu no celular - toque nele
-     fecha o menu (ver CSS/JS: só aparece quando body tem a classe
-     "sidebar-mobile-open", e só existe visualmente abaixo do breakpoint
-     mobile). #}
-  <div class="sidebar-backdrop no-print" onclick="fecharMenuMobileSidebar()"></div>
+  {# Fundo escurecido atrás da gaveta do menu - toque nele fecha o menu
+     (ver CSS/JS: só aparece quando body tem a classe "sidebar-open"). #}
+  <div class="sidebar-backdrop no-print" onclick="fecharMenuSidebar()"></div>
   {% endif %}
 
   <div class="flex-grow-1 d-flex flex-column" style="min-height: 100vh;">
@@ -261,7 +253,7 @@
       <div class="d-flex align-items-center">
         {% if eh_staff_logado %}
         <button type="button" id="sidebarToggleBtn" class="btn btn-sm btn-outline-secondary sidebar-toggle-btn me-2"
-                title="Mostrar/esconder o menu lateral (fixe o menu para poder escondê-lo)">
+                title="Abrir/fechar o menu">
           <i class="bi bi-list"></i>
         </button>
         {% endif %}
@@ -376,99 +368,28 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 {% if eh_staff_logado %}
 <script>
-  // Menu lateral: por padrão fica fixo ("pinado"), igual sempre foi - só
-  // pode ser escondido depois que o usuário desafixa. Preferência salva no
-  // navegador (localStorage), não é algo do servidor/conta.
+  // Menu lateral em gaveta (off-canvas), em qualquer tamanho de tela: fica
+  // escondido por padrão a cada carregamento de página e abre por cima do
+  // conteúdo ao clicar no hamburguer (#sidebarToggleBtn) - sem preferência
+  // salva no navegador (era assim no celular; unificado pro app inteiro a
+  // pedido do Silvan, no lugar do antigo menu fixo com botão de "pino").
   (function () {
-    var CHAVE_PINADO = "media.sidebarPinado";
-    var CHAVE_ESCONDIDO = "media.sidebarEscondido";
-    // Mesmo breakpoint do CSS acima (767.98px) - abaixo disso o menu vira
-    // gaveta (sidebar-mobile-open) e o conceito de "pino" não existe.
-    var mqMobile = window.matchMedia("(max-width: 767.98px)");
-
-    function estaPinado() { return localStorage.getItem(CHAVE_PINADO) !== "false"; }
-    function estaEscondido() { return localStorage.getItem(CHAVE_ESCONDIDO) === "true"; }
-
-    function fecharMenuMobile() { document.body.classList.remove("sidebar-mobile-open"); }
-    function abrirMenuMobile() { document.body.classList.add("sidebar-mobile-open"); }
-    // Usado pelo onclick do fundo escurecido (ver o <div class="sidebar-backdrop">).
-    window.fecharMenuMobileSidebar = fecharMenuMobile;
-
-    function aplicar() {
-      if (mqMobile.matches) {
-        // No celular não existe "pino" - o menu é sempre uma gaveta que
-        // abre/fecha por cima do conteúdo (ver abrirMenuMobile acima) e o
-        // botão de hamburguer no topo nunca fica desabilitado.
-        document.body.classList.remove("sidebar-hidden");
-        var toggleBtnMobile = document.getElementById("sidebarToggleBtn");
-        if (toggleBtnMobile) {
-          toggleBtnMobile.disabled = false;
-          toggleBtnMobile.title = "Abrir/fechar o menu";
-        }
-        return;
-      }
-
-      // Trocando de celular pra tablet/desktop (ex.: girar o aparelho) -
-      // garante que a gaveta não fique "presa" aberta com o layout de
-      // desktop por baixo.
-      fecharMenuMobile();
-
-      var pinado = estaPinado();
-      var escondido = !pinado && estaEscondido();
-      document.body.classList.toggle("sidebar-hidden", escondido);
-
-      var pinIcon = document.getElementById("sidebarPinIcon");
-      var pinBtn = document.getElementById("sidebarPinBtn");
-      if (pinIcon && pinBtn) {
-        pinIcon.className = pinado ? "bi bi-pin-angle-fill" : "bi bi-pin-angle";
-        pinBtn.classList.toggle("pinned", pinado);
-        pinBtn.title = pinado ? "Desafixar o menu (permite esconder)" : "Fixar o menu (impede esconder)";
-      }
-      var toggleBtn = document.getElementById("sidebarToggleBtn");
-      if (toggleBtn) {
-        toggleBtn.disabled = pinado;
-        toggleBtn.title = pinado
-          ? "Desafixe o menu (ícone de pin) para poder escondê-lo"
-          : "Mostrar/esconder o menu lateral";
-      }
-    }
+    function fecharMenuSidebar() { document.body.classList.remove("sidebar-open"); }
+    function abrirMenuSidebar() { document.body.classList.add("sidebar-open"); }
+    // Usado pelo onclick do fundo escurecido e do botão de fechar dentro
+    // do próprio menu (ver <div class="sidebar-backdrop"> e o botão de
+    // fechar no topo da <nav class="app-sidebar">).
+    window.fecharMenuSidebar = fecharMenuSidebar;
 
     document.addEventListener("DOMContentLoaded", function () {
-      aplicar();
-      if (mqMobile.addEventListener) {
-        mqMobile.addEventListener("change", aplicar);
-      } else if (mqMobile.addListener) {
-        mqMobile.addListener(aplicar); // Safari antigo
-      }
-
-      var pinBtn = document.getElementById("sidebarPinBtn");
-      if (pinBtn) {
-        pinBtn.addEventListener("click", function () {
-          if (mqMobile.matches) return; // sem pino no celular
-          var novoPinado = !estaPinado();
-          localStorage.setItem(CHAVE_PINADO, novoPinado ? "true" : "false");
-          if (novoPinado) {
-            // Fixar sempre deixa o menu visível.
-            localStorage.setItem(CHAVE_ESCONDIDO, "false");
-          }
-          aplicar();
-        });
-      }
-
       var toggleBtn = document.getElementById("sidebarToggleBtn");
       if (toggleBtn) {
         toggleBtn.addEventListener("click", function () {
-          if (mqMobile.matches) {
-            if (document.body.classList.contains("sidebar-mobile-open")) {
-              fecharMenuMobile();
-            } else {
-              abrirMenuMobile();
-            }
-            return;
+          if (document.body.classList.contains("sidebar-open")) {
+            fecharMenuSidebar();
+          } else {
+            abrirMenuSidebar();
           }
-          if (estaPinado()) return; // não esconde enquanto estiver fixo
-          localStorage.setItem(CHAVE_ESCONDIDO, estaEscondido() ? "false" : "true");
-          aplicar();
         });
       }
 
@@ -477,9 +398,7 @@
       // data-bs-toggle="collapse" e têm a classe nav-group-toggle).
       var linksDeNavegacao = document.querySelectorAll(".app-sidebar a.nav-link:not(.nav-group-toggle)");
       for (var i = 0; i < linksDeNavegacao.length; i++) {
-        linksDeNavegacao[i].addEventListener("click", function () {
-          if (mqMobile.matches) fecharMenuMobile();
-        });
+        linksDeNavegacao[i].addEventListener("click", fecharMenuSidebar);
       }
     });
   })();
