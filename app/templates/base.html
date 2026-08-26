@@ -178,6 +178,16 @@
           <i class="bi bi-box-arrow-up-right me-2"></i>Portal de atendimento
         </a>
       </li>
+
+      {# Fatia 8 (licença individual): pedido explícito do Silvan de que o
+         médico tenha acesso a isso pelo app Mobile - por isso este item
+         NÃO leva oculto_no_celular_do_medico nem d-md-none, fica visível
+         tanto no menu reduzido do celular quanto no desktop. #}
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if request.endpoint == 'medico.minha_licenca' %}active{% endif %}" href="{{ url_for('medico.minha_licenca') }}">
+          <i class="bi bi-patch-check me-2"></i>Minha licença
+        </a>
+      </li>
       {% endif %}
 
       {# Reorganização de menus: o menu "Relatórios" deixou de existir -

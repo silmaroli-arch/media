@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block titulo %}Minha licença{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Minha licença</h3>
+
+<div class="card" style="max-width: 480px;">
+  <div class="card-body">
+    <p class="mb-2">
+      Status:
+      <span class="badge bg-{{ licenca_cor }}">{{ licenca_label }}</span>
+    </p>
+    <p class="mb-0">
+      Vencimento:
+      {% if licenca_vencimento %}
+        <strong>{{ licenca_vencimento.strftime('%d/%m/%Y') }}</strong>
+      {% else %}
+        <span class="text-muted">não definido</span>
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+<p class="text-muted mt-3">
+  Essa informação é só para acompanhamento — vencer a licença não bloqueia o seu acesso ao MedIA.
+</p>
+{% endblock %}

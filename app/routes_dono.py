@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from functools import wraps
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash
+from flask import Blueprint, render_template, redirect, url_for, request, flash, abort
 from flask_login import login_required, current_user
 
 from app.extensions import db
@@ -223,6 +223,34 @@ def grupo_desbloquear(grupo_id):
     db.session.commit()
     flash(f"Acesso do grupo '{grupo.nome}' foi restabelecido.", "success")
     return redirect(url_for("dono.grupo_detalhe", grupo_id=grupo.id))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_editar(usuario_id):
+    """Fatia 8 (licença individual): edição da licença de UM médico -
+    espelha grupo_editar() acima, mas por Usuario (a cobrança agora é por
+    médico, não por Grupo - decisão do Silvan). Não se aplica a
+    secretária (não tem licença individual)."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    if usuario.tipo != "medico":
+        abort(404)
+
+    usuario.licenca_status = request.form.get("licenca_status", usuario.licenca_status)
+    vencimento_str = request.form.get("licenca_vencimento", "").strip()
+    if vencimento_str:
+        try:
+            usuario.licenca_vencimento = datetime.strptime(vencimento_str, "%Y-%m-%d").date()
+        except ValueError:
+            flash("Data de vencimento inválida.", "danger")
+            return redirect(url_for("dono.usuarios"))
+    else:
+        usuario.licenca_vencimento = None
+
+    db.session.commit()
+    flash(f"Licença de '{usuario.nome}' atualizada.", "success")
+    return redirect(url_for("dono.usuarios"))
 
 
 @dono_bp.route("/usuarios")

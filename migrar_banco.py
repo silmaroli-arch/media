@@ -297,6 +297,22 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 -- ao responder cada pergunta, separados por vírgula - mostrado como
 -- aviso na tela de aprovação do médico (ver medico/perguntas.html).
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS ias_com_erro VARCHAR(60);
+
+-- Fatia 8 (licença individual): a cobrança passa a ser POR MÉDICO, não só
+-- por Grupo (Grupo.valor_por_medico continua sendo só uma estimativa) -
+-- vale desde o cadastro, independente de o médico estar ou não num Grupo
+-- de trabalho (decisão do Silvan). Mesmo vocabulário de Grupo.status.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS licenca_status VARCHAR(20) NOT NULL DEFAULT 'trial';
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS licenca_vencimento DATE;
+
+-- Backfill: a partir deste deploy, todo médico NOVO já nasce com
+-- licenca_vencimento explícito (ver routes_auth.py:cadastro() e
+-- routes_grupo.py:convidar()) - então qualquer médico já existente que
+-- ainda estiver com licenca_vencimento NULL é necessariamente uma conta
+-- de ANTES desta fatia, e é seguro considerá-la já "ativa" (sem trial a
+-- vencer) em vez de mostrar um vencimento de 14 dias a partir de hoje que
+-- não corresponde à realidade dela.
+UPDATE usuarios SET licenca_status = 'ativa' WHERE tipo = 'medico' AND licenca_vencimento IS NULL;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

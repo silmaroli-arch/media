@@ -129,6 +129,14 @@ class Usuario(db.Model, UserMixin):
     crm_numero = db.Column(db.String(20))
     crm_uf = db.Column(db.String(2))
 
+    # Fatia 8 (licença individual): a cobrança agora é POR MÉDICO, não só
+    # por Grupo (Grupo.valor_por_medico é uma estimativa de mercado; a
+    # licença de verdade é individual, vale a partir do cadastro,
+    # independente de o médico estar ou não num Grupo de trabalho -
+    # decisão do Silvan). Vocabulário igual ao de Grupo.status.
+    licenca_status = db.Column(db.String(20), nullable=False, default="trial")
+    licenca_vencimento = db.Column(db.Date)
+
     # CONTA ÚNICA do paciente: uma pessoa (um Usuario) pode ter VÁRIOS
     # cadastros de paciente - um por empresa que frequenta (ver
     # encontrar_conta_paciente). O que é global é a PESSOA e o login dela;
@@ -151,6 +159,15 @@ class Usuario(db.Model, UserMixin):
         if not self.senha_hash:
             return False
         return check_password_hash(self.senha_hash, senha)
+
+    def verificar_vencimento_licenca(self):
+        """Mesma regra de Grupo.verificar_vencimento_trial() - só informativo
+        por enquanto (não bloqueia o acesso), ver medico.minha_licenca. Não
+        faz commit, quem chamar decide quando salvar. Retorna True se mudou."""
+        if self.licenca_status == "trial" and self.licenca_vencimento and self.licenca_vencimento < date.today():
+            self.licenca_status = "inadimplente"
+            return True
+        return False
 
     @property
     def paciente(self):

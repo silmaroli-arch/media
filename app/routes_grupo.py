@@ -227,6 +227,11 @@ def convidar(grupo_id):
             senha_final = request.form.get("senha", "").strip() or "123456"
             usuario = Usuario(nome=nome, email=email, tipo=papel_conta, cpf=cpf or None)
             usuario.set_senha(senha_final)
+            # Fatia 8 (licença individual): mesma regra de trial do cadastro
+            # público (routes_auth.py:cadastro()) - vale a partir de agora,
+            # independente de o médico já entrar direto num Grupo.
+            if papel_conta == "medico":
+                usuario.licenca_vencimento = date.today() + timedelta(days=PlataformaConfig.obter().trial_dias)
             db.session.add(usuario)
             db.session.flush()
             db.session.add(GrupoMembro(grupo_id=grupo.id, usuario_id=usuario.id, papel=papel_grupo, ativo=True))

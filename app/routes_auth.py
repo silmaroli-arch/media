@@ -1,11 +1,11 @@
 import re
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, session
 from flask_login import login_user, logout_user, login_required, current_user
 
 from app.extensions import db
-from app.models import Usuario, Paciente, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.models import Usuario, Paciente, PlataformaConfig, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
 # `proximo_seguro` mora em clinica_utils.py (compartilhado com
 # routes_medico.py:escolher_clinica, que precisa do mesmo tratamento pra
 # não perder o destino original de quem tem vínculo em mais de um Grupo -
@@ -298,6 +298,14 @@ def cadastro():
         usuario.uf = request.form.get("uf", "").strip().upper() or None
         usuario.crm_numero = crm_numero
         usuario.crm_uf = crm_uf
+
+        # Fatia 8 (licença individual): a cobrança é por médico e vale a
+        # partir do cadastro, independente de Grupo (decisão do Silvan) -
+        # todo médico novo já nasce com um prazo de trial usando o mesmo
+        # parâmetro configurável que os Grupos usam (PlataformaConfig.
+        # trial_dias), pra não introduzir uma segunda constante de negócio.
+        if papel == "medico":
+            usuario.licenca_vencimento = date.today() + timedelta(days=PlataformaConfig.obter().trial_dias)
 
         db.session.add(usuario)
         # Fatia 6: o cadastro NÃO cria mais um Grupo. A conta nasce solo,

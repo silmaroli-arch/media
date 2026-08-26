@@ -2393,6 +2393,39 @@ def portal_atendimento():
     )
 
 
+_LICENCA_LABELS = {
+    "trial": ("Em teste", "info"),
+    "ativa": ("Ativa", "success"),
+    "inadimplente": ("Pendente de pagamento", "warning"),
+    "bloqueada": ("Bloqueada", "danger"),
+}
+
+
+@medico_bp.route("/minha-licenca")
+@login_required
+@staff_required
+def minha_licenca():
+    """Fatia 8 (licença individual): tela informativa pro médico ver quando
+    sua licença vence - a cobrança é por médico, não por Grupo, e vale desde
+    o cadastro (decisão do Silvan). Por enquanto é só informativo: vencer
+    não bloqueia o acesso (ver Usuario.verificar_vencimento_licenca)."""
+    if not eh_medico():
+        flash("Essa tela é só para contas de médico.", "warning")
+        return redirect(url_for("medico.dashboard"))
+
+    if current_user.verificar_vencimento_licenca():
+        db.session.commit()
+
+    label, cor = _LICENCA_LABELS.get(current_user.licenca_status, (current_user.licenca_status, "secondary"))
+    return render_template(
+        "medico/minha_licenca.html",
+        licenca_status=current_user.licenca_status,
+        licenca_label=label,
+        licenca_cor=cor,
+        licenca_vencimento=current_user.licenca_vencimento,
+    )
+
+
 @medico_bp.route("/perguntas/<int:pergunta_id>/responder", methods=["POST"])
 @login_required
 @staff_required

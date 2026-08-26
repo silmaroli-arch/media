@@ -23,10 +23,12 @@
         <th>E-mail</th>
         <th>Tipo</th>
         <th>Grupo(s) de trabalho</th>
+        <th>Licença</th>
         <th>Cadastrado em</th>
       </tr>
     </thead>
     <tbody>
+      {% set licenca_cores = {'trial': 'info', 'ativa': 'success', 'inadimplente': 'warning', 'bloqueada': 'danger'} %}
       {% for l in linhas %}
       <tr>
         <td>{{ l.usuario.nome }}</td>
@@ -53,10 +55,30 @@
             <span class="badge bg-secondary">conta solo</span>
           {% endif %}
         </td>
+        <td>
+          {% if l.usuario.tipo == "medico" %}
+            <span class="badge bg-{{ licenca_cores.get(l.usuario.licenca_status, 'secondary') }} mb-1">{{ l.usuario.licenca_status }}</span>
+            <span class="text-muted small d-block mb-1">
+              {{ l.usuario.licenca_vencimento.strftime('%d/%m/%Y') if l.usuario.licenca_vencimento else "sem vencimento" }}
+            </span>
+            <form method="post" action="{{ url_for('dono.usuario_licenca_editar', usuario_id=l.usuario.id) }}" class="d-flex gap-1 flex-wrap">
+              <select name="licenca_status" class="form-select form-select-sm" style="width: auto;">
+                {% for s in ['trial', 'ativa', 'inadimplente', 'bloqueada'] %}
+                <option value="{{ s }}" {% if s == l.usuario.licenca_status %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+              </select>
+              <input type="date" name="licenca_vencimento" class="form-control form-control-sm" style="width: auto;"
+                     value="{{ l.usuario.licenca_vencimento.isoformat() if l.usuario.licenca_vencimento else '' }}">
+              <button type="submit" class="btn btn-sm btn-outline-primary">Salvar</button>
+            </form>
+          {% else %}
+            <span class="text-muted small">—</span>
+          {% endif %}
+        </td>
         <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
+      <tr><td colspan="8" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
       {% endfor %}
     </tbody>
   </table>
