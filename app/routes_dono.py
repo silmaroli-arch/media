@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 
@@ -47,11 +47,21 @@ def _usuarios_com_custo():
         if c.preco_desconhecido:
             item["tem_custo_desconhecido"] = True
 
+    # Calendário de pagamento (Fatia 8): mostra de cara se o mês corrente já
+    # foi marcado como pago pra cada médico, sem precisar abrir o
+    # calendário completo de cada um - ver usuario_licenca_pagamentos.
+    mes_atual = date.today().replace(day=1)
+    pago_mes_atual_por_usuario = {
+        p.usuario_id: p.pago
+        for p in LicencaPagamento.query.filter_by(mes=mes_atual).all()
+    }
+
     return [
         {
             "usuario": u,
             "grupos": nomes_de_grupo_por_usuario.get(u.id, []),
             "custo": custo_por_usuario.get(u.id),
+            "pago_mes_atual": pago_mes_atual_por_usuario.get(u.id),
         }
         for u in lista_usuarios
     ]
@@ -251,6 +261,52 @@ def usuario_licenca_editar(usuario_id):
     db.session.commit()
     flash(f"Licença de '{usuario.nome}' atualizada.", "success")
     return redirect(url_for("dono.usuarios"))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos")
+@login_required
+@dono_required
+def usuario_licenca_pagamentos(usuario_id):
+    """Calendário de pagamento mensal do médico (convive com licenca_status/
+    licenca_vencimento, que continuam controlando o trial/status geral) -
+    controle 100% manual do dono, sem gateway de pagamento integrado
+    (decisão do Silvan). Gera os meses que faltam (desde o cadastro) antes
+    de exibir, pra ninguém precisar "abrir o mês" manualmente."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    if usuario.tipo != "medico":
+        abort(404)
+
+    if garantir_meses_licenca(usuario):
+        db.session.commit()
+
+    pagamentos = (
+        LicencaPagamento.query.filter_by(usuario_id=usuario.id)
+        .order_by(LicencaPagamento.mes.desc())
+        .all()
+    )
+    return render_template("dono/usuario_licenca_pagamentos.html", usuario=usuario, pagamentos=pagamentos)
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos/<int:pagamento_id>/marcar", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_pagamento_marcar(usuario_id, pagamento_id):
+    """Alterna um mês entre pago/não pago - marcado manualmente pelo dono
+    (não existe gateway de pagamento integrado nesta versão)."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    pagamento = LicencaPagamento.query.get_or_404(pagamento_id)
+    if pagamento.usuario_id != usuario.id:
+        abort(404)
+
+    pagamento.pago = not pagamento.pago
+    pagamento.pago_em = datetime.utcnow() if pagamento.pago else None
+    db.session.commit()
+
+    flash(
+        f"{usuario.nome}: mês {pagamento.mes.strftime('%m/%Y')} marcado como {'pago' if pagamento.pago else 'não pago'}.",
+        "success",
+    )
+    return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
 
 
 @dono_bp.route("/usuarios")

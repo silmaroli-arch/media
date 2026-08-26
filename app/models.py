@@ -365,6 +365,69 @@ def gerar_codigo_mestre_medico():
     return "MED-" + secrets.token_hex(5).upper()
 
 
+class LicencaPagamento(db.Model):
+    """Fatia 8 (calendário de pagamento): um registro POR MÊS da licença
+    individual de um médico - convive com Usuario.licenca_status/
+    licenca_vencimento (que continuam controlando o trial/status geral),
+    sem substituí-los. Por enquanto é controle 100% manual do dono da
+    plataforma (não existe gateway de pagamento integrado) - o dono marca
+    cada mês como pago/não pago em /dono/usuarios, e o médico só
+    acompanha o histórico em "Minha licença" (decisão do Silvan)."""
+    __tablename__ = "licenca_pagamentos"
+    __table_args__ = (
+        db.UniqueConstraint("usuario_id", "mes", name="uq_licenca_pagamento_usuario_mes"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    # Sempre o dia 1 do mês (ex.: 2026-08-01) - normaliza a comparação e
+    # a unicidade por (usuario_id, mes), sem precisar guardar dia/hora.
+    mes = db.Column(db.Date, nullable=False)
+    pago = db.Column(db.Boolean, nullable=False, default=False)
+    pago_em = db.Column(db.DateTime)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship("Usuario", foreign_keys=[usuario_id])
+
+
+def _primeiro_dia_do_mes(d):
+    return date(d.year, d.month, 1)
+
+
+def _mes_seguinte(d):
+    if d.month == 12:
+        return date(d.year + 1, 1, 1)
+    return date(d.year, d.month + 1, 1)
+
+
+def garantir_meses_licenca(usuario):
+    """Garante que existe uma linha de LicencaPagamento (como "não pago")
+    pra cada mês desde o cadastro do médico até o mês atual, inclusive -
+    chamado sempre que a tela de licença (do médico ou do dono) é aberta,
+    pra ninguém precisar "gerar o mês" manualmente (decisão do Silvan).
+    Só se aplica a médico (a licença é individual, por médico - secretária
+    não tem). Não faz commit, quem chamar decide quando salvar. Retorna a
+    lista de linhas novas (pode estar vazia)."""
+    if usuario.tipo != "medico":
+        return []
+
+    inicio = _primeiro_dia_do_mes(usuario.criado_em.date() if usuario.criado_em else date.today())
+    fim = _primeiro_dia_do_mes(date.today())
+
+    existentes = {p.mes for p in LicencaPagamento.query.filter_by(usuario_id=usuario.id).all()}
+
+    novos = []
+    mes = inicio
+    while mes <= fim:
+        if mes not in existentes:
+            novos.append(LicencaPagamento(usuario_id=usuario.id, mes=mes, pago=False))
+        mes = _mes_seguinte(mes)
+
+    if novos:
+        db.session.add_all(novos)
+    return novos
+
+
 class Grupo(db.Model):
     """Trabalho compartilhado (BBP MedIA, seção 4.2 / 5.1.4): um grupo de
     usuários — médicos e/ou administrativos — que trabalham juntos. Quem

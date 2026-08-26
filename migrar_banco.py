@@ -313,6 +313,13 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS licenca_vencimento DATE;
 -- vencer) em vez de mostrar um vencimento de 14 dias a partir de hoje que
 -- não corresponde à realidade dela.
 UPDATE usuarios SET licenca_status = 'ativa' WHERE tipo = 'medico' AND licenca_vencimento IS NULL;
+
+-- Fatia 8 (calendário de pagamento): tabela "licenca_pagamentos" (um
+-- registro por mês por médico, controle manual do dono - ver
+-- app.models.LicencaPagamento) não precisa de ALTER TABLE nenhum aqui -
+-- é criada automaticamente pelo db.create_all() no topo deste script, por
+-- não existir ainda em nenhum ambiente (mesmo caso de "push_subscriptions"
+-- acima).
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

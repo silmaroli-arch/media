@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block titulo %}Calendário de pagamento{% endblock %}
+{% block conteudo %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0">Calendário de pagamento — {{ usuario.nome }}</h3>
+  <a href="{{ url_for('dono.usuarios') }}" class="btn btn-link">Voltar</a>
+</div>
+
+<p class="text-muted small">
+  Controle manual — não existe cobrança automática integrada ainda. Marque cada mês como pago quando o
+  pagamento for confirmado.
+</p>
+
+{% set nomes_mes = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
+<div class="card p-3" style="max-width: 560px;">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr><th>Mês</th><th>Situação</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for p in pagamentos %}
+        <tr>
+          <td>{{ nomes_mes[p.mes.month] }}/{{ p.mes.year }}</td>
+          <td>
+            {% if p.pago %}
+              <span class="badge bg-success">Pago</span>
+              {% if p.pago_em %}<span class="text-muted small ms-1">em {{ p.pago_em.strftime('%d/%m/%Y') }}</span>{% endif %}
+            {% else %}
+              <span class="badge bg-warning text-dark">Não pago</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="{{ url_for('dono.usuario_licenca_pagamento_marcar', usuario_id=usuario.id, pagamento_id=p.id) }}">
+              <button type="submit" class="btn btn-sm {{ 'btn-outline-warning' if p.pago else 'btn-outline-success' }}">
+                {{ 'Marcar como não pago' if p.pago else 'Marcar como pago' }}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="text-muted text-center">Sem meses registrados ainda.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

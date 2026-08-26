@@ -147,4 +147,48 @@ with app.app_context():
     r_404 = client.post(f"/dono/usuarios/{secretaria.id}/licenca", data={"licenca_status": "ativa"})
     checar("Editar licença de uma secretária (não se aplica) dá 404", r_404.status_code == 404)
 
+# ---------- Calendário de pagamento mensal (Fatia 8) ----------
+r_cal = client.get(f"/dono/usuarios/{medica_id}/licenca/pagamentos")
+checar("Calendário de pagamento do dono responde 200", r_cal.status_code == 200)
+html_cal = r_cal.get_data(as_text=True)
+checar("Mês atual aparece como 'Não pago' por padrão", "Não pago" in html_cal)
+
+with app.app_context():
+    from app.models import LicencaPagamento
+    pagamento_mes_atual = LicencaPagamento.query.filter_by(
+        usuario_id=medica_id, mes=date.today().replace(day=1)
+    ).first()
+    checar("Mês atual foi gerado automaticamente ao abrir a tela", pagamento_mes_atual is not None)
+    checar("Mês atual nasce como não pago", pagamento_mes_atual.pago is False)
+    pagamento_id = pagamento_mes_atual.id
+
+r_marcar = client.post(
+    f"/dono/usuarios/{medica_id}/licenca/pagamentos/{pagamento_id}/marcar",
+    follow_redirects=True,
+)
+checar("Marcar mês como pago responde 200", r_marcar.status_code == 200)
+checar("Tela volta mostrando 'Pago'", "Pago" in r_marcar.get_data(as_text=True))
+
+with app.app_context():
+    pagamento = LicencaPagamento.query.get(pagamento_id)
+    checar("Mês foi marcado como pago no banco", pagamento.pago is True)
+    checar("pago_em foi registrado", pagamento.pago_em is not None)
+
+# Tentar marcar o pagamento de uma médica usando o id de OUTRA (usuario_id
+# não bate com o dono do pagamento) tem que dar 404, não deixar vazar.
+with app.app_context():
+    secretaria = Usuario.query.filter_by(email="secretaria.licenca@example.com").first()
+    r_cross = client.post(f"/dono/usuarios/{secretaria.id}/licenca/pagamentos/{pagamento_id}/marcar")
+    checar("Marcar pagamento de outro usuário (id não bate) dá 404", r_cross.status_code == 404)
+
+client.get("/logout")
+
+# ---------- O médico vê o calendário na tela "Minha licença" ----------
+client.post("/login", data={"identificador": "licenca.medica@example.com", "senha": "123456"})
+r_minha = client.get("/equipe/minha-licenca")
+checar("Tela do médico ainda responde 200 com o calendário", r_minha.status_code == 200)
+html_minha = r_minha.get_data(as_text=True)
+checar("Calendário de pagamento aparece na tela do médico", "Calendário de pagamento" in html_minha)
+checar("Médico vê que o mês atual está pago (marcado pelo dono acima)", "Pago" in html_minha)
+
 print("\nTodos os testes de licença individual passaram.")

@@ -21,7 +21,7 @@ from app.models import (
     PerguntaPendente, GrupoPaciente, Grupo, GrupoMembro, GrupoConvite,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
-    ChatMensagem, ResultadoExame, PushSubscription,
+    ChatMensagem, ResultadoExame, PushSubscription, LicencaPagamento, garantir_meses_licenca,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto,
 )
@@ -2413,16 +2413,24 @@ def minha_licenca():
         flash("Essa tela é só para contas de médico.", "warning")
         return redirect(url_for("medico.dashboard"))
 
-    if current_user.verificar_vencimento_licenca():
+    mudou_status = current_user.verificar_vencimento_licenca()
+    novos_meses = garantir_meses_licenca(current_user)
+    if mudou_status or novos_meses:
         db.session.commit()
 
     label, cor = _LICENCA_LABELS.get(current_user.licenca_status, (current_user.licenca_status, "secondary"))
+    pagamentos = (
+        LicencaPagamento.query.filter_by(usuario_id=current_user.id)
+        .order_by(LicencaPagamento.mes.desc())
+        .all()
+    )
     return render_template(
         "medico/minha_licenca.html",
         licenca_status=current_user.licenca_status,
         licenca_label=label,
         licenca_cor=cor,
         licenca_vencimento=current_user.licenca_vencimento,
+        pagamentos=pagamentos,
     )
 
 

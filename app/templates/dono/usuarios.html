@@ -71,6 +71,14 @@
                      value="{{ l.usuario.licenca_vencimento.isoformat() if l.usuario.licenca_vencimento else '' }}">
               <button type="submit" class="btn btn-sm btn-outline-primary">Salvar</button>
             </form>
+            <div class="mt-1">
+              {% if l.pago_mes_atual %}
+                <span class="badge bg-success">Mês atual pago</span>
+              {% else %}
+                <span class="badge bg-danger">Mês atual não pago</span>
+              {% endif %}
+              <a href="{{ url_for('dono.usuario_licenca_pagamentos', usuario_id=l.usuario.id) }}" class="small ms-1">ver calendário</a>
+            </div>
           {% else %}
             <span class="text-muted small">—</span>
           {% endif %}

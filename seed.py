@@ -25,6 +25,7 @@ from app.models import (
     Exame, PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento,
     Agendamento, FaqItem, normalizar_telefone,
+    LicencaPagamento, garantir_meses_licenca,
 )
 
 app = create_app()
@@ -140,6 +141,22 @@ with app.app_context():
         secretaria_vitoria, secretaria_sp, medico_compartilhado, medica_vitoria2,
         secretaria_grupo, medico_grupo,
     ])
+    db.session.commit()
+
+    # --- Calendário de pagamento (Fatia 8) ---
+    # Gera os meses desde o cadastro de cada médico (todos "hoje" no seed,
+    # então normalmente só o mês atual) e marca alguns como pagos, pra
+    # demonstrar os dois estados na tela "Minha licença"/no painel do dono.
+    for medico in (medico_compartilhado, medica_vitoria2, medico_grupo):
+        garantir_meses_licenca(medico)
+    db.session.commit()
+
+    mes_atual = date.today().replace(day=1)
+    LicencaPagamento.query.filter_by(usuario_id=medico_compartilhado.id, mes=mes_atual).update(
+        {"pago": True, "pago_em": datetime.utcnow()}
+    )
+    # medica_vitoria2 (trial) e medico_grupo (inadimplente) ficam com o mês
+    # atual em aberto, coerente com o status de cada um.
     db.session.commit()
 
     # --- Vínculos (GrupoMembro) ---

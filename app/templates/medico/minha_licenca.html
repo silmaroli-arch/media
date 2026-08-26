@@ -23,4 +23,37 @@
 <p class="text-muted mt-3">
   Essa informação é só para acompanhamento — vencer a licença não bloqueia o seu acesso ao MedIA.
 </p>
+
+{% set nomes_mes = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
+<h5 class="mt-4 mb-3">Calendário de pagamento</h5>
+<div class="card" style="max-width: 480px;">
+  <div class="table-responsive">
+    <table class="table table-sm mb-0">
+      <thead>
+        <tr><th>Mês</th><th>Situação</th></tr>
+      </thead>
+      <tbody>
+        {% for p in pagamentos %}
+        <tr>
+          <td>{{ nomes_mes[p.mes.month] }}/{{ p.mes.year }}</td>
+          <td>
+            {% if p.pago %}
+              <span class="badge bg-success">Pago</span>
+              {% if p.pago_em %}<span class="text-muted small ms-1">em {{ p.pago_em.strftime('%d/%m/%Y') }}</span>{% endif %}
+            {% else %}
+              <span class="badge bg-warning text-dark">Não pago</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="2" class="text-muted text-center">Sem meses registrados ainda.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="text-muted small mt-2">
+  O controle de pagamento é feito manualmente pela equipe do MedIA — se você já pagou e o mês ainda aparece como
+  "Não pago", entre em contato com a gente.
+</p>
 {% endblock %}
