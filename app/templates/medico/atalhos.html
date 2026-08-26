@@ -15,6 +15,34 @@
     equipe) abre direto no app, sem precisar procurar o link no navegador.
   </p>
 
+  {% if current_user.tipo == "medico" %}
+  {# No iPhone/iPad, "Adicionar à Tela de Início" do Safari NÃO lê o manifesto do
+     app - ele trava o atalho na URL que estava aberta no Safari no momento do
+     toque em "Compartilhar". Por isso, pro médico (que no celular só usa "Meus
+     exames agendados" e o "Portal de atendimento"), o atalho tem que ser criado
+     A PARTIR da própria página do Portal - nunca a partir desta tela de
+     instruções - senão o ícone abriria sempre o app completo por engano (mesmo
+     bug de uma sessão anterior). O Portal já tem seu próprio aviso de instalação
+     (iOS e Android, ver portal/atendimento.html), então aqui só direcionamos
+     pra lá. #}
+  <div id="wizardAvisoIosMedico" class="alert alert-primary align-items-start mb-3" style="display: none;">
+    <div class="d-flex">
+      <span class="me-2" style="font-size: 1.4rem; line-height: 1;">📲</span>
+      <div>
+        <strong>No iPhone/iPad (Safari)</strong>
+        <div class="small mt-1">
+          O atalho precisa ser criado a partir da própria tela do Portal de atendimento — é lá que o
+          Safari vai "gravar" o link certo. Toque no botão abaixo para abrir o Portal e, uma vez lá,
+          toque no ícone de compartilhar <strong>⎋</strong> e depois em
+          <strong>"Adicionar à Tela de Início"</strong>.
+        </div>
+        <a href="{{ url_for('medico.portal_atendimento') }}" class="btn btn-primary btn-sm mt-2">
+          Abrir o Portal de atendimento
+        </a>
+      </div>
+    </div>
+  </div>
+  {% else %}
   <div id="wizardAvisoIos" class="alert alert-primary align-items-start mb-3" style="display: none;">
     <div class="d-flex">
       <span class="me-2" style="font-size: 1.4rem; line-height: 1;">📲</span>
@@ -27,6 +55,7 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
   <div id="wizardAvisoAndroid" class="alert alert-primary align-items-center mb-3" style="display: none;">
     <div class="d-flex align-items-center justify-content-between w-100">
@@ -83,8 +112,9 @@
     // mensagem certa em cada caso enquanto o botão real de instalar
     // (beforeinstallprompt, abaixo) ainda não apareceu.
     var eAndroid = /Android/.test(navigator.userAgent);
+    var ehMedico = {{ "true" if current_user.tipo == "medico" else "false" }};
     if (eIos) {
-      var avisoIos = document.getElementById("wizardAvisoIos");
+      var avisoIos = document.getElementById(ehMedico ? "wizardAvisoIosMedico" : "wizardAvisoIos");
       if (avisoIos) avisoIos.style.display = "flex";
     } else if (eAndroid) {
       var avisoAndroidGenerico = document.getElementById("wizardAvisoAndroidGenerico");

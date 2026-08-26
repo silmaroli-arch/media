@@ -1,9 +1,9 @@
 {
   "name": "MedIA - Equipe",
   "short_name": "MedIA Equipe",
-  "description": "Perguntas dos pacientes e aprovação de respostas da IA",
-  "start_url": "/equipe/perguntas",
-  "id": "/equipe/perguntas",
+  "description": "Portal de atendimento rápido - perguntas dos pacientes e aprovação de respostas da IA",
+  "start_url": "/equipe/portal",
+  "id": "/equipe/portal",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0B3D66",

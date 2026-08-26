@@ -107,8 +107,19 @@
         <i class="bi bi-pin-angle-fill" id="sidebarPinIcon"></i>
       </button>
     </div>
+    {# No celular, o médico usa uma versão bem reduzida do app: só "Meus
+       exames agendados" e "Portal de atendimento" (pedido do Silvan - "no
+       celular vamos ter um app só", com essas duas telas apenas). Os
+       demais itens continuam existindo em tablet/desktop, e continuam
+       TODOS visíveis pra secretária no celular também (só o médico tem
+       o menu reduzido no celular) - por isso o `d-none d-md-block`
+       abaixo só é aplicado quando `current_user.tipo == "medico"`, nunca
+       incondicionalmente. As rotas em si não mudam nem ficam bloqueadas
+       - dá pra chegar nelas por link direto se precisar, só não aparecem
+       no menu do celular do médico. #}
+    {% set oculto_no_celular_do_medico = "d-none d-md-block" if current_user.tipo == "medico" else "" %}
     <ul class="nav nav-pills flex-column">
-      <li class="nav-item mb-1">
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint == 'medico.dashboard' %}active{% endif %}" href="{{ url_for('medico.dashboard') }}">
           <i class="bi bi-speedometer2 me-2"></i>Painel
         </a>
@@ -117,7 +128,7 @@
       {# Checklist opcional (atalho na tela de início, modelo de preparo,
          exame) - acessível a qualquer momento, não é mais forçado logo
          após o cadastro (ver auth.cadastro / medico.primeiros_passos). #}
-      <li class="nav-item mb-1">
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint in ['medico.primeiros_passos', 'medico.atalhos'] %}active{% endif %}" href="{{ url_for('medico.primeiros_passos') }}">
           <i class="bi bi-rocket-takeoff me-2"></i>Primeiros passos
         </a>
@@ -127,13 +138,13 @@
          ao modelo de Empresa/Clínica/"locais de atendimento" abaixo (ver
          app/routes_grupo.py); a migração completa do restante do sistema
          para este conceito ainda está pendente. #}
-      <li class="nav-item mb-1">
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('grupo.') %}active{% endif %}" href="{{ url_for('grupo.meus_grupos') }}">
           <i class="bi bi-people me-2"></i>Grupos de trabalho
         </a>
       </li>
 
-      <li class="nav-item mb-1">
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">
           <i class="bi bi-journal-plus me-2"></i>Pacientes
         </a>
@@ -157,14 +168,31 @@
            de existir - "Meus exames agendados" virou item direto, e
            "Minha agenda em todos os locais" saiu do menu (a rota
            medico.minha_agenda_completa continua existindo, só sem link
-           aqui). #}
+           aqui). Este item é um dos 2 que continuam no menu reduzido do
+           celular do médico - por isso NÃO leva a classe
+           oculto_no_celular_do_medico. #}
       </li>
+
+      {% if current_user.tipo == "medico" %}
+      {# Versão mobile do link "Portal de atendimento rápido" (o outro,
+         dentro de "Médico + IA" mais abaixo, continua servindo
+         tablet/desktop) - aqui SEM target="_blank": abrir uma aba nova
+         dentro de um PWA instalado em modo standalone tende a jogar a
+         pessoa pra fora do app (pro Safari/Chrome "de verdade"), o que
+         não faz sentido nesse atalho pensado justamente pra quem está
+         usando o app pelo celular. #}
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'medico.portal_atendimento' %}active{% endif %}" href="{{ url_for('medico.portal_atendimento') }}">
+          <i class="bi bi-box-arrow-up-right me-2"></i>Portal de atendimento
+        </a>
+      </li>
+      {% endif %}
 
       {# Reorganização de menus: o menu "Relatórios" deixou de existir -
          as rotas (relatorios.index/agenda/pacientes/desempenho_medico)
          continuam existindo, só sem link no menu. #}
 
-      <li class="nav-item mb-1">
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuConfigExames" role="button"
            aria-expanded="{{ 'true' if request.endpoint in grupo_config_exames else 'false' }}">
           <span><i class="bi bi-sliders me-2"></i>Configuração de exames</span>
@@ -185,7 +213,7 @@
         </div>
       </li>
 
-      <li class="nav-item mb-1">
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuIA" role="button"
            aria-expanded="{{ 'true' if request.endpoint in grupo_ia else 'false' }}">
           <span><i class="bi bi-robot me-2"></i>Médico + IA</span>
@@ -206,7 +234,10 @@
                enxuta, sem menu, só com as perguntas pendentes + histórico -
                pensada para o médico salvar como atalho separado na tela de
                início do celular e abrir rapidinho pra responder. Abre em
-               nova aba porque tem sua própria barra de topo/navegação. #}
+               nova aba porque tem sua própria barra de topo/navegação -
+               em telas menores (celular do médico) esse item some daqui
+               (todo o "Médico + IA" fica oculto) e um link equivalente,
+               sem abrir nova aba, aparece direto no menu (ver acima). #}
             <li class="nav-item">
               <a class="nav-link" href="{{ url_for('medico.portal_atendimento') }}" target="_blank" rel="noopener">
                 <i class="bi bi-box-arrow-up-right me-1"></i>Portal de atendimento rápido
