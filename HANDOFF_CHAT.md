@@ -1,6 +1,6 @@
 # Handoff — Continuação do chat com Claude sobre o projeto Media/MedIA
 
-> Atualizado em 2026-08-19 (2ª rodada). Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
+> Atualizado em 2026-09-01 (3ª rodada). Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
 
 ## Contexto do projeto
 
@@ -141,6 +141,43 @@ Enquanto o bloqueio do WhatsApp (acima) fica em aberto, o Silvan pediu uma forma
 ### Pendência ativa (bug reportado, NÃO resolvido)
 
 O Silvan testou no iPhone (mandou uma pergunta de teste) e a notificação **não chegou**. Isso ficou sem diagnóstico — a conversa foi interrompida antes de conseguir confirmar com ele: (a) se o banner "Ativar notificações" foi tocado e a permissão foi de fato concedida; (b) a versão do iOS; (c) se o PWA estava genuinamente instalado na tela de início (não só aberto numa aba do Safari); (d) — possibilidade nova, depois do ajuste fino de escopo por exame — se a pergunta de teste era de um exame do qual aquele médico específico não é responsável, caso em que a notificação corretamente NÃO deveria disparar (esse ajuste de escopo foi implementado depois do teste do Silvan, então a ordem dos eventos importa para o diagnóstico). **Retomar esse diagnóstico é o próximo passo mais importante desta fatia.**
+
+## Licença individual do médico + calendário de pagamento (nova nesta sessão)
+
+> Nota de numeração: o código chama isso de "Fatia 8" nos comentários (`app/models.py`, `app/routes_auth.py`, `app/routes_medico.py`, `app/routes_dono.py`, `migrar_banco.py`, `seed.py`) — mesmo número já usado acima pelo PWA de notificação push. É só uma coincidência de numeração entre sessões diferentes (cada uma não via o trabalho da outra), **não é a mesma fatia** e não há conflito de código entre elas. Vale ajustar a numeração dos comentários numa limpeza futura, se incomodar.
+
+O Silvan pediu que o médico tenha acesso a quando sua licença vai vencer, com um menu para isso inclusive no app mobile. Ao esclarecer o escopo, ele corrigiu uma suposição importante: **a cobrança é por médico, não por Grupo** (`Grupo.valor_por_medico × medicos_distintos` continua existindo, mas é só uma estimativa) — a licença vale a partir do momento do cadastro, independente de o médico estar ou não vinculado a um Grupo de trabalho.
+
+### Licença individual (`Usuario.licenca_status` / `licenca_vencimento`)
+
+- **`app/models.py`**: `Usuario` ganhou `licenca_status` (`trial`/`ativa`/`inadimplente`/`bloqueada`, mesmo vocabulário de `Grupo.status`) e `licenca_vencimento` (Date), mais o método `verificar_vencimento_licenca()` (mesma regra de `Grupo.verificar_vencimento_trial()` — trial vencido vira `inadimplente`, sem commit automático).
+- **Só informativo por enquanto**: vencer a licença **não bloqueia** o acesso (decisão explícita do Silvan) — fica para uma iteração futura se for o caso.
+- **`app/routes_auth.py`** (`cadastro()`) e **`app/routes_grupo.py`** (`convidar()`, ação "criar_conta"): todo médico novo já nasce com `licenca_vencimento` = hoje + `PlataformaConfig.trial_dias` (o mesmo parâmetro configurável que os Grupos usam para o trial deles) — não é uma constante de negócio nova.
+- **`app/routes_medico.py`**: nova rota `/equipe/minha-licenca` (`minha_licenca()`), só para médico (secretária é redirecionada). Template `medico/minha_licenca.html` mostra status + vencimento.
+- **`app/templates/base.html`**: item de menu "Minha licença" — **visível tanto no desktop quanto no celular** (sem `d-md-none` nem `oculto_no_celular_do_medico`), atendendo ao pedido explícito de acesso mobile.
+- **`app/routes_dono.py`** / **`app/templates/dono/usuarios.html`**: nova coluna "Licença" na lista de usuários, com badge de status e um formulário rápido (status + data) para o dono editar a licença de cada médico. Rota: `POST /dono/usuarios/<id>/licenca`.
+
+### Calendário de pagamento mensal (`LicencaPagamento`)
+
+Pedido seguinte do Silvan: "criar um calendário de pagamento mensal" e mostrar na tela de licença se o médico pagou ou não. Esclarecido antes de implementar: controle **100% manual** do dono (não existe gateway de pagamento integrado), histórico dos últimos meses (não só o mês atual), e esse calendário **convive** com `licenca_status`/`licenca_vencimento` — não substitui.
+
+- **`app/models.py`**: novo modelo `LicencaPagamento` (`usuario_id`, `mes` — sempre dia 1 do mês, `pago`, `pago_em`), com `UniqueConstraint(usuario_id, mes)`. Função `garantir_meses_licenca(usuario)` gera as linhas que faltam, como "não pago", desde o mês do cadastro do médico até o mês atual — chamada sempre que a tela é aberta (médico ou dono), ninguém precisa "abrir o mês" manualmente.
+- **`medico/minha_licenca.html`**: passou a mostrar o histórico completo, mês a mês, com badge Pago/Não pago.
+- **`app/routes_dono.py`**: `/dono/usuarios` mostra se o mês atual está pago ou não pago de cada médico; link "ver calendário" leva para `/dono/usuarios/<id>/licenca/pagamentos` (novo template `dono/usuario_licenca_pagamentos.html`), onde o dono marca cada mês como pago/não pago com um botão (`POST /dono/usuarios/<id>/licenca/pagamentos/<pagamento_id>/marcar`).
+- **`migrar_banco.py`**: as colunas novas de `Usuario` (`licenca_status`/`licenca_vencimento`) precisaram de `ALTER TABLE`, com backfill (`licenca_status='ativa'` para médicos já existentes sem `licenca_vencimento`, já que essa migração deixaria de fazer sentido pra contas anteriores à fatia). A tabela `licenca_pagamentos` é nova e **não precisou de `ALTER TABLE`** — é criada sozinha pelo `db.create_all()` que já roda no topo do script (mesmo caso de `push_subscriptions`).
+- **`seed.py`**: 3 médicos de demonstração cobrindo os três cenários (ativa/pago, trial prestes a vencer, inadimplente/não pago).
+
+### Testes e commits
+
+- `test_licenca_medico.py` (novo): 34 checagens cobrindo cadastro → trial automático, tela do médico, visibilidade no menu mobile, vencimento automático sem bloqueio, edição pelo dono, geração automática dos meses, marcação de pagamento e isolamento entre usuários (não deixa marcar pagamento de outro médico).
+- Suíte completa rodada isolada (banco limpo por arquivo) depois de cada mudança — sem regressão em relação à baseline já existente (as falhas pré-existentes de outros arquivos `test_*.py` não têm relação com esta fatia, confirmado com `git stash` antes de começar).
+- Dois commits locais em `dev` (ainda não passaram pelo push manual/automático do Silvan até a data deste documento): `577dd7c` (licença individual) e `817ed11` (calendário de pagamento), cada um com exatamente os arquivos daquela parte — nenhum dos outros arquivos com mudanças em andamento na pasta (WhatsApp, PWA, etc.) foi tocado ou incluído nesses commits.
+
+### Fora do escopo desta fatia (perguntado ao Silvan, ainda sem decisão)
+
+- Mostrar um **valor de cobrança por médico** na tela de licença (hoje só status/vencimento/pago-não pago, sem valores).
+- **Aviso automático para o dono** quando um médico ficar sem pagar por mais de N meses (hoje é só uma indicação visual passiva na lista/calendário, sem notificação nenhuma).
+- Gateway de pagamento real (cartão/PIX/boleto processado automaticamente) — decisão explícita do Silvan de manter 100% manual por enquanto.
 
 ## Otimização de custo — importação de PDF de preparo
 
