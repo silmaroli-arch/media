@@ -136,6 +136,11 @@ class Usuario(db.Model, UserMixin):
     # decisão do Silvan). Vocabulário igual ao de Grupo.status.
     licenca_status = db.Column(db.String(20), nullable=False, default="trial")
     licenca_vencimento = db.Column(db.Date)
+    # Valor mensal negociado com ESTE médico (mesmo padrão de
+    # Grupo.valor_por_medico, mas de verdade individual - cada médico pode
+    # ter um valor diferente). Opcional: fica em branco até o dono
+    # negociar/preencher. Só editável em /dono/usuarios por enquanto.
+    valor_licenca_mensal = db.Column(db.Numeric(10, 2))
 
     # CONTA ÚNICA do paciente: uma pessoa (um Usuario) pode ter VÁRIOS
     # cadastros de paciente - um por empresa que frequenta (ver

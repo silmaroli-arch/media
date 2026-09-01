@@ -60,6 +60,12 @@
             <span class="badge bg-{{ licenca_cores.get(l.usuario.licenca_status, 'secondary') }} mb-1">{{ l.usuario.licenca_status }}</span>
             <span class="text-muted small d-block mb-1">
               {{ l.usuario.licenca_vencimento.strftime('%d/%m/%Y') if l.usuario.licenca_vencimento else "sem vencimento" }}
+              ·
+              {% if l.usuario.valor_licenca_mensal is not none %}
+                R$ {{ "%.2f"|format(l.usuario.valor_licenca_mensal) }}/mês
+              {% else %}
+                valor não definido
+              {% endif %}
             </span>
             <form method="post" action="{{ url_for('dono.usuario_licenca_editar', usuario_id=l.usuario.id) }}" class="d-flex gap-1 flex-wrap">
               <select name="licenca_status" class="form-select form-select-sm" style="width: auto;">
@@ -69,6 +75,8 @@
               </select>
               <input type="date" name="licenca_vencimento" class="form-control form-control-sm" style="width: auto;"
                      value="{{ l.usuario.licenca_vencimento.isoformat() if l.usuario.licenca_vencimento else '' }}">
+              <input type="text" name="valor_licenca_mensal" class="form-control form-control-sm" style="width: 90px;" placeholder="R$/mês"
+                     value="{{ '%.2f'|format(l.usuario.valor_licenca_mensal) if l.usuario.valor_licenca_mensal is not none else '' }}">
               <button type="submit" class="btn btn-sm btn-outline-primary">Salvar</button>
             </form>
             <div class="mt-1">

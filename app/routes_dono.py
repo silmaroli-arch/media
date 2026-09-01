@@ -258,6 +258,16 @@ def usuario_licenca_editar(usuario_id):
     else:
         usuario.licenca_vencimento = None
 
+    valor_str = request.form.get("valor_licenca_mensal", "").strip().replace(",", ".")
+    if valor_str:
+        try:
+            usuario.valor_licenca_mensal = float(valor_str)
+        except ValueError:
+            flash("Valor mensal inválido.", "danger")
+            return redirect(url_for("dono.usuarios"))
+    else:
+        usuario.valor_licenca_mensal = None
+
     db.session.commit()
     flash(f"Licença de '{usuario.nome}' atualizada.", "success")
     return redirect(url_for("dono.usuarios"))

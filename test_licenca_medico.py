@@ -134,6 +134,7 @@ checar("Coluna de licença aparece na lista", "Licença" in r_usuarios.get_data(
 r_editar = client.post(f"/dono/usuarios/{medica_id}/licenca", data={
     "licenca_status": "ativa",
     "licenca_vencimento": (date.today() + timedelta(days=90)).isoformat(),
+    "valor_licenca_mensal": "175,50",
 }, follow_redirects=True)
 checar("Edição de licença pelo dono responde 200", r_editar.status_code == 200)
 
@@ -141,6 +142,21 @@ with app.app_context():
     medica = Usuario.query.get(medica_id)
     checar("Dono conseguiu reativar a licença do médico", medica.licenca_status == "ativa")
     checar("Dono conseguiu mudar o vencimento", medica.licenca_vencimento == date.today() + timedelta(days=90))
+    checar("Dono conseguiu definir o valor mensal (aceita vírgula decimal)", float(medica.valor_licenca_mensal) == 175.50)
+
+checar("Valor mensal aparece formatado na lista do dono", "R$ 175.50/mês" in r_editar.get_data(as_text=True))
+
+# Limpar o valor (deixar em branco) precisa voltar a NULL, não travar num
+# valor antigo.
+r_limpar = client.post(f"/dono/usuarios/{medica_id}/licenca", data={
+    "licenca_status": "ativa",
+    "licenca_vencimento": (date.today() + timedelta(days=90)).isoformat(),
+    "valor_licenca_mensal": "",
+}, follow_redirects=True)
+checar("Limpar o valor mensal responde 200", r_limpar.status_code == 200)
+with app.app_context():
+    medica = Usuario.query.get(medica_id)
+    checar("Valor mensal voltou a ficar em branco (None)", medica.valor_licenca_mensal is None)
 
 with app.app_context():
     secretaria = Usuario.query.filter_by(email="secretaria.licenca@example.com").first()

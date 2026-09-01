@@ -112,6 +112,7 @@ with app.app_context():
     # futuro - cenário "tudo em dia".
     medico_compartilhado.licenca_status = "ativa"
     medico_compartilhado.licenca_vencimento = date.today() + timedelta(days=180)
+    medico_compartilhado.valor_licenca_mensal = 180.00
 
     # Uma segunda médica, só no Grupo Vitória — demonstra que cada médico
     # só cadastra/acompanha os seus próprios exames e pacientes.
@@ -121,6 +122,7 @@ with app.app_context():
     # Fatia 8: ainda em trial, vencendo em breve - cenário "atenção".
     medica_vitoria2.licenca_status = "trial"
     medica_vitoria2.licenca_vencimento = date.today() + timedelta(days=5)
+    # Ainda em trial - valor nem foi negociado ainda (fica em branco).
 
     # Equipe do Grupo Saúde Total: uma secretária que administra os dois
     # grupos, e um médico que atende nos dois — pela regra de cobrança
@@ -136,6 +138,7 @@ with app.app_context():
     # "pendente de pagamento" (só informativo, não bloqueia o acesso).
     medico_grupo.licenca_status = "inadimplente"
     medico_grupo.licenca_vencimento = date.today() - timedelta(days=3)
+    medico_grupo.valor_licenca_mensal = 150.00
 
     db.session.add_all([
         secretaria_vitoria, secretaria_sp, medico_compartilhado, medica_vitoria2,

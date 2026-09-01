@@ -305,6 +305,12 @@ ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS ias_com_erro VARCHAR(60
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS licenca_status VARCHAR(20) NOT NULL DEFAULT 'trial';
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS licenca_vencimento DATE;
 
+-- Fatia 8 (valor de cobrança por médico): valor mensal negociado com CADA
+-- médico individualmente (mesmo padrão de Grupo.valor_por_medico, mas de
+-- verdade por médico) - opcional, fica NULL até o dono preencher. Só
+-- editável em /dono/usuarios por enquanto.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS valor_licenca_mensal NUMERIC(10, 2);
+
 -- Backfill: a partir deste deploy, todo médico NOVO já nasce com
 -- licenca_vencimento explícito (ver routes_auth.py:cadastro() e
 -- routes_grupo.py:convidar()) - então qualquer médico já existente que
