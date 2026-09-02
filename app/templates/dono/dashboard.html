@@ -39,6 +39,16 @@
       <i class="bi bi-sliders me-1"></i>Configurações
     </button>
   </li>
+  {# Diferente das outras, esta NÃO é uma aba client-side - é um link de
+     verdade pra /dono/usuarios (Fatia 8), a tela com status de licença,
+     valor mensal, calendário de pagamento e cobrança via Mercado Pago por
+     médico. Fica como item de menu separado (pedido do Silvan) em vez de
+     duplicar essa tabela inteira aqui dentro do dashboard. #}
+  <li class="nav-item" role="presentation">
+    <a class="nav-link" href="{{ url_for('dono.usuarios') }}">
+      <i class="bi bi-cash-coin me-1"></i>Licenças
+    </a>
+  </li>
 </ul>
 
 <div class="tab-content" id="donoTabsContent">
