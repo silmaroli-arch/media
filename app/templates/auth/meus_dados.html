@@ -115,14 +115,24 @@
 </div>
 
 <script>
+// Tudo dentro de DOMContentLoaded de propósito: este bloco de conteúdo é
+// renderizado ANTES do <script src=".../bootstrap.bundle.min.js"> que
+// fica no fim do <body> (ver base.html) - chamar `bootstrap.Modal` fora
+// de um listener rodaria antes da lib existir e falharia em silêncio,
+// deixando o popup de senha sem abrir (o fieldset ficava desabilitado
+// pra sempre, sem jeito nenhum de confirmar a senha - bug real visto em
+// produção).
+document.addEventListener('DOMContentLoaded', function () {
 {% if not confirmado %}
-// Abre o popup de senha assim que a página carrega - sem botão de fechar
-// nem clique fora pra dispensar (data-bs-backdrop="static"/keyboard="false"
-// acima), já que os campos por trás estão desabilitados mesmo (fieldset
-// disabled) até a senha ser confirmada de verdade no servidor.
-var modalSenha = new bootstrap.Modal(document.getElementById('modal-confirmar-senha'));
-modalSenha.show();
+  // Abre o popup de senha assim que a página carrega - sem botão de
+  // fechar nem clique fora pra dispensar (data-bs-backdrop="static"/
+  // keyboard="false" acima), já que os campos por trás estão
+  // desabilitados mesmo (fieldset disabled) até a senha ser confirmada
+  // de verdade no servidor.
+  var modalSenha = new bootstrap.Modal(document.getElementById('modal-confirmar-senha'));
+  modalSenha.show();
 {% endif %}
+});
 
 // ---------- Máscaras (mesma lógica de auth/cadastro.html) ----------
 function aplicarMascaraFixa(campo, padrao) {

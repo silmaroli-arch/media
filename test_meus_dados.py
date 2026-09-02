@@ -16,10 +16,22 @@ Cobre:
    duplicado de outra conta (mesma lógica de busca por dígitos usada no
    login) - nenhum desses casos deve alterar o registro.
 6. Paciente (sem senha) é redirecionado, não acessa a tela.
+7. Checagem estática do bug real encontrado em produção: o popup de senha
+   (bootstrap.Modal) precisa ser criado dentro de um listener
+   DOMContentLoaded - o <script> deste template roda ANTES do
+   <script src=".../bootstrap.bundle.min.js"> carregado no fim do <body>
+   (ver base.html), então chamar `new bootstrap.Modal(...)` direto no
+   corpo do <script> falha em silêncio (a lib ainda não existe) e o popup
+   nunca abre, deixando os campos desabilitados pra sempre sem jeito
+   nenhum de confirmar a senha. test_client não executa JS, então esse
+   bug não aparece nos testes de comportamento acima - só numa checagem
+   textual do template mesmo.
 
 Roda com banco isolado: `rm -f preparo_exames.db && python3
 test_meus_dados.py`.
 """
+from pathlib import Path
+
 from app import create_app
 from app.extensions import db
 from app.models import Usuario
@@ -142,5 +154,16 @@ with client.session_transaction() as sess:
     sess["_fresh"] = True
 r9 = client.get("/meus-dados", follow_redirects=True)
 checar("Paciente é redirecionado (não vê a tela)", 'name="senha_atual"' not in r9.get_data(as_text=True))
+
+# --- Checagem estática: bootstrap.Modal só pode ser chamado dentro de um
+# listener DOMContentLoaded (ver docstring acima). ---
+template_html = Path(__file__).parent / "app" / "templates" / "auth" / "meus_dados.html"
+conteudo_template = template_html.read_text(encoding="utf-8")
+indice_modal = conteudo_template.find("new bootstrap.Modal")
+indice_dom_ready = conteudo_template.find("document.addEventListener('DOMContentLoaded'")
+checar(
+    "new bootstrap.Modal(...) existe e vem DEPOIS do listener DOMContentLoaded que o envolve",
+    indice_modal != -1 and indice_dom_ready != -1 and indice_dom_ready < indice_modal,
+)
 
 print("\nTodos os testes de Meus dados passaram.")
