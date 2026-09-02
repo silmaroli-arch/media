@@ -317,6 +317,17 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS valor_licenca_mensal NUMERIC(10, 2
 -- configurável por médico (decisão do Silvan), padrão 2 meses.
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aviso_inadimplencia_meses INTEGER NOT NULL DEFAULT 2;
 
+-- Fatia 8 (valor por mes no calendario + gateway Mercado Pago): valor
+-- cobrado naquele mes especifico (fotografia de valor_licenca_mensal, nao
+-- muda retroativamente) e os campos de rastreio da cobranca real via
+-- Mercado Pago (ver app/mercadopago_integration.py) - tudo opcional/NULL
+-- ate o dono gerar uma cobranca de verdade.
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS valor NUMERIC(10, 2);
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS mp_preference_id VARCHAR(80);
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS mp_payment_id VARCHAR(80);
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS mp_status VARCHAR(30);
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS mp_init_point TEXT;
+
 -- Backfill: a partir deste deploy, todo médico NOVO já nasce com
 -- licenca_vencimento explícito (ver routes_auth.py:cadastro() e
 -- routes_grupo.py:convidar()) - então qualquer médico já existente que

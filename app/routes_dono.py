@@ -1,13 +1,14 @@
 from datetime import datetime, date
 from functools import wraps
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, abort
+from flask import Blueprint, render_template, redirect, url_for, request, flash, abort, current_app
 from flask_login import login_required, current_user
 
 from app.extensions import db
 from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
+from app.mercadopago_integration import criar_preferencia_pagamento, MercadoPagoNaoConfigurado
 
 dono_bp = Blueprint("dono", __name__, url_prefix="/dono")
 
@@ -343,6 +344,45 @@ def usuario_licenca_pagamento_marcar(usuario_id, pagamento_id):
         f"{usuario.nome}: mês {pagamento.mes.strftime('%m/%Y')} marcado como {'pago' if pagamento.pago else 'não pago'}.",
         "success",
     )
+    return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos/<int:pagamento_id>/cobrar", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_pagamento_cobrar(usuario_id, pagamento_id):
+    """Gera (ou regenera) a cobrança REAL desse mês via Mercado Pago
+    (Checkout Pro) - fica ao lado do "marcar como pago" manual acima, não no
+    lugar dele (decisão do Silvan de manter os dois caminhos: Pix fora do
+    sistema, acordos informais etc continuam podendo ser marcados na mão).
+    O link gerado aparece aqui pro dono repassar, e também na tela "Minha
+    licença" do próprio médico (ver routes_medico.py:minha_licenca)."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    pagamento = LicencaPagamento.query.get_or_404(pagamento_id)
+    if pagamento.usuario_id != usuario.id:
+        abort(404)
+
+    try:
+        criar_preferencia_pagamento(pagamento)
+    except MercadoPagoNaoConfigurado:
+        flash(
+            "Mercado Pago ainda não está configurado nesta instalação "
+            "(defina MERCADOPAGO_ACCESS_TOKEN no .env).",
+            "danger",
+        )
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+    except ValueError as erro:
+        flash(str(erro), "danger")
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+    except Exception:
+        current_app.logger.exception(
+            "Falha ao criar cobrança no Mercado Pago para o pagamento %s.", pagamento.id
+        )
+        flash("Não foi possível gerar a cobrança agora - tente novamente em instantes.", "danger")
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+    db.session.commit()
+    flash(f"Cobrança gerada para {usuario.nome} ({pagamento.mes.strftime('%m/%Y')}).", "success")
     return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
 
 

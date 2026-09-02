@@ -204,6 +204,7 @@ def create_app():
     from app.routes_relatorios import relatorios_bp
     from app.routes_grupo import grupo_bp
     from app.routes_whatsapp import whatsapp_bp
+    from app.routes_pagamentos_webhook import pagamentos_webhook_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(medico_bp)
@@ -212,6 +213,7 @@ def create_app():
     app.register_blueprint(relatorios_bp)
     app.register_blueprint(grupo_bp)
     app.register_blueprint(whatsapp_bp)
+    app.register_blueprint(pagamentos_webhook_bp)
 
     @app.template_filter("hora_hhmm")
     def hora_hhmm(valor):

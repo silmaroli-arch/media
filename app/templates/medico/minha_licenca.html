@@ -9,12 +9,20 @@
       Status:
       <span class="badge bg-{{ licenca_cor }}">{{ licenca_label }}</span>
     </p>
-    <p class="mb-0">
+    <p class="mb-2">
       Vencimento:
       {% if licenca_vencimento %}
         <strong>{{ licenca_vencimento.strftime('%d/%m/%Y') }}</strong>
       {% else %}
         <span class="text-muted">não definido</span>
+      {% endif %}
+    </p>
+    <p class="mb-0">
+      Valor mensal:
+      {% if current_user.valor_licenca_mensal is not none %}
+        <strong>R$ {{ "%.2f"|format(current_user.valor_licenca_mensal) }}/mês</strong>
+      {% else %}
+        <span class="text-muted">ainda não definido</span>
       {% endif %}
     </p>
   </div>
@@ -26,16 +34,23 @@
 
 {% set nomes_mes = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
 <h5 class="mt-4 mb-3">Calendário de pagamento</h5>
-<div class="card" style="max-width: 480px;">
+<div class="card" style="max-width: 560px;">
   <div class="table-responsive">
     <table class="table table-sm mb-0">
       <thead>
-        <tr><th>Mês</th><th>Situação</th></tr>
+        <tr><th>Mês</th><th>Valor</th><th>Situação</th><th></th></tr>
       </thead>
       <tbody>
         {% for p in pagamentos %}
         <tr>
           <td>{{ nomes_mes[p.mes.month] }}/{{ p.mes.year }}</td>
+          <td>
+            {% if p.valor is not none %}
+              R$ {{ "%.2f"|format(p.valor) }}
+            {% else %}
+              <span class="text-muted small">—</span>
+            {% endif %}
+          </td>
           <td>
             {% if p.pago %}
               <span class="badge bg-success">Pago</span>
@@ -44,16 +59,22 @@
               <span class="badge bg-warning text-dark">Não pago</span>
             {% endif %}
           </td>
+          <td>
+            {% if not p.pago and p.mp_init_point %}
+              <a href="{{ p.mp_init_point }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Pagar agora</a>
+            {% endif %}
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="2" class="text-muted text-center">Sem meses registrados ainda.</td></tr>
+        <tr><td colspan="4" class="text-muted text-center">Sem meses registrados ainda.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 <p class="text-muted small mt-2">
-  O controle de pagamento é feito manualmente pela equipe do MedIA — se você já pagou e o mês ainda aparece como
-  "Não pago", entre em contato com a gente.
+  Alguns meses são confirmados automaticamente pelo Mercado Pago assim que o pagamento é feito pelo link
+  "Pagar agora"; outros são marcados manualmente pela equipe do MedIA (Pix fora do sistema, acordo informal
+  etc.) — se você já pagou e o mês ainda aparece como "Não pago", entre em contato com a gente.
 </p>
 {% endblock %}

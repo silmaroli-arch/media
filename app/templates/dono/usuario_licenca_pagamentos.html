@@ -7,21 +7,29 @@
 </div>
 
 <p class="text-muted small">
-  Controle manual — não existe cobrança automática integrada ainda. Marque cada mês como pago quando o
-  pagamento for confirmado.
+  Marque cada mês como pago manualmente (Pix fora do sistema, acordo informal etc.) ou gere uma cobrança real
+  pelo Mercado Pago — o mês é marcado como pago sozinho assim que o pagamento é confirmado.
 </p>
 
 {% set nomes_mes = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
-<div class="card p-3" style="max-width: 560px;">
+{% set mp_cores = {'pendente': 'secondary', 'approved': 'success', 'rejected': 'danger', 'in_process': 'info', 'cancelled': 'dark'} %}
+<div class="card p-3" style="max-width: 720px;">
   <div class="table-responsive">
     <table class="table table-hover mb-0">
       <thead>
-        <tr><th>Mês</th><th>Situação</th><th></th></tr>
+        <tr><th>Mês</th><th>Valor</th><th>Situação</th><th>Mercado Pago</th><th></th></tr>
       </thead>
       <tbody>
         {% for p in pagamentos %}
         <tr>
           <td>{{ nomes_mes[p.mes.month] }}/{{ p.mes.year }}</td>
+          <td>
+            {% if p.valor is not none %}
+              R$ {{ "%.2f"|format(p.valor) }}
+            {% else %}
+              <span class="text-muted small">não definido</span>
+            {% endif %}
+          </td>
           <td>
             {% if p.pago %}
               <span class="badge bg-success">Pago</span>
@@ -31,15 +39,32 @@
             {% endif %}
           </td>
           <td>
-            <form method="post" action="{{ url_for('dono.usuario_licenca_pagamento_marcar', usuario_id=usuario.id, pagamento_id=p.id) }}">
+            {% if p.mp_status %}
+              <span class="badge bg-{{ mp_cores.get(p.mp_status, 'secondary') }}">{{ p.mp_status }}</span>
+              {% if p.mp_init_point and not p.pago %}
+                <a href="{{ p.mp_init_point }}" target="_blank" rel="noopener" class="small d-block">link de pagamento</a>
+              {% endif %}
+            {% else %}
+              <span class="text-muted small">sem cobrança gerada</span>
+            {% endif %}
+          </td>
+          <td class="text-nowrap">
+            <form method="post" action="{{ url_for('dono.usuario_licenca_pagamento_marcar', usuario_id=usuario.id, pagamento_id=p.id) }}" class="d-inline">
               <button type="submit" class="btn btn-sm {{ 'btn-outline-warning' if p.pago else 'btn-outline-success' }}">
                 {{ 'Marcar como não pago' if p.pago else 'Marcar como pago' }}
               </button>
             </form>
+            {% if not p.pago %}
+            <form method="post" action="{{ url_for('dono.usuario_licenca_pagamento_cobrar', usuario_id=usuario.id, pagamento_id=p.id) }}" class="d-inline">
+              <button type="submit" class="btn btn-sm btn-outline-primary" title="Gera um link de pagamento real via Mercado Pago">
+                {{ 'Gerar nova cobrança' if p.mp_preference_id else 'Gerar cobrança (Mercado Pago)' }}
+              </button>
+            </form>
+            {% endif %}
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="3" class="text-muted text-center">Sem meses registrados ainda.</td></tr>
+        <tr><td colspan="5" class="text-muted text-center">Sem meses registrados ainda.</td></tr>
         {% endfor %}
       </tbody>
     </table>

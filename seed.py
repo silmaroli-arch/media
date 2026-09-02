@@ -174,7 +174,10 @@ with app.app_context():
     # todo mundo "hoje", então sem isso nunca haveria mais de um mês de
     # histórico pra nenhum médico).
     mes_anterior = (mes_atual.replace(day=1) - timedelta(days=1)).replace(day=1)
-    db.session.add(LicencaPagamento(usuario_id=medico_grupo.id, mes=mes_anterior, pago=False))
+    db.session.add(LicencaPagamento(
+        usuario_id=medico_grupo.id, mes=mes_anterior, pago=False,
+        valor=medico_grupo.valor_licenca_mensal,
+    ))
     db.session.commit()
 
     # --- Vínculos (GrupoMembro) ---

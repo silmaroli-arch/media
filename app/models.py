@@ -397,6 +397,28 @@ class LicencaPagamento(db.Model):
     pago = db.Column(db.Boolean, nullable=False, default=False)
     pago_em = db.Column(db.DateTime)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    # Valor de cobrança por médico (item "valor por mês no calendário"):
+    # uma FOTOGRAFIA do Usuario.valor_licenca_mensal no momento em que o mês
+    # nasce (garantir_meses_licenca) ou em que a cobrança real é gerada
+    # (mercadopago_integration.criar_preferencia_pagamento) - não muda
+    # retroativamente se o valor do médico mudar depois, igual uma fatura já
+    # emitida. Pode ficar None se o médico ainda não tinha valor definido
+    # quando o mês nasceu.
+    valor = db.Column(db.Numeric(10, 2))
+    # Gateway de pagamento real (Mercado Pago, Checkout Pro) - camada
+    # ADITIVA ao controle manual: o dono continua podendo marcar
+    # pago/não pago na mão (usuario_licenca_pagamento_marcar, útil pra Pix
+    # fora do sistema, acordos informais etc - decisão do Silvan de manter
+    # os dois caminhos). mp_status vem direto da API do Mercado Pago
+    # (pending/approved/rejected/...); `pago`/`pago_em` continuam sendo a
+    # fonte da verdade pro resto do app (calendário, aviso de
+    # inadimplência) - o webhook só os atualiza quando mp_status vira
+    # "approved". Ver app/mercadopago_integration.py e
+    # app/routes_pagamentos_webhook.py.
+    mp_preference_id = db.Column(db.String(80))
+    mp_payment_id = db.Column(db.String(80))
+    mp_status = db.Column(db.String(30))
+    mp_init_point = db.Column(db.Text)
 
     usuario = db.relationship("Usuario", foreign_keys=[usuario_id])
 
@@ -431,7 +453,10 @@ def garantir_meses_licenca(usuario):
     mes = inicio
     while mes <= fim:
         if mes not in existentes:
-            novos.append(LicencaPagamento(usuario_id=usuario.id, mes=mes, pago=False))
+            novos.append(LicencaPagamento(
+                usuario_id=usuario.id, mes=mes, pago=False,
+                valor=usuario.valor_licenca_mensal,
+            ))
         mes = _mes_seguinte(mes)
 
     if novos:
