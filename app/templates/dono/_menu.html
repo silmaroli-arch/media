@@ -1,0 +1,51 @@
+{# Menu de navegação do painel do dono, compartilhado entre a tela
+   principal (dono/dashboard.html, onde os 5 primeiros itens abrem abas
+   client-side dentro da própria página) e as telas "soltas" que vivem
+   fora dela (Usuários, Meus dados, Custo de IA detalhado etc.) - antes
+   essas telas soltas só tinham um link "Voltar", sem navegação nenhuma
+   pro resto do painel (achado do Silvan). Aqui todo item é um link de
+   verdade pra dono.dashboard com uma âncora (#painel-...), que o próprio
+   dashboard já sabe abrir na aba certa ao carregar (ver o script no fim
+   de dono/dashboard.html) - moramos com pequena duplicação de rótulos em
+   vez de mais uma camada de indireção.
+
+   Uso: {% include "dono/_menu.html" with context %}, com uma variável
+   `aba_ativa` no contexto de quem inclui - um de "visao-geral", "usuarios",
+   "grupos", "custo-ia", "config", "licencas", "meus-dados". #}
+<ul class="nav nav-tabs mb-4">
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if aba_ativa == 'visao-geral' }}" href="{{ url_for('dono.dashboard') }}#painel-visao-geral">
+      <i class="bi bi-speedometer2 me-1"></i>Visão geral
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if aba_ativa == 'usuarios' }}" href="{{ url_for('dono.dashboard') }}#painel-usuarios">
+      <i class="bi bi-people me-1"></i>Usuários
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if aba_ativa == 'grupos' }}" href="{{ url_for('dono.dashboard') }}#painel-grupos">
+      <i class="bi bi-diagram-3 me-1"></i>Grupos
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if aba_ativa == 'custo-ia' }}" href="{{ url_for('dono.dashboard') }}#painel-custo-ia">
+      <i class="bi bi-robot me-1"></i>Custo de IA
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if aba_ativa == 'config' }}" href="{{ url_for('dono.dashboard') }}#painel-config">
+      <i class="bi bi-sliders me-1"></i>Configurações
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if aba_ativa == 'licencas' }}" href="{{ url_for('dono.usuarios') }}">
+      <i class="bi bi-cash-coin me-1"></i>Licenças
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if aba_ativa == 'meus-dados' }}" href="{{ url_for('auth.meus_dados') }}">
+      <i class="bi bi-person-circle me-1"></i>Meus dados
+    </a>
+  </li>
+</ul>

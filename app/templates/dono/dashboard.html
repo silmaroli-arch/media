@@ -12,7 +12,15 @@
    principal") - o conteúdo continua todo aqui, só dividido em abas em vez
    de tudo empilhado numa página só. São abas client-side (Bootstrap
    nav-tabs, sem rota nova nem reload) - todos os links/forms/urls
-   continuam exatamente como estavam antes, só reagrupados. #}
+   continuam exatamente como estavam antes, só reagrupados.
+
+   As telas "soltas" fora daqui (Usuários, Meus dados etc. - ver
+   dono/_menu.html) linkam pra essas abas usando uma âncora na URL
+   (#painel-usuarios etc.) - o script no fim da página abre a aba certa
+   quando a página chega assim, pra quem clicou em "Usuários" ou "Meus
+   dados" a partir de outra tela do painel não perder a referência de
+   onde está (achado do Silvan: essas telas ficavam "soltas", sem menu
+   nenhum de volta pro resto do painel). #}
 <ul class="nav nav-tabs mb-4" id="donoTabs" role="tablist">
   <li class="nav-item" role="presentation">
     <button class="nav-link active" id="tab-visao-geral" data-bs-toggle="tab" data-bs-target="#painel-visao-geral" type="button" role="tab" aria-controls="painel-visao-geral" aria-selected="true">
@@ -291,4 +299,16 @@
   </div>
 
 </div>
+
+<script>
+// Se a página chegou com uma âncora tipo "#painel-usuarios" (link vindo
+// de outra tela do painel - ver dono/_menu.html), abre a aba
+// correspondente em vez de sempre cair em "Visão geral".
+(function () {
+  var alvo = window.location.hash;
+  if (!alvo) return;
+  var botao = document.querySelector('#donoTabs [data-bs-target="' + alvo + '"]');
+  if (botao) new bootstrap.Tab(botao).show();
+})();
+</script>
 {% endblock %}

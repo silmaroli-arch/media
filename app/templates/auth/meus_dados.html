@@ -1,39 +1,30 @@
 {% extends "base.html" %}
 {% block titulo %}Meus dados{% endblock %}
 {% block conteudo %}
+{# O menu de abas do painel só faz sentido pra quem é dono (médico/
+   secretária não têm esse painel) - eles chegam aqui por outro caminho
+   (ex.: direto pela URL), então continuam vendo só o cabeçalho padrão. #}
+{% if current_user.is_dono %}
+{% set aba_ativa = 'meus-dados' %}
+{% include "dono/_menu.html" %}
+{% endif %}
+
 <div class="row justify-content-center">
   <div class="col-md-7">
 
-    {% if not confirmado %}
-    {# Etapa 1: confirmar a senha atual antes de mostrar qualquer dado -
-       mesmo já estando logado (decisão do Silvan: CPF/e-mail são dados
-       sensíveis e credenciais de login, então pedem essa camada extra). #}
-    <div class="card p-4 mt-4" style="max-width: 480px; margin: 0 auto;">
-      <h4 class="mb-1 text-center"><i class="bi bi-shield-lock"></i> Confirme sua senha</h4>
-      <p class="text-muted text-center small">
-        Por segurança, confirme sua senha para acessar e editar seus dados pessoais.
-      </p>
-      <form method="post">
-        <input type="hidden" name="acao" value="confirmar_senha">
-        <div class="mb-3">
-          <label class="form-label">Sua senha</label>
-          <input type="password" name="senha_atual" class="form-control" required autofocus>
-        </div>
-        <button type="submit" class="btn btn-primary w-100">Confirmar</button>
-        <a href="{{ url_for('index') }}" class="btn btn-link w-100">Cancelar</a>
-      </form>
-    </div>
-
-    {% else %}
-    {# Etapa 2: edição de verdade, já com a senha confirmada (vale por
-       alguns minutos - ver MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS em
-       app/routes_auth.py). #}
+    {# A página inteira (com o menu/cabeçalho normal do app) sempre
+       aparece - antes a confirmação de senha usava uma tela separada
+       "nua", sem o menu, o que dava a impressão de ter saído do sistema.
+       Agora o formulário fica aqui embaixo, só desabilitado enquanto a
+       senha não é confirmada, e o pedido de senha vira um popup (modal)
+       por cima, sem esconder o restante da tela (pedido do Silvan). #}
     <div class="card p-4 mt-4">
       <h4 class="mb-1"><i class="bi bi-person-circle"></i> Meus dados</h4>
       <p class="text-muted small">Seus dados pessoais de cadastro na plataforma.</p>
 
-      <form method="post">
+      <form method="post" id="form-meus-dados">
         <input type="hidden" name="acao" value="salvar">
+        <fieldset id="campos-meus-dados" {% if not confirmado %}disabled{% endif %}>
         <div class="row g-3">
           <div class="col-md-6">
             <label class="form-label">Nome</label>
@@ -91,15 +82,48 @@
 
         <button type="submit" class="btn btn-primary mt-4">Salvar alterações</button>
         <a href="{{ url_for('auth.trocar_senha') }}" class="btn btn-outline-secondary mt-4">Trocar senha</a>
+        </fieldset>
       </form>
     </div>
-    {% endif %}
 
   </div>
 </div>
 
-{% if confirmado %}
+{# ---------- Popup de confirmação de senha ---------- #}
+<div class="modal" id="modal-confirmar-senha" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" id="form-confirmar-senha">
+        <input type="hidden" name="acao" value="confirmar_senha">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-shield-lock"></i> Confirme sua senha</h6>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small mb-3">
+            Por segurança, confirme sua senha para ver e editar seus dados pessoais.
+          </p>
+          <label class="form-label">Sua senha</label>
+          <input type="password" name="senha_atual" class="form-control" required autofocus>
+        </div>
+        <div class="modal-footer">
+          <a href="{{ url_for('index') }}" class="btn btn-link">Cancelar</a>
+          <button type="submit" class="btn btn-primary">Confirmar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
+{% if not confirmado %}
+// Abre o popup de senha assim que a página carrega - sem botão de fechar
+// nem clique fora pra dispensar (data-bs-backdrop="static"/keyboard="false"
+// acima), já que os campos por trás estão desabilitados mesmo (fieldset
+// disabled) até a senha ser confirmada de verdade no servidor.
+var modalSenha = new bootstrap.Modal(document.getElementById('modal-confirmar-senha'));
+modalSenha.show();
+{% endif %}
+
 // ---------- Máscaras (mesma lógica de auth/cadastro.html) ----------
 function aplicarMascaraFixa(campo, padrao) {
   if (!campo) return;
@@ -188,7 +212,7 @@ campoCep.addEventListener('blur', function () {
     });
 });
 
-document.querySelector('form').addEventListener('submit', function (evento) {
+document.getElementById('form-meus-dados').addEventListener('submit', function (evento) {
   var cpfOk = marcarCpfValido();
   var telefoneOk = marcarTelefoneValido();
   if (!cpfOk || !telefoneOk) {
@@ -198,5 +222,4 @@ document.querySelector('form').addEventListener('submit', function (evento) {
   }
 });
 </script>
-{% endif %}
 {% endblock %}

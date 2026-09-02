@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block titulo %}Usuários cadastrados{% endblock %}
 {% block conteudo %}
+{% set aba_ativa = 'licencas' %}
+{% include "dono/_menu.html" %}
+
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h3 class="mb-0">Usuários cadastrados (equipe)</h3>
-  <a href="{{ url_for('dono.dashboard') }}" class="btn btn-link">Voltar</a>
 </div>
 
 <p class="text-muted small">
