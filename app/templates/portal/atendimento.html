@@ -2,15 +2,22 @@
 {% block titulo %}Portal de atendimento{% endblock %}
 {% block conteudo %}
 <style>
-  /* Layout simples e direto: cada pergunta é um bloco de campo:valor
-     (Paciente:, Pergunta: etc.), sem cartão/badge - ver pedido do
-     Silvan de "tela mais simples". */
+  /* Fatia "resumo + popup" (pedido do Silvan: a lista ficava grande demais
+     com tudo aberto) - cada pergunta agora é uma linha resumida e
+     clicável; sugestões da IA, rascunho editável e histórico só aparecem
+     dentro do popup ao clicar. */
+  .pergunta-linha { background: #fff; border-radius: .5rem; padding: .85rem 1.1rem; margin-bottom: .6rem; border-left: 4px solid #dee2e6; cursor: pointer; }
+  .pergunta-linha:hover { background: #f8f9fa; }
+  .pergunta-linha.aguardando-ia { border-left-color: #ffc107; }
+  .pergunta-linha.sem-ia { border-left-color: #dc3545; }
+  .pergunta-linha .pergunta-texto { color: #495057; }
+  .pergunta-linha .pergunta-meta { font-size: .8rem; color: #6c757d; }
+  .pergunta-linha .badge-urgente { display: none; }
+  .pergunta-linha.urgente { border-left-color: #dc3545; border-left-width: 6px; }
+  .pergunta-linha.urgente .badge-urgente { display: inline-block; }
   .historico-item { border-left: 3px solid #dee2e6; padding-left: .75rem; margin-bottom: .5rem; }
   .historico-item small { display: block; color: #6c757d; }
-  .pergunta-simples { background: #fff; border-radius: .5rem; padding: 1rem 1.25rem; margin-bottom: 1.25rem; border-left: 4px solid #dee2e6; }
-  .pergunta-simples.aguardando-ia { border-left-color: #ffc107; }
-  .pergunta-simples.sem-ia { border-left-color: #dc3545; }
-  .pergunta-simples .campo { margin-bottom: .4rem; }
+  .campo { margin-bottom: .4rem; }
   .rotulo { font-weight: 600; color: #495057; }
 </style>
 
@@ -41,6 +48,20 @@
   <div class="alert alert-success">Nenhuma pergunta pendente sem resposta. 🎉</div>
 {% endif %}
 
+{% macro linha_resumo(p, classe) %}
+  <div class="pergunta-linha {{ classe }}" data-bs-toggle="modal" data-bs-target="#modal-pergunta-{{ p.id }}" data-criado-em="{{ p.criado_em.isoformat() }}">
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <strong>{{ p.paciente.nome }}</strong>
+        <span class="text-muted">· {{ p.exame.nome if p.exame else "Geral (sem exame)" }}</span>
+      </div>
+      <span class="badge bg-danger badge-urgente"><i class="bi bi-clock-history"></i> aguardando há tempo</span>
+    </div>
+    <div class="pergunta-texto">{{ p.pergunta }}</div>
+    <div class="pergunta-meta">Recebida em {{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</div>
+  </div>
+{% endmacro %}
+
 {% macro historico(paciente_id) %}
   {% set mensagens_paciente = historico_por_paciente.get(paciente_id, []) %}
   {% if mensagens_paciente %}
@@ -63,51 +84,95 @@
   <div class="campo"><span class="rotulo">{{ rotulo }}:</span> {{ valor }}</div>
 {% endmacro %}
 
+{% macro modal_pergunta(p, aguardando_ia) %}
+  <div class="modal fade" id="modal-pergunta-{{ p.id }}" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h6 class="modal-title">{{ p.paciente.nome }} · {{ p.exame.nome if p.exame else "Geral (sem exame)" }}</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          {{ campo("Pergunta", p.pergunta) }}
+          {{ campo("Recebida em", p.criado_em.strftime('%d/%m/%Y %H:%M')) }}
+          {{ historico(p.paciente_id) }}
+          {% if aguardando_ia %}
+            {# Só mostra a coluna da IA que o dono escolheu pra esta
+               pergunta (ver PlataformaConfig.ia_chat_provedor_1/2 em
+               /dono/configuracoes) - normalmente 1 das 3 fica em branco
+               (a que não foi escolhida naquele momento), por isso fica
+               escondida em vez de aparecer vazia/com "—" - mesmo
+               critério já usado em medico/perguntas.html. #}
+            {% if p.resposta_bruta_gemini %}{{ campo("Sugestão do Gemini", p.resposta_bruta_gemini) }}{% endif %}
+            {% if p.resposta_bruta_chatgpt %}{{ campo("Sugestão do ChatGPT", p.resposta_bruta_chatgpt) }}{% endif %}
+            {% if p.resposta_bruta_claude %}{{ campo("Sugestão do Claude", p.resposta_bruta_claude) }}{% endif %}
+            <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
+              <input type="hidden" name="origem" value="portal">
+              <div class="campo">
+                <span class="rotulo">Rascunho final (edite se precisar)</span>
+                <textarea name="resposta" class="form-control mt-1" rows="3" required>{{ p.resposta_sugerida_ia }}</textarea>
+              </div>
+              <button type="submit" class="btn btn-info btn-sm mt-1">Aprovar e enviar ao paciente</button>
+            </form>
+          {% else %}
+            <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
+              <input type="hidden" name="origem" value="portal">
+              <div class="campo">
+                <span class="rotulo">Resposta</span>
+                <textarea name="resposta" class="form-control mt-1" rows="2" placeholder="Digite a resposta..." required></textarea>
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm mt-1">Responder e ensinar a IA</button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+{% endmacro %}
+
 {% if aguardando %}
   {% for p in aguardando %}
-    <div class="pergunta-simples aguardando-ia">
-      {{ campo("Paciente", p.paciente.nome) }}
-      {{ campo("Exame", p.exame.nome if p.exame else "Geral (sem exame)") }}
-      {{ campo("Pergunta", p.pergunta) }}
-      {{ campo("Recebida em", p.criado_em.strftime('%d/%m/%Y %H:%M')) }}
-      {{ historico(p.paciente_id) }}
-      {# Só mostra a coluna da IA que o dono escolheu pra esta pergunta
-         (ver PlataformaConfig.ia_chat_provedor_1/2 em /dono/configuracoes) -
-         normalmente 1 das 3 fica em branco (a que não foi escolhida
-         naquele momento), por isso fica escondida em vez de aparecer
-         vazia/com "—" - mesmo critério já usado em medico/perguntas.html. #}
-      {% if p.resposta_bruta_gemini %}{{ campo("Sugestão do Gemini", p.resposta_bruta_gemini) }}{% endif %}
-      {% if p.resposta_bruta_chatgpt %}{{ campo("Sugestão do ChatGPT", p.resposta_bruta_chatgpt) }}{% endif %}
-      {% if p.resposta_bruta_claude %}{{ campo("Sugestão do Claude", p.resposta_bruta_claude) }}{% endif %}
-      <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
-        <input type="hidden" name="origem" value="portal">
-        <div class="campo">
-          <span class="rotulo">Rascunho final (edite se precisar)</span>
-          <textarea name="resposta" class="form-control mt-1" rows="3" required>{{ p.resposta_sugerida_ia }}</textarea>
-        </div>
-        <button type="submit" class="btn btn-info btn-sm mt-1">Aprovar e enviar ao paciente</button>
-      </form>
-    </div>
+    {{ linha_resumo(p, "aguardando-ia") }}
   {% endfor %}
 {% endif %}
 
 {% if pendentes %}
   {% for p in pendentes %}
-    <div class="pergunta-simples sem-ia">
-      {{ campo("Paciente", p.paciente.nome) }}
-      {{ campo("Exame", p.exame.nome if p.exame else "Geral (sem exame)") }}
-      {{ campo("Pergunta", p.pergunta) }}
-      {{ campo("Recebida em", p.criado_em.strftime('%d/%m/%Y %H:%M')) }}
-      {{ historico(p.paciente_id) }}
-      <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
-        <input type="hidden" name="origem" value="portal">
-        <div class="campo">
-          <span class="rotulo">Resposta</span>
-          <textarea name="resposta" class="form-control mt-1" rows="2" placeholder="Digite a resposta..." required></textarea>
-        </div>
-        <button type="submit" class="btn btn-primary btn-sm mt-1">Responder e ensinar a IA</button>
-      </form>
-    </div>
+    {{ linha_resumo(p, "sem-ia") }}
   {% endfor %}
 {% endif %}
+
+{# Os popups ficam fora das linhas resumidas, de propósito - um <form>
+   dentro de outro elemento clicável (data-bs-toggle) não muda nada aqui,
+   mas manter os modais soltos no fim da página evita qualquer aninhamento
+   estranho de markup do Bootstrap. #}
+{% if aguardando %}
+  {% for p in aguardando %}
+    {{ modal_pergunta(p, true) }}
+  {% endfor %}
+{% endif %}
+{% if pendentes %}
+  {% for p in pendentes %}
+    {{ modal_pergunta(p, false) }}
+  {% endfor %}
+{% endif %}
+
+<script>
+// Destaca (badge + borda mais grossa) perguntas aguardando resposta há
+// mais de 2 horas - "urgência/tempo de espera" (pedido do Silvan).
+// Calculado no navegador (não no servidor) porque a página não tem
+// nenhum outro dado "ao vivo" de data/hora - mais simples que passar
+// "agora" do backend só para isto.
+(function () {
+  var LIMITE_HORAS = 2;
+  var agora = Date.now();
+  document.querySelectorAll('.pergunta-linha').forEach(function (linha) {
+    var criadoEm = new Date(linha.dataset.criadoEm).getTime();
+    var horasEsperando = (agora - criadoEm) / 3600000;
+    if (horasEsperando >= LIMITE_HORAS) {
+      linha.classList.add('urgente');
+    }
+  });
+})();
+</script>
 {% endblock %}
