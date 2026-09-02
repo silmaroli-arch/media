@@ -59,19 +59,26 @@ client.post("/login", data={"identificador": "dono@plataforma.com", "senha": "se
 r1 = client.get("/meus-dados")
 html1 = r1.get_data(as_text=True)
 checar("Tela responde 200 sem confirmar senha", r1.status_code == 200)
-checar("Mostra o formulário de confirmação de senha", 'name="senha_atual"' in html1)
-checar("NÃO mostra o formulário de edição (campo nome) antes de confirmar", 'name="nome"' not in html1)
+checar("Mostra o popup de confirmação de senha", 'name="senha_atual"' in html1)
+# O menu de navegação do painel do dono continua visível mesmo antes de
+# confirmar a senha (achado do Silvan: a tela antiga ficava "sem
+# referência" nenhuma de menu enquanto pedia a senha).
+checar("Menu do painel do dono aparece mesmo antes de confirmar a senha", 'href="/dono/usuarios"' in html1 and "Licenças" in html1)
+# O formulário de edição continua no DOM (a página não fica "nua", sem
+# menu - pedido do Silvan), mas desabilitado por trás do popup até a
+# senha ser confirmada de verdade no servidor.
+checar("Campo nome existe mas vem desabilitado antes de confirmar", 'name="nome"' in html1 and '<fieldset id="campos-meus-dados" disabled>' in html1)
 
 # --- Senha errada não libera a edição. ---
 r2 = client.post("/meus-dados", data={"acao": "confirmar_senha", "senha_atual": "senha-errada"}, follow_redirects=True)
 checar("Senha errada mostra mensagem de erro", "Senha incorreta" in r2.get_data(as_text=True))
-checar("Ainda não libera o formulário de edição", 'name="cpf"' not in r2.get_data(as_text=True) or 'name="senha_atual"' in r2.get_data(as_text=True))
+checar("Formulário continua desabilitado com senha errada", '<fieldset id="campos-meus-dados" disabled>' in r2.get_data(as_text=True))
 
 # --- Senha certa libera a edição. ---
 r3 = client.post("/meus-dados", data={"acao": "confirmar_senha", "senha_atual": "senha-dono-123"}, follow_redirects=True)
 html3 = r3.get_data(as_text=True)
 checar("Depois da senha certa, responde 200", r3.status_code == 200)
-checar("Formulário de edição aparece (campo nome)", 'name="nome"' in html3)
+checar("Formulário de edição fica habilitado (sem disabled)", '<fieldset id="campos-meus-dados" >' in html3 or '<fieldset id="campos-meus-dados">' in html3)
 checar("Dados atuais aparecem preenchidos", 'value="Dono Original"' in html3)
 
 # Uma segunda visita (mesma sessão, dentro da janela de tempo) já mostra
