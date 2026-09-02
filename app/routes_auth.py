@@ -30,10 +30,16 @@ def login():
         senha = request.form.get("senha", "")
         cpf_digitos = re.sub(r"\D", "", identificador)
 
+        # Desde 2026-09-02 o dono da plataforma pode compartilhar o CPF com
+        # uma conta de médico/secretária dele mesmo (ver auth.meus_dados) -
+        # então mais de uma conta pode bater com o mesmo CPF aqui. Em vez
+        # de ficar só com a primeira encontrada (que poderia ter uma senha
+        # diferente da digitada), testa a senha em CADA candidata com esse
+        # CPF e usa a primeira que bater de verdade.
         usuario = None
         if len(cpf_digitos) == 11:
             for candidato in Usuario.query.filter(Usuario.cpf.isnot(None), Usuario.tipo != "paciente").all():
-                if re.sub(r"\D", "", candidato.cpf or "") == cpf_digitos:
+                if re.sub(r"\D", "", candidato.cpf or "") == cpf_digitos and candidato.ativo and candidato.checar_senha(senha):
                     usuario = candidato
                     break
         if not usuario:
@@ -275,15 +281,23 @@ def meus_dados():
         # E-mail/CPF são credenciais de login (ver auth.login) - não podem
         # colidir com a conta de outra pessoa (comparação de CPF ignora
         # pontuação, mesma lógica usada pra localizar a conta no login).
+        # Exceção (pedido do Silvan, 2026-09-02): o DONO da plataforma pode
+        # ser a mesma pessoa física de uma conta de médico/secretária já
+        # cadastrada - nesse caso o CPF é legitimamente o mesmo em duas
+        # contas/logins diferentes, então a checagem de duplicidade de CPF
+        # não se aplica a ele (a de e-mail continua valendo pra todo mundo,
+        # já que o e-mail é um valor livre, sem motivo de negócio pra
+        # repetir entre contas).
         if Usuario.query.filter(Usuario.id != current_user.id, Usuario.email == email).first():
             flash("Já existe uma conta com esse e-mail.", "danger")
             return render_template("auth/meus_dados.html", confirmado=True)
 
-        cpf_alvo = re.sub(r"\D", "", cpf)
-        for outro in Usuario.query.filter(Usuario.id != current_user.id, Usuario.cpf.isnot(None)).all():
-            if re.sub(r"\D", "", outro.cpf or "") == cpf_alvo:
-                flash("Já existe uma conta com esse CPF.", "danger")
-                return render_template("auth/meus_dados.html", confirmado=True)
+        if current_user.tipo != "dono":
+            cpf_alvo = re.sub(r"\D", "", cpf)
+            for outro in Usuario.query.filter(Usuario.id != current_user.id, Usuario.cpf.isnot(None)).all():
+                if re.sub(r"\D", "", outro.cpf or "") == cpf_alvo:
+                    flash("Já existe uma conta com esse CPF.", "danger")
+                    return render_template("auth/meus_dados.html", confirmado=True)
 
         current_user.nome = nome
         current_user.email = email

@@ -118,15 +118,19 @@ checar("E-mail duplicado mostra mensagem de erro", "Já existe uma conta com ess
 with app.app_context():
     checar("Nome NÃO foi alterado com e-mail duplicado", Usuario.query.get(dono_id).nome == "Dono Original")
 
-# --- CPF duplicado de outra conta (com pontuação diferente) não salva. ---
+# --- Restruturação de 2026-09-02 (pedido do Silvan): o DONO da plataforma
+# pode compartilhar o CPF com uma conta de médico/secretária já cadastrada
+# (é a mesma pessoa física, com dois logins diferentes) - a checagem de
+# CPF duplicado não se aplica a ele. ---
 r7 = client.post("/meus-dados", data={
     "acao": "salvar", "nome": "Dono Novo Nome", "email": "dono@plataforma.com",
     "cpf": "111.444.777-35", "telefone": "", "cep": "", "rua": "", "numero": "",
     "complemento": "", "bairro": "", "cidade": "", "uf": "",
 }, follow_redirects=True)
-checar("CPF duplicado mostra mensagem de erro", "Já existe uma conta com esse CPF" in r7.get_data(as_text=True))
+checar("Dono consegue salvar com o mesmo CPF de outra conta (sem erro de duplicidade)",
+       "Já existe uma conta com esse CPF" not in r7.get_data(as_text=True))
 with app.app_context():
-    checar("Nome NÃO foi alterado com CPF duplicado", Usuario.query.get(dono_id).nome == "Dono Original")
+    checar("CPF do dono foi salvo, agora igual ao de 'outra_conta'", Usuario.query.get(dono_id).cpf == "111.444.777-35")
 
 # --- Caminho feliz: dados válidos salvam de verdade. ---
 r8 = client.post("/meus-dados", data={
@@ -154,6 +158,40 @@ with client.session_transaction() as sess:
     sess["_fresh"] = True
 r9 = client.get("/meus-dados", follow_redirects=True)
 checar("Paciente é redirecionado (não vê a tela)", 'name="senha_atual"' not in r9.get_data(as_text=True))
+
+# --- Restruturação de 2026-09-02: login por CPF quando duas contas
+# compartilham o mesmo CPF (dono + a conta de médico/secretária dele
+# mesmo) - o sistema tem que testar a senha em CADA conta com aquele CPF
+# e escolher a que bate, não travar na primeira encontrada. ---
+client.get("/logout")
+
+with app.app_context():
+    # Deixa as duas contas ("outra_conta", que já é médico, e o dono
+    # atualizado acima) com o MESMO CPF, senhas diferentes.
+    dono_atual = Usuario.query.get(dono_id)
+    outra = Usuario.query.filter_by(email="outra@teste.com").first()
+    dono_atual.cpf = "111.444.777-35"
+    outra.cpf = "111.444.777-35"
+    db.session.commit()
+    outra_id = outra.id
+
+r_login_medico = client.post("/login", data={"identificador": "111.444.777-35", "senha": "123456"}, follow_redirects=True)
+checar("Login por CPF compartilhado com a senha de 'outra_conta' entra na conta certa",
+       "CPF/e-mail ou senha inválidos" not in r_login_medico.get_data(as_text=True))
+with client.session_transaction() as sess:
+    checar("A sessão logou como 'outra_conta' (médico), não como o dono", int(sess["_user_id"]) == outra_id)
+client.get("/logout")
+
+r_login_dono = client.post("/login", data={"identificador": "111.444.777-35", "senha": "senha-dono-123"}, follow_redirects=True)
+checar("Login por CPF compartilhado com a senha do dono entra na conta certa",
+       "CPF/e-mail ou senha inválidos" not in r_login_dono.get_data(as_text=True))
+with client.session_transaction() as sess:
+    checar("A sessão logou como o dono, não como 'outra_conta'", int(sess["_user_id"]) == dono_id)
+client.get("/logout")
+
+r_login_errado = client.post("/login", data={"identificador": "111.444.777-35", "senha": "senha-que-nao-existe"}, follow_redirects=True)
+checar("Login por CPF compartilhado com senha errada continua recusando (nenhuma das duas bate)",
+       "CPF/e-mail ou senha inválidos" in r_login_errado.get_data(as_text=True))
 
 # --- Checagem estática: bootstrap.Modal só pode ser chamado dentro de um
 # listener DOMContentLoaded (ver docstring acima). ---
