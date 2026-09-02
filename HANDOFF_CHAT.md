@@ -1,6 +1,6 @@
 # Handoff — Continuação do chat com Claude sobre o projeto Media/MedIA
 
-> Atualizado em 2026-09-01 (3ª rodada). Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
+> Atualizado em 2026-09-02 (4ª rodada). Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
 
 ## Contexto do projeto
 
@@ -173,11 +173,47 @@ Pedido seguinte do Silvan: "criar um calendário de pagamento mensal" e mostrar 
 - Suíte completa rodada isolada (banco limpo por arquivo) depois de cada mudança — sem regressão em relação à baseline já existente (as falhas pré-existentes de outros arquivos `test_*.py` não têm relação com esta fatia, confirmado com `git stash` antes de começar).
 - Dois commits locais em `dev` (ainda não passaram pelo push manual/automático do Silvan até a data deste documento): `577dd7c` (licença individual) e `817ed11` (calendário de pagamento), cada um com exatamente os arquivos daquela parte — nenhum dos outros arquivos com mudanças em andamento na pasta (WhatsApp, PWA, etc.) foi tocado ou incluído nesses commits.
 
-### Fora do escopo desta fatia (perguntado ao Silvan, ainda sem decisão)
+### Fora do escopo desta fatia (perguntado ao Silvan, ainda sem decisão) — **todos os 3 itens abaixo já foram implementados em rodadas seguintes, ver seção "Extensões da licença individual" logo adiante**
 
-- Mostrar um **valor de cobrança por médico** na tela de licença (hoje só status/vencimento/pago-não pago, sem valores).
-- **Aviso automático para o dono** quando um médico ficar sem pagar por mais de N meses (hoje é só uma indicação visual passiva na lista/calendário, sem notificação nenhuma).
-- Gateway de pagamento real (cartão/PIX/boleto processado automaticamente) — decisão explícita do Silvan de manter 100% manual por enquanto.
+- ~~Mostrar um **valor de cobrança por médico** na tela de licença (hoje só status/vencimento/pago-não pago, sem valores).~~
+- ~~**Aviso automático para o dono** quando um médico ficar sem pagar por mais de N meses (hoje é só uma indicação visual passiva na lista/calendário, sem notificação nenhuma).~~
+- ~~Gateway de pagamento real (cartão/PIX/boleto processado automaticamente) — decisão explícita do Silvan de manter 100% manual por enquanto.~~
+
+## Extensões da licença individual (novas nesta sessão)
+
+Depois do calendário de pagamento (seção anterior), o Silvan pediu para seguir com os 3 itens que tinham ficado "fora do escopo" — em rodadas separadas, cada uma com commit próprio.
+
+### 1. Valor de cobrança por médico (`Usuario.valor_licenca_mensal`)
+
+- **`app/models.py`**: `Usuario` ganhou `valor_licenca_mensal` (Numeric(10,2), opcional) — valor mensal **negociado individualmente com cada médico** (varia por médico, não é um valor único da plataforma).
+- Editável só em **`/dono/usuarios`** (`POST /dono/usuarios/<id>/licenca`, mesmo formulário de status/vencimento) — decisão explícita do Silvan de **não** mostrar esse valor na tela do próprio médico nem guardar um valor por mês no calendário nessa rodada (isso só veio depois, ver item 3 abaixo).
+- Aceita vírgula decimal (mesmo padrão de `Grupo.valor_por_medico`); deixar o campo em branco limpa para `None`.
+- Commit: `8eb7721`.
+
+### 2. Aviso automático de inadimplência (`Usuario.aviso_inadimplencia_meses`)
+
+- Pedido: avisar o dono quando um médico acumula meses seguidos sem pagar. Ao esclarecer o escopo, o Silvan pediu explicitamente um **limite configurável por médico** ("eu configuro por médico"), não um número fixo pra plataforma toda — e só **destaque visual no painel**, sem e-mail.
+- **`app/models.py`**: `Usuario.aviso_inadimplencia_meses` (Integer, NOT NULL, padrão 2 meses, editável por médico); `meses_consecutivos_sem_pagar(usuario)` conta quantos meses seguidos, a partir do mês atual pra trás, o médico está sem pagar (para no primeiro mês pago ou sem registro).
+- **`/dono/usuarios`**: banner vermelho no topo listando quem passou do próprio limite, linha destacada (`table-danger`) e badge "X mês(es) seguido(s) sem pagar" ao lado do badge de mês atual pago/não pago; o próprio limite é editável no mesmo formulário inline de cada médico.
+- Commit: `895c0bc`.
+
+### 3. Valor por mês no calendário + valor na tela do médico + gateway Mercado Pago
+
+Pedido seguinte do Silvan, junto com os itens 1 e 2 revisitados: mostrar o valor também na tela do próprio médico, guardar o valor cobrado em cada mês do calendário (não só na tela do dono), e — o maior dos três — integrar um gateway de pagamento real. Provedor escolhido pelo Silvan: **Mercado Pago**, com escopo de **cobrança automática com webhook** (confirmação de pagamento sem o dono precisar marcar manualmente).
+
+- **Valor na tela do médico**: `medico/minha_licenca.html` passou a mostrar `current_user.valor_licenca_mensal` junto com status/vencimento (sem mudança de rota — `current_user` já está disponível no template).
+- **Valor por mês (`LicencaPagamento.valor`)**: nova coluna Numeric(10,2), uma **fotografia** do valor do médico no momento em que o mês nasce (`garantir_meses_licenca`) — não muda retroativamente se o valor do médico mudar depois (é como uma fatura já emitida). Aparece tanto no calendário do dono (`dono/usuario_licenca_pagamentos.html`) quanto no do médico (`medico/minha_licenca.html`).
+- **Gateway Mercado Pago (`app/mercadopago_integration.py`, novo módulo)**:
+  - `criar_preferencia_pagamento(pagamento)`: cria uma preferência de pagamento (Checkout Pro) pra UM mês específico, gravando `mp_preference_id`/`mp_status`/`mp_init_point` no `LicencaPagamento` e travando o `valor` cobrado nessa preferência.
+  - `_assinatura_valida(data_id, request_id)` + `consultar_pagamento(payment_id)`: validação da assinatura do webhook (cabeçalho `X-Signature`, HMAC-SHA256 sobre um "manifest" `id:...;request-id:...;ts:...;`, conforme documentação oficial do Mercado Pago) e confirmação do pagamento **direto na API** antes de marcar qualquer mês como pago (nunca confia só no conteúdo da notificação recebida).
+  - Nova rota **pública** `POST /webhooks/mercadopago` (`app/routes_pagamentos_webhook.py`, blueprint próprio) — recebe a notificação, valida a assinatura (falha fechada: sem `MERCADOPAGO_WEBHOOK_SECRET` configurado, recusa tudo — mesmo princípio do webhook de WhatsApp em `app/routes_whatsapp.py`), e sempre responde 200 (mesmo quando recusa) pra não fazer o Mercado Pago reentregar a notificação.
+  - Nova rota `POST /dono/usuarios/<id>/licenca/pagamentos/<pagamento_id>/cobrar` — o dono gera (ou regenera) a cobrança real de um mês específico; o link fica visível tanto pro dono (`dono/usuario_licenca_pagamentos.html`) quanto pro médico ("Pagar agora" em `medico/minha_licenca.html`).
+  - **Isto é uma camada ADITIVA** — o controle manual (`usuario_licenca_pagamento_marcar`) continua existindo do lado do dono, útil pra Pix fora do sistema ou acordos informais (decisão do Silvan de manter os dois caminhos, não substituir um pelo outro).
+  - **Configuração necessária** (variáveis de ambiente, documentadas em `.env.example`, nunca em código): `MERCADOPAGO_ACCESS_TOKEN` (comece pelas credenciais de TESTE) e `MERCADOPAGO_WEBHOOK_SECRET` (gerado em Suas integrações > Webhooks > Configurar notificações). **Sem essas variáveis configuradas em produção, o botão "Gerar cobrança" falha com uma mensagem clara** — nada quebra, mas nenhuma cobrança real é gerada até o Silvan cadastrar as credenciais.
+  - **Testado só com chamadas de API simuladas** (monkeypatch de `requests.post`/`requests.get`, sem nenhuma chamada de rede de verdade) — o fluxo de ponta a ponta com o Mercado Pago de verdade (credenciais de teste, webhook configurado apontando pra `media-dev`) ainda precisa ser validado manualmente pelo Silvan antes de confiar no gateway em produção.
+- Migração: `migrar_banco.py` ganhou `ALTER TABLE licenca_pagamentos ADD COLUMN` para `valor`, `mp_preference_id`, `mp_payment_id`, `mp_status`, `mp_init_point`.
+- Testes: novo arquivo `test_licenca_pagamento_valor_e_gateway.py` (26 checagens) — valor na tela do médico, fotografia do valor por mês (incluindo não mudar retroativamente), geração de cobrança sem credenciais (mensagem de erro) e com credenciais (preferência simulada), link "Pagar agora" na tela do médico, webhook com assinatura válida (marca como pago) e inválida (recusa, sem processar), e webhook sem secret configurado (falha fechada).
+- Commit: pendente ao final desta rodada (ver `git log` em `dev`).
 
 ## Otimização de custo — importação de PDF de preparo
 
