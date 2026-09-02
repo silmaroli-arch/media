@@ -49,6 +49,16 @@
       <i class="bi bi-cash-coin me-1"></i>Licenças
     </a>
   </li>
+  {# Também não é uma aba client-side - link direto pra auth.meus_dados
+     (pedido do Silvan: o dono da plataforma poder editar o próprio
+     cadastro - nome/CPF/e-mail/telefone/endereço - protegido por
+     confirmação de senha). Disponível pra qualquer conta com senha, não
+     só o dono, mas o link fica aqui no painel dele por conveniência. #}
+  <li class="nav-item" role="presentation">
+    <a class="nav-link" href="{{ url_for('auth.meus_dados') }}">
+      <i class="bi bi-person-circle me-1"></i>Meus dados
+    </a>
+  </li>
 </ul>
 
 <div class="tab-content" id="donoTabsContent">

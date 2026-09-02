@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block titulo %}Meus dados{% endblock %}
+{% block conteudo %}
+<div class="row justify-content-center">
+  <div class="col-md-7">
+
+    {% if not confirmado %}
+    {# Etapa 1: confirmar a senha atual antes de mostrar qualquer dado -
+       mesmo já estando logado (decisão do Silvan: CPF/e-mail são dados
+       sensíveis e credenciais de login, então pedem essa camada extra). #}
+    <div class="card p-4 mt-4" style="max-width: 480px; margin: 0 auto;">
+      <h4 class="mb-1 text-center"><i class="bi bi-shield-lock"></i> Confirme sua senha</h4>
+      <p class="text-muted text-center small">
+        Por segurança, confirme sua senha para acessar e editar seus dados pessoais.
+      </p>
+      <form method="post">
+        <input type="hidden" name="acao" value="confirmar_senha">
+        <div class="mb-3">
+          <label class="form-label">Sua senha</label>
+          <input type="password" name="senha_atual" class="form-control" required autofocus>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Confirmar</button>
+        <a href="{{ url_for('index') }}" class="btn btn-link w-100">Cancelar</a>
+      </form>
+    </div>
+
+    {% else %}
+    {# Etapa 2: edição de verdade, já com a senha confirmada (vale por
+       alguns minutos - ver MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS em
+       app/routes_auth.py). #}
+    <div class="card p-4 mt-4">
+      <h4 class="mb-1"><i class="bi bi-person-circle"></i> Meus dados</h4>
+      <p class="text-muted small">Seus dados pessoais de cadastro na plataforma.</p>
+
+      <form method="post">
+        <input type="hidden" name="acao" value="salvar">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Nome</label>
+            <input type="text" name="nome" id="nome" class="form-control" value="{{ current_user.nome }}" autocapitalize="words" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">CPF</label>
+            <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" value="{{ current_user.cpf or '' }}" required>
+            <div class="invalid-feedback" id="cpf_status"></div>
+            <div class="form-text">Usado também como login, junto com o e-mail.</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">E-mail</label>
+            <input type="email" name="email" class="form-control" value="{{ current_user.email or '' }}" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Telefone</label>
+            <input type="text" inputmode="numeric" name="telefone" id="telefone" class="form-control" placeholder="(27) 99999-9999" value="{{ current_user.telefone or '' }}">
+            <div class="invalid-feedback" id="telefone_status"></div>
+          </div>
+        </div>
+
+        <h6 class="mb-0 mt-4">Endereço</h6>
+        <div class="row g-3 mt-0">
+          <div class="col-md-3">
+            <label class="form-label">CEP</label>
+            <input type="text" inputmode="numeric" name="cep" id="cep" class="form-control" placeholder="00000-000" value="{{ current_user.cep or '' }}">
+            <div class="form-text" id="cep_status"></div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Rua</label>
+            <input type="text" name="rua" id="rua" class="form-control" value="{{ current_user.rua or '' }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Número</label>
+            <input type="text" name="numero" class="form-control" value="{{ current_user.numero or '' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Complemento</label>
+            <input type="text" name="complemento" class="form-control" value="{{ current_user.complemento or '' }}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Bairro</label>
+            <input type="text" name="bairro" id="bairro" class="form-control" value="{{ current_user.bairro or '' }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Cidade</label>
+            <input type="text" name="cidade" id="cidade" class="form-control" value="{{ current_user.cidade or '' }}">
+          </div>
+          <div class="col-md-1">
+            <label class="form-label">UF</label>
+            <input type="text" name="uf" id="uf" class="form-control" maxlength="2" value="{{ current_user.uf or '' }}">
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-4">Salvar alterações</button>
+        <a href="{{ url_for('auth.trocar_senha') }}" class="btn btn-outline-secondary mt-4">Trocar senha</a>
+      </form>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+{% if confirmado %}
+<script>
+// ---------- Máscaras (mesma lógica de auth/cadastro.html) ----------
+function aplicarMascaraFixa(campo, padrao) {
+  if (!campo) return;
+  var maxDigitos = (padrao.match(/9/g) || []).length;
+  campo.addEventListener('input', function () {
+    var digitos = campo.value.replace(/\D/g, '').slice(0, maxDigitos);
+    if (!digitos) { campo.value = ''; return; }
+    var resultado = '', pos = 0;
+    for (var i = 0; i < padrao.length && pos < digitos.length; i++) {
+      if (padrao[i] === '9') { resultado += digitos[pos]; pos++; }
+      else { resultado += padrao[i]; }
+    }
+    campo.value = resultado;
+  });
+}
+aplicarMascaraFixa(document.getElementById('cpf'), '999.999.999-99');
+aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
+aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
+
+// ---------- Validação de CPF (dígitos verificadores) ----------
+function cpfValido(cpf) {
+  var d = cpf.replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  for (var t = 9; t <= 10; t++) {
+    var soma = 0;
+    for (var i = 0; i < t; i++) soma += parseInt(d[i]) * (t + 1 - i);
+    var resto = (soma * 10) % 11;
+    if (resto === 10) resto = 0;
+    if (resto !== parseInt(d[t])) return false;
+  }
+  return true;
+}
+function marcarCpfValido() {
+  var campo = document.getElementById('cpf');
+  var status = document.getElementById('cpf_status');
+  var d = campo.value.replace(/\D/g, '');
+  if (d.length === 11 && cpfValido(campo.value)) {
+    status.textContent = ''; campo.classList.remove('is-invalid'); return true;
+  }
+  status.textContent = 'CPF inválido — confira os números digitados.';
+  campo.classList.add('is-invalid');
+  return false;
+}
+document.getElementById('cpf').addEventListener('blur', marcarCpfValido);
+
+// ---------- Validação de telefone completo (10 ou 11 dígitos) ----------
+function marcarTelefoneValido() {
+  var campo = document.getElementById('telefone');
+  var status = document.getElementById('telefone_status');
+  var d = campo.value.replace(/\D/g, '');
+  if (!d) { status.textContent = ''; campo.classList.remove('is-invalid'); return true; }
+  if (d.length === 10 || d.length === 11) {
+    status.textContent = ''; campo.classList.remove('is-invalid'); return true;
+  }
+  status.textContent = 'Telefone incompleto — digite o DDD e o número completos.';
+  campo.classList.add('is-invalid');
+  return false;
+}
+document.getElementById('telefone').addEventListener('blur', marcarTelefoneValido);
+
+// ---------- Busca de endereço por CEP via ViaCEP ----------
+var campoCep = document.getElementById('cep');
+campoCep.addEventListener('blur', function () {
+  var cep = campoCep.value.replace(/\D/g, '');
+  var status = document.getElementById('cep_status');
+  if (!cep) { status.textContent = ''; campoCep.classList.remove('is-invalid'); return; }
+  if (cep.length !== 8) {
+    status.textContent = 'CEP incompleto — digite os 8 números.';
+    campoCep.classList.add('is-invalid');
+    return;
+  }
+  campoCep.classList.remove('is-invalid');
+  status.textContent = 'Buscando endereço...';
+  fetch('https://viacep.com.br/ws/' + cep + '/json/')
+    .then(function (r) { return r.json(); })
+    .then(function (dados) {
+      if (dados.erro) { status.textContent = 'CEP não encontrado — confira o número digitado.'; return; }
+      document.getElementById('rua').value = dados.logradouro || '';
+      document.getElementById('bairro').value = dados.bairro || '';
+      document.getElementById('cidade').value = dados.localidade || '';
+      document.getElementById('uf').value = dados.uf || '';
+      status.textContent = 'Endereço preenchido automaticamente pelo CEP.';
+    })
+    .catch(function () {
+      status.textContent = 'Não foi possível consultar o CEP agora — tente de novo.';
+    });
+});
+
+document.querySelector('form').addEventListener('submit', function (evento) {
+  var cpfOk = marcarCpfValido();
+  var telefoneOk = marcarTelefoneValido();
+  if (!cpfOk || !telefoneOk) {
+    evento.preventDefault();
+    var primeiroInvalido = document.querySelector('.is-invalid');
+    if (primeiroInvalido) primeiroInvalido.focus();
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

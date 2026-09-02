@@ -205,6 +205,104 @@ def trocar_senha():
     return render_template("auth/trocar_senha.html")
 
 
+# Quanto tempo a confirmação de senha vale para acessar/editar "Meus
+# dados" (auth.meus_dados) - depois desse tempo sem usar a tela, pede a
+# senha de novo (mesmo padrão de "reautenticação por tempo" usado em
+# vários apps para telas de dados sensíveis). Guardado na sessão, não no
+# banco - não sobrevive a logout/troca de navegador, de propósito.
+MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS = 15
+
+
+@auth_bp.route("/meus-dados", methods=["GET", "POST"])
+@login_required
+def meus_dados():
+    """Dados pessoais da PRÓPRIA conta logada (nome, CPF, e-mail, telefone,
+    endereço) - pedido do Silvan para o dono da plataforma poder manter seu
+    próprio cadastro atualizado (hoje só dava pra editar dados de médico/
+    secretária pela tela de exclusão/licença; o dono não tinha cadastro
+    nenhum pra editar). Disponível para qualquer tipo de conta com senha
+    (dono/médico/secretária) - não só o dono - já que a mesma necessidade
+    vale para qualquer um deles.
+
+    Por serem dados sensíveis (CPF é inclusive credencial de login), o
+    acesso exige confirmar a senha atual antes de ver/editar qualquer
+    coisa, mesmo já estando logado - a confirmação vale por
+    MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS minutos (guardado na sessão),
+    então a pessoa não precisa digitar a senha de novo a cada campo que
+    for ajustar na mesma visita."""
+    if not current_user.tem_senha:
+        flash("Esta tela é só para contas com senha (dono, médico ou secretária).", "info")
+        return redirect(url_for("index"))
+
+    confirmado_em = session.get("meus_dados_confirmado_em")
+    confirmado = (
+        confirmado_em is not None
+        and datetime.utcnow() - datetime.fromisoformat(confirmado_em) < timedelta(minutes=MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS)
+    )
+
+    if request.method == "POST" and request.form.get("acao") == "confirmar_senha":
+        senha_atual = request.form.get("senha_atual", "")
+        if not current_user.checar_senha(senha_atual):
+            flash("Senha incorreta.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=False)
+        session["meus_dados_confirmado_em"] = datetime.utcnow().isoformat()
+        return redirect(url_for("auth.meus_dados"))
+
+    if not confirmado:
+        return render_template("auth/meus_dados.html", confirmado=False)
+
+    if request.method == "POST" and request.form.get("acao") == "salvar":
+        nome = request.form.get("nome", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        cpf = request.form.get("cpf", "").strip()
+
+        if not nome or not email or not cpf:
+            flash("Nome, CPF e e-mail são obrigatórios.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=True)
+
+        if not validar_cpf(cpf):
+            flash("CPF inválido — confira os números digitados.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=True)
+
+        if telefone_incompleto(request.form.get("telefone", "")):
+            flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=True)
+
+        if cep_incompleto(request.form.get("cep", "")):
+            flash("CEP incompleto — digite os 8 números.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=True)
+
+        # E-mail/CPF são credenciais de login (ver auth.login) - não podem
+        # colidir com a conta de outra pessoa (comparação de CPF ignora
+        # pontuação, mesma lógica usada pra localizar a conta no login).
+        if Usuario.query.filter(Usuario.id != current_user.id, Usuario.email == email).first():
+            flash("Já existe uma conta com esse e-mail.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=True)
+
+        cpf_alvo = re.sub(r"\D", "", cpf)
+        for outro in Usuario.query.filter(Usuario.id != current_user.id, Usuario.cpf.isnot(None)).all():
+            if re.sub(r"\D", "", outro.cpf or "") == cpf_alvo:
+                flash("Já existe uma conta com esse CPF.", "danger")
+                return render_template("auth/meus_dados.html", confirmado=True)
+
+        current_user.nome = nome
+        current_user.email = email
+        current_user.cpf = cpf
+        current_user.telefone = normalizar_telefone(request.form.get("telefone", ""))
+        current_user.cep = request.form.get("cep", "").strip()
+        current_user.rua = request.form.get("rua", "").strip()
+        current_user.numero = request.form.get("numero", "").strip()
+        current_user.complemento = request.form.get("complemento", "").strip()
+        current_user.bairro = request.form.get("bairro", "").strip()
+        current_user.cidade = request.form.get("cidade", "").strip()
+        current_user.uf = request.form.get("uf", "").strip().upper() or None
+        db.session.commit()
+        flash("Dados atualizados com sucesso.", "success")
+        return redirect(url_for("auth.meus_dados"))
+
+    return render_template("auth/meus_dados.html", confirmado=True)
+
+
 @auth_bp.route("/cadastro", methods=["GET", "POST"])
 def cadastro():
     """Cadastro público — uma ÚNICA tela pra todo mundo (médico(a) ou
