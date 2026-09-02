@@ -36,6 +36,7 @@
         <th>Grupo(s) de trabalho</th>
         <th>Licença</th>
         <th>Cadastrado em</th>
+        <th>Excluir</th>
       </tr>
     </thead>
     <tbody>
@@ -112,9 +113,25 @@
           {% endif %}
         </td>
         <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
+        <td>
+          {# Exclusão permanente (substitui a antiga "Limpar dados de teste"
+             do login, que apagava o banco inteiro sem senha nenhuma -
+             decisão do Silvan de trocar por algo escopado a uma pessoa e
+             protegido pela senha do próprio dono). O confirm() do navegador
+             é uma segunda trava, além da senha, contra clique acidental -
+             a validação de verdade é a senha, conferida no servidor em
+             dono.usuario_excluir. #}
+          <form method="post" action="{{ url_for('dono.usuario_excluir', usuario_id=l.usuario.id) }}"
+                class="d-flex gap-1"
+                onsubmit="return confirm('Excluir permanentemente {{ l.usuario.nome }} e todos os dados associados (exames, agendamentos, licença)? Essa ação não pode ser desfeita.');">
+            <input type="password" name="senha_confirmacao" class="form-control form-control-sm" style="width: 130px;"
+                   placeholder="sua senha" autocomplete="current-password" required>
+            <button type="submit" class="btn btn-sm btn-outline-danger text-nowrap">Excluir</button>
+          </form>
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
+      <tr><td colspan="9" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
       {% endfor %}
     </tbody>
   </table>

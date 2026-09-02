@@ -37,9 +37,6 @@
       <div class="text-center mt-2">
         <a href="{{ url_for('auth.login_paciente') }}" class="small">Sou paciente &rarr; <strong>Entrar com CPF e data de nascimento</strong></a>
       </div>
-      <div class="text-center mt-3">
-        <a href="{{ url_for('auth.dev_limpar_base') }}" class="small text-danger" style="opacity:.6;">Limpar dados de teste (temporário)</a>
-      </div>
       {% if versao_info %}
       <div class="text-muted text-center small mt-3" style="opacity:.55; font-size:.75rem;">
         versão {{ versao_info.commit_curto }} ({{ versao_info.branch }}) · último deploy: {{ versao_info.deploy_em_local }}

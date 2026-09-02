@@ -9,6 +9,7 @@ from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, Cham
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 from app.mercadopago_integration import criar_preferencia_pagamento, MercadoPagoNaoConfigurado
+from app.exclusao_usuario import verificar_bloqueios_exclusao, excluir_usuario_e_dados
 
 dono_bp = Blueprint("dono", __name__, url_prefix="/dono")
 
@@ -384,6 +385,42 @@ def usuario_licenca_pagamento_cobrar(usuario_id, pagamento_id):
     db.session.commit()
     flash(f"Cobrança gerada para {usuario.nome} ({pagamento.mes.strftime('%m/%Y')}).", "success")
     return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/excluir", methods=["POST"])
+@login_required
+@dono_required
+def usuario_excluir(usuario_id):
+    """Exclusão PERMANENTE de um médico ou secretária (substitui a antiga
+    tela "Limpar dados de teste", que apagava o banco inteiro sem login -
+    decisão do Silvan de trocar por uma opção escopada a uma pessoa,
+    disponível de verdade em produção). Apaga a conta e tudo relacionado a
+    ela (exames/agendamentos em que é responsável, licença, custo de IA,
+    convites, vínculo com grupos) - pacientes cadastrados por ela só
+    perdem essa atribuição, não são apagados (ver app/exclusao_usuario.py).
+
+    Confirmação: exige a SENHA do próprio dono (decisão do Silvan) - não
+    basta estar logado, porque essa ação não tem volta."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    if usuario.tipo not in ("medico", "secretaria"):
+        abort(404)
+
+    senha_confirmacao = request.form.get("senha_confirmacao", "")
+    if not current_user.checar_senha(senha_confirmacao):
+        flash("Senha incorreta - a conta NÃO foi excluída.", "danger")
+        return redirect(url_for("dono.usuarios"))
+
+    bloqueios = verificar_bloqueios_exclusao(usuario)
+    if bloqueios:
+        for mensagem in bloqueios:
+            flash(mensagem, "danger")
+        return redirect(url_for("dono.usuarios"))
+
+    nome = usuario.nome
+    excluir_usuario_e_dados(usuario)
+    db.session.commit()
+    flash(f'"{nome}" e todos os dados associados foram excluídos permanentemente.', "success")
+    return redirect(url_for("dono.usuarios"))
 
 
 @dono_bp.route("/usuarios")
