@@ -139,6 +139,12 @@ with app.app_context():
     medico_grupo.licenca_status = "inadimplente"
     medico_grupo.licenca_vencimento = date.today() - timedelta(days=3)
     medico_grupo.valor_licenca_mensal = 150.00
+    # Fatia 8 (aviso de inadimplência): este médico tem um limite de aviso
+    # customizado (1 mês em vez do padrão de 2) - demonstra que o campo é
+    # configurável por médico (decisão do Silvan), e junto com o histórico de
+    # meses seguidos sem pagar montado abaixo, já nasce em alerta na tela do
+    # dono (/dono/usuarios).
+    medico_grupo.aviso_inadimplencia_meses = 1
 
     db.session.add_all([
         secretaria_vitoria, secretaria_sp, medico_compartilhado, medica_vitoria2,
@@ -160,6 +166,15 @@ with app.app_context():
     )
     # medica_vitoria2 (trial) e medico_grupo (inadimplente) ficam com o mês
     # atual em aberto, coerente com o status de cada um.
+    db.session.commit()
+
+    # Fatia 8 (aviso de inadimplência): medico_grupo já nasce com 2 meses
+    # seguidos sem pagar (mês atual + o anterior), pra demonstrar o destaque
+    # de alerta em /dono/usuarios logo de cara (o seed normalmente só cria
+    # todo mundo "hoje", então sem isso nunca haveria mais de um mês de
+    # histórico pra nenhum médico).
+    mes_anterior = (mes_atual.replace(day=1) - timedelta(days=1)).replace(day=1)
+    db.session.add(LicencaPagamento(usuario_id=medico_grupo.id, mes=mes_anterior, pago=False))
     db.session.commit()
 
     # --- Vínculos (GrupoMembro) ---

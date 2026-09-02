@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 
@@ -50,21 +50,37 @@ def _usuarios_com_custo():
     # Calendário de pagamento (Fatia 8): mostra de cara se o mês corrente já
     # foi marcado como pago pra cada médico, sem precisar abrir o
     # calendário completo de cada um - ver usuario_licenca_pagamentos.
+    # Garante o mês atual pra cada médico antes de contar meses seguidos
+    # sem pagar - sem isso, um médico que ninguém abriu a tela dele ainda
+    # este mês ficaria subcontado (mês atual "não existe" em vez de "não
+    # pago").
+    houve_mes_novo = False
+    for u in lista_usuarios:
+        if garantir_meses_licenca(u):
+            houve_mes_novo = True
+    if houve_mes_novo:
+        db.session.commit()
+
     mes_atual = date.today().replace(day=1)
     pago_mes_atual_por_usuario = {
         p.usuario_id: p.pago
         for p in LicencaPagamento.query.filter_by(mes=mes_atual).all()
     }
 
-    return [
-        {
+    linhas = []
+    for u in lista_usuarios:
+        meses_sem_pagar = meses_consecutivos_sem_pagar(u)
+        linhas.append({
             "usuario": u,
             "grupos": nomes_de_grupo_por_usuario.get(u.id, []),
             "custo": custo_por_usuario.get(u.id),
             "pago_mes_atual": pago_mes_atual_por_usuario.get(u.id),
-        }
-        for u in lista_usuarios
-    ]
+            "meses_sem_pagar": meses_sem_pagar,
+            "em_alerta_inadimplencia": (
+                u.tipo == "medico" and meses_sem_pagar >= (u.aviso_inadimplencia_meses or 2)
+            ),
+        })
+    return linhas
 
 
 @dono_bp.route("/")
@@ -267,6 +283,17 @@ def usuario_licenca_editar(usuario_id):
             return redirect(url_for("dono.usuarios"))
     else:
         usuario.valor_licenca_mensal = None
+
+    aviso_str = request.form.get("aviso_inadimplencia_meses", "").strip()
+    if aviso_str:
+        try:
+            aviso_meses = int(aviso_str)
+            if aviso_meses < 1:
+                raise ValueError
+            usuario.aviso_inadimplencia_meses = aviso_meses
+        except ValueError:
+            flash("Número de meses para aviso de inadimplência inválido (use um número inteiro maior que zero).", "danger")
+            return redirect(url_for("dono.usuarios"))
 
     db.session.commit()
     flash(f"Licença de '{usuario.nome}' atualizada.", "success")

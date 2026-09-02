@@ -12,6 +12,17 @@
   sistema sozinha, sem trial/vencimento/bloqueio) e não aparece na lista de Grupos.
 </p>
 
+{% set em_alerta = linhas|selectattr("em_alerta_inadimplencia")|list %}
+{% if em_alerta %}
+<div class="alert alert-danger">
+  <strong>{{ em_alerta|length }} médico{{ "s" if em_alerta|length != 1 else "" }} sem pagar há tempo demais:</strong>
+  {% for l in em_alerta %}
+    {{ l.usuario.nome }} ({{ l.meses_sem_pagar }} mes{{ "es" if l.meses_sem_pagar != 1 else "" }} seguido{{ "s" if l.meses_sem_pagar != 1 else "" }}){{ ", " if not loop.last else "" }}
+  {% endfor %}
+  — o limite de aviso de cada um pode ser ajustado no formulário da linha dele.
+</div>
+{% endif %}
+
 <div class="card p-3">
   <div class="table-responsive">
   <table class="table table-hover">
@@ -30,7 +41,7 @@
     <tbody>
       {% set licenca_cores = {'trial': 'info', 'ativa': 'success', 'inadimplente': 'warning', 'bloqueada': 'danger'} %}
       {% for l in linhas %}
-      <tr>
+      <tr class="{{ 'table-danger' if l.em_alerta_inadimplencia else '' }}">
         <td>{{ l.usuario.nome }}</td>
         <td>
           {% if l.custo %}
@@ -77,6 +88,10 @@
                      value="{{ l.usuario.licenca_vencimento.isoformat() if l.usuario.licenca_vencimento else '' }}">
               <input type="text" name="valor_licenca_mensal" class="form-control form-control-sm" style="width: 90px;" placeholder="R$/mês"
                      value="{{ '%.2f'|format(l.usuario.valor_licenca_mensal) if l.usuario.valor_licenca_mensal is not none else '' }}">
+              <span class="input-group-text form-control-sm" style="width: auto;" title="Avisar após quantos meses seguidos sem pagar">Avisar após</span>
+              <input type="number" name="aviso_inadimplencia_meses" class="form-control form-control-sm" style="width: 60px;" min="1"
+                     value="{{ l.usuario.aviso_inadimplencia_meses }}">
+              <span class="input-group-text form-control-sm" style="width: auto;">mês(es)</span>
               <button type="submit" class="btn btn-sm btn-outline-primary">Salvar</button>
             </form>
             <div class="mt-1">
@@ -84,6 +99,11 @@
                 <span class="badge bg-success">Mês atual pago</span>
               {% else %}
                 <span class="badge bg-danger">Mês atual não pago</span>
+              {% endif %}
+              {% if l.meses_sem_pagar > 0 %}
+                <span class="badge {{ 'bg-danger' if l.em_alerta_inadimplencia else 'bg-secondary' }}">
+                  {{ l.meses_sem_pagar }} mês(es) seguido(s) sem pagar
+                </span>
               {% endif %}
               <a href="{{ url_for('dono.usuario_licenca_pagamentos', usuario_id=l.usuario.id) }}" class="small ms-1">ver calendário</a>
             </div>

@@ -207,4 +207,94 @@ html_minha = r_minha.get_data(as_text=True)
 checar("Calendário de pagamento aparece na tela do médico", "Calendário de pagamento" in html_minha)
 checar("Médico vê que o mês atual está pago (marcado pelo dono acima)", "Pago" in html_minha)
 
+# ---------- Aviso automático de inadimplência (Fatia 8) ----------
+# Configurável por médico (decisão do Silvan: "Eu configuro por médico"),
+# destaque visual no painel do dono (sem e-mail).
+client.get("/logout")
+client.post("/login", data={"identificador": dono_email, "senha": "123456"})
+
+with app.app_context():
+    from app.models import meses_consecutivos_sem_pagar
+
+    medica = Usuario.query.get(medica_id)
+    checar("Limite de aviso nasce com o padrão de 2 meses", medica.aviso_inadimplencia_meses == 2)
+    checar("Médica em dia não conta meses seguidos sem pagar (mês atual foi marcado pago acima)",
+           meses_consecutivos_sem_pagar(medica) == 0)
+    checar("Secretária não conta meses sem pagar (não se aplica a ela)",
+           meses_consecutivos_sem_pagar(secretaria) == 0)
+
+# Dono edita o limite de aviso da médica (deixando outros campos como estão).
+r_aviso = client.post(f"/dono/usuarios/{medica_id}/licenca", data={
+    "licenca_status": "ativa",
+    "licenca_vencimento": (date.today() + timedelta(days=90)).isoformat(),
+    "valor_licenca_mensal": "",
+    "aviso_inadimplencia_meses": "5",
+}, follow_redirects=True)
+checar("Editar o limite de aviso responde 200", r_aviso.status_code == 200)
+with app.app_context():
+    medica = Usuario.query.get(medica_id)
+    checar("Dono conseguiu mudar o limite de aviso da médica", medica.aviso_inadimplencia_meses == 5)
+
+# Deixar o campo em branco não deve zerar/alterar o valor já salvo (diferente
+# de vencimento/valor, que limpam pra None quando em branco) - este campo é
+# NOT NULL com um padrão, então "em branco" significa "não mexer".
+r_aviso_branco = client.post(f"/dono/usuarios/{medica_id}/licenca", data={
+    "licenca_status": "ativa",
+    "licenca_vencimento": (date.today() + timedelta(days=90)).isoformat(),
+    "valor_licenca_mensal": "",
+    "aviso_inadimplencia_meses": "",
+}, follow_redirects=True)
+checar("Deixar o limite de aviso em branco responde 200", r_aviso_branco.status_code == 200)
+with app.app_context():
+    medica = Usuario.query.get(medica_id)
+    checar("Limite de aviso não mudou ao deixar o campo em branco", medica.aviso_inadimplencia_meses == 5)
+
+# Valor inválido (não numérico ou <= 0) é rejeitado com uma mensagem clara,
+# sem quebrar a tela nem mudar o valor salvo.
+r_aviso_invalido = client.post(f"/dono/usuarios/{medica_id}/licenca", data={
+    "licenca_status": "ativa",
+    "licenca_vencimento": (date.today() + timedelta(days=90)).isoformat(),
+    "valor_licenca_mensal": "",
+    "aviso_inadimplencia_meses": "0",
+}, follow_redirects=True)
+checar("Limite de aviso inválido (zero) responde 200 com aviso", r_aviso_invalido.status_code == 200)
+checar("Mensagem de erro aparece na tela", "inválido" in r_aviso_invalido.get_data(as_text=True).lower())
+with app.app_context():
+    medica = Usuario.query.get(medica_id)
+    checar("Limite de aviso não mudou com valor inválido", medica.aviso_inadimplencia_meses == 5)
+
+# Cria um médico com vários meses seguidos sem pagar, pra cruzar o limite de
+# aviso e disparar o destaque em /dono/usuarios.
+with app.app_context():
+    from app.models import LicencaPagamento, garantir_meses_licenca, _mes_anterior
+
+    inadimplente = Usuario(nome="Dr. Sempre Atrasado", email="inadimplente.licenca@example.com", tipo="medico")
+    inadimplente.set_senha("123456")
+    inadimplente.licenca_status = "inadimplente"
+    inadimplente.aviso_inadimplencia_meses = 2
+    db.session.add(inadimplente)
+    db.session.commit()
+    garantir_meses_licenca(inadimplente)
+    mes_atual = date.today().replace(day=1)
+    mes_passado = _mes_anterior(mes_atual)
+    db.session.add(LicencaPagamento(usuario_id=inadimplente.id, mes=mes_passado, pago=False))
+    db.session.commit()
+    inadimplente_id = inadimplente.id
+
+    checar("Um mês seguido sem pagar ainda não cruza o limite de 2",
+           meses_consecutivos_sem_pagar(Usuario.query.get(inadimplente_id)) >= 1)
+
+r_usuarios_alerta = client.get("/dono/usuarios")
+checar("Tela dono/usuarios responde 200 com médico em alerta", r_usuarios_alerta.status_code == 200)
+html_alerta = r_usuarios_alerta.get_data(as_text=True)
+checar("Banner de alerta de inadimplência aparece na tela", "sem pagar há tempo demais" in html_alerta)
+checar("Nome do médico em alerta aparece no banner", "Dr. Sempre Atrasado" in html_alerta)
+checar("Linha do médico em alerta é destacada (table-danger)", "table-danger" in html_alerta)
+
+with app.app_context():
+    checar("em_alerta_inadimplencia bate com o limite configurado (2 meses seguidos >= 2)",
+           meses_consecutivos_sem_pagar(Usuario.query.get(inadimplente_id)) >= 2)
+
+client.get("/logout")
+
 print("\nTodos os testes de licença individual passaram.")

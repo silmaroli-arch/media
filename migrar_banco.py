@@ -311,6 +311,12 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS licenca_vencimento DATE;
 -- editável em /dono/usuarios por enquanto.
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS valor_licenca_mensal NUMERIC(10, 2);
 
+-- Fatia 8 (aviso de inadimplência): depois de quantos meses SEGUIDOS sem
+-- pagar o dono vê um destaque de atenção pra este médico em
+-- /dono/usuarios (ver app.models.meses_consecutivos_sem_pagar) -
+-- configurável por médico (decisão do Silvan), padrão 2 meses.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aviso_inadimplencia_meses INTEGER NOT NULL DEFAULT 2;
+
 -- Backfill: a partir deste deploy, todo médico NOVO já nasce com
 -- licenca_vencimento explícito (ver routes_auth.py:cadastro() e
 -- routes_grupo.py:convidar()) - então qualquer médico já existente que

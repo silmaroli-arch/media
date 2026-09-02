@@ -141,6 +141,12 @@ class Usuario(db.Model, UserMixin):
     # ter um valor diferente). Opcional: fica em branco até o dono
     # negociar/preencher. Só editável em /dono/usuarios por enquanto.
     valor_licenca_mensal = db.Column(db.Numeric(10, 2))
+    # Depois de quantos meses SEGUIDOS sem pagar o dono deve ver um aviso
+    # de atenção pra este médico (ver Usuario.meses_consecutivos_sem_pagar
+    # e o destaque em /dono/usuarios) - configurável por médico (decisão
+    # do Silvan: cada médico pode ter um limite diferente, em vez de um
+    # número único fixo pra plataforma toda).
+    aviso_inadimplencia_meses = db.Column(db.Integer, nullable=False, default=2)
 
     # CONTA ÚNICA do paciente: uma pessoa (um Usuario) pode ter VÁRIOS
     # cadastros de paciente - um por empresa que frequenta (ver
@@ -431,6 +437,35 @@ def garantir_meses_licenca(usuario):
     if novos:
         db.session.add_all(novos)
     return novos
+
+
+def _mes_anterior(d):
+    if d.month == 1:
+        return date(d.year - 1, 12, 1)
+    return date(d.year, d.month - 1, 1)
+
+
+def meses_consecutivos_sem_pagar(usuario):
+    """Quantos meses SEGUIDOS, contando do mês atual pra trás, o médico
+    está sem pagar - usado para decidir se ele já passou do limite de
+    atenção do dono (Usuario.aviso_inadimplencia_meses). Para de contar no
+    primeiro mês pago ou no primeiro mês sem registro nenhum (ex.: antes do
+    cadastro dele) - chame garantir_meses_licenca() antes se quiser
+    garantir que o mês atual já existe. Só se aplica a médico."""
+    if usuario.tipo != "medico":
+        return 0
+
+    pagos_por_mes = {
+        p.mes: p.pago
+        for p in LicencaPagamento.query.filter_by(usuario_id=usuario.id).all()
+    }
+
+    mes = _primeiro_dia_do_mes(date.today())
+    contagem = 0
+    while mes in pagos_por_mes and not pagos_por_mes[mes]:
+        contagem += 1
+        mes = _mes_anterior(mes)
+    return contagem
 
 
 class Grupo(db.Model):
