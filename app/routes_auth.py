@@ -399,11 +399,17 @@ def cadastro():
 
         # Fatia 8 (licença individual): a cobrança é por médico e vale a
         # partir do cadastro, independente de Grupo (decisão do Silvan) -
-        # todo médico novo já nasce com um prazo de trial usando o mesmo
-        # parâmetro configurável que os Grupos usam (PlataformaConfig.
-        # trial_dias), pra não introduzir uma segunda constante de negócio.
+        # todo médico novo já nasce em trial, com vencimento calculado a
+        # partir do mesmo parâmetro configurável que os Grupos usam
+        # (PlataformaConfig.trial_dias), pra não introduzir uma segunda
+        # constante de negócio. valor_licenca_mensal nasce com o valor
+        # padrão global (PlataformaConfig.valor_licenca_padrao), mas o dono
+        # pode reajustar depois em /dono/usuarios (restruturação de
+        # 2026-09-02, pedido do Silvan).
         if papel == "medico":
-            usuario.licenca_vencimento = date.today() + timedelta(days=PlataformaConfig.obter().trial_dias)
+            config = PlataformaConfig.obter()
+            usuario.licenca_vencimento = date.today() + timedelta(days=config.trial_dias)
+            usuario.valor_licenca_mensal = config.valor_licenca_padrao
 
         db.session.add(usuario)
         # Fatia 6: o cadastro NÃO cria mais um Grupo. A conta nasce solo,

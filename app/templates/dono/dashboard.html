@@ -256,12 +256,40 @@
         Todo grupo novo, criado ao se cadastrar em <code>/cadastro</code> (ou ao criar um grupo adicional),
         entra com esse número de dias de trial. Quando a data de vencimento passa e o grupo ainda está em
         trial, o status muda automaticamente para <strong>inadimplente</strong> (o grupo continua acessando
-        normalmente — bloquear é sempre uma decisão sua).
+        normalmente — bloquear é sempre uma decisão sua). Esse mesmo número de dias vale também para o
+        trial individual de cada médico (ver "Licença de médico" abaixo) — ao vencer, o médico passa
+        automaticamente de trial para ativo.
       </p>
       <form method="post" action="{{ url_for('dono.configuracoes') }}" class="d-flex align-items-end gap-2">
         <div>
           <label class="form-label small mb-0">Dias de trial</label>
           <input type="number" name="trial_dias" min="1" class="form-control" style="max-width: 120px" value="{{ config.trial_dias }}" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </form>
+    </div>
+
+    <div class="card p-3 mb-4">
+      <h5 class="mb-1">Licença de médico</h5>
+      <p class="text-muted small mb-3">
+        Todo médico nasce em <strong>trial</strong> e passa para <strong>ativo</strong> automaticamente ao
+        vencer o número de dias de trial configurado acima. Se ficar sem pagar por mais meses seguidos do
+        que o limite abaixo, o status muda para <strong>inadimplente</strong> (só um aviso — o acesso
+        continua liberado). A única ação manual sobre o status é <strong>bloquear o acesso</strong>,
+        feita individualmente em cada médico na aba Licenças. O valor mensal padrão abaixo é usado para
+        preencher automaticamente o valor cobrado de cada médico novo — pode ser reajustado
+        individualmente depois na aba Licenças.
+      </p>
+      <form method="post" action="{{ url_for('dono.configuracoes_licenca_medico') }}" class="d-flex align-items-end gap-2 flex-wrap">
+        <div>
+          <label class="form-label small mb-0">Valor mensal padrão (R$)</label>
+          <input type="text" name="valor_licenca_padrao" class="form-control" style="max-width: 140px"
+                 placeholder="R$/mês"
+                 value="{{ '%.2f'|format(config.valor_licenca_padrao) if config.valor_licenca_padrao is not none else '' }}">
+        </div>
+        <div>
+          <label class="form-label small mb-0">Avisar após quantos meses seguidos sem pagar</label>
+          <input type="number" name="aviso_inadimplencia_meses" min="1" class="form-control" style="max-width: 120px" value="{{ config.aviso_inadimplencia_meses }}" required>
         </div>
         <button type="submit" class="btn btn-primary">Salvar</button>
       </form>

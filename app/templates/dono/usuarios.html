@@ -73,7 +73,11 @@
           {% if l.usuario.tipo == "medico" %}
             <span class="badge bg-{{ licenca_cores.get(l.usuario.licenca_status, 'secondary') }} mb-1">{{ l.usuario.licenca_status }}</span>
             <span class="text-muted small d-block mb-1">
-              {{ l.usuario.licenca_vencimento.strftime('%d/%m/%Y') if l.usuario.licenca_vencimento else "sem vencimento" }}
+              {% if l.usuario.licenca_status == "trial" %}
+                trial até {{ l.usuario.licenca_vencimento.strftime('%d/%m/%Y') if l.usuario.licenca_vencimento else "—" }}
+              {% else %}
+                {{ l.usuario.licenca_vencimento.strftime('%d/%m/%Y') if l.usuario.licenca_vencimento else "sem trial" }}
+              {% endif %}
               ·
               {% if l.usuario.valor_licenca_mensal is not none %}
                 R$ {{ "%.2f"|format(l.usuario.valor_licenca_mensal) }}/mês
@@ -81,22 +85,28 @@
                 valor não definido
               {% endif %}
             </span>
-            <form method="post" action="{{ url_for('dono.usuario_licenca_editar', usuario_id=l.usuario.id) }}" class="d-flex gap-1 flex-wrap">
-              <select name="licenca_status" class="form-select form-select-sm" style="width: auto;">
-                {% for s in ['trial', 'ativa', 'inadimplente', 'bloqueada'] %}
-                <option value="{{ s }}" {% if s == l.usuario.licenca_status %}selected{% endif %}>{{ s }}</option>
-                {% endfor %}
-              </select>
-              <input type="date" name="licenca_vencimento" class="form-control form-control-sm" style="width: auto;"
-                     value="{{ l.usuario.licenca_vencimento.isoformat() if l.usuario.licenca_vencimento else '' }}">
-              <input type="text" name="valor_licenca_mensal" class="form-control form-control-sm" style="width: 90px;" placeholder="R$/mês"
-                     value="{{ '%.2f'|format(l.usuario.valor_licenca_mensal) if l.usuario.valor_licenca_mensal is not none else '' }}">
-              <span class="input-group-text form-control-sm" style="width: auto;" title="Avisar após quantos meses seguidos sem pagar">Avisar após</span>
-              <input type="number" name="aviso_inadimplencia_meses" class="form-control form-control-sm" style="width: 60px;" min="1"
-                     value="{{ l.usuario.aviso_inadimplencia_meses }}">
-              <span class="input-group-text form-control-sm" style="width: auto;">mês(es)</span>
-              <button type="submit" class="btn btn-sm btn-outline-primary">Salvar</button>
-            </form>
+            {# Restruturação de 2026-09-02: status deixou de ser editável à
+               mão (trial->ativa e ativa<->inadimplente são automáticos, ver
+               Usuario.verificar_vencimento_licenca) - só o valor mensal
+               (que nasce do padrão global, mas pode variar por médico) e o
+               bloqueio de acesso continuam sendo decisão do dono. #}
+            <div class="d-flex gap-1 flex-wrap">
+              <form method="post" action="{{ url_for('dono.usuario_licenca_editar', usuario_id=l.usuario.id) }}" class="d-flex gap-1">
+                <input type="text" name="valor_licenca_mensal" class="form-control form-control-sm" style="width: 90px;" placeholder="R$/mês"
+                       value="{{ '%.2f'|format(l.usuario.valor_licenca_mensal) if l.usuario.valor_licenca_mensal is not none else '' }}">
+                <button type="submit" class="btn btn-sm btn-outline-primary">Salvar valor</button>
+              </form>
+              {% if l.usuario.licenca_status == "bloqueada" %}
+                <form method="post" action="{{ url_for('dono.usuario_licenca_desbloquear', usuario_id=l.usuario.id) }}" class="d-inline">
+                  <button type="submit" class="btn btn-sm btn-outline-success">Desbloquear acesso</button>
+                </form>
+              {% else %}
+                <form method="post" action="{{ url_for('dono.usuario_licenca_bloquear', usuario_id=l.usuario.id) }}" class="d-inline"
+                      onsubmit="return confirm('Bloquear o acesso de {{ l.usuario.nome }} à plataforma?');">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Bloquear acesso</button>
+                </form>
+              {% endif %}
+            </div>
             <div class="mt-1">
               {% if l.pago_mes_atual %}
                 <span class="badge bg-success">Mês atual pago</span>

@@ -56,11 +56,18 @@ def _usuarios_com_custo():
     # sem pagar - sem isso, um médico que ninguém abriu a tela dele ainda
     # este mês ficaria subcontado (mês atual "não existe" em vez de "não
     # pago").
-    houve_mes_novo = False
+    # Atualiza trial->ativa/inadimplência de cada médico antes de exibir a
+    # lista - não existe job em segundo plano, então isso é conferido
+    # sempre que o dono olha a lista (mesmo padrão de
+    # verificar_vencimento_grupo no dashboard de Grupos, e do
+    # staff_required no lado do médico).
+    houve_mudanca = False
     for u in lista_usuarios:
         if garantir_meses_licenca(u):
-            houve_mes_novo = True
-    if houve_mes_novo:
+            houve_mudanca = True
+        if u.tipo == "medico" and u.verificar_vencimento_licenca():
+            houve_mudanca = True
+    if houve_mudanca:
         db.session.commit()
 
     mes_atual = date.today().replace(day=1)
@@ -68,6 +75,11 @@ def _usuarios_com_custo():
         p.usuario_id: p.pago
         for p in LicencaPagamento.query.filter_by(mes=mes_atual).all()
     }
+
+    # Restruturação de 2026-09-02: o limite de meses pra aviso de
+    # inadimplência deixou de ser por médico e virou um único parâmetro
+    # global (PlataformaConfig.aviso_inadimplencia_meses).
+    limite_aviso_inadimplencia = PlataformaConfig.obter().aviso_inadimplencia_meses or 2
 
     linhas = []
     for u in lista_usuarios:
@@ -79,7 +91,7 @@ def _usuarios_com_custo():
             "pago_mes_atual": pago_mes_atual_por_usuario.get(u.id),
             "meses_sem_pagar": meses_sem_pagar,
             "em_alerta_inadimplencia": (
-                u.tipo == "medico" and meses_sem_pagar >= (u.aviso_inadimplencia_meses or 2)
+                u.tipo == "medico" and meses_sem_pagar >= limite_aviso_inadimplencia
             ),
         })
     return linhas
@@ -137,7 +149,38 @@ def configuracoes():
 
     config.trial_dias = trial_dias
     db.session.commit()
-    flash(f"Duração do trial atualizada para {trial_dias} dia(s). Vale para novos grupos cadastrados a partir de agora.", "success")
+    flash(f"Duração do trial atualizada para {trial_dias} dia(s). Vale para novos grupos e médicos cadastrados a partir de agora.", "success")
+    return redirect(url_for("dono.dashboard"))
+
+
+@dono_bp.route("/configuracoes/licenca-medico", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_licenca_medico():
+    """Restruturação de 2026-09-02 (pedido do Silvan): valor mensal padrão
+    e limite de meses pra aviso de inadimplência deixaram de ser
+    configuráveis por médico (ver antiga dono.usuario_licenca_editar) e
+    viraram parâmetros globais da plataforma, editados aqui."""
+    config = PlataformaConfig.obter()
+
+    aviso_meses = request.form.get("aviso_inadimplencia_meses", type=int)
+    if not aviso_meses or aviso_meses < 1:
+        flash("Informe um número de meses para aviso de inadimplência válido (maior que zero).", "danger")
+        return redirect(url_for("dono.dashboard"))
+    config.aviso_inadimplencia_meses = aviso_meses
+
+    valor_str = request.form.get("valor_licenca_padrao", "").strip().replace(",", ".")
+    if valor_str:
+        try:
+            config.valor_licenca_padrao = float(valor_str)
+        except ValueError:
+            flash("Valor mensal padrão inválido.", "danger")
+            return redirect(url_for("dono.dashboard"))
+    else:
+        config.valor_licenca_padrao = None
+
+    db.session.commit()
+    flash("Configuração da licença de médico atualizada.", "success")
     return redirect(url_for("dono.dashboard"))
 
 
@@ -257,24 +300,16 @@ def grupo_desbloquear(grupo_id):
 @login_required
 @dono_required
 def usuario_licenca_editar(usuario_id):
-    """Fatia 8 (licença individual): edição da licença de UM médico -
-    espelha grupo_editar() acima, mas por Usuario (a cobrança agora é por
-    médico, não por Grupo - decisão do Silvan). Não se aplica a
-    secretária (não tem licença individual)."""
+    """Restruturação de 2026-09-02 (pedido do Silvan): a licença de um
+    médico deixou de ser controlada campo-a-campo por aqui - trial→ativa é
+    automático (ver Usuario.verificar_vencimento_licenca) e o vencimento do
+    trial não é mais uma data digitada à mão. O único valor que continua
+    editável por médico é o valor mensal cobrado (nasce com o padrão
+    global de PlataformaConfig.valor_licenca_padrao, mas pode ser
+    reajustado individualmente)."""
     usuario = Usuario.query.get_or_404(usuario_id)
     if usuario.tipo != "medico":
         abort(404)
-
-    usuario.licenca_status = request.form.get("licenca_status", usuario.licenca_status)
-    vencimento_str = request.form.get("licenca_vencimento", "").strip()
-    if vencimento_str:
-        try:
-            usuario.licenca_vencimento = datetime.strptime(vencimento_str, "%Y-%m-%d").date()
-        except ValueError:
-            flash("Data de vencimento inválida.", "danger")
-            return redirect(url_for("dono.usuarios"))
-    else:
-        usuario.licenca_vencimento = None
 
     valor_str = request.form.get("valor_licenca_mensal", "").strip().replace(",", ".")
     if valor_str:
@@ -286,19 +321,43 @@ def usuario_licenca_editar(usuario_id):
     else:
         usuario.valor_licenca_mensal = None
 
-    aviso_str = request.form.get("aviso_inadimplencia_meses", "").strip()
-    if aviso_str:
-        try:
-            aviso_meses = int(aviso_str)
-            if aviso_meses < 1:
-                raise ValueError
-            usuario.aviso_inadimplencia_meses = aviso_meses
-        except ValueError:
-            flash("Número de meses para aviso de inadimplência inválido (use um número inteiro maior que zero).", "danger")
-            return redirect(url_for("dono.usuarios"))
-
     db.session.commit()
-    flash(f"Licença de '{usuario.nome}' atualizada.", "success")
+    flash(f"Valor da licença de '{usuario.nome}' atualizado.", "success")
+    return redirect(url_for("dono.usuarios"))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/bloquear", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_bloquear(usuario_id):
+    """Restruturação de 2026-09-02 (pedido do Silvan): "bloquear o acesso"
+    é a ÚNICA ação manual que sobra sobre o status da licença de um médico
+    - todo o resto (trial→ativa, ativa→inadimplente e de volta) é
+    automático (ver Usuario.verificar_vencimento_licenca)."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    if usuario.tipo != "medico":
+        abort(404)
+
+    usuario.licenca_status = "bloqueada"
+    db.session.commit()
+    flash(f"Acesso de '{usuario.nome}' bloqueado.", "success")
+    return redirect(url_for("dono.usuarios"))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/desbloquear", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_desbloquear(usuario_id):
+    """Reverte o bloqueio manual - o médico volta pra "ativa" (a checagem
+    automática, no próximo acesso dele, reavalia se ele deveria estar em
+    "inadimplente" de novo, ver Usuario.verificar_vencimento_licenca)."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    if usuario.tipo != "medico":
+        abort(404)
+
+    usuario.licenca_status = "ativa"
+    db.session.commit()
+    flash(f"Acesso de '{usuario.nome}' desbloqueado.", "success")
     return redirect(url_for("dono.usuarios"))
 
 

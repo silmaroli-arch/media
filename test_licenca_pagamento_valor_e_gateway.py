@@ -31,7 +31,7 @@ from datetime import date
 from app import create_app
 from app.extensions import db
 from app.db_utils import resetar_banco
-from app.models import Usuario, LicencaPagamento
+from app.models import Usuario, LicencaPagamento, PlataformaConfig
 import app.mercadopago_integration as mp_integration
 
 app = create_app()
@@ -39,6 +39,14 @@ client = app.test_client()
 
 with app.app_context():
     resetar_banco(db)
+    # Restruturação de 2026-09-02: valor_licenca_mensal nasce a partir do
+    # padrão global (PlataformaConfig.valor_licenca_padrao) - sem isso, o
+    # médico cadastrado abaixo nasceria com valor em branco, e o mês atual
+    # (garantido logo no primeiro acesso autenticado dele, via
+    # staff_required) fotografaria None antes do dono ter chance de
+    # definir um valor individual.
+    PlataformaConfig.obter().valor_licenca_padrao = 220.00
+    db.session.commit()
 
 
 def checar(nome, condicao):

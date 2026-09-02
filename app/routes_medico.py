@@ -164,6 +164,16 @@ def staff_required(f):
             flash("Acesso restrito à equipe médica/secretaria.", "danger")
             return redirect(url_for("auth.login"))
 
+        # Restruturação de 2026-09-02: sem job agendado, a checagem de
+        # trial/inadimplência do médico roda aqui, a cada acesso autenticado
+        # de uma tela da equipe - não só na tela "Minha licença" (ver
+        # Usuario.verificar_vencimento_licenca).
+        if current_user.tipo == "medico":
+            novos_meses = garantir_meses_licenca(current_user)
+            mudou_status = current_user.verificar_vencimento_licenca()
+            if mudou_status or novos_meses:
+                db.session.commit()
+
         if empresa_atual() is None:
             if clinicas_do_usuario():
                 # Ambíguo: 2+ Grupos ativos e nenhum selecionado ainda.
@@ -456,6 +466,17 @@ def dashboard():
     # A agenda completa (lista) foi incorporada ao painel — não existe mais
     # uma tela separada de "Agenda" no menu.
     agendamentos = agendamentos_q.order_by(Agendamento.data_hora.asc()).all()
+
+    # Restruturação de 2026-09-02 (pedido do Silvan): o painel do médico
+    # passa a mostrar o status da própria licença (trial/Ativo/Bloqueado) -
+    # a checagem de vencimento já rodou em staff_required, então aqui é só
+    # exibição (ver _LICENCA_LABELS, reaproveitado de medico.minha_licenca).
+    licenca_label = licenca_cor = None
+    if eh_medico():
+        licenca_label, licenca_cor = _LICENCA_LABELS.get(
+            current_user.licenca_status, (current_user.licenca_status, "secondary")
+        )
+
     return render_template(
         "medico/dashboard.html",
         clinica=clinica_atual(),
@@ -466,6 +487,8 @@ def dashboard():
         pendentes=pendentes,
         convites_pendentes=convites_pendentes,
         agendamentos=agendamentos,
+        licenca_label=licenca_label,
+        licenca_cor=licenca_cor,
     )
 
 
@@ -2413,8 +2436,8 @@ def minha_licenca():
         flash("Essa tela é só para contas de médico.", "warning")
         return redirect(url_for("medico.dashboard"))
 
-    mudou_status = current_user.verificar_vencimento_licenca()
     novos_meses = garantir_meses_licenca(current_user)
+    mudou_status = current_user.verificar_vencimento_licenca()
     if mudou_status or novos_meses:
         db.session.commit()
 

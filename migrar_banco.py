@@ -343,6 +343,25 @@ UPDATE usuarios SET licenca_status = 'ativa' WHERE tipo = 'medico' AND licenca_v
 -- é criada automaticamente pelo db.create_all() no topo deste script, por
 -- não existir ainda em nenhum ambiente (mesmo caso de "push_subscriptions"
 -- acima).
+
+-- Restruturação da licença individual (2026-09-02, pedido do Silvan):
+-- valor mensal padrão e limite de meses pra aviso de inadimplência
+-- deixaram de ser configuráveis por médico e viraram parâmetros globais
+-- (ver app.routes_dono.configuracoes_licenca_medico). A coluna antiga
+-- "usuarios.aviso_inadimplencia_meses" fica órfã (sem DROP, mesmo
+-- tratamento dado às demais colunas/tabelas órfãs deste projeto, que não
+-- usa Flask-Migrate) - só não é mais lida em nenhum lugar da aplicação.
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS valor_licenca_padrao NUMERIC(10, 2);
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS aviso_inadimplencia_meses INTEGER NOT NULL DEFAULT 2;
+
+-- Backfill: usa a maior configuração de aviso já existente entre os
+-- médicos cadastrados (se houver) como valor inicial do novo parâmetro
+-- global, em vez de resetar todo mundo pro padrão de 2 meses - preserva o
+-- comportamento mais parecido possível com o que já estava configurado
+-- pontualmente por médico antes desta migração.
+UPDATE plataforma_config SET aviso_inadimplencia_meses = (
+    SELECT MAX(aviso_inadimplencia_meses) FROM usuarios WHERE tipo = 'medico'
+) WHERE EXISTS (SELECT 1 FROM usuarios WHERE tipo = 'medico');
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

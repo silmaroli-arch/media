@@ -2,7 +2,14 @@
 {% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}Painel{% endblock %}
 {% block conteudo %}
-<h3 class="mb-1">{% if current_user.tipo == "medico" %}Meu painel{% else %}Painel da secretaria{% endif %}</h3>
+<h3 class="mb-1">
+  {% if current_user.tipo == "medico" %}Meu painel{% else %}Painel da secretaria{% endif %}
+  {% if licenca_label %}
+    <a href="{{ url_for('medico.minha_licenca') }}" class="badge bg-{{ licenca_cor }} align-middle" style="font-size: 0.9rem;" title="Status da sua licença — clique para ver detalhes">
+      {{ licenca_label }}
+    </a>
+  {% endif %}
+</h3>
 <p class="text-muted mb-4">{{ clinica.nome if clinica else current_user.nome }}</p>
 
 <div class="row g-3 mb-4">

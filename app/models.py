@@ -35,11 +35,19 @@ class PlataformaConfig(db.Model):
     ia_chat_provedor_1 = db.Column(db.String(20), nullable=False, default="Claude")
     ia_chat_provedor_2 = db.Column(db.String(20), nullable=False, default="ChatGPT")
 
+    # Restruturação da licença individual (pedido do Silvan, 2026-09-02): o
+    # que antes era configurável por médico em /dono/usuarios vira global
+    # aqui, e passa a valer pra equipe toda de uma vez. `trial_dias` (acima)
+    # é reaproveitado tanto pro trial de Grupo quanto pro trial de médico
+    # (decisão do Silvan: um único número, mais simples de manter).
+    valor_licenca_padrao = db.Column(db.Numeric(10, 2))
+    aviso_inadimplencia_meses = db.Column(db.Integer, nullable=False, default=2)
+
     @classmethod
     def obter(cls):
         config = cls.query.first()
         if not config:
-            config = cls(trial_dias=14, ia_chat_provedor_1="Claude", ia_chat_provedor_2="ChatGPT")
+            config = cls(trial_dias=14, ia_chat_provedor_1="Claude", ia_chat_provedor_2="ChatGPT", aviso_inadimplencia_meses=2)
             db.session.add(config)
             db.session.commit()
         return config
@@ -134,19 +142,23 @@ class Usuario(db.Model, UserMixin):
     # licença de verdade é individual, vale a partir do cadastro,
     # independente de o médico estar ou não num Grupo de trabalho -
     # decisão do Silvan). Vocabulário igual ao de Grupo.status.
+    #
+    # Restruturação de 2026-09-02 (pedido do Silvan): todo médico nasce em
+    # "trial" e passa pra "ativa" AUTOMATICAMENTE quando `licenca_vencimento`
+    # (agora calculado sozinho a partir de PlataformaConfig.trial_dias, sem
+    # input manual do dono) passa - ver verificar_vencimento_licenca().
+    # "inadimplente" continua existindo como aviso automático (não bloqueia
+    # o acesso) quando o médico atrasa pagamento além do limite configurado
+    # (PlataformaConfig.aviso_inadimplencia_meses). "bloqueada" é sempre uma
+    # decisão manual do dono - é a ÚNICA transição que ele faz à mão agora.
     licenca_status = db.Column(db.String(20), nullable=False, default="trial")
     licenca_vencimento = db.Column(db.Date)
-    # Valor mensal negociado com ESTE médico (mesmo padrão de
-    # Grupo.valor_por_medico, mas de verdade individual - cada médico pode
-    # ter um valor diferente). Opcional: fica em branco até o dono
-    # negociar/preencher. Só editável em /dono/usuarios por enquanto.
+    # Valor mensal cobrado deste médico. Nasce preenchido automaticamente a
+    # partir de PlataformaConfig.valor_licenca_padrao (no cadastro), mas o
+    # dono pode reajustar individualmente depois em /dono/usuarios -
+    # decisão do Silvan: o padrão é global, o valor em si continua podendo
+    # variar por médico.
     valor_licenca_mensal = db.Column(db.Numeric(10, 2))
-    # Depois de quantos meses SEGUIDOS sem pagar o dono deve ver um aviso
-    # de atenção pra este médico (ver Usuario.meses_consecutivos_sem_pagar
-    # e o destaque em /dono/usuarios) - configurável por médico (decisão
-    # do Silvan: cada médico pode ter um limite diferente, em vez de um
-    # número único fixo pra plataforma toda).
-    aviso_inadimplencia_meses = db.Column(db.Integer, nullable=False, default=2)
 
     # CONTA ÚNICA do paciente: uma pessoa (um Usuario) pode ter VÁRIOS
     # cadastros de paciente - um por empresa que frequenta (ver
@@ -172,13 +184,44 @@ class Usuario(db.Model, UserMixin):
         return check_password_hash(self.senha_hash, senha)
 
     def verificar_vencimento_licenca(self):
-        """Mesma regra de Grupo.verificar_vencimento_trial() - só informativo
-        por enquanto (não bloqueia o acesso), ver medico.minha_licenca. Não
-        faz commit, quem chamar decide quando salvar. Retorna True se mudou."""
-        if self.licenca_status == "trial" and self.licenca_vencimento and self.licenca_vencimento < date.today():
-            self.licenca_status = "inadimplente"
-            return True
-        return False
+        """Restruturação de 2026-09-02 (pedido do Silvan): roda a cada
+        acesso autenticado do médico (ver staff_required em
+        routes_medico.py), sem job agendado nenhum - mesmo padrão que já
+        existia, só passou a rodar num ponto comum em vez de só na tela
+        "Minha licença".
+
+        Regras (nunca mexe em "bloqueada" - essa é sempre manual, decisão
+        do dono):
+        - trial -> ativa: automático, quando `licenca_vencimento` (calculado
+          no cadastro a partir de PlataformaConfig.trial_dias) passa.
+        - ativa -> inadimplente: aviso automático (não bloqueia o acesso)
+          quando o médico acumula mais meses seguidos sem pagar do que
+          PlataformaConfig.aviso_inadimplencia_meses permite.
+        - inadimplente -> ativa: sai do aviso sozinho assim que o atraso é
+          resolvido (paga os meses em atraso).
+
+        Não faz commit, quem chamar decide quando salvar. Retorna True se
+        algo mudou."""
+        se_venceu_trial = (
+            self.licenca_status == "trial"
+            and self.licenca_vencimento
+            and self.licenca_vencimento < date.today()
+        )
+        if se_venceu_trial:
+            self.licenca_status = "ativa"
+
+        if self.licenca_status in ("ativa", "inadimplente"):
+            limite = PlataformaConfig.obter().aviso_inadimplencia_meses or 2
+            meses_atraso = meses_consecutivos_sem_pagar(self)
+            deveria_estar_inadimplente = meses_atraso >= limite
+            if deveria_estar_inadimplente and self.licenca_status != "inadimplente":
+                self.licenca_status = "inadimplente"
+                return True
+            if not deveria_estar_inadimplente and self.licenca_status == "inadimplente":
+                self.licenca_status = "ativa"
+                return True
+
+        return se_venceu_trial
 
     @property
     def paciente(self):
@@ -473,10 +516,11 @@ def _mes_anterior(d):
 def meses_consecutivos_sem_pagar(usuario):
     """Quantos meses SEGUIDOS, contando do mês atual pra trás, o médico
     está sem pagar - usado para decidir se ele já passou do limite de
-    atenção do dono (Usuario.aviso_inadimplencia_meses). Para de contar no
-    primeiro mês pago ou no primeiro mês sem registro nenhum (ex.: antes do
-    cadastro dele) - chame garantir_meses_licenca() antes se quiser
-    garantir que o mês atual já existe. Só se aplica a médico."""
+    atenção do dono (PlataformaConfig.aviso_inadimplencia_meses, global
+    desde a restruturação de 2026-09-02). Para de contar no primeiro mês
+    pago ou no primeiro mês sem registro nenhum (ex.: antes do cadastro
+    dele) - chame garantir_meses_licenca() antes se quiser garantir que o
+    mês atual já existe. Só se aplica a médico."""
     if usuario.tipo != "medico":
         return 0
 

@@ -10,7 +10,11 @@
       <span class="badge bg-{{ licenca_cor }}">{{ licenca_label }}</span>
     </p>
     <p class="mb-2">
-      Vencimento:
+      {% if licenca_status == "trial" %}
+        Trial até:
+      {% else %}
+        Vencimento do trial:
+      {% endif %}
       {% if licenca_vencimento %}
         <strong>{{ licenca_vencimento.strftime('%d/%m/%Y') }}</strong>
       {% else %}
@@ -29,7 +33,13 @@
 </div>
 
 <p class="text-muted mt-3">
-  Essa informação é só para acompanhamento — vencer a licença não bloqueia o seu acesso ao MedIA.
+  {% if licenca_status == "bloqueada" %}
+    Seu acesso está bloqueado pelo administrador da plataforma. Entre em contato com a gente para regularizar.
+  {% else %}
+    Ao vencer o trial, sua conta passa automaticamente para "Ativa". Ficar em atraso de pagamento por muitos
+    meses seguidos pode marcar sua conta como "Pendente de pagamento" (só um aviso — o acesso continua
+    liberado); bloquear o acesso é sempre uma decisão manual da equipe do MedIA.
+  {% endif %}
 </p>
 
 {% set nomes_mes = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}

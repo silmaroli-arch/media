@@ -25,7 +25,7 @@ from app.models import (
     Exame, PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento,
     Agendamento, FaqItem, normalizar_telefone,
-    LicencaPagamento, garantir_meses_licenca,
+    LicencaPagamento, garantir_meses_licenca, PlataformaConfig,
 )
 
 app = create_app()
@@ -139,12 +139,13 @@ with app.app_context():
     medico_grupo.licenca_status = "inadimplente"
     medico_grupo.licenca_vencimento = date.today() - timedelta(days=3)
     medico_grupo.valor_licenca_mensal = 150.00
-    # Fatia 8 (aviso de inadimplência): este médico tem um limite de aviso
-    # customizado (1 mês em vez do padrão de 2) - demonstra que o campo é
-    # configurável por médico (decisão do Silvan), e junto com o histórico de
-    # meses seguidos sem pagar montado abaixo, já nasce em alerta na tela do
-    # dono (/dono/usuarios).
-    medico_grupo.aviso_inadimplencia_meses = 1
+    # Restruturação de 2026-09-02: o limite de meses pra aviso de
+    # inadimplência deixou de ser por médico e virou global
+    # (PlataformaConfig.aviso_inadimplencia_meses, ajustado abaixo pra 1 em
+    # vez do padrão de 2) - junto com o histórico de meses seguidos sem
+    # pagar montado abaixo, medico_grupo já nasce em alerta na tela do dono
+    # (/dono/usuarios).
+    PlataformaConfig.obter().aviso_inadimplencia_meses = 1
 
     db.session.add_all([
         secretaria_vitoria, secretaria_sp, medico_compartilhado, medica_vitoria2,
