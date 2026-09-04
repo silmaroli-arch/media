@@ -44,22 +44,32 @@
 </div>
 
 {% if convites_pendentes %}
-<div class="card p-3 mb-4 border-warning">
-  <h6 class="mb-1"><i class="bi bi-envelope-exclamation me-1"></i>Convites para entrar em outros grupos</h6>
-  <p class="text-muted small mb-2">
-    Você foi convidado(a) pelo seu CPF. O vínculo só começa se você aceitar.
-  </p>
-  {% for convite in convites_pendentes %}
-  <div class="d-flex justify-content-between align-items-center border rounded p-2 mb-2">
-    <div>
-      <strong>{{ convite.grupo.nome }}</strong>
-      <span class="text-muted small">— convite de {{ convite.criado_em.strftime('%d/%m/%Y') }}</span>
-    </div>
-    <div class="d-flex gap-2">
-      <a href="{{ url_for('grupo.meus_convites') }}" class="btn btn-sm btn-success">Ver convite</a>
+{# Pedido do Silvan: destacar bem mais este aviso - antes era um card
+   discreto, fácil de passar despercebido no meio do painel, mesmo sendo
+   uma ação pendente importante (o vínculo com o outro grupo só começa se
+   a pessoa aceitar). Vira um alerta grande, mesmo estilo de destaque
+   usado nos avisos de "conta em teste"/inadimplência da plataforma. #}
+<div class="alert alert-warning border-warning border-2 mb-4 p-4">
+  <div class="d-flex align-items-start">
+    <i class="bi bi-envelope-exclamation-fill me-3" style="font-size: 2rem;"></i>
+    <div class="flex-grow-1">
+      <h5 class="alert-heading mb-1">
+        {{ convites_pendentes|length }} convite{{ "s" if convites_pendentes|length != 1 else "" }} para entrar em outro grupo
+      </h5>
+      <p class="mb-3">
+        Você foi convidado(a) pelo seu CPF. O vínculo só começa se você aceitar.
+      </p>
+      {% for convite in convites_pendentes %}
+      <div class="d-flex justify-content-between align-items-center bg-white border rounded p-3 mb-2">
+        <div>
+          <strong class="fs-5">{{ convite.grupo.nome }}</strong>
+          <div class="text-muted small">Convite de {{ convite.criado_em.strftime('%d/%m/%Y') }}</div>
+        </div>
+        <a href="{{ url_for('grupo.meus_convites') }}" class="btn btn-success">Ver convite</a>
+      </div>
+      {% endfor %}
     </div>
   </div>
-  {% endfor %}
 </div>
 {% endif %}
 
