@@ -37,11 +37,17 @@ services:
     # necessária. --timeout 120 acompanha o mesmo motivo do
     # .platform/nginx/conf.d/timeout.conf (importação de PDF via IA pode
     # demorar mais que o padrão de 30s do gunicorn).
-    startCommand: "gunicorn application:application --timeout 120"
-    # Roda a migração de schema (ALTER TABLE ... ADD COLUMN IF NOT EXISTS)
-    # antes de cada deploy assumir tráfego - equivalente ao hook
-    # .platform/hooks/predeploy/01_migrar_banco.sh do Elastic Beanstalk.
-    preDeployCommand: "python migrar_banco.py"
+    #
+    # preDeployCommand não é suportado no plano free dos web services do
+    # Render (erro "pre-deploy command is not supported for free tier
+    # services" ao criar o Blueprint) - por isso a migração de schema
+    # (equivalente ao hook .platform/hooks/predeploy/01_migrar_banco.sh do
+    # Elastic Beanstalk) roda encadeada aqui no startCommand, antes do
+    # gunicorn subir. Como migrar_banco.py é idempotente (ALTER TABLE ...
+    # ADD COLUMN IF NOT EXISTS), rodar a cada start do serviço (inclusive
+    # quando o free tier "acorda" depois de dormir por inatividade) é
+    # seguro.
+    startCommand: "python migrar_banco.py && gunicorn application:application --timeout 120"
     envVars:
       - key: DATABASE_URL
         fromDatabase:
