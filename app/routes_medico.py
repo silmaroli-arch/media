@@ -352,20 +352,20 @@ def primeiros_passos():
     """"Primeiros passos" - checklist opcional, acessível a qualquer
     momento pelo menu lateral (não é mais forçado logo após o cadastro,
     ver auth.cadastro): atalho na tela de início (médico e secretária) e,
-    só para médico(a), modelo de preparo e exame - cada item mostra se já
-    foi feito (com base no que a pessoa já tem cadastrado) e permite
-    pular pra qualquer outro a qualquer momento (ver medico.atalhos /
-    preparo_modelos_novo / exames_novo, que aceitam o parâmetro
-    "wizard=1" pra encadear um item no próximo)."""
-    tem_preparo = tem_exame = False
+    só para médico(a), modelo de preparo (que já cria o exame gêmeo junto -
+    ver preparo_modelos_novo) - cada item mostra se já foi feito (com base
+    no que a pessoa já tem cadastrado) e permite pular pra qualquer outro a
+    qualquer momento (ver medico.atalhos / preparo_modelos_novo, que aceita
+    o parâmetro "wizard=1")."""
+    # Restruturação de 2026-09 (pedido do Silvan): "modelo de preparo" e
+    # "exame" viraram uma coisa só (ver preparo_modelos_novo) - o checklist
+    # passa a ter um item só cobrindo os dois.
+    tem_preparo = False
     if eh_medico():
         tem_preparo = PreparoModelo.query.filter(
             filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
         ).first() is not None
-        tem_exame = Exame.query.filter(
-            filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id)
-        ).first() is not None
-    return render_template("medico/primeiros_passos.html", tem_preparo=tem_preparo, tem_exame=tem_exame)
+    return render_template("medico/primeiros_passos.html", tem_preparo=tem_preparo)
 
 
 @medico_bp.route("/primeiros-passos/atalhos", methods=["GET", "POST"])
@@ -1580,6 +1580,14 @@ def preparo_modelos_novo():
     # o fundador sem vínculo perdia o formulário inteiro com um aviso de
     # "nenhum local cadastrado", mesmo com a empresa tendo locais).
     filiais = _filiais_da_empresa()
+    # Restruturação de 2026-09 (pedido do Silvan): "modelo de preparo",
+    # "exame" e "associar exame a médico" viraram uma coisa só nesta tela -
+    # ao salvar o modelo, um Exame com o MESMO nome nasce junto, já
+    # associado ao médico responsável (ver mais abaixo). As telas antigas
+    # de Exame/"Exames por filial" continuam existindo no código (rotas
+    # exames_*, mesmo padrão já usado para equipe_lista/filiais_lista - ver
+    # comentário em base.html), só não têm mais link no menu nem no wizard.
+    medicos = medicos_das_filiais(filiais)
     sugestao = None
     if request.method == "GET" and request.args.get("de_importacao"):
         sugestao = session.pop("preparo_sugestao_importada", None)
@@ -1589,6 +1597,13 @@ def preparo_modelos_novo():
     # já usado pelo campo "origem" em perguntas_responder). Acessado pelo
     # menu, a qualquer momento - não é mais forçado logo após o cadastro.
     wizard = request.values.get("wizard") == "1"
+
+    def _rerender_novo():
+        return render_template(
+            "medico/preparo_modelo_form.html", modelo=None, sugestao=None,
+            medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
+            wizard=wizard, medicos=medicos, eh_medico_logado=eh_medico(),
+        )
 
     if request.method == "POST":
         # Modelo de preparo é genérico - não pertence a uma filial específica,
@@ -1604,16 +1619,56 @@ def preparo_modelos_novo():
         nome = request.form.get("nome", "").strip()
         instrucoes = request.form.get("instrucoes", "").strip()
         observacoes_medicamentos = request.form.get("observacoes_medicamentos", "").strip()
+        # Campos do Exame (ver models.py) preenchidos direto nesta tela -
+        # antes viviam só no cadastro de exame separado (exames_novo).
+        duracao_minutos = request.form.get("duracao_minutos", type=int)
+        precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
 
         if not nome or not instrucoes:
             flash("Nome do modelo e instruções são obrigatórios.", "danger")
-            return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(), wizard=wizard)
+            return _rerender_novo()
 
         if PreparoModelo.query.filter(
             filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id), PreparoModelo.nome == nome
         ).first():
             flash("Já existe um modelo de preparo com esse nome.", "danger")
-            return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(), wizard=wizard)
+            return _rerender_novo()
+
+        # O nome do modelo também vira o nome do Exame criado automaticamente
+        # logo abaixo - por isso precisa ser único também entre os exames,
+        # não só entre os modelos de preparo (decisão do Silvan: nesse caso
+        # é melhor barrar e pedir outro nome do que criar um exame
+        # duplicado/confuso).
+        if Exame.query.filter(
+            filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id), Exame.nome == nome
+        ).first():
+            flash(
+                "Já existe um exame com esse nome. Escolha um nome diferente para o modelo de preparo "
+                "(o mesmo nome é usado para criar o exame automaticamente).",
+                "danger",
+            )
+            return _rerender_novo()
+
+        # Médico responsável pelo exame criado junto: se quem cadastra é
+        # médico, é ele mesmo, sem perguntar nada (decisão do Silvan). Se é
+        # dono/secretária, o campo aparece pra escolher - mas não bloqueia o
+        # cadastro se ficar em branco (mesma tolerância que o cadastro
+        # genérico de exame já tinha): cai num médico provisório
+        # (medico_confirmado=False), corrigível depois ao editar o modelo.
+        medico_confirmado = True
+        if eh_medico():
+            medico_id = current_user.id
+        elif medicos:
+            medico_id_raw = request.form.get("medico_id", "").strip()
+            medico_escolhido = next((m for m in medicos if str(m.id) == medico_id_raw), None)
+            if medico_escolhido:
+                medico_id = medico_escolhido.id
+            else:
+                medico_id = medicos[0].id
+                medico_confirmado = False
+        else:
+            flash("Cadastre um médico na equipe antes de criar um modelo de preparo.", "danger")
+            return _rerender_novo()
 
         modelo = PreparoModelo(
             grupo_id=filial.id if filial else None,
@@ -1626,15 +1681,34 @@ def preparo_modelos_novo():
         db.session.add(modelo)
         db.session.flush()
         _salvar_cortes_e_medicamentos(modelo, request.form)
+
+        # Exame gêmeo do modelo: nasce já ASSOCIADO de verdade (não existe
+        # mais o estado "catálogo", que a tela antiga de cadastro genérico
+        # de exame criava) - só "medico_confirmado" pode ficar False, se
+        # ninguém escolheu o médico de propósito (ver comentário acima).
+        exame = Exame(
+            grupo_id=filial.id if filial else None,
+            medico_id=medico_id, nome=nome, descricao="",
+            preparo_modelo_id=modelo.id,
+            duracao_minutos=duracao_minutos,
+            precisa_acompanhante=precisa_acompanhante,
+            medico_confirmado=medico_confirmado,
+            associado=True,
+            criado_por_id=current_user.id,
+        )
+        db.session.add(exame)
         db.session.commit()
 
-        flash("Modelo de preparo cadastrado com sucesso.", "success")
+        flash("Modelo de preparo cadastrado com sucesso — o exame correspondente também foi criado.", "success")
         if wizard:
-            # Próximo item do checklist - cadastro de exame (ver exames_novo).
-            return redirect(url_for("medico.exames_novo", wizard=1))
+            return redirect(url_for("medico.primeiros_passos"))
         return redirect(url_for("medico.preparo_modelos_lista"))
 
-    return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(), wizard=wizard)
+    return render_template(
+        "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
+        medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
+        wizard=wizard, medicos=medicos, eh_medico_logado=eh_medico(),
+    )
 
 
 @medico_bp.route("/preparo-modelos/<int:modelo_id>/editar", methods=["GET", "POST"])
@@ -1653,22 +1727,108 @@ def preparo_modelos_editar(modelo_id):
         )
         return redirect(url_for("medico.preparo_modelos_lista"))
 
+    filiais = _filiais_da_empresa()
+    medicos = medicos_das_filiais(filiais)
+    # Restruturação de 2026-09: o exame "gêmeo" deste modelo (mesmo nome,
+    # ver preparo_modelos_novo) só é editado por aqui quando o vínculo é 1
+    # para 1. Modelos antigos compartilhados por vários exames ao mesmo
+    # tempo (ex.: os 3 substratos do Teste de Hidrogênio, ver seed.py)
+    # continuam existindo como estão - os campos de exame ficam
+    # ocultos/bloqueados nesse caso (decisão do Silvan: evitar editar em
+    # massa por engano; para separar, peça suporte). Modelo sem NENHUM
+    # exame vinculado (ex.: exame apagado à parte antes desta
+    # restruturação) ganha um exame novo ao salvar, auto-curando o caso.
+    varios_exames_vinculados = len(modelo.exames) > 1
+    exame_vinculado = modelo.exames[0] if len(modelo.exames) == 1 else None
+
+    def _rerender_editar():
+        return render_template(
+            "medico/preparo_modelo_form.html", modelo=modelo, sugestao=None,
+            medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
+            medicos=medicos, exame_vinculado=exame_vinculado,
+            varios_exames_vinculados=varios_exames_vinculados, eh_medico_logado=eh_medico(),
+        )
+
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
         if not nome:
             flash("Informe o nome do modelo.", "danger")
-            return render_template("medico/preparo_modelo_form.html", modelo=modelo, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+            return _rerender_editar()
+
+        duracao_minutos = request.form.get("duracao_minutos", type=int)
+        precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
+        medico_id = None
+        medico_confirmado = True
+
+        if not varios_exames_vinculados:
+            # Nome também é o nome do exame (gêmeo, existente ou a criar
+            # agora) - precisa continuar único entre exames, exceto contra
+            # ele mesmo.
+            colisao = Exame.query.filter(
+                filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id), Exame.nome == nome
+            )
+            if exame_vinculado:
+                colisao = colisao.filter(Exame.id != exame_vinculado.id)
+            if colisao.first():
+                flash(
+                    "Já existe um exame com esse nome. Escolha um nome diferente (o mesmo nome é "
+                    "usado pelo exame associado a este modelo).",
+                    "danger",
+                )
+                return _rerender_editar()
+
+            # Médico: se ninguém trocou a escolha no formulário, mantém o
+            # que já estava (não reatribui o exame a outro médico sem
+            # querer a cada edição). Só cai num provisório
+            # (medico_confirmado=False) se está criando o exame agora e
+            # ninguém escolheu nada ainda (ver preparo_modelos_novo).
+            if eh_medico():
+                medico_id = exame_vinculado.medico_id if exame_vinculado else current_user.id
+            elif medicos:
+                medico_id_raw = request.form.get("medico_id", "").strip()
+                medico_escolhido = next((m for m in medicos if str(m.id) == medico_id_raw), None)
+                if medico_escolhido:
+                    medico_id = medico_escolhido.id
+                elif exame_vinculado:
+                    medico_id = exame_vinculado.medico_id
+                    medico_confirmado = exame_vinculado.medico_confirmado
+                else:
+                    medico_id = medicos[0].id
+                    medico_confirmado = False
+            else:
+                flash("Cadastre um médico na equipe antes de continuar.", "danger")
+                return _rerender_editar()
 
         modelo.nome = nome
         modelo.instrucoes = request.form.get("instrucoes", "").strip()
         modelo.observacoes_medicamentos = request.form.get("observacoes_medicamentos", "").strip() or None
         _salvar_cortes_e_medicamentos(modelo, request.form)
+
+        if not varios_exames_vinculados:
+            if exame_vinculado:
+                exame_vinculado.nome = nome
+                exame_vinculado.duracao_minutos = duracao_minutos
+                exame_vinculado.precisa_acompanhante = precisa_acompanhante
+                exame_vinculado.medico_id = medico_id
+                exame_vinculado.medico_confirmado = medico_confirmado
+                exame_vinculado.associado = True
+            else:
+                db.session.add(Exame(
+                    grupo_id=modelo.grupo_id,
+                    medico_id=medico_id, nome=nome, descricao="",
+                    preparo_modelo_id=modelo.id,
+                    duracao_minutos=duracao_minutos,
+                    precisa_acompanhante=precisa_acompanhante,
+                    medico_confirmado=medico_confirmado, associado=True,
+                    criado_por_id=current_user.id,
+                ))
+
         db.session.commit()
 
         flash("Modelo de preparo atualizado.", "success")
         return redirect(url_for("medico.preparo_modelos_lista"))
 
-    return render_template("medico/preparo_modelo_form.html", modelo=modelo, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+    return _rerender_editar()
 
 
 @medico_bp.route("/preparo-modelos/<int:modelo_id>/remover", methods=["POST"])
@@ -1789,6 +1949,7 @@ def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None):
     return render_template(
         "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
         medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
+        medicos=medicos_das_filiais(_filiais_da_empresa()), eh_medico_logado=eh_medico(),
     )
 
 

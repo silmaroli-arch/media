@@ -2,17 +2,26 @@
 {% block titulo %}{% if modelo %}Editar modelo de preparo{% else %}Novo modelo de preparo{% endif %}{% endblock %}
 {% block conteudo %}
 {% if wizard %}
-<p class="text-muted small mb-1">Passo 2 de 3 — Primeiros passos</p>
+<p class="text-muted small mb-1">Passo 2 de 2 — Primeiros passos</p>
 <div class="progress mb-3" style="height: 6px; max-width: 640px;">
-  <div class="progress-bar" role="progressbar" style="width: 66%;"></div>
+  <div class="progress-bar" role="progressbar" style="width: 100%;"></div>
 </div>
 {% endif %}
 <h3 class="mb-3">{% if modelo %}Editar modelo de preparo{% elif wizard %}Cadastre seu primeiro modelo de preparo{% else %}Novo modelo de preparo{% endif %}</h3>
 {% if wizard %}
 <p class="text-muted">
-  Modelo de preparo é o texto de instruções que o paciente recebe antes de um exame (ex.: dieta,
-  jejum, medicações). Você pode pular esta etapa agora e cadastrar depois, em "Modelos de preparo".
+  Ao salvar, um exame com o mesmo nome já é criado e associado a você automaticamente — não tem uma
+  etapa separada para isso.
 </p>
+{% endif %}
+
+{% if varios_exames_vinculados %}
+<div class="alert alert-info">
+  Este modelo é usado por {{ modelo.exames|length }} exames ao mesmo tempo (cadastro antigo, ex.:
+  variações do mesmo teste que usam o mesmo preparo). Por isso os campos de exame (duração, médico
+  responsável etc.) não aparecem aqui — editar em massa por engano poderia mexer nos exames errados.
+  Só o texto do preparo em si é editado nesta tela.
+</div>
 {% endif %}
 
 {% if sugestao %}
@@ -53,11 +62,49 @@
     {# O NOME fica acima das abas - é a identidade do modelo, visível o
        tempo todo, independente da aba aberta. #}
     <div class="mb-3">
-      <label class="form-label">Nome do modelo</label>
+      <label class="form-label">Nome do modelo (também é o nome do exame)</label>
       <input type="text" name="nome" class="form-control" required
              value="{{ modelo.nome if modelo else ((sugestao.nome_sugerido if sugestao else '') or '') }}">
-      <div class="form-text">Ex.: "Colonoscopia com Picoprep e Manitol (Manhã)", "Teste de Hidrogênio Expirado".</div>
+      <div class="form-text">
+        Ex.: "Colonoscopia com Picoprep e Manitol (Manhã)", "Teste de Hidrogênio Expirado" — este nome
+        é usado tanto para o modelo de preparo quanto para o exame criado/atualizado junto.
+      </div>
     </div>
+
+    {% if not varios_exames_vinculados %}
+    {# Restruturação de 2026-09 (pedido do Silvan): os dados do exame
+       associado (antes numa tela separada) são preenchidos direto aqui -
+       ao salvar, o exame nasce/é atualizado automaticamente junto com o
+       modelo, com o mesmo nome. #}
+    <div class="row g-3 mb-3">
+      <div class="col-md-4">
+        <label class="form-label">Duração do exame (minutos, opcional)</label>
+        <input type="number" min="0" name="duracao_minutos" class="form-control"
+               value="{{ exame_vinculado.duracao_minutos if exame_vinculado and exame_vinculado.duracao_minutos is not none else '' }}">
+      </div>
+      <div class="col-md-4 d-flex align-items-end">
+        <div class="form-check">
+          <input type="checkbox" class="form-check-input" name="precisa_acompanhante" id="precisa_acompanhante"
+                 {% if exame_vinculado and exame_vinculado.precisa_acompanhante %}checked{% endif %}>
+          <label class="form-check-label" for="precisa_acompanhante">Precisa de acompanhante</label>
+        </div>
+      </div>
+      {% if not eh_medico_logado %}
+      <div class="col-md-4">
+        <label class="form-label">Médico responsável</label>
+        <select name="medico_id" class="form-select">
+          <option value="">A definir depois</option>
+          {% for m in medicos %}
+          <option value="{{ m.id }}" {% if exame_vinculado and exame_vinculado.medico_id == m.id %}selected{% endif %}>{{ m.nome }}</option>
+          {% endfor %}
+        </select>
+        {% if exame_vinculado and not exame_vinculado.medico_confirmado %}
+        <div class="form-text text-warning">Ainda não confirmado — escolha o médico responsável.</div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
 
     {# Abas: um tópico por aba, pra facilitar o preenchimento. Todas as
        abas ficam no MESMO <form> - trocar de aba não perde nada, e o
@@ -298,9 +345,9 @@
     </div>
 
     <hr>
-    <button type="submit" class="btn btn-primary">Salvar{% if wizard %} e continuar{% endif %}</button>
+    <button type="submit" class="btn btn-primary">Salvar</button>
     {% if wizard %}
-    <a href="{{ url_for('medico.exames_novo', wizard=1) }}" class="btn btn-link">Pular esta etapa</a>
+    <a href="{{ url_for('medico.primeiros_passos') }}" class="btn btn-link">Pular esta etapa</a>
     {% else %}
     <a href="{{ url_for('medico.preparo_modelos_lista') }}" class="btn btn-link">Cancelar</a>
     {% endif %}

@@ -14,11 +14,20 @@
 </p>
 <div class="card p-3">
   <table class="table table-hover align-middle">
-    <thead><tr><th>Nome</th><th>Cortes de alimentação</th><th>Medicamentos a suspender</th><th>Outras orientações</th><th>Usado por</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th>Médico</th><th>Cortes de alimentação</th><th>Medicamentos a suspender</th><th>Outras orientações</th><th>Usado por</th><th></th></tr></thead>
     <tbody>
       {% for m in modelos %}
       <tr>
         <td>{{ m.nome }}</td>
+        <td>
+          {% if m.exames|length == 1 %}
+          {{ m.exames[0].medico.nome if m.exames[0].medico else "—" }}
+          {% elif m.exames|length > 1 %}
+          <span class="text-muted small">Vários exames</span>
+          {% else %}
+          <span class="text-muted small">—</span>
+          {% endif %}
+        </td>
         <td>
           {% for c in m.cortes %}
           <span class="badge bg-light text-dark border me-1">{{ c.descricao }}: {{ c.horas_antes }}h antes</span>
@@ -59,7 +68,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text-muted text-center">Nenhum modelo de preparo cadastrado ainda.</td></tr>
+      <tr><td colspan="7" class="text-muted text-center">Nenhum modelo de preparo cadastrado ainda.</td></tr>
       {% endfor %}
     </tbody>
   </table>

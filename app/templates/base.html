@@ -88,10 +88,12 @@
                       'medico.perguntas_respondidas',
                       'medico.faq_lista', 'medico.faq_novo',
                       'medico.portal_atendimento'] %}
-  {% set grupo_config_exames = ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar',
-                                 'medico.exames_por_filial',
-                                 'medico.preparo_modelos_lista', 'medico.preparo_modelos_novo',
-                                 'medico.preparo_modelos_editar'] %}
+  {# Restruturação de 2026-09 (pedido do Silvan): "Exames", "Exames &
+     Preparo" e "Associar exames entre filiais" viraram uma única tela
+     ("Modelos de preparo" - ver medico.preparo_modelos_novo). As rotas
+     antigas (medico.exames_*) continuam existindo no código, mesmo padrão
+     já usado para equipe_lista/filiais_lista (ver comentário mais abaixo),
+     só não têm mais link no menu. #}
   <nav class="app-sidebar bg-primary text-white p-3 no-print">
     <div class="d-flex align-items-center justify-content-between mb-4">
       <a class="d-block text-decoration-none" href="{{ url_for('medico.dashboard') }}">
@@ -195,24 +197,9 @@
          continuam existindo, só sem link no menu. #}
 
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuConfigExames" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_config_exames else 'false' }}">
-          <span><i class="bi bi-sliders me-2"></i>Configuração de exames</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">
+          <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
         </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_config_exames %}show{% endif %}" id="menuConfigExames">
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">Modelos de preparo</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint in ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar'] %}active{% endif %}" href="{{ url_for('medico.exames_lista') }}">Exames &amp; Preparo</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.exames_por_filial' %}active{% endif %}" href="{{ url_for('medico.exames_por_filial') }}">Associar exames entre filiais</a>
-            </li>
-          </ul>
-        </div>
       </li>
 
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">

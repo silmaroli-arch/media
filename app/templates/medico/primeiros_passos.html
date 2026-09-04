@@ -25,12 +25,13 @@
     <div class="d-flex align-items-center">
       <span class="me-3" style="font-size: 1.6rem;">{{ "✅" if tem_preparo else "📝" }}</span>
       <div>
-        <strong>Modelo de preparo</strong>
+        <strong>Modelo de preparo e exame</strong>
         <div class="text-muted small">
           {% if tem_preparo %}
-          Você já tem pelo menos um modelo cadastrado.
+          Você já tem pelo menos um modelo (e exame) cadastrado.
           {% else %}
-          O texto de instruções que o paciente recebe antes de um exame (dieta, jejum, medicações).
+          Cadastre o exame/procedimento e o texto de instruções que o paciente recebe antes dele
+          (dieta, jejum, medicações) — os dois de uma vez, na mesma tela.
           {% endif %}
         </div>
       </div>
@@ -39,29 +40,6 @@
     <a href="{{ url_for('medico.preparo_modelos_lista') }}" class="btn btn-outline-secondary btn-sm text-nowrap ms-3">Ver modelos</a>
     {% else %}
     <a href="{{ url_for('medico.preparo_modelos_novo') }}" class="btn btn-outline-primary btn-sm text-nowrap ms-3">Cadastrar agora</a>
-    {% endif %}
-  </div>
-</div>
-
-<div class="card p-3 mb-3">
-  <div class="d-flex align-items-center justify-content-between">
-    <div class="d-flex align-items-center">
-      <span class="me-3" style="font-size: 1.6rem;">{{ "✅" if tem_exame else "🩺" }}</span>
-      <div>
-        <strong>Exame</strong>
-        <div class="text-muted small">
-          {% if tem_exame %}
-          Você já tem pelo menos um exame cadastrado.
-          {% else %}
-          Cadastre os exames/procedimentos que você oferece, com o modelo de preparo de cada um.
-          {% endif %}
-        </div>
-      </div>
-    </div>
-    {% if tem_exame %}
-    <a href="{{ url_for('medico.exames_lista') }}" class="btn btn-outline-secondary btn-sm text-nowrap ms-3">Ver exames</a>
-    {% else %}
-    <a href="{{ url_for('medico.exames_novo') }}" class="btn btn-outline-primary btn-sm text-nowrap ms-3">Cadastrar agora</a>
     {% endif %}
   </div>
 </div>

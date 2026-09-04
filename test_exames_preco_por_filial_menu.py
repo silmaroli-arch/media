@@ -1,6 +1,11 @@
 """Testa que:
-1) "Associar exames entre filiais" virou um item de menu próprio (não um
-   botão dentro da tela de Exames & Preparo);
+1) Restruturação de 2026-09 (pedido do Silvan): "Exames", "Exames &
+   Preparo" e "Associar exames entre filiais" deixaram de ter QUALQUER
+   link de menu (o cadastro de exame passou a acontecer todo dentro de
+   "Modelos de preparo" - ver medico.preparo_modelos_novo). As rotas
+   antigas (medico.exames_*) continuam existindo e respondendo por URL
+   direta, mesmo padrão já usado para equipe_lista/filiais_lista - só não
+   aparecem mais em nenhum menu;
 2) o preço do exame não aparece mais como campo em NENHUM formulário de
    exame (nem no cadastro, nem na edição) - o cadastro é genérico e o preço
    só é definido/ajustado depois, por local, na tela "Exames por filial"."""
@@ -29,20 +34,32 @@ with app.app_context():
         grupo_id=Grupo.query.filter_by(nome="Clínica Vitória").first().id
     ).first().id
 
-# A tela de Exames & Preparo não tem mais o botão "Associar exames entre filiais".
+# A rota antiga de Exames continua respondendo por URL direta (não foi
+# removida do código - só não tem mais link nenhum de menu, ver
+# comentário no topo do arquivo).
 r = client.get("/equipe/exames")
 html = r.get_data(as_text=True)
-checar("Tela de Exames responde 200", r.status_code == 200)
+checar("Tela de Exames (antiga, sem link de menu) ainda responde 200 por URL direta", r.status_code == 200)
 checar(
     "Não tem mais o botão dentro do cabeçalho da tela de Exames",
     'btn-outline-secondary"><i class="bi bi-diagram-3"></i> Associar exames entre filiais' not in html,
 )
 
-# O link para a tela só aparece uma vez: no menu lateral (presente em toda página), não mais
-# como um segundo botão dentro do conteúdo da tela de Exames.
+# O link para "Associar exames entre filiais" não aparece em NENHUM lugar
+# (nem no menu lateral, nem dentro da tela) - a tela deixou de ser
+# alcançável pela navegação normal.
 checar(
-    "O link 'Associar exames entre filiais' aparece só uma vez (no menu lateral)",
-    html.count('href="/equipe/exames/por-filial"') == 1,
+    "O link 'Associar exames entre filiais' não aparece mais em lugar nenhum",
+    'href="/equipe/exames/por-filial"' not in html,
+)
+
+# O menu lateral (presente em toda página) agora tem um único item
+# consolidado "Exames & preparo", apontando para a tela de modelos de
+# preparo - não mais para a tela antiga de exames nem para "Associar
+# exames entre filiais".
+checar(
+    "Menu lateral tem o item consolidado 'Exames & preparo' apontando para preparo-modelos",
+    'href="/equipe/preparo-modelos"' in html and "Exames &amp; preparo" in html,
 )
 
 # O formulário de "Novo exame" também não pede mais preço - o cadastro é genérico.
