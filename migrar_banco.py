@@ -565,11 +565,20 @@ tem_dono = conn.execute("SELECT 1 FROM usuarios WHERE tipo = 'dono' LIMIT 1").fe
 if not tem_dono:
     from werkzeug.security import generate_password_hash as _gerar_hash_senha
 
+    # licenca_status precisa vir explícito aqui: é NOT NULL na tabela
+    # (ver Usuario.licenca_status em models.py), mas o default "trial" é
+    # só do lado do SQLAlchemy (Python) - um INSERT em SQL puro como este,
+    # que não passa pelo ORM, não recebe esse default sozinho. Sem isso, a
+    # recriação do dono falha com "null value ... violates not-null
+    # constraint" logo no primeiro deploy contra um banco novo/vazio
+    # (encontrado ao validar a migração do media-dev para o Render,
+    # 2026-09-04 - nesse caso db.create_all() já roda antes deste ponto e
+    # cria a tabela do zero, sem nenhum usuário ainda).
     conn.execute(
         "INSERT INTO usuarios (nome, email, senha_hash, tipo, ativo, "
-        "perm_pacientes, perm_equipe, perm_filiais, perm_dados_clinica) "
+        "perm_pacientes, perm_equipe, perm_filiais, perm_dados_clinica, licenca_status) "
         "VALUES ('Dono da Plataforma', 'dono@plataforma.com', %s, 'dono', TRUE, "
-        "FALSE, FALSE, FALSE, FALSE)",
+        "FALSE, FALSE, FALSE, FALSE, 'trial')",
         (_gerar_hash_senha("123456"),),
     )
     print("Conta do dono recriada (dono@plataforma.com / 123456) - a base estava sem nenhum dono.")

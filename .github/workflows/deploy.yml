@@ -1,8 +1,13 @@
 name: Deploy no Elastic Beanstalk
 
+# O branch "dev" saiu daqui em 2026-09-04 (migração de custo, decisão do
+# Silvan): o ambiente media-dev passou a rodar no Render (render.yaml na
+# raiz do repo), que já observa este mesmo repositório/branch diretamente
+# e faz deploy automático a cada push, sem precisar de GitHub Actions.
+# "qualidade" e "main" continuam no Elastic Beanstalk normalmente.
 on:
   push:
-    branches: [dev, qualidade, main]
+    branches: [qualidade, main]
 
 jobs:
   deploy:

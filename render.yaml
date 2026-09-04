@@ -1,0 +1,95 @@
+# Configuração do ambiente de DEV do MedIA no Render (render.com).
+#
+# Este arquivo descreve dois recursos: o web service (Flask via gunicorn) e
+# o banco PostgreSQL, ambos no plano FREE (decisão do Silvan: ambiente de
+# dev/teste, sem problema se o banco expirar/apagar).
+#
+# Como usar:
+# 1. Crie uma conta no Render (render.com) e conecte este repositório
+#    GitHub (é pedido na primeira vez que você cria um "Blueprint").
+# 2. No painel do Render, escolha "New" > "Blueprint" e aponte para este
+#    repositório/branch (dev) - o Render lê este arquivo automaticamente e
+#    cria os dois recursos abaixo.
+# 3. Preencha manualmente, no painel, as variáveis marcadas com
+#    "sync: false" abaixo (nunca ficam neste arquivo, que é público no
+#    Git) - ver a lista de "Variáveis a preencher manualmente" no final
+#    deste comentário.
+# 4. A partir daí, todo push no branch "dev" faz deploy automático - sem
+#    precisar do workflow de GitHub Actions que hoje existe para o
+#    Elastic Beanstalk (o Render já observa o repositório diretamente).
+#
+# Observação sobre o plano free do Postgres: o Render apaga bancos free
+# depois de 30 dias de existência (não só de inatividade) - aceito de
+# propósito para o ambiente de dev (decisão do Silvan, 2026-09-04). Quando
+# isso acontecer, basta recriar o banco no painel e rodar
+# `python seed.py` de novo para popular dados de demonstração.
+
+services:
+  - type: web
+    name: media-dev
+    runtime: python
+    plan: free
+    branch: dev
+    autoDeploy: true
+    buildCommand: "pip install -r requirements.txt"
+    # gunicorn aponta para o mesmo objeto WSGI "application" que o Elastic
+    # Beanstalk já usa (ver application.py) - nenhuma mudança de código
+    # necessária. --timeout 120 acompanha o mesmo motivo do
+    # .platform/nginx/conf.d/timeout.conf (importação de PDF via IA pode
+    # demorar mais que o padrão de 30s do gunicorn).
+    startCommand: "gunicorn application:application --timeout 120"
+    # Roda a migração de schema (ALTER TABLE ... ADD COLUMN IF NOT EXISTS)
+    # antes de cada deploy assumir tráfego - equivalente ao hook
+    # .platform/hooks/predeploy/01_migrar_banco.sh do Elastic Beanstalk.
+    preDeployCommand: "python migrar_banco.py"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: media-dev-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      # As variáveis abaixo são todas OPCIONAIS (ver .env.example) - o app
+      # sobe e funciona normalmente sem elas, só com os recursos
+      # correspondentes desligados (chat por IA mais simples, WhatsApp
+      # desligado, notificação push desligada, etc.). Preencha no painel
+      # do Render só as que você já usa hoje no media-dev.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: WHATSAPP_META_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_META_APP_SECRET
+        sync: false
+      - key: WHATSAPP_META_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_META_PHONE_NUMBER_ID
+        sync: false
+      - key: MERCADOPAGO_ACCESS_TOKEN
+        sync: false
+      - key: MERCADOPAGO_WEBHOOK_SECRET
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_CLAIM_EMAIL
+        sync: false
+
+databases:
+  - name: media-dev-db
+    plan: free
+    databaseName: media_dev
+    user: media_dev
+
+# Variáveis a preencher manualmente no painel do Render (Dashboard >
+# media-dev > Environment), depois que o Blueprint for criado:
+#   - Qualquer uma das chaves opcionais acima que você já usa hoje no
+#     media-dev (copie os valores do .env atual do Elastic Beanstalk).
+#   - SECRET_KEY é gerada automaticamente pelo Render (generateValue) -
+#     não precisa mexer, mas repare que ela será DIFERENTE da usada hoje
+#     no Elastic Beanstalk, o que invalida sessões/cookies antigos (sem
+#     problema, é só fazer login de novo).
