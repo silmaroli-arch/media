@@ -471,11 +471,17 @@ def dashboard():
     # passa a mostrar o status da própria licença (trial/Ativo/Bloqueado) -
     # a checagem de vencimento já rodou em staff_required, então aqui é só
     # exibição (ver _LICENCA_LABELS, reaproveitado de medico.minha_licenca).
-    licenca_label = licenca_cor = None
+    licenca_label = licenca_cor = licenca_vencimento = None
     if eh_medico():
         licenca_label, licenca_cor = _LICENCA_LABELS.get(
             current_user.licenca_status, (current_user.licenca_status, "secondary")
         )
+        # Só faz sentido mostrar essa data no painel enquanto for o prazo do
+        # trial (ver dashboard.html) - depois que vira "ativa",
+        # licenca_vencimento fica sendo só a data (passada) em que o trial
+        # acabou, não uma próxima cobrança (isso é por mês, em
+        # LicencaPagamento) - mostrar ali confundiria, parecendo atraso.
+        licenca_vencimento = current_user.licenca_vencimento
 
     return render_template(
         "medico/dashboard.html",
@@ -489,6 +495,7 @@ def dashboard():
         agendamentos=agendamentos,
         licenca_label=licenca_label,
         licenca_cor=licenca_cor,
+        licenca_vencimento=licenca_vencimento,
     )
 
 

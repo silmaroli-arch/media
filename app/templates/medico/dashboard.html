@@ -8,6 +8,11 @@
     <a href="{{ url_for('medico.minha_licenca') }}" class="badge bg-{{ licenca_cor }} align-middle" style="font-size: 0.9rem;" title="Status da sua licença — clique para ver detalhes">
       {{ licenca_label }}
     </a>
+    {% if current_user.licenca_status == "trial" and licenca_vencimento %}
+      <span class="text-muted align-middle" style="font-size: 0.85rem;">
+        · vence em {{ licenca_vencimento.strftime('%d/%m/%Y') }}
+      </span>
+    {% endif %}
   {% endif %}
 </h3>
 <p class="text-muted mb-4">{{ clinica.nome if clinica else current_user.nome }}</p>
