@@ -812,6 +812,17 @@ class Paciente(db.Model):
     # clínica aceitar) ou 'rejeitado'.
     status_cadastro = db.Column(db.String(20), nullable=False, default="aprovado")
 
+    # Pedido do Silvan: tela onde o médico testa a IA fazendo perguntas
+    # sobre o próprio preparo (ver routes_medico.testar_ia) - reaproveita
+    # o mesmo fluxo de app.ia_preparo.responder_com_ia usado pelo chat real
+    # do paciente (incluindo a fila de aprovação e o aprendizado de FAQ),
+    # então precisa de um Paciente "de verdade" (paciente_id de
+    # PerguntaPendente/ChatMensagem é obrigatório) para servir de âncora -
+    # este campo marca esse cadastro sintético (um por médico, criado sob
+    # demanda) para que ele NUNCA apareça nas listas/contagens normais de
+    # pacientes (ver _filtro_pacientes_da_empresa em routes_medico.py).
+    eh_teste = db.Column(db.Boolean, nullable=False, default=False)
+
     usuario = db.relationship("Usuario", back_populates="pacientes", foreign_keys=[usuario_id])
 
     @property

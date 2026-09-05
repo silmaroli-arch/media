@@ -362,6 +362,13 @@ ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS aviso_inadimplencia_meses
 UPDATE plataforma_config SET aviso_inadimplencia_meses = (
     SELECT MAX(aviso_inadimplencia_meses) FROM usuarios WHERE tipo = 'medico'
 ) WHERE EXISTS (SELECT 1 FROM usuarios WHERE tipo = 'medico');
+
+-- Tela de teste de IA para o médico (pedido do Silvan, 2026-09-05, ver
+-- routes_medico.testar_ia): marca o cadastro de Paciente sintético criado
+-- sob demanda para servir de âncora das perguntas de teste - nunca deve
+-- aparecer nas listas/contagens normais de pacientes (ver
+-- _filtro_pacientes_da_empresa em routes_medico.py).
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS eh_teste BOOLEAN NOT NULL DEFAULT FALSE;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

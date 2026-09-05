@@ -33,6 +33,8 @@ from app.clinica_utils import (
 )
 from app.pdf_preparo import extrair_sugestao_de_pdf, extrair_sugestao_de_texto
 from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
+from app.ia_preparo import responder_com_ia
+from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.custo_ia import registrar_chamada_ia
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
@@ -98,14 +100,21 @@ def _filtro_pacientes_da_empresa():
     Fatia 6: quando a conta é solo (sem Grupo nenhum ainda), não existe
     GrupoPaciente pra criar - o paciente fica associado diretamente ao
     dono pessoal (`Paciente.cadastrado_por_id`), mesmo padrão dos outros
-    modelos (ver clinica_utils.filtro_escopo_atual())."""
+    modelos (ver clinica_utils.filtro_escopo_atual()).
+
+    Nunca inclui o Paciente sintético "de teste" (ver Paciente.eh_teste e
+    routes_medico.testar_ia) - esse cadastro existe só como âncora técnica
+    das perguntas de teste do médico, e não deve aparecer em NENHUMA lista,
+    contagem ou relatório de paciente de verdade."""
     grupo_ids = _grupos_da_empresa_ids()
     if not grupo_ids:
-        return Paciente.cadastrado_por_id == current_user.id
-    paciente_ids_do_grupo = db.session.query(GrupoPaciente.paciente_id).filter(
-        GrupoPaciente.grupo_id.in_(grupo_ids)
-    )
-    return Paciente.id.in_(paciente_ids_do_grupo)
+        base_filtro = Paciente.cadastrado_por_id == current_user.id
+    else:
+        paciente_ids_do_grupo = db.session.query(GrupoPaciente.paciente_id).filter(
+            GrupoPaciente.grupo_id.in_(grupo_ids)
+        )
+        base_filtro = Paciente.id.in_(paciente_ids_do_grupo)
+    return and_(base_filtro, Paciente.eh_teste.is_(False))
 
 
 def _associar_paciente_ao_escopo_atual(paciente, empresa):
@@ -2622,6 +2631,159 @@ def minha_licenca():
         licenca_cor=cor,
         licenca_vencimento=current_user.licenca_vencimento,
         pagamentos=pagamentos,
+    )
+
+
+def _paciente_teste_do_medico(medico):
+    """Get-or-create do Paciente sintético usado como âncora técnica das
+    perguntas de teste deste médico (ver Paciente.eh_teste e
+    medico.testar_ia) - um por médico, criado sob demanda na primeira vez
+    que ele testa a IA. CPF fixo e claramente artificial (nunca colide com
+    um CPF de paciente de verdade, que só tem dígitos)."""
+    cpf_teste = f"TESTE-IA-{medico.id}"
+    paciente = Paciente.query.filter_by(cpf=cpf_teste, eh_teste=True).first()
+    if paciente:
+        return paciente
+    paciente = Paciente(
+        nome=f"Paciente de teste (uso interno de {medico.nome})",
+        cpf=cpf_teste,
+        cadastrado_por_id=medico.id,
+        status_cadastro="aprovado",
+        eh_teste=True,
+    )
+    db.session.add(paciente)
+    db.session.commit()
+    return paciente
+
+
+@medico_bp.route("/testar-ia", methods=["GET", "POST"])
+@login_required
+def testar_ia():
+    """Pedido do Silvan (2026-09-05): tela onde o médico faz perguntas de
+    teste à IA sobre os próprios preparos, para validar como o chat do
+    paciente responderia antes de confiar nele de verdade.
+
+    Decisão do Silvan: simular o FLUXO COMPLETO do paciente, não um atalho
+    à parte - por isso reaproveita exatamente o mesmo caminho de
+    app.routes_paciente.chat (responder_com_ia -> base de FAQ ->
+    alimento/medicamento -> fila de aprovação), inclusive a fila de
+    aprovação (medico.perguntas_pendentes) e o aprendizado de FAQ quando o
+    médico aprova uma resposta de teste (ver medico.perguntas_responder) -
+    o que também tem o efeito colateral desejável de já ir alimentando a
+    base de conhecimento com perguntas que o médico antecipa que pacientes
+    de verdade vão fazer. A chamada de IA conta no painel de custo do dono
+    normalmente (mesmo ChamadaIA de sempre, ver app.custo_ia) - decisão do
+    Silvan, já que usa a mesma API paga.
+
+    Único desvio proposital do fluxo real: não notifica a equipe por push
+    (ver app.push_notificacoes) quando a pergunta cai na fila de aprovação
+    - é o próprio médico quem acabou de gerar esta pergunta de teste, não
+    faz sentido alertá-lo de algo que ele mesmo já sabe que fez.
+
+    Só médico usa (é conteúdo clínico do próprio médico, mesma restrição de
+    quem pode editar um modelo de preparo - ver
+    PreparoModelo.pode_ser_editado_por)."""
+    if not eh_medico():
+        flash("Essa tela é só para contas de médico.", "warning")
+        return redirect(url_for("medico.dashboard"))
+
+    exames_do_medico = [
+        e for e in Exame.query.filter(filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id)).all()
+        if e.medico_pode_atender(current_user.id) and e.preparo is not None
+    ]
+
+    resposta_ia = None
+    pergunta_enviada = None
+    exame_id_selecionado = None
+    origem = None
+    encaminhada = False
+
+    if request.method == "POST":
+        exame_id_selecionado = request.form.get("exame_id", "").strip()
+        pergunta_enviada = request.form.get("pergunta", "").strip()
+        exame_selecionado = next((e for e in exames_do_medico if str(e.id) == exame_id_selecionado), None)
+
+        if not exame_selecionado:
+            flash("Escolha um dos seus exames/preparos para testar.", "danger")
+        elif not pergunta_enviada:
+            flash("Digite uma pergunta para testar.", "danger")
+        else:
+            paciente_teste = _paciente_teste_do_medico(current_user)
+            grupo_id_ancora = exame_selecionado.grupo_id
+            criado_por_id_ancora = exame_selecionado.criado_por_id
+
+            # A IA é sempre consultada primeiro, igual ao chat real do
+            # paciente (ver app.routes_paciente.chat) - a resposta dela só
+            # vira rascunho aguardando aprovação, nunca é mostrada direto.
+            resultado_ia = responder_com_ia(pergunta_enviada, exame_selecionado, paciente_id=paciente_teste.id)
+
+            if resultado_ia and resultado_ia["final"]:
+                origem = "ia_aguardando"
+                pendente = PerguntaPendente(
+                    grupo_id=grupo_id_ancora,
+                    criado_por_id=criado_por_id_ancora,
+                    paciente_id=paciente_teste.id,
+                    exame_id=exame_selecionado.id,
+                    pergunta=pergunta_enviada,
+                    status="aguardando_aprovacao",
+                    resposta_sugerida_ia=resultado_ia["final"],
+                    resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
+                    resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
+                    resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
+                    ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
+                )
+                db.session.add(pendente)
+                db.session.commit()
+                encaminhada = True
+            else:
+                faq_item, _score = buscar_resposta(
+                    pergunta_enviada,
+                    grupo_id=grupo_id_ancora,
+                    exame_id=exame_selecionado.id,
+                    criado_por_id=criado_por_id_ancora,
+                )
+                if faq_item:
+                    faq_item.vezes_utilizada += 1
+                    db.session.commit()
+                    resposta_ia = faq_item.resposta
+                    origem = "faq"
+                elif (resposta_alimento := buscar_resposta_alimento(pergunta_enviada, exame_selecionado, paciente_teste)):
+                    resposta_ia = resposta_alimento
+                    origem = "alimento"
+                elif (resposta_medicamento := buscar_resposta_medicamento(pergunta_enviada, exame_selecionado, paciente_teste)):
+                    resposta_ia = resposta_medicamento
+                    origem = "medicamento"
+                else:
+                    pendente = PerguntaPendente(
+                        grupo_id=grupo_id_ancora,
+                        criado_por_id=criado_por_id_ancora,
+                        paciente_id=paciente_teste.id,
+                        exame_id=exame_selecionado.id,
+                        pergunta=pergunta_enviada,
+                        ias_com_erro=(",".join(resultado_ia.get("falhas") or []) or None) if resultado_ia else None,
+                    )
+                    db.session.add(pendente)
+                    db.session.commit()
+                    encaminhada = True
+                    origem = "pendente"
+
+            db.session.add(ChatMensagem(
+                paciente_id=paciente_teste.id,
+                exame_id=exame_selecionado.id,
+                pergunta=pergunta_enviada,
+                resposta=resposta_ia,
+                origem=origem,
+            ))
+            db.session.commit()
+
+    return render_template(
+        "medico/testar_ia.html",
+        exames=exames_do_medico,
+        resposta_ia=resposta_ia,
+        pergunta_enviada=pergunta_enviada,
+        exame_id_selecionado=exame_id_selecionado,
+        origem=origem,
+        encaminhada=encaminhada,
     )
 
 

@@ -219,6 +219,16 @@
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">Base de conhecimento</a>
             </li>
+            {% if current_user.tipo == "medico" %}
+            {# Pedido do Silvan: tela onde o médico testa a IA fazendo
+               perguntas sobre os próprios preparos - só faz sentido para
+               quem tem preparo próprio (médico), por isso não aparece
+               para secretária/dono, diferente dos outros itens deste
+               submenu. #}
+            <li class="nav-item">
+              <a class="nav-link {% if request.endpoint == 'medico.testar_ia' %}active{% endif %}" href="{{ url_for('medico.testar_ia') }}">Testar IA nos meus preparos</a>
+            </li>
+            {% endif %}
             {# Atalho adicional (não substitui o acesso normal acima): tela
                enxuta, só com as perguntas pendentes + histórico - pensada
                para o médico salvar como atalho separado na tela de início
