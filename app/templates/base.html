@@ -181,6 +181,18 @@
         </a>
       </li>
 
+      {# Versão mobile do link "Testar IA nos meus preparos" (pedido do
+         Silvan: também precisa aparecer no app do médico, não só no
+         desktop/tablet) - o outro, dentro de "Médico + IA" mais abaixo,
+         fica oculto no menu reduzido do celular (ver
+         oculto_no_celular_do_medico), então esta cópia é o único jeito de
+         chegar lá pelo celular. #}
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'medico.testar_ia' %}active{% endif %}" href="{{ url_for('medico.testar_ia') }}">
+          <i class="bi bi-robot me-2"></i>Testar IA nos meus preparos
+        </a>
+      </li>
+
       {# Fatia 8 (licença individual): pedido explícito do Silvan de que o
          médico tenha acesso a isso pelo app Mobile - por isso este item
          NÃO leva oculto_no_celular_do_medico nem d-md-none, fica visível
