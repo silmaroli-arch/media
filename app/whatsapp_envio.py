@@ -33,6 +33,18 @@ repositório, ver .env.example):
   janela de 24h da última mensagem do paciente; fora dela, a Meta recusa
   e o envio é só registrado como falha (a resposta continua disponível
   na área web).
+- WHATSAPP_META_TEMPLATE_BOAS_VINDAS (opcional): nome do template
+  aprovado usado para mandar a mensagem de boas-vindas quando um
+  paciente é cadastrado (ver enviar_boas_vindas_whatsapp mais abaixo,
+  chamada em app.routes_medico.pacientes_novo e
+  app.routes_auth.cadastro_paciente_global) - COM uma variável (o nome
+  do paciente). É a PRIMEIRA mensagem que a clínica manda a essa pessoa,
+  então está sempre fora da janela de 24h - sem este template
+  configurado, o envio é só pulado (nada quebra, mesmo padrão de
+  "falha aberta" do resto deste módulo); o Silvan precisa criar e
+  aprovar este template na Meta separadamente do de resposta (são dois
+  templates diferentes, cada mensagem iniciada pela clínica precisa do
+  seu próprio).
 - WHATSAPP_META_TEMPLATE_IDIOMA (opcional, padrão "pt_BR"): o código de
   idioma cadastrado junto com o template na aprovação.
 - WHATSAPP_META_API_VERSION (opcional, padrão "v22.0"): versão da Graph
@@ -59,31 +71,37 @@ def _numero_para_graph_api(telefone_e164):
     return "".join(c for c in telefone_e164 if c.isdigit())
 
 
-def enviar_mensagem_whatsapp(telefone_destino, texto, content_variables=None):
+def enviar_mensagem_whatsapp(telefone_destino, texto, content_variables=None, nome_template_env="WHATSAPP_META_TEMPLATE_RESPOSTA"):
     """Manda `texto` para `telefone_destino` (formato "+5527999998888")
     usando a WhatsApp Cloud API da Meta diretamente. Nunca levanta exceção
     para quem chama - qualquer falha (configuração ausente, erro de rede,
     número inválido, fora da janela de 24h sem template etc.) só é
-    registrada no log, porque isso roda depois que a resposta da pergunta
-    já foi salva com sucesso: uma falha de envio não pode desfazer nem
-    bloquear essa gravação, já que a resposta continua acessível pela
-    área web do paciente de qualquer forma.
+    registrada no log, porque isso roda depois que a ação principal
+    (responder a pergunta, cadastrar o paciente) já foi salva com
+    sucesso: uma falha de envio não pode desfazer nem bloquear essa
+    gravação, já que a informação continua acessível pela área web de
+    qualquer forma.
 
     `content_variables`, se informado, é uma lista de strings usada para
-    preencher as variáveis {{1}}, {{2}}... do template configurado em
-    WHATSAPP_META_TEMPLATE_RESPOSTA (ver docstring do módulo) - `texto`
+    preencher as variáveis {{1}}, {{2}}... do template configurado na
+    variável de ambiente indicada por `nome_template_env` (padrão
+    WHATSAPP_META_TEMPLATE_RESPOSTA, ver docstring do módulo) - `texto`
     só é usado de fato se não houver template configurado (mensagem de
-    texto livre, dentro da janela de 24h)."""
+    texto livre, dentro da janela de 24h). `nome_template_env` existe
+    para outros envios PROATIVOS (ex.: boas-vindas no cadastro, ver
+    enviar_boas_vindas_whatsapp) usarem um template Meta DIFERENTE do de
+    resposta de pergunta - cada tipo de mensagem iniciada pela clínica
+    fora da janela de 24h precisa do seu próprio template aprovado."""
     access_token = os.environ.get("WHATSAPP_META_ACCESS_TOKEN")
     phone_number_id = os.environ.get("WHATSAPP_META_PHONE_NUMBER_ID")
-    template_nome = os.environ.get("WHATSAPP_META_TEMPLATE_RESPOSTA")
+    template_nome = os.environ.get(nome_template_env)
     template_idioma = os.environ.get("WHATSAPP_META_TEMPLATE_IDIOMA", "pt_BR")
     api_version = os.environ.get("WHATSAPP_META_API_VERSION", "v22.0")
 
     if not (access_token and phone_number_id):
         current_app.logger.info(
             "Envio de WhatsApp pulado (WHATSAPP_META_ACCESS_TOKEN/"
-            "WHATSAPP_META_PHONE_NUMBER_ID não configurados) - a resposta "
+            "WHATSAPP_META_PHONE_NUMBER_ID não configurados) - a informação "
             "continua disponível na área web."
         )
         return False
@@ -143,3 +161,32 @@ def enviar_mensagem_whatsapp(telefone_destino, texto, content_variables=None):
         # docstring), só registra para investigação.
         current_app.logger.exception("Falha ao enviar mensagem de WhatsApp para %s", telefone_destino)
         return False
+
+
+def enviar_boas_vindas_whatsapp(paciente):
+    """Pedido do Silvan (2026-09-06): mandar uma mensagem de WhatsApp para
+    o paciente assim que ele é cadastrado, para que ele já tenha o número
+    da clínica salvo e saiba que pode mandar dúvidas por lá (ver
+    app.whatsapp_conversa para o fluxo de identificação por CPF + data de
+    nascimento que essa mensagem inaugura).
+
+    Chamada logo depois do cadastro em app.routes_medico.pacientes_novo
+    (cadastro feito pela equipe) e app.routes_auth.cadastro_paciente_global
+    (autocadastro do próprio paciente) - e também em
+    app.routes_medico._paciente_teste_do_medico, para o médico poder
+    testar esse mesmo fluxo no próprio WhatsApp (ver medico.testar_ia).
+
+    É sempre a PRIMEIRA mensagem trocada com esse número - nunca há uma
+    janela de 24h aberta ainda -, então SEMPRE precisa do template
+    aprovado (WHATSAPP_META_TEMPLATE_BOAS_VINDAS, ver docstring do
+    módulo); sem ele configurado, o envio é só pulado (mesmo padrão de
+    "falha aberta" do resto deste módulo) - o cadastro em si nunca falha
+    por causa disso. `texto` aqui é só o rótulo do parâmetro obrigatório
+    de enviar_mensagem_whatsapp; nunca chega a ser usado de fato, porque
+    texto livre fora da janela de 24h a Meta sempre recusa."""
+    return enviar_mensagem_whatsapp(
+        paciente.telefone,
+        texto=f"Olá, {paciente.nome}! Este é o WhatsApp da clínica — salve este número para tirar dúvidas sobre o preparo dos seus exames.",
+        content_variables=[paciente.nome],
+        nome_template_env="WHATSAPP_META_TEMPLATE_BOAS_VINDAS",
+    )

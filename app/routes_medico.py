@@ -36,6 +36,7 @@ from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
 from app.ia_preparo import responder_com_ia
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.custo_ia import registrar_chamada_ia
+from app.whatsapp_envio import enviar_boas_vindas_whatsapp
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -761,6 +762,12 @@ def pacientes_novo():
         db.session.flush()
         _associar_paciente_ao_escopo_atual(paciente, empresa)
         db.session.commit()
+
+        # Pedido do Silvan (2026-09-06): mandar boas-vindas por WhatsApp já
+        # no cadastro, pra ele salvar o número da clínica e saber que pode
+        # tirar dúvidas por lá - falha aberta (sem template Meta configurado,
+        # só é pulado, ver app.whatsapp_envio.enviar_boas_vindas_whatsapp).
+        enviar_boas_vindas_whatsapp(paciente)
 
         flash(
             "Paciente cadastrado. Ele(a) pode acessar o sistema informando o CPF e a data de "
@@ -2639,7 +2646,14 @@ def _paciente_teste_do_medico(medico):
     perguntas de teste deste médico (ver Paciente.eh_teste e
     medico.testar_ia) - um por médico, criado sob demanda na primeira vez
     que ele testa a IA. CPF fixo e claramente artificial (nunca colide com
-    um CPF de paciente de verdade, que só tem dígitos)."""
+    um CPF de paciente de verdade, que só tem dígitos).
+
+    Pedido do Silvan (2026-09-06): usa o TELEFONE do próprio médico
+    (Usuario.telefone, informado no cadastro dele) - assim, na primeira
+    vez que ele usa esta tela, recebe no próprio WhatsApp a mesma
+    mensagem de boas-vindas que um paciente de verdade recebe (ver
+    app.whatsapp_envio.enviar_boas_vindas_whatsapp), podendo testar o
+    fluxo completo (inclusive responder por lá) como se fosse paciente."""
     cpf_teste = f"TESTE-IA-{medico.id}"
     paciente = Paciente.query.filter_by(cpf=cpf_teste, eh_teste=True).first()
     if paciente:
@@ -2647,12 +2661,17 @@ def _paciente_teste_do_medico(medico):
     paciente = Paciente(
         nome=f"Paciente de teste (uso interno de {medico.nome})",
         cpf=cpf_teste,
+        telefone=medico.telefone,
         cadastrado_por_id=medico.id,
         status_cadastro="aprovado",
         eh_teste=True,
     )
     db.session.add(paciente)
     db.session.commit()
+    # Só na criação (não em reaproveitamentos futuros do mesmo cadastro de
+    # teste) - mesmo comportamento de "boas-vindas uma vez só" que vale
+    # para o cadastro de paciente de verdade.
+    enviar_boas_vindas_whatsapp(paciente)
     return paciente
 
 

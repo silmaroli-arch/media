@@ -6,6 +6,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 
 from app.extensions import db
 from app.models import Usuario, Paciente, PlataformaConfig, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.whatsapp_envio import enviar_boas_vindas_whatsapp
 # `proximo_seguro` mora em clinica_utils.py (compartilhado com
 # routes_medico.py:escolher_clinica, que precisa do mesmo tratamento pra
 # não perder o destino original de quem tem vínculo em mais de um Grupo -
@@ -577,6 +578,12 @@ def cadastro_paciente_global():
         paciente.contato_emergencia_telefone = request.form.get("contato_emergencia_telefone", "").strip()
         db.session.add(paciente)
         db.session.commit()
+
+        # Pedido do Silvan (2026-09-06): mandar boas-vindas por WhatsApp já
+        # no cadastro, pra ele salvar o número da clínica e saber que pode
+        # tirar dúvidas por lá - falha aberta (sem template Meta configurado,
+        # só é pulado, ver app.whatsapp_envio.enviar_boas_vindas_whatsapp).
+        enviar_boas_vindas_whatsapp(paciente)
 
         login_user(usuario)
         session["paciente_id"] = paciente.id
