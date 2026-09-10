@@ -1,6 +1,8 @@
 # Handoff — Continuação do chat com Claude sobre o projeto Media/MedIA
 
-> Atualizado em 2026-09-02 (4ª rodada). Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
+> Atualizado em 2026-09-10 (5ª rodada — ver seção no final). Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
+>
+> **Mudança de infraestrutura importante desde a 4ª rodada (registrada abaixo, mas avisando já aqui em cima porque afeta TUDO que este documento diz sobre AWS/Elastic Beanstalk)**: o ambiente `media-dev` foi migrado do AWS Elastic Beanstalk para o **Render** (`render.yaml` na raiz do repo, serviço `media-dev` em dashboard.render.com). Onde as seções abaixo mencionam "Elastic Beanstalk", "`.platform/hooks/predeploy/`" ou variáveis de ambiente configuradas "no Elastic Beanstalk", leia como "no Render" — o mecanismo mudou (ver 5ª rodada), mas a lista de variáveis e o propósito de cada uma continuam os mesmos.
 
 ## Contexto do projeto
 
@@ -236,6 +238,175 @@ Logo depois da troca para o Gemini, o Silvan tentou importar um PDF real (baixad
 **Correção**: a rota agora renderiza a tela de revisão (`medico/preparo_modelo_form.html`) **diretamente na resposta do próprio upload do PDF**, em vez de guardar a sugestão na sessão e redirecionar — elimina a dependência do cookie para esse caminho, então PDFs longos não têm mais esse limite. (Os outros dois pontos que usam a mesma sessão — importação de Excel com uma aba, e escolha de aba quando há várias — não foram alterados, pois planilhas tendem a gerar sugestões bem menores; se algum dia um Excel muito grande também estourar o cookie, aplicar a mesma correção lá.)
 
 Suíte de testes completa (43 arquivos) rodada de novo depois de cada mudança desta seção — sem regressão.
+
+## 5ª rodada (2026-09-10) — migração para Render, fix crítico de "Apagar dados", templates WhatsApp aprovados, ajustes de cadastro/menu
+
+### Migração de infraestrutura: Elastic Beanstalk → Render
+
+O `media-dev` deixou de rodar no AWS Elastic Beanstalk e passou a rodar no **Render**
+(decisão do Silvan, 2026-09-04) — plano Free, serviço `media-dev` + banco Postgres
+`media-dev-db`, ambos descritos em `render.yaml` na raiz do repo. Push em `dev` continua
+disparando deploy automático, agora direto pelo Render (`autoDeploy: true`), sem passar
+mais pelo GitHub Actions para este ambiente.
+
+- **`startCommand`** (substitui o hook `.platform/hooks/predeploy/01_migrar_banco.sh` do
+  Elastic Beanstalk): `python gerar_deploy_info_render.py; python migrar_banco.py &&
+  gunicorn application:application --timeout 120`. Migração de schema continua em
+  `migrar_banco.py` (inalterado, mesma disciplina de `ALTER TABLE ... ADD COLUMN IF NOT
+  EXISTS`), só passou a rodar encadeado no `startCommand` porque o plano Free do Render
+  não suporta `preDeployCommand`.
+- **`gerar_deploy_info_render.py`** (novo): como o GitHub Actions não roda mais para a
+  branch `dev`, esse script tampa o buraco gerando `deploy_info.json` localmente no
+  próprio Render (usa `git rev-parse`/`git log` no checkout, que o build do Render
+  mantém) — é isso que alimenta o "versão X (HEAD) · último deploy" na tela de login e o
+  histórico de versões (tabela `HistoricoDeploy`, ver `_registrar_deploy_atual` em
+  `app/__init__.py`).
+- **Variáveis de ambiente**: mesma lista de sempre (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
+  `OPENAI_API_KEY`, `WHATSAPP_META_*`, `MERCADOPAGO_*`, `VAPID_*`), agora configuradas em
+  Render → media-dev → Environment (em vez do console do Elastic Beanstalk).
+- **Plano Free do Render — limitações relevantes para depuração futura**: sem Shell (pede
+  upgrade para o plano Starter), sem Zero Downtime, sem Persistent Disks, a instância
+  "dorme" após inatividade (aviso "Your free instance will spin down..." visível no
+  dashboard).
+- **Armadilha descoberta nesta rodada, guardar para o futuro**: depois de um deploy do
+  commit certo aparecer como "Deploy succeeded | Live" no Render (log confirmando
+  `deploy_info.json gerado: commit <hash certo>` e "Your service is live"), o site em
+  produção continuou servindo o código de um commit ANTERIOR por um bom tempo — mesmo
+  testado em aba anônima, com `?cache-bust` na URL, e depois de descartar hipóteses de
+  serviço duplicado, domínio customizado extra, múltiplas instâncias e processo travado
+  (todas checadas e descartadas nas Settings/Events do Render). **A causa foi o build
+  cache do Render ficando obsoleto entre deploys consecutivos** — resolvido fazendo um
+  **Manual Deploy → limpar o cache de build** pelo dashboard. Se isso voltar a acontecer
+  (deploy "Live" no Render mas comportamento/versão antigos no site), esse é o primeiro
+  atalho a tentar, antes de qualquer investigação mais profunda.
+
+### Fix crítico: "Apagar todos os dados" quebrava com FK violation no Postgres
+
+A função de wipe-all-data (`app/limpar_dados.py`, usada pelo dono para zerar a conta)
+apagava `PreparoModelo` (e tabelas dependentes: `PreparoCorte`, `PreparoInfoGeral`,
+`PreparoAlimento`, `PreparoExameAnterior`, `PreparoMedicamentoSuspenso`,
+`PreparoMedicamentoMantido`) **antes** de apagar `Exame` — só que `Exame.preparo_modelo_id`
+é uma FK para `preparo_modelos.id`, então em Postgres real (não em SQLite, usado nos
+testes locais) isso sempre lançava `ForeignKeyViolation`, quebrando a função no primeiro
+uso em produção. Corrigido invertendo a ordem: `Exame` (e a tabela de associação
+`exame_medicos_associados`) agora é apagado **antes** dos `PreparoModelo`/tabelas
+dependentes. Validado contra um Postgres 16 local de teste (não só SQLite) antes de
+confiar na correção — reproduzir bugs de FK exige testar no mesmo motor de banco da
+produção, SQLite é frouxo demais com integridade referencial para pegar isso sozinho.
+Commit: `df11641`. Confirmado funcionando em produção pelo Silvan.
+
+### WhatsApp: 3 templates Meta aprovados/em aprovação + ajuste de variável vazia
+
+Continuação da Fatia 7 (seção acima) — as credenciais Meta já estavam configuradas desde
+a 4ª rodada; nesta rodada o Silvan efetivamente criou e submeteu os templates que
+faltavam em WhatsApp Manager:
+
+- `boas_vindas_clinica` (2 variáveis) — mensagem de boas-vindas ao paciente/médico
+  recém-cadastrado.
+- `preparo_cadastrado_medico` (1 variável) — aviso ao médico de que já pode testar a IA,
+  depois de cadastrar um modelo de preparo.
+- `resposta_duvida_paciente` (2 variáveis, **novo nesta rodada**) — resposta a uma
+  pergunta do paciente quando a janela de 24h já fechou (variável
+  `WHATSAPP_META_TEMPLATE_RESPOSTA` já existia desde a migração para Meta direta, mas o
+  template em si só foi criado agora).
+
+Todos passaram por reclassificação automática da Meta de "Utilidade" para "Marketing"
+(aceito, a pedido do Silvan, em vez de tentar reescrever para forçar "Utilidade") e pela
+regra de que uma variável de template não pode ficar no início/fim do corpo da mensagem
+(contornado reescrevendo o texto para sempre ter conteúdo fixo depois da última
+variável). As 3 variáveis de ambiente correspondentes
+(`WHATSAPP_META_TEMPLATE_BOAS_VINDAS`, `WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO`,
+`WHATSAPP_META_TEMPLATE_RESPOSTA`) foram configuradas no Render.
+
+Ajuste de código relacionado: `enviar_boas_vindas_whatsapp` (`app/whatsapp_envio.py`)
+passou a mandar `aviso_extra.strip() or " "` em vez de string vazia — a Graph API da Meta
+rejeita variável de template vazia, então quando não há aviso extra manda um espaço em
+branco só para satisfazer a API.
+
+Pendência: os 3 templates estavam "Em análise" na Meta ao final desta rodada — falta
+confirmar aprovação e testar de ponta a ponta (mensagem de boas-vindas chegando de fato
+no WhatsApp de um cadastro novo).
+
+### Cadastro público: campos obrigatórios + confirmação de senha + menu "Meus dados"
+
+Pedido do Silvan, com este escopo confirmado por ele (só se aplica a cadastros NOVOS, sem
+checagem retroativa em contas existentes):
+
+- **Todo o formulário de cadastro** (`app/routes_auth.py:cadastro()`,
+  `app/templates/auth/cadastro.html`) virou obrigatório, **exceto Complemento** — antes só
+  nome/e-mail/senha/CPF eram exigidos de verdade; telefone e CEP só validavam formato
+  quando preenchidos (podiam ficar em branco); o resto do endereço (rua, número, bairro,
+  cidade, UF) não tinha validação nenhuma (campos inclusive ficavam `readonly`,
+  preenchidos só via ViaCEP).
+- **Confirmação de senha** (campo `senha_confirmacao`, digitar duas vezes) — só na tela de
+  cadastro inicial, não nas demais telas de senha (ex.: `trocar_senha`), a pedido
+  explícito do Silvan.
+- **Novo item de menu "Meus dados"** na barra lateral (`app/templates/base.html`) — leva
+  para a tela `auth.meus_dados` que já existia (antes só acessível pelo menu de usuário no
+  canto superior direito), permitindo ao médico/secretária ver e editar os próprios dados
+  (ex.: telefone, se trocou de número) sem precisar abrir aquele menu secundário.
+- 6 arquivos de teste (`test_medico_independente.py`, `test_licenca_medico.py`,
+  `test_licenca_pagamento_valor_e_gateway.py`, `test_painel_agenda_do_medico.py`,
+  `test_smoke.py`, `test_smoke_final.py`) tiveram os `POST /cadastro` atualizados para
+  incluir os novos campos obrigatórios.
+
+### Reorganização do menu lateral + máscaras em "Meus dados"
+
+Pedido seguinte do Silvan, com uma ordem específica definida por ele (ver planilha que
+ele compartilhou): **Painel, Meus dados, Exames & preparo, Pacientes, Meus exames
+agendados, Médico + IA, Grupos de trabalho, Minha licença** — o item **"Primeiros
+passos" saiu do menu** (a rota `medico.primeiros_passos` continua existindo, só sem link
+fixo na barra lateral).
+
+Além disso, na tela "Meus dados" (`app/templates/auth/meus_dados.html`), o telefone (e
+também CPF, data de nascimento e CEP, que tinham o mesmo problema) apareciam **sem
+formatação** na primeira abertura da tela — a máscara (`aplicarMascaraFixa`) só entrava
+em ação a partir do próximo caractere digitado pelo usuário, não no valor já carregado do
+banco. Corrigido para formatar o valor assim que a página abre.
+
+### Paciente de teste do WhatsApp, visível (só) na tela "Meus pacientes"
+
+Descoberta desta rodada: quando um médico se cadastra com telefone preenchido, o sistema
+já cria automaticamente um `Paciente` sintético com `eh_teste=True` (usa o próprio
+CPF/telefone/data de nascimento do médico) — usado como âncora técnica da tela "Testar IA
+nos meus preparos" (ver `_paciente_teste_do_medico` em `app/routes_medico.py`). Esse
+cadastro é **de propósito** excluído de toda lista/contagem/relatório de paciente real
+(`_filtro_pacientes_da_empresa()`, comentário explícito no código: "não deve aparecer em
+NENHUMA lista, contagem ou relatório de paciente de verdade") — por isso a tela "Meus
+pacientes" aparecia vazia mesmo o médico já tendo se cadastrado, o que gerou uma dúvida do
+Silvan sobre se o cadastro automático realmente existia.
+
+Depois de confirmar com ele o escopo exato, a solução implementada foi cirúrgica: o
+paciente de teste passou a aparecer **só na tela "Meus pacientes"** (`pacientes_lista()`
+em `app/routes_medico.py` + `app/templates/medico/pacientes_lista.html`), numa linha
+visualmente destacada com badges "Teste" / "Paciente de teste (Testar IA)", sem link de
+"Detalhes" (a rota `pacientes_detalhe` também usa `_filtro_pacientes_da_empresa()` e daria
+404 para esse cadastro) — **sem** alterar `_filtro_pacientes_da_empresa()` em si, então
+contagens, relatórios e as demais listas continuam exatamente como antes, sem o paciente
+de teste contaminando métrica nenhuma.
+
+### Observação sobre o ambiente de trabalho desta rodada
+
+Durante toda esta 5ª rodada, a ferramenta de terminal remoto (`device_bash`) esteve
+indisponível ("no Plan9 drive shares mounted") para as pastas conectadas
+(`media--src`, `oseupreparo--src`) — todo código foi entregue por cópia de arquivo
+(`device_commit_files`) direto na pasta `C:\app\media\src`, nunca por comando git direto
+na máquina do Silvan. Isso significa que **eu nunca rodo `git add`/`commit`/`push`
+sozinho** — cabe sempre ao Silvan (manualmente no PowerShell, ou via o serviço Windows de
+auto-commit/push mencionado na seção "Contexto do projeto" acima) revisar com `git diff`
+e commitar o que foi entregue. Em pelo menos duas ocasiões desta rodada, uma primeira
+tentativa de `device_commit_files` reportou sucesso mas o arquivo não apareceu de fato no
+`git diff` do Silvan — resolvido re-enviando com a opção de forçar sobrescrita; vale
+tentar isso primeiro se um arquivo "entregue" não aparecer no `git status` da máquina
+dele.
+
+**Atenção para a próxima sessão**: ao rodar `git status`/`git add` depois desta rodada, a
+pasta local pode conter outras modificações não relacionadas ao que está documentado aqui
+(por exemplo, em `app/models.py`, `app/routes_dono.py`,
+`app/templates/dono/dashboard.html`, `render.yaml`, `migrar_banco.py`) — não foram feitas
+nesta rodada, possivelmente sobras do serviço de auto-commit ou de trabalho anterior
+ainda não commitado. Antes de comitar em bloco, confirmar com o Silvan o que cada arquivo
+extra contém.
 
 ## Como continuar
 
