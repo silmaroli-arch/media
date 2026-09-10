@@ -377,6 +377,16 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS eh_teste BOOLEAN NOT NULL DEFAULT
 -- (app.whatsapp_conversa._localizar_paciente), permitindo testar o fluxo
 -- completo mandando mensagem de verdade, não só pela tela "Testar IA".
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS data_nascimento DATE;
+
+-- Licença anual (pedido do Silvan, 2026-09-10) - alternativa à licença
+-- mensal já existente, valor INDEPENDENTE (não é desconto calculado a
+-- partir do mensal). Ver PlataformaConfig.valor_licenca_anual_padrao,
+-- Usuario.ciclo_licenca/valor_licenca_anual e
+-- LicencaPagamento.origem_anual em models.py.
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS valor_licenca_anual_padrao NUMERIC(10, 2);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ciclo_licenca VARCHAR(10) NOT NULL DEFAULT 'mensal';
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS valor_licenca_anual NUMERIC(10, 2);
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS origem_anual BOOLEAN NOT NULL DEFAULT FALSE;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

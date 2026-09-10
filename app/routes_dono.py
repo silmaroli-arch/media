@@ -8,7 +8,9 @@ from app.extensions import db
 from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
-from app.mercadopago_integration import criar_preferencia_pagamento, MercadoPagoNaoConfigurado
+from app.mercadopago_integration import (
+    criar_preferencia_pagamento, criar_preferencia_pagamento_anual, MercadoPagoNaoConfigurado,
+)
 from app.exclusao_usuario import verificar_bloqueios_exclusao, excluir_usuario_e_dados
 from app.limpar_dados import apagar_todos_os_dados
 
@@ -180,6 +182,19 @@ def configuracoes_licenca_medico():
     else:
         config.valor_licenca_padrao = None
 
+    # Pedido do Silvan (2026-09-10): valor anual padrão, INDEPENDENTE do
+    # mensal acima (não é calculado como desconto) - ver
+    # PlataformaConfig.valor_licenca_anual_padrao em models.py.
+    valor_anual_str = request.form.get("valor_licenca_anual_padrao", "").strip().replace(",", ".")
+    if valor_anual_str:
+        try:
+            config.valor_licenca_anual_padrao = float(valor_anual_str)
+        except ValueError:
+            flash("Valor anual padrão inválido.", "danger")
+            return redirect(url_for("dono.dashboard"))
+    else:
+        config.valor_licenca_anual_padrao = None
+
     db.session.commit()
     flash("Configuração da licença de médico atualizada.", "success")
     return redirect(url_for("dono.dashboard"))
@@ -322,6 +337,19 @@ def usuario_licenca_editar(usuario_id):
     else:
         usuario.valor_licenca_mensal = None
 
+    # Pedido do Silvan (2026-09-10): valor anual individual deste médico -
+    # mesmo padrão do mensal acima (nasce do padrão global, dono pode
+    # reajustar por médico). Ver Usuario.valor_licenca_anual em models.py.
+    valor_anual_str = request.form.get("valor_licenca_anual", "").strip().replace(",", ".")
+    if valor_anual_str:
+        try:
+            usuario.valor_licenca_anual = float(valor_anual_str)
+        except ValueError:
+            flash("Valor anual inválido.", "danger")
+            return redirect(url_for("dono.usuarios"))
+    else:
+        usuario.valor_licenca_anual = None
+
     db.session.commit()
     flash(f"Valor da licença de '{usuario.nome}' atualizado.", "success")
     return redirect(url_for("dono.usuarios"))
@@ -444,6 +472,56 @@ def usuario_licenca_pagamento_cobrar(usuario_id, pagamento_id):
 
     db.session.commit()
     flash(f"Cobrança gerada para {usuario.nome} ({pagamento.mes.strftime('%m/%Y')}).", "success")
+    return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos/<int:pagamento_id>/cobrar-anual", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_pagamento_cobrar_anual(usuario_id, pagamento_id):
+    """Pedido do Silvan (2026-09-10, licença anual): mesma ideia de
+    usuario_licenca_pagamento_cobrar acima, só que cobrando o valor ANUAL
+    de uma vez (pagamento único via Checkout Pro, decisão do Silvan de não
+    usar assinatura recorrente por enquanto) - só faz sentido quando
+    `usuario.ciclo_licenca == "anual"` (o próprio médico escolhe isso em
+    "Minha licença", ver medico.licenca_escolher_ciclo). O link gerado
+    aparece aqui pro dono repassar, e também em "Minha licença" do médico.
+
+    `pagamento_id` é o LicencaPagamento do mês em que o ciclo anual
+    começa (normalmente o mês vigente, já existente via
+    garantir_meses_licenca) - ver docstring de
+    mercadopago_integration.criar_preferencia_pagamento_anual para o
+    porquê de usar esse registro como "âncora" da cobrança."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    pagamento = LicencaPagamento.query.get_or_404(pagamento_id)
+    if pagamento.usuario_id != usuario.id:
+        abort(404)
+    if usuario.ciclo_licenca != "anual":
+        flash(f"{usuario.nome} não está no ciclo de cobrança anual.", "danger")
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+    valor_anual = usuario.valor_licenca_anual
+    try:
+        criar_preferencia_pagamento_anual(pagamento, valor_anual)
+    except MercadoPagoNaoConfigurado:
+        flash(
+            "Mercado Pago ainda não está configurado nesta instalação "
+            "(defina MERCADOPAGO_ACCESS_TOKEN no .env).",
+            "danger",
+        )
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+    except ValueError as erro:
+        flash(str(erro), "danger")
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+    except Exception:
+        current_app.logger.exception(
+            "Falha ao criar cobrança anual no Mercado Pago para o pagamento %s.", pagamento.id
+        )
+        flash("Não foi possível gerar a cobrança agora - tente novamente em instantes.", "danger")
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+    db.session.commit()
+    flash(f"Cobrança anual gerada para {usuario.nome} (a partir de {pagamento.mes.strftime('%m/%Y')}).", "success")
     return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
 
 

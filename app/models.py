@@ -42,6 +42,13 @@ class PlataformaConfig(db.Model):
     # (decisão do Silvan: um único número, mais simples de manter).
     valor_licenca_padrao = db.Column(db.Numeric(10, 2))
     aviso_inadimplencia_meses = db.Column(db.Integer, nullable=False, default=2)
+    # Pedido do Silvan (2026-09-10): licença anual, como alternativa à
+    # mensal - valor INDEPENDENTE (não é um desconto calculado a partir do
+    # mensal), digitado à parte pelo dono. Nasce em branco (nenhum médico
+    # pode escolher "anual" até o dono definir um valor aqui) - ver
+    # Usuario.valor_licenca_anual/ciclo_licenca e o toggle em "Minha
+    # licença" (medico.minha_licenca / medico.licenca_escolher_ciclo).
+    valor_licenca_anual_padrao = db.Column(db.Numeric(10, 2))
 
     @classmethod
     def obter(cls):
@@ -172,6 +179,19 @@ class Usuario(db.Model, UserMixin):
     # decisão do Silvan: o padrão é global, o valor em si continua podendo
     # variar por médico.
     valor_licenca_mensal = db.Column(db.Numeric(10, 2))
+    # Pedido do Silvan (2026-09-10): o médico pode optar por pagar a
+    # licença ANUALMENTE em vez de mês a mês - "mensal" continua sendo o
+    # padrão de todo mundo (default aqui). A troca é feita pelo próprio
+    # médico em "Minha licença" (ver medico.licenca_escolher_ciclo) e só é
+    # permitida quando não há pendência de meses ANTERIORES ao vigente -
+    # ver _pode_trocar_ciclo_licenca() logo abaixo.
+    ciclo_licenca = db.Column(db.String(10), nullable=False, default="mensal")
+    # Valor anual cobrado deste médico - mesmo padrão de valor_licenca_mensal
+    # (nasce a partir de PlataformaConfig.valor_licenca_anual_padrao, dono
+    # pode reajustar individualmente depois). Só é usado quando
+    # ciclo_licenca == "anual"; None enquanto o médico nunca optou por
+    # anual ou enquanto o dono não configurou um valor anual padrão.
+    valor_licenca_anual = db.Column(db.Numeric(10, 2))
 
     # CONTA ÚNICA do paciente: uma pessoa (um Usuario) pode ter VÁRIOS
     # cadastros de paciente - um por empresa que frequenta (ver
@@ -235,6 +255,24 @@ class Usuario(db.Model, UserMixin):
                 return True
 
         return se_venceu_trial
+
+    def pode_trocar_ciclo_licenca(self):
+        """Pedido do Silvan (2026-09-10): o médico só pode alternar entre
+        cobrança mensal e anual quando não há pendência de meses ANTERIORES
+        ao vigente - o mês atual em aberto não impede a troca (ele
+        simplesmente deixa de existir/é substituído pelo novo ciclo ao
+        trocar, ver medico.licenca_escolher_ciclo), mas um atraso de mês(es)
+        passado(s) trava a troca, pra evitar ficar sem saber que dívida
+        pertence a qual ciclo. Só se aplica a médico."""
+        if self.tipo != "medico":
+            return False
+        mes_atual = _primeiro_dia_do_mes(date.today())
+        pendencias_anteriores = LicencaPagamento.query.filter(
+            LicencaPagamento.usuario_id == self.id,
+            LicencaPagamento.pago.is_(False),
+            LicencaPagamento.mes < mes_atual,
+        ).count()
+        return pendencias_anteriores == 0
 
     @property
     def paciente(self):
@@ -476,6 +514,17 @@ class LicencaPagamento(db.Model):
     mp_status = db.Column(db.String(30))
     mp_init_point = db.Column(db.Text)
 
+    # Pedido do Silvan (2026-09-10, licença anual): True quando este mês foi
+    # quitado como parte de um pagamento ANUAL único (ver
+    # gerar_ciclo_anual_pago em app/models.py), não mês a mês - o valor
+    # gravado aqui já é o valor anual RATEADO (valor_licenca_anual / 12),
+    # só para exibição no calendário; o pagamento de verdade (link/registro
+    # no Mercado Pago) fica no PRIMEIRO mês do ciclo anual (mp_preference_id
+    # etc. só são preenchidos nele - os outros 11 meses do mesmo ciclo
+    # nascem "pago=True" direto, sem gateway próprio, ver
+    # routes_dono.usuario_licenca_pagamento_cobrar_anual).
+    origem_anual = db.Column(db.Boolean, nullable=False, default=False)
+
     usuario = db.relationship("Usuario", foreign_keys=[usuario_id])
 
 
@@ -518,6 +567,45 @@ def garantir_meses_licenca(usuario):
     if novos:
         db.session.add_all(novos)
     return novos
+
+
+def gerar_ciclo_anual_pago(usuario, mes_inicio, valor_anual):
+    """Pedido do Silvan (2026-09-10, licença anual): ao confirmar um
+    pagamento anual, cria/atualiza os 12 LicencaPagamento a partir de
+    `mes_inicio` (inclusive) já como "pago=True", com o valor anual
+    RATEADO em 12 (só para exibição no calendário mês a mês - ver
+    "Continua gerando 12 meses, mas todos já nascem pagos de uma vez",
+    decisão do Silvan) e origem_anual=True, para diferenciar de um mês
+    pago avulso na tela "Minha licença".
+
+    Não mexe no gateway de pagamento (mp_preference_id/mp_init_point/
+    mp_status) - quem chama (routes_dono.usuario_licenca_pagamento_
+    cobrar_anual) decide se/como preencher esses campos no PRIMEIRO mês
+    do ciclo, depois de chamar esta função. Não faz commit. Retorna a
+    lista dos 12 LicencaPagamento (novos ou já existentes, atualizados)."""
+    valor_rateado = (valor_anual / 12) if valor_anual else None
+    agora = datetime.utcnow()
+
+    existentes = {
+        p.mes: p
+        for p in LicencaPagamento.query.filter_by(usuario_id=usuario.id).all()
+    }
+
+    linhas = []
+    mes = _primeiro_dia_do_mes(mes_inicio)
+    for _ in range(12):
+        pagamento = existentes.get(mes)
+        if pagamento is None:
+            pagamento = LicencaPagamento(usuario_id=usuario.id, mes=mes)
+            db.session.add(pagamento)
+        pagamento.pago = True
+        pagamento.pago_em = agora
+        pagamento.valor = valor_rateado
+        pagamento.origem_anual = True
+        linhas.append(pagamento)
+        mes = _mes_seguinte(mes)
+
+    return linhas
 
 
 def _mes_anterior(d):

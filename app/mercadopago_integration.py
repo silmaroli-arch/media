@@ -106,6 +106,59 @@ def criar_preferencia_pagamento(pagamento):
     return dados.get("init_point")
 
 
+def criar_preferencia_pagamento_anual(pagamento, valor_anual):
+    """Pedido do Silvan (2026-09-10, licença anual): mesmo mecanismo de
+    `criar_preferencia_pagamento` acima (Checkout Pro, pagamento ÚNICO -
+    decisão do Silvan de NÃO usar assinatura recorrente/Preapproval por
+    enquanto), só que cobrando o valor ANUAL de uma vez.
+
+    `pagamento` é o LicencaPagamento do PRIMEIRO mês do ciclo anual (mesmo
+    padrão de "fotografia"/registro único usado pela cobrança mensal) -
+    é nele que gravamos mp_preference_id/mp_init_point/mp_status, e é a
+    partir do `external_reference` no formato "licenca_anual:<id>"
+    (diferente de "licenca_pagamento:<id>", usado pela cobrança mensal)
+    que o webhook (routes_pagamentos_webhook.py) sabe que precisa chamar
+    app.models.gerar_ciclo_anual_pago para os 12 meses, em vez de marcar
+    só este registro como pago.
+
+    Levanta MercadoPagoNaoConfigurado/ValueError nas mesmas condições da
+    função acima. Não faz commit, quem chama decide quando salvar. Devolve
+    a URL de pagamento (init_point)."""
+    if not valor_anual or float(valor_anual) <= 0:
+        raise ValueError(
+            "Defina o valor anual (deste médico ou o padrão da plataforma) antes de gerar a cobrança."
+        )
+
+    usuario = pagamento.usuario
+    payload = {
+        "items": [{
+            "title": f"Licença MedIA (anual) - {usuario.nome} - a partir de {pagamento.mes.strftime('%m/%Y')}",
+            "quantity": 1,
+            "currency_id": "BRL",
+            "unit_price": float(valor_anual),
+        }],
+        "external_reference": f"licenca_anual:{pagamento.id}",
+        "notification_url": url_for("pagamentos_webhook.mercadopago_webhook", _external=True),
+    }
+    if usuario.email:
+        payload["payer"] = {"email": usuario.email}
+
+    resposta = requests.post(
+        f"{MP_API_BASE}/checkout/preferences",
+        json=payload,
+        headers={"Authorization": f"Bearer {_access_token()}"},
+        timeout=15,
+    )
+    resposta.raise_for_status()
+    dados = resposta.json()
+
+    pagamento.mp_preference_id = dados.get("id")
+    pagamento.mp_status = "pendente"
+    pagamento.mp_init_point = dados.get("init_point")
+
+    return dados.get("init_point")
+
+
 def _assinatura_valida(data_id, request_id):
     """Confere o cabeçalho X-Signature (HMAC-SHA256 sobre um "manifest" com
     id/request-id/timestamp, usando o secret configurado em Suas

@@ -17,7 +17,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from app.extensions import db
 from app.mercadopago_integration import _assinatura_valida, consultar_pagamento
-from app.models import LicencaPagamento
+from app.models import LicencaPagamento, gerar_ciclo_anual_pago
 
 pagamentos_webhook_bp = Blueprint("pagamentos_webhook", __name__, url_prefix="/webhooks")
 
@@ -44,6 +44,34 @@ def mercadopago_webhook():
         return jsonify({"status": "erro ao consultar"}), 200
 
     referencia = pagamento_mp.get("external_reference") or ""
+
+    # Pedido do Silvan (2026-09-10, licença anual): "licenca_anual:<id>"
+    # identifica o LicencaPagamento do PRIMEIRO mês do ciclo anual (ver
+    # mercadopago_integration.criar_preferencia_pagamento_anual) - ao
+    # confirmar, marca os 12 meses a partir dali como pagos de uma vez
+    # (gerar_ciclo_anual_pago), em vez de só este registro.
+    if referencia.startswith("licenca_anual:"):
+        try:
+            pagamento_id = int(referencia.split(":", 1)[1])
+        except ValueError:
+            return jsonify({"status": "referencia invalida"}), 200
+
+        pagamento = LicencaPagamento.query.get(pagamento_id)
+        if not pagamento:
+            return jsonify({"status": "pagamento nao encontrado"}), 200
+
+        status_mp = pagamento_mp.get("status")
+        pagamento.mp_payment_id = str(pagamento_mp.get("id")) if pagamento_mp.get("id") is not None else None
+        pagamento.mp_status = status_mp
+        if status_mp == "approved" and not pagamento.pago:
+            valor_anual = pagamento.usuario.valor_licenca_anual
+            gerar_ciclo_anual_pago(pagamento.usuario, pagamento.mes, valor_anual)
+            # gerar_ciclo_anual_pago recria/reaproveita a linha deste mesmo
+            # mês - os campos mp_* já setados acima continuam nela (mesma
+            # instância, ver "existentes.get(mes)" em gerar_ciclo_anual_pago).
+        db.session.commit()
+        return jsonify({"status": "ok"}), 200
+
     if not referencia.startswith("licenca_pagamento:"):
         return jsonify({"status": "referencia desconhecida, ignorado"}), 200
 

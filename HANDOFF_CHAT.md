@@ -608,6 +608,92 @@ mensagem e o botão de volta, e os dois links de "Exames & preparo" no HTML apon
 para URLs diferentes (`/equipe/preparo-modelos` no item desktop,
 `/equipe/preparo-modelos/aviso-mobile` no item mobile), como esperado.
 
+### Licença anual, como alternativa à mensal (mesma rodada)
+
+Pedido do Silvan (2026-09-10, mesmo dia): "Vamos colocar o valor da licença anual. O
+usuário poderá optar em pagar anualmente ou mensalmente." Decisões tomadas com o
+Silvan antes de implementar: (1) o valor anual é **independente** do mensal (não é
+calculado como desconto - o dono digita o valor à parte); (2) ao pagar anual, o
+calendário mensal continua existindo (12 registros), só que todos nascem "pago=True"
+de uma vez, com o valor anual **rateado** em 12 (só para exibição, ver
+`origem_anual`); (3) o **próprio médico** escolhe o ciclo (mensal/anual) na tela
+"Minha licença", sem depender do dono; (4) a cobrança real no Mercado Pago é
+**pagamento único** (Checkout Pro, mesmo mecanismo já usado no mensal - decisão
+explícita do Silvan de NÃO usar assinatura recorrente/Preapproval por enquanto); (5)
+o médico só pode trocar de ciclo (em qualquer direção) quando **não há mês anterior
+ao vigente em aberto** - o mês vigente em aberto não atrapalha a troca; (6) ao
+escolher "anual", o **próprio médico gera a cobrança na hora** (autoatendimento -
+diferente do fluxo mensal, onde é sempre o dono quem gera a cobrança).
+
+**Modelo de dados** (`app/models.py`, migração em `migrar_banco.py`):
+- `PlataformaConfig.valor_licenca_anual_padrao` - valor anual padrão global,
+  configurado pelo dono em Configurações (ao lado do valor mensal padrão já
+  existente). Em branco até o dono preencher (nenhum médico pode escolher "anual"
+  enquanto estiver vazio, nem globalmente nem individualmente).
+- `Usuario.ciclo_licenca` (`"mensal"` por padrão, ou `"anual"`) e
+  `Usuario.valor_licenca_anual` (mesmo padrão de "fotografia" de
+  `valor_licenca_mensal` - nasce do padrão global no momento em que o médico escolhe
+  "anual" pela primeira vez, dono pode reajustar depois em `/dono/usuarios`).
+- `Usuario.pode_trocar_ciclo_licenca()` - True quando não há `LicencaPagamento` não
+  pago com `mes` anterior ao mês vigente.
+- `LicencaPagamento.origem_anual` (boolean) - True nos 12 meses gerados por um
+  pagamento anual confirmado, para diferenciar de um mês pago avulso no calendário.
+- `gerar_ciclo_anual_pago(usuario, mes_inicio, valor_anual)` - cria/atualiza os 12
+  `LicencaPagamento` a partir de `mes_inicio` como pagos, com o valor rateado.
+
+**Fluxo de cobrança** (mesmo padrão "fotografia"/pagamento único já usado no
+mensal, ver `app/mercadopago_integration.py`):
+- `criar_preferencia_pagamento_anual(pagamento, valor_anual)` - gera uma preferência
+  Checkout Pro cobrando o valor anual de uma vez, usando o `LicencaPagamento` do
+  PRIMEIRO mês do ciclo (o mês vigente) como "âncora" (mesmo registro que guarda
+  `mp_preference_id`/`mp_init_point`) - `external_reference` no formato
+  `"licenca_anual:<id>"` (diferente de `"licenca_pagamento:<id>"` do mensal), para o
+  webhook (`app/routes_pagamentos_webhook.py`) saber que precisa chamar
+  `gerar_ciclo_anual_pago` para os 12 meses ao confirmar, em vez de marcar só aquele
+  registro como pago.
+- Nova rota do médico: `POST /equipe/minha-licenca/ciclo`
+  (`medico.licenca_escolher_ciclo`) - troca `ciclo_licenca` (com a checagem de
+  `pode_trocar_ciclo_licenca()`) e, ao trocar PARA "anual", já chama
+  `criar_preferencia_pagamento_anual` na hora (autoatendimento) - se o Mercado Pago
+  não estiver configurado ou a chamada falhar, o ciclo ainda assim muda para
+  "anual" (com aviso), e o link pode ser gerado depois reabrindo a tela, ou pelo
+  dono (ver abaixo).
+- Nova rota do dono (fallback, caso o médico não consiga gerar sozinho): `POST
+  /dono/usuarios/<id>/licenca/pagamentos/<id>/cobrar-anual`
+  (`dono.usuario_licenca_pagamento_cobrar_anual`), só habilitada quando
+  `usuario.ciclo_licenca == "anual"`.
+
+**Telas atualizadas**:
+- `medico/minha_licenca.html`: mostra o ciclo atual, um botão para trocar (ou o
+  motivo de não poder trocar, se houver pendência anterior), o valor anual/mensal
+  conforme o ciclo, um card de "Pagamento anual pendente" com o botão "Pagar agora"
+  quando aplicável, e um badge "Anual" nos meses do calendário pagos via ciclo
+  anual.
+- `dono/dashboard.html` (aba Configurações, print enviado pelo Silvan): novo campo
+  "Valor anual padrão (R$)" ao lado do "Valor mensal padrão" já existente.
+- `dono/usuarios.html`: novo campo de valor anual individual (ao lado do mensal) e
+  um badge mostrando o ciclo de cada médico.
+- `dono/usuario_licenca_pagamentos.html`: badge do ciclo do médico, botão "Gerar
+  cobrança anual" (em vez do mensal) quando o médico está em ciclo anual, e o mesmo
+  badge "Anual" nos meses pagos por essa via.
+
+Testes rodados (scripts ad-hoc criados e apagados nesta rodada, sem depender de
+credenciais reais da Meta/Mercado Pago): confirmam que (1) o médico consegue trocar
+para anual e o valor nasce do padrão global; (2) sem Mercado Pago configurado, a
+troca de ciclo acontece mesmo assim, só com aviso; (3) a troca de volta para mensal
+funciona sem pendência; (4) `gerar_ciclo_anual_pago` (simulando o webhook) marca
+corretamente os 12 meses como pagos, com `origem_anual=True` e o valor rateado; (5)
+com um mês ANTERIOR ao vigente em aberto, a troca de ciclo é recusada com a
+mensagem correta, e `ciclo_licenca` não muda. Também rodadas as suítes já
+existentes de licença (`test_licenca_medico.py`,
+`test_licenca_pagamento_valor_e_gateway.py`) - todas passando, sem regressão no
+fluxo mensal. `test_smoke.py` continua com a mesma falha pré-existente já
+documentada (`colonoscopia_id`, linha ~1298), não relacionada a esta mudança.
+
+**Pendência para o Silvan**: configurar o valor anual padrão em
+Configurações (aba do print que você mandou) antes que qualquer médico consiga ver
+a opção de cobrança anual em "Minha licença" - hoje esse campo nasce vazio.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

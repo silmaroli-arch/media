@@ -2,13 +2,23 @@
 {% block titulo %}Calendário de pagamento{% endblock %}
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h3 class="mb-0">Calendário de pagamento — {{ usuario.nome }}</h3>
+  <h3 class="mb-0">
+    Calendário de pagamento — {{ usuario.nome }}
+    <span class="badge bg-{{ 'info text-dark' if usuario.ciclo_licenca == 'anual' else 'light text-dark border' }} align-middle">
+      ciclo {{ usuario.ciclo_licenca }}
+    </span>
+  </h3>
   <a href="{{ url_for('dono.usuarios') }}" class="btn btn-link">Voltar</a>
 </div>
 
 <p class="text-muted small">
   Marque cada mês como pago manualmente (Pix fora do sistema, acordo informal etc.) ou gere uma cobrança real
   pelo Mercado Pago — o mês é marcado como pago sozinho assim que o pagamento é confirmado.
+  {% if usuario.ciclo_licenca == "anual" %}
+    O médico está no ciclo <strong>anual</strong> (escolha feita por ele mesmo em "Minha licença") — ele
+    normalmente já gera a própria cobrança anual por lá; o botão "Gerar cobrança anual" abaixo é só uma
+    alternativa, caso ele não consiga gerar sozinho.
+  {% endif %}
 </p>
 
 {% set nomes_mes = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
@@ -33,6 +43,7 @@
           <td>
             {% if p.pago %}
               <span class="badge bg-success">Pago</span>
+              {% if p.origem_anual %}<span class="badge bg-info text-dark ms-1">Anual</span>{% endif %}
               {% if p.pago_em %}<span class="text-muted small ms-1">em {{ p.pago_em.strftime('%d/%m/%Y') }}</span>{% endif %}
             {% else %}
               <span class="badge bg-warning text-dark">Não pago</span>
@@ -55,11 +66,19 @@
               </button>
             </form>
             {% if not p.pago %}
-            <form method="post" action="{{ url_for('dono.usuario_licenca_pagamento_cobrar', usuario_id=usuario.id, pagamento_id=p.id) }}" class="d-inline">
-              <button type="submit" class="btn btn-sm btn-outline-primary" title="Gera um link de pagamento real via Mercado Pago">
-                {{ 'Gerar nova cobrança' if p.mp_preference_id else 'Gerar cobrança (Mercado Pago)' }}
-              </button>
-            </form>
+              {% if usuario.ciclo_licenca == "anual" %}
+              <form method="post" action="{{ url_for('dono.usuario_licenca_pagamento_cobrar_anual', usuario_id=usuario.id, pagamento_id=p.id) }}" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-outline-info" title="Gera um link de pagamento ANUAL (valor cheio, 12 meses de uma vez) via Mercado Pago">
+                  {{ 'Gerar nova cobrança anual' if p.mp_preference_id else 'Gerar cobrança anual (Mercado Pago)' }}
+                </button>
+              </form>
+              {% else %}
+              <form method="post" action="{{ url_for('dono.usuario_licenca_pagamento_cobrar', usuario_id=usuario.id, pagamento_id=p.id) }}" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-outline-primary" title="Gera um link de pagamento real via Mercado Pago">
+                  {{ 'Gerar nova cobrança' if p.mp_preference_id else 'Gerar cobrança (Mercado Pago)' }}
+                </button>
+              </form>
+              {% endif %}
             {% endif %}
           </td>
         </tr>

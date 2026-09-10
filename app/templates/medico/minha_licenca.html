@@ -22,11 +22,20 @@
       {% endif %}
     </p>
     <p class="mb-0">
-      Valor mensal:
-      {% if current_user.valor_licenca_mensal is not none %}
-        <strong>R$ {{ "%.2f"|format(current_user.valor_licenca_mensal) }}/mês</strong>
+      {% if ciclo_licenca == "anual" %}
+        Valor anual:
+        {% if current_user.valor_licenca_anual is not none %}
+          <strong>R$ {{ "%.2f"|format(current_user.valor_licenca_anual) }}/ano</strong>
+        {% else %}
+          <span class="text-muted">ainda não definido</span>
+        {% endif %}
       {% else %}
-        <span class="text-muted">ainda não definido</span>
+        Valor mensal:
+        {% if current_user.valor_licenca_mensal is not none %}
+          <strong>R$ {{ "%.2f"|format(current_user.valor_licenca_mensal) }}/mês</strong>
+        {% else %}
+          <span class="text-muted">ainda não definido</span>
+        {% endif %}
       {% endif %}
     </p>
   </div>
@@ -41,6 +50,62 @@
     liberado); bloquear o acesso é sempre uma decisão manual da equipe do MedIA.
   {% endif %}
 </p>
+
+{# Pedido do Silvan (2026-09-10): o médico escolhe, sozinho, entre cobrança
+   mensal (padrão) e anual (valor independente, configurado pelo
+   administrador) - ver medico.licenca_escolher_ciclo. Só libera a troca
+   quando não há pendência de meses ANTERIORES ao vigente (ver
+   Usuario.pode_trocar_ciclo_licenca) - o mês atual em aberto não
+   atrapalha. #}
+<div class="card mt-3" style="max-width: 480px;">
+  <div class="card-body">
+    <h5 class="card-title">Ciclo de cobrança</h5>
+    <p class="mb-2">
+      Atual:
+      <span class="badge bg-primary">{{ "Anual" if ciclo_licenca == "anual" else "Mensal" }}</span>
+    </p>
+
+    {% if not pode_trocar_ciclo %}
+      <p class="text-muted small mb-0">
+        Você tem mês(es) anterior(es) em aberto — regularize o pagamento pendente antes de trocar o
+        ciclo de cobrança.
+      </p>
+    {% elif ciclo_licenca == "anual" %}
+      <form method="post" action="{{ url_for('medico.licenca_escolher_ciclo') }}">
+        <input type="hidden" name="ciclo" value="mensal">
+        <button type="submit" class="btn btn-outline-secondary btn-sm">Mudar para cobrança mensal</button>
+      </form>
+    {% else %}
+      {% if valor_anual_disponivel %}
+        <form method="post" action="{{ url_for('medico.licenca_escolher_ciclo') }}">
+          <input type="hidden" name="ciclo" value="anual">
+          <button type="submit" class="btn btn-outline-primary btn-sm">
+            Mudar para cobrança anual (R$ {{ "%.2f"|format(valor_anual_disponivel) }}/ano)
+          </button>
+        </form>
+      {% else %}
+        <p class="text-muted small mb-0">
+          A cobrança anual ainda não está disponível — o administrador da plataforma precisa configurar
+          um valor anual antes.
+        </p>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{% if ciclo_licenca == "anual" and pagamento_mes_atual and not pagamento_mes_atual.pago %}
+  <div class="alert alert-warning d-flex justify-content-between align-items-center mt-3" style="max-width: 480px;">
+    <div>
+      Pagamento anual pendente
+      {% if current_user.valor_licenca_anual is not none %}
+        (R$ {{ "%.2f"|format(current_user.valor_licenca_anual) }})
+      {% endif %}.
+    </div>
+    {% if pagamento_mes_atual.mp_init_point %}
+      <a href="{{ pagamento_mes_atual.mp_init_point }}" target="_blank" rel="noopener" class="btn btn-sm btn-primary ms-2">Pagar agora</a>
+    {% endif %}
+  </div>
+{% endif %}
 
 {% set nomes_mes = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
 <h5 class="mt-4 mb-3">Calendário de pagamento</h5>
@@ -64,6 +129,7 @@
           <td>
             {% if p.pago %}
               <span class="badge bg-success">Pago</span>
+              {% if p.origem_anual %}<span class="badge bg-info text-dark ms-1">Anual</span>{% endif %}
               {% if p.pago_em %}<span class="text-muted small ms-1">em {{ p.pago_em.strftime('%d/%m/%Y') }}</span>{% endif %}
             {% else %}
               <span class="badge bg-warning text-dark">Não pago</span>

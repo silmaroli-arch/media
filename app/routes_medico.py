@@ -4,7 +4,7 @@ import os
 import re
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import wraps
 
 from flask import (
@@ -22,9 +22,11 @@ from app.models import (
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, PushSubscription, LicencaPagamento, garantir_meses_licenca,
+    PlataformaConfig,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto,
 )
+from app.mercadopago_integration import criar_preferencia_pagamento_anual, MercadoPagoNaoConfigurado
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
     empresa_atual, empresas_do_usuario, selecionar_empresa,
@@ -2682,6 +2684,15 @@ def minha_licenca():
         .order_by(LicencaPagamento.mes.desc())
         .all()
     )
+    # Pedido do Silvan (2026-09-10, licença anual): o mês vigente é o
+    # "âncora" do ciclo anual (ver medico.licenca_escolher_ciclo) - achar
+    # ele aqui pra saber se já existe um pagamento anual pendente
+    # (mp_init_point preenchido, ainda não pago) a oferecer no botão
+    # "Pagar agora (anual)".
+    mes_atual = _primeiro_dia_do_mes_licenca(date.today())
+    pagamento_mes_atual = next((p for p in pagamentos if p.mes == mes_atual), None)
+    valor_anual_disponivel = current_user.valor_licenca_anual or PlataformaConfig.obter().valor_licenca_anual_padrao
+
     return render_template(
         "medico/minha_licenca.html",
         licenca_status=current_user.licenca_status,
@@ -2689,7 +2700,119 @@ def minha_licenca():
         licenca_cor=cor,
         licenca_vencimento=current_user.licenca_vencimento,
         pagamentos=pagamentos,
+        ciclo_licenca=current_user.ciclo_licenca,
+        pode_trocar_ciclo=current_user.pode_trocar_ciclo_licenca(),
+        valor_anual_disponivel=valor_anual_disponivel,
+        pagamento_mes_atual=pagamento_mes_atual,
     )
+
+
+def _primeiro_dia_do_mes_licenca(d):
+    """Mesma regra de app.models._primeiro_dia_do_mes (não exportada de
+    lá) - normaliza uma data pro dia 1 do mês, pra comparar com
+    LicencaPagamento.mes."""
+    return date(d.year, d.month, 1)
+
+
+@medico_bp.route("/minha-licenca/ciclo", methods=["POST"])
+@login_required
+@staff_required
+def licenca_escolher_ciclo():
+    """Pedido do Silvan (2026-09-10): o médico escolhe, sozinho, entre
+    cobrança MENSAL (padrão) e ANUAL (valor independente, configurado pelo
+    dono - ver PlataformaConfig.valor_licenca_anual_padrao/
+    Usuario.valor_licenca_anual). Só permite a troca quando não há
+    pendência de meses ANTERIORES ao vigente (ver
+    Usuario.pode_trocar_ciclo_licenca) - o mês atual em aberto não
+    atrapalha.
+
+    Ao trocar PARA "anual", já gera a cobrança real no Mercado Pago na
+    hora (autoatendimento - decisão do Silvan de não depender do dono
+    clicar em nada, diferente do fluxo mensal onde é sempre o dono quem
+    gera a cobrança) - se a geração falhar (Mercado Pago não configurado,
+    etc.), o ciclo ainda assim muda para "anual", só o link de pagamento
+    fica pendente (o dono pode gerar depois em /dono/usuarios, ou o
+    médico tenta de novo mais tarde reabrindo esta tela - ver o botão
+    "Gerar cobrança" condicional no template)."""
+    if not eh_medico():
+        flash("Essa tela é só para contas de médico.", "warning")
+        return redirect(url_for("medico.dashboard"))
+
+    novo_ciclo = request.form.get("ciclo")
+    if novo_ciclo not in ("mensal", "anual"):
+        flash("Escolha um ciclo de cobrança válido.", "danger")
+        return redirect(url_for("medico.minha_licenca"))
+
+    if novo_ciclo == current_user.ciclo_licenca:
+        return redirect(url_for("medico.minha_licenca"))
+
+    if not current_user.pode_trocar_ciclo_licenca():
+        flash(
+            "Você tem meses anteriores em aberto - regularize o pagamento pendente antes de "
+            "trocar o ciclo de cobrança.",
+            "danger",
+        )
+        return redirect(url_for("medico.minha_licenca"))
+
+    if novo_ciclo == "anual":
+        valor_anual = current_user.valor_licenca_anual or PlataformaConfig.obter().valor_licenca_anual_padrao
+        if not valor_anual:
+            flash(
+                "Ainda não há um valor de licença anual configurado - fale com o administrador da "
+                "plataforma antes de escolher essa opção.",
+                "danger",
+            )
+            return redirect(url_for("medico.minha_licenca"))
+
+        if current_user.valor_licenca_anual is None:
+            # Mesma lógica de "fotografia" já usada pra valor_licenca_mensal
+            # no cadastro: trava o valor individual do médico no valor
+            # padrão vigente, sem depender do padrão global mudar depois.
+            current_user.valor_licenca_anual = valor_anual
+
+        current_user.ciclo_licenca = "anual"
+        db.session.commit()
+
+        garantir_meses_licenca(current_user)
+        db.session.commit()
+        mes_atual = _primeiro_dia_do_mes_licenca(date.today())
+        pagamento_mes_atual = LicencaPagamento.query.filter_by(
+            usuario_id=current_user.id, mes=mes_atual
+        ).first()
+
+        try:
+            criar_preferencia_pagamento_anual(pagamento_mes_atual, valor_anual)
+            db.session.commit()
+            flash(
+                "Ciclo de cobrança alterado para anual. Use o botão \"Pagar agora\" abaixo para "
+                "concluir o pagamento no Mercado Pago.",
+                "success",
+            )
+        except MercadoPagoNaoConfigurado:
+            flash(
+                "Ciclo alterado para anual, mas o Mercado Pago ainda não está configurado nesta "
+                "instalação - fale com o administrador para gerar o link de pagamento.",
+                "warning",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Falha ao criar cobrança anual no Mercado Pago para o usuário %s.", current_user.id
+            )
+            flash(
+                "Ciclo alterado para anual, mas não foi possível gerar o link de pagamento agora - "
+                "tente novamente reabrindo esta tela.",
+                "warning",
+            )
+        return redirect(url_for("medico.minha_licenca"))
+
+    # novo_ciclo == "mensal": só muda a preferência - o calendário mensal
+    # já existente continua funcionando exatamente como antes (nenhum mês
+    # precisa ser desfeito; se algum mês futuro já tivesse sido marcado
+    # como pago por um ciclo anual anterior, ele continua pago).
+    current_user.ciclo_licenca = "mensal"
+    db.session.commit()
+    flash("Ciclo de cobrança alterado para mensal.", "success")
+    return redirect(url_for("medico.minha_licenca"))
 
 
 class PacienteMedicoConflitanteError(Exception):
