@@ -545,6 +545,18 @@ credenciais reais da Meta — todos passando. `test_smoke.py` continua com a mes
 falha pré-existente já documentada (`colonoscopia_id`, linha ~1298), não relacionada
 a esta mudança.
 
+### Atalho "Agendar exame" no menu lateral (mesma rodada)
+
+Pedido do Silvan (2026-09-10, mesmo dia, com print do menu): faltava um jeito direto
+de chegar em "Novo agendamento" pelo menu — antes só se chegava lá pelo botão dentro
+do Painel ("agenda completa"). Adicionado item **"Agendar exame"** (ícone
+`bi-calendar-plus`) em `app/templates/base.html`, logo abaixo de "Pacientes" e acima
+de "Meus exames agendados" — aponta para a rota já existente `medico.agenda_novo`
+(a mesma que ganhou o aviso de WhatsApp acima), sem nenhuma mudança de backend.
+Segue o mesmo padrão dos outros itens (fica oculto no menu reduzido do celular do
+médico, `oculto_no_celular_do_medico`, igual a "Pacientes" e "Exames & preparo").
+Confirmado manualmente que o link aparece e aponta pra URL certa.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

@@ -161,6 +161,16 @@
            link no menu. #}
       </li>
 
+      {# Pedido do Silvan (2026-09-10): atalho direto no menu para criar um
+         novo agendamento — antes só se chegava em medico.agenda_novo pelo
+         botão dentro do Painel ("agenda completa"); a rota em si não
+         mudou, só ganhou este link fixo logo abaixo de "Pacientes". #}
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint == 'medico.agenda_novo' %}active{% endif %}" href="{{ url_for('medico.agenda_novo') }}">
+          <i class="bi bi-calendar-plus me-2"></i>Agendar exame
+        </a>
+      </li>
+
       <li class="nav-item mb-1">
         <a class="nav-link {% if request.endpoint == 'medico.medico_agenda_pessoal' %}active{% endif %}" href="{{ url_for('medico.medico_agenda_pessoal') }}">
           <i class="bi bi-clipboard2-pulse me-2"></i>Meus exames agendados
