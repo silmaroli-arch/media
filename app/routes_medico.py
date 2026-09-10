@@ -36,7 +36,7 @@ from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
 from app.ia_preparo import responder_com_ia
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.custo_ia import registrar_chamada_ia
-from app.whatsapp_envio import enviar_boas_vindas_whatsapp
+from app.whatsapp_envio import enviar_boas_vindas_whatsapp, enviar_preparo_cadastrado_whatsapp
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -1715,6 +1715,15 @@ def preparo_modelos_novo():
         db.session.add(exame)
         db.session.commit()
 
+        # Pedido do Silvan (2026-09-10): avisa o médico, no próprio
+        # WhatsApp, que já pode testar - toda vez que cadastra um preparo
+        # (não só no primeiro), decisão do Silvan. Só quando quem cadastra
+        # é o PRÓPRIO médico (eh_medico()) - se foi o dono/secretária quem
+        # cadastrou em nome de um médico da equipe, não faz sentido mandar
+        # essa mensagem pro médico sem ele ter feito nada agora.
+        if eh_medico():
+            enviar_preparo_cadastrado_whatsapp(current_user)
+
         flash("Modelo de preparo cadastrado com sucesso — o exame correspondente também foi criado.", "success")
         if wizard:
             return redirect(url_for("medico.primeiros_passos"))
@@ -2641,12 +2650,21 @@ def minha_licenca():
     )
 
 
-def _paciente_teste_do_medico(medico):
+def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
     """Get-or-create do Paciente sintético usado como âncora técnica das
     perguntas de teste deste médico (ver Paciente.eh_teste e
     medico.testar_ia) - um por médico, criado sob demanda na primeira vez
-    que ele testa a IA. Localizado por (cadastrado_por_id, eh_teste), não
-    mais pelo CPF - ver abaixo.
+    que ele testa a IA (ou já no cadastro dele, ver abaixo). Localizado
+    por (cadastrado_por_id, eh_teste), não mais pelo CPF - ver abaixo.
+
+    `enviar_boas_vindas=False` (pedido do Silvan, 2026-09-10): usado só
+    por auth.cadastro, que já manda a mensagem de boas-vindas ele mesmo
+    (com um aviso extra pedindo pra cadastrar um preparo antes de testar,
+    ver enviar_boas_vindas_whatsapp) - evita mandar a mensagem em
+    DOBRO (uma sem aviso, daqui de dentro, e outra com aviso, de lá).
+    Qualquer outro chamador (ex.: medico.testar_ia, pra médicos
+    cadastrados antes desta mudança que ainda não têm paciente de teste)
+    continua com o comportamento de sempre.
 
     Pedido do Silvan (2026-09-06): usa o TELEFONE do próprio médico
     (Usuario.telefone, informado no cadastro dele) - assim, na primeira
@@ -2674,41 +2692,47 @@ def _paciente_teste_do_medico(medico):
     fica indisponível nesse caso raro, mas a tela "Testar IA" continua ok.
 
     Cuidado com pacientes de teste ÓRFÃOS (Silvan encontrou isso na prática,
-    2026-09-10): se o médico recadastra a própria conta (ex.: apagou e
-    criou de novo), o Usuario.id muda, e o paciente de teste antigo (preso
-    ao id antigo, que pode nem existir mais) vira órfão - ele CONTINUA
-    ocupando o CPF real do médico (é o mesmo CPF, a pessoa é a mesma).
-    Sem tratar esse caso à parte, o cadastro novo bateria nesse órfão como
-    se fosse "outro paciente de verdade" e cairia pro CPF sintético
-    (bug real, visto em produção: depois de um recadastro, nem o CPF
-    reconhecia mais pelo WhatsApp). Por isso, quando o conflito de CPF é
-    com outro Paciente que também é eh_teste=True, REAPROVEITA esse
-    registro (realoca pro cadastrado_por_id atual) em vez de tratá-lo como
-    conflito de terceiro - evita acumular um paciente de teste órfão por
-    recadastro."""
+    2026-09-10, inclusive depois de recadastrar VÁRIAS vezes a mesma
+    conta): cada vez que o médico recadastra a própria conta (ex.: apaga e
+    cria de novo), o Usuario.id muda, e o paciente de teste anterior (preso
+    ao cadastrado_por_id antigo) vira órfão - ele CONTINUA ocupando o CPF
+    real do médico (é a mesma pessoa, mesmo CPF), então um recadastro atrás
+    do outro pode deixar VÁRIOS órfãos com esse mesmo CPF. Sem tratar isso,
+    o cadastro atual bateria em algum desses órfãos como se fosse "outro
+    paciente de verdade" e cairia pro CPF sintético (bug real, visto em
+    produção: depois de recadastrar, nem o CPF era mais reconhecido pelo
+    WhatsApp).
+
+    Em vez de tentar migrar o histórico (Agendamento/ChatMensagem/etc.) de
+    um órfão para o registro atual - arriscado, um por um -, a solução é
+    mais simples: qualquer OUTRO Paciente com eh_teste=True que esteja
+    ocupando o CPF real do médico tem esse CPF liberado (devolvido pro
+    próprio CPF sintético dele, TESTE-IA-<id antigo>) antes de decidir o
+    CPF do registro atual - assim o CPF real do médico fica livre pro
+    cadastrado_por_id de agora, não importa quantos órfãos existam. Só
+    conflitos com um Paciente de VERDADE (eh_teste=False) continuam caindo
+    pro CPF sintético do médico atual, para não desfazer o cadastro de
+    alguém real."""
     paciente = Paciente.query.filter_by(cadastrado_por_id=medico.id, eh_teste=True).first()
 
     cpf_sintetico = f"TESTE-IA-{medico.id}"
     cpf_desejado = medico.cpf or cpf_sintetico
     if cpf_desejado != cpf_sintetico:
-        conflito_query = Paciente.query.filter(Paciente.cpf == cpf_desejado)
+        conflitos_query = Paciente.query.filter(Paciente.cpf == cpf_desejado)
         if paciente:
-            conflito_query = conflito_query.filter(Paciente.id != paciente.id)
-        conflito = conflito_query.first()
-        if conflito and conflito.eh_teste:
-            # Órfão de um recadastro anterior do mesmo médico (mesmo CPF) -
-            # reaproveita esse registro em vez de criar/cair pro sintético.
-            if paciente and paciente.id != conflito.id:
-                # Já existia um paciente de teste "correto" (cadastrado_por_id
-                # atual) E um órfão com o mesmo CPF - situação rara demais
-                # pra reconciliar automaticamente sem risco; mantém o atual e
-                # deixa o órfão de lado (nunca é escolhido por nenhuma busca
-                # daqui pra frente, some sozinho).
-                pass
+            conflitos_query = conflitos_query.filter(Paciente.id != paciente.id)
+        tem_conflito_de_verdade = False
+        for conflito in conflitos_query.all():
+            if conflito.eh_teste:
+                # Órfão de um recadastro anterior - libera o CPF real,
+                # devolvendo para um sintético baseado no PRÓPRIO id do
+                # Paciente (não do cadastrado_por_id, que pode colidir com
+                # o de outro órfão do mesmo médico antigo) - Paciente.id é
+                # sempre único, então nunca colide com outro sintético.
+                conflito.cpf = f"TESTE-IA-{conflito.id}"
             else:
-                paciente = conflito
-                paciente.cadastrado_por_id = medico.id
-        elif conflito:
+                tem_conflito_de_verdade = True
+        if tem_conflito_de_verdade:
             cpf_desejado = cpf_sintetico
 
     if paciente:
@@ -2735,8 +2759,10 @@ def _paciente_teste_do_medico(medico):
     db.session.commit()
     # Só na criação (não em reaproveitamentos futuros do mesmo cadastro de
     # teste) - mesmo comportamento de "boas-vindas uma vez só" que vale
-    # para o cadastro de paciente de verdade.
-    enviar_boas_vindas_whatsapp(paciente)
+    # para o cadastro de paciente de verdade. Ver docstring acima sobre
+    # `enviar_boas_vindas`.
+    if enviar_boas_vindas:
+        enviar_boas_vindas_whatsapp(paciente)
     return paciente
 
 

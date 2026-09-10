@@ -37,14 +37,23 @@ repositório, ver .env.example):
   aprovado usado para mandar a mensagem de boas-vindas quando um
   paciente é cadastrado (ver enviar_boas_vindas_whatsapp mais abaixo,
   chamada em app.routes_medico.pacientes_novo e
-  app.routes_auth.cadastro_paciente_global) - COM uma variável (o nome
-  do paciente). É a PRIMEIRA mensagem que a clínica manda a essa pessoa,
-  então está sempre fora da janela de 24h - sem este template
-  configurado, o envio é só pulado (nada quebra, mesmo padrão de
-  "falha aberta" do resto deste módulo); o Silvan precisa criar e
-  aprovar este template na Meta separadamente do de resposta (são dois
-  templates diferentes, cada mensagem iniciada pela clínica precisa do
-  seu próprio).
+  app.routes_auth.cadastro_paciente_global) - COM DUAS variáveis: {{1}}
+  o nome da pessoa, {{2}} um aviso extra que só o MÉDICO recebe no
+  próprio cadastro (pedido do Silvan, 2026-09-10 - avisando que ele
+  precisa cadastrar um modelo de preparo antes de testar); para um
+  paciente de verdade, {{2}} chega vazio. Se este template já estava
+  aprovado com só UMA variável (versão anterior a 2026-09-10), precisa
+  ser editado/reaprovado na Meta para aceitar a segunda. É a PRIMEIRA
+  mensagem que a clínica manda a essa pessoa, então está sempre fora da
+  janela de 24h - sem este template configurado, o envio é só pulado
+  (nada quebra, mesmo padrão de "falha aberta" do resto deste módulo).
+- WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO (opcional, pedido do
+  Silvan, 2026-09-10): nome do template aprovado usado para avisar o
+  médico, no próprio WhatsApp, que um modelo de preparo foi cadastrado e
+  ele já pode testar a IA (ver enviar_preparo_cadastrado_whatsapp mais
+  abaixo, chamada em app.routes_medico.preparo_modelos_novo) - COM uma
+  variável (o nome do médico). Também quase sempre fora da janela de
+  24h, e também opcional (sem ele, o envio é só pulado).
 - WHATSAPP_META_TEMPLATE_IDIOMA (opcional, padrão "pt_BR"): o código de
   idioma cadastrado junto com o template na aprovação.
 - WHATSAPP_META_API_VERSION (opcional, padrão "v22.0"): versão da Graph
@@ -163,7 +172,7 @@ def enviar_mensagem_whatsapp(telefone_destino, texto, content_variables=None, no
         return False
 
 
-def enviar_boas_vindas_whatsapp(paciente):
+def enviar_boas_vindas_whatsapp(paciente, aviso_extra=""):
     """Pedido do Silvan (2026-09-06): mandar uma mensagem de WhatsApp para
     o paciente assim que ele é cadastrado, para que ele já tenha o número
     da clínica salvo e saiba que pode mandar dúvidas por lá (ver
@@ -174,7 +183,19 @@ def enviar_boas_vindas_whatsapp(paciente):
     (cadastro feito pela equipe) e app.routes_auth.cadastro_paciente_global
     (autocadastro do próprio paciente) - e também em
     app.routes_medico._paciente_teste_do_medico, para o médico poder
-    testar esse mesmo fluxo no próprio WhatsApp (ver medico.testar_ia).
+    testar esse mesmo fluxo no próprio WhatsApp (ver medico.testar_ia), e
+    diretamente em auth.cadastro (pedido do Silvan, 2026-09-10: mandar
+    essa mensagem já no CADASTRO do médico, não só quando ele abre
+    "Testar IA" pela primeira vez).
+
+    `aviso_extra` (pedido do Silvan, 2026-09-10): texto adicional que
+    aparece só para o MÉDICO no momento do próprio cadastro (avisando que
+    ele precisa cadastrar um modelo de preparo antes de poder testar) -
+    fica em BRANCO para o paciente real, que não deveria ver esse aviso.
+    É a 2ª variável do MESMO template WHATSAPP_META_TEMPLATE_BOAS_VINDAS
+    (em vez de um template separado) - o template, ao ser (re)aprovado na
+    Meta, precisa ter duas variáveis no corpo: {{1}} o nome, {{2}} este
+    aviso extra (ou vazio).
 
     É sempre a PRIMEIRA mensagem trocada com esse número - nunca há uma
     janela de 24h aberta ainda -, então SEMPRE precisa do template
@@ -187,6 +208,38 @@ def enviar_boas_vindas_whatsapp(paciente):
     return enviar_mensagem_whatsapp(
         paciente.telefone,
         texto=f"Olá, {paciente.nome}! Este é o WhatsApp da clínica — salve este número para tirar dúvidas sobre o preparo dos seus exames.",
-        content_variables=[paciente.nome],
+        content_variables=[paciente.nome, aviso_extra],
         nome_template_env="WHATSAPP_META_TEMPLATE_BOAS_VINDAS",
+    )
+
+
+def enviar_preparo_cadastrado_whatsapp(medico):
+    """Pedido do Silvan (2026-09-10): avisar o médico, no PRÓPRIO
+    WhatsApp, assim que ele cadastra um modelo de preparo - "agora você já
+    pode testar fazendo uma pergunta" (ver medico.testar_ia). Chamada em
+    app.routes_medico.preparo_modelos_novo, uma vez a cada preparo
+    cadastrado (não só no primeiro - decisão do Silvan).
+
+    Vai para Usuario.telefone (o telefone do próprio médico, informado no
+    cadastro - mesmo número usado pelo paciente de teste dele, ver
+    routes_medico._paciente_teste_do_medico) - nunca para um paciente de
+    verdade, então não precisa (nem deve) da variável de aviso extra que
+    enviar_boas_vindas_whatsapp usa.
+
+    Mensagem iniciada pela clínica, quase sempre fora da janela de 24h (o
+    médico raramente vai ter mandado mensagem havia pouco) - por isso usa
+    seu PRÓPRIO template (WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO,
+    com uma variável: o nome do médico), separado do de boas-vindas. Sem
+    esse template configurado, o envio é só pulado (mesmo padrão de
+    "falha aberta" do resto deste módulo) - o cadastro do preparo em si
+    nunca falha por causa disso."""
+    return enviar_mensagem_whatsapp(
+        medico.telefone,
+        texto=(
+            f"Boa notícia, {medico.nome}! Seu modelo de preparo foi cadastrado. "
+            "Agora você já pode testar o assistente de IA fazendo uma pergunta de teste "
+            'em "Testar IA nos meus preparos".'
+        ),
+        content_variables=[medico.nome],
+        nome_template_env="WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO",
     )
