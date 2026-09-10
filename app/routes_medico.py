@@ -103,19 +103,22 @@ def _filtro_pacientes_da_empresa():
     dono pessoal (`Paciente.cadastrado_por_id`), mesmo padrão dos outros
     modelos (ver clinica_utils.filtro_escopo_atual()).
 
-    Nunca inclui o Paciente sintético "de teste" (ver Paciente.eh_teste e
-    routes_medico.testar_ia) - esse cadastro existe só como âncora técnica
-    das perguntas de teste do médico, e não deve aparecer em NENHUMA lista,
-    contagem ou relatório de paciente de verdade."""
+    Pedido do Silvan (2026-09-10, revisão desta mesma data): o Paciente
+    criado automaticamente no cadastro do médico (ver
+    routes_medico._paciente_teste_do_medico) deixou de ser excluído daqui
+    - antes ("Paciente de teste", Paciente.eh_teste=True) ele nunca
+    aparecia em nenhuma lista/contagem/relatório; agora é um paciente REAL
+    como outro qualquer, incluído normalmente neste filtro, para que o
+    médico possa aprender o sistema (agenda, atendimento) na própria
+    pele. O campo Paciente.eh_teste continua existindo no banco só por
+    compatibilidade com o dado histórico - nada mais o define como True."""
     grupo_ids = _grupos_da_empresa_ids()
     if not grupo_ids:
-        base_filtro = Paciente.cadastrado_por_id == current_user.id
-    else:
-        paciente_ids_do_grupo = db.session.query(GrupoPaciente.paciente_id).filter(
-            GrupoPaciente.grupo_id.in_(grupo_ids)
-        )
-        base_filtro = Paciente.id.in_(paciente_ids_do_grupo)
-    return and_(base_filtro, Paciente.eh_teste.is_(False))
+        return Paciente.cadastrado_por_id == current_user.id
+    paciente_ids_do_grupo = db.session.query(GrupoPaciente.paciente_id).filter(
+        GrupoPaciente.grupo_id.in_(grupo_ids)
+    )
+    return Paciente.id.in_(paciente_ids_do_grupo)
 
 
 def _associar_paciente_ao_escopo_atual(paciente, empresa):
@@ -532,24 +535,13 @@ def pacientes_lista():
     else:
         pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).order_by(Paciente.nome).all()
 
-    # Pedido do Silvan (2026-09-10): o paciente sintético "de teste" (ver
-    # Paciente.eh_teste e _paciente_teste_do_medico) continua de propósito
-    # fora de _filtro_pacientes_da_empresa() - não deve contar em nenhuma
-    # métrica/relatório/contagem de paciente de verdade. Mas, só NESTA
-    # tela, o médico (quando é ele mesmo, com perm_pacientes - quem tem
-    # essa permissão é quem também usa "Testar IA") pode querer ver esse
-    # cadastro pra entender o que a tela de teste está usando por baixo -
-    # entra como um item à parte, sinalizado no template, nunca misturado
-    # silenciosamente com pacientes reais.
-    paciente_teste = None
-    if eh_medico() and current_user.perm_pacientes:
-        paciente_teste = Paciente.query.filter_by(
-            cadastrado_por_id=current_user.id, eh_teste=True
-        ).first()
-
-    return render_template(
-        "medico/pacientes_lista.html", pacientes=pacientes, paciente_teste=paciente_teste
-    )
+    # Pedido do Silvan (2026-09-10, revisão desta mesma data): o paciente
+    # criado automaticamente no cadastro do médico (ver
+    # _paciente_teste_do_medico) deixou de ser um cadastro "de teste"
+    # escondido à parte - agora é um Paciente real, incluído normalmente
+    # em `pacientes` acima (via _filtro_pacientes_da_empresa), sem
+    # tratamento especial nesta tela.
+    return render_template("medico/pacientes_lista.html", pacientes=pacientes)
 
 
 @medico_bp.route("/pacientes/solicitacoes")
@@ -2668,12 +2660,27 @@ def minha_licenca():
     )
 
 
+class PacienteMedicoConflitanteError(Exception):
+    """Levantada por _paciente_teste_do_medico quando o CPF do médico já
+    pertence a um Paciente de OUTRA pessoa (cadastrado_por_id diferente) -
+    ver docstring da função para o motivo de não tentar resolver isso
+    sozinho."""
+
+
 def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
-    """Get-or-create do Paciente sintético usado como âncora técnica das
-    perguntas de teste deste médico (ver Paciente.eh_teste e
-    medico.testar_ia) - um por médico, criado sob demanda na primeira vez
-    que ele testa a IA (ou já no cadastro dele, ver abaixo). Localizado
-    por (cadastrado_por_id, eh_teste), não mais pelo CPF - ver abaixo.
+    """Get-or-create do Paciente do próprio médico - um por médico, criado
+    sob demanda na primeira vez que ele testa a IA (ou já no cadastro
+    dele, ver abaixo).
+
+    Pedido do Silvan (2026-09-10, revisão desta mesma data): esse cadastro
+    DEIXOU de ser um Paciente "de teste" (o campo Paciente.eh_teste, que
+    o excluía de toda lista/contagem/relatório via
+    _filtro_pacientes_da_empresa, não é mais usado aqui) - agora é um
+    Paciente REAL como outro qualquer, criado desde o cadastro do médico,
+    para que ele possa aprender a usar o sistema (agenda, atendimento,
+    WhatsApp) na própria pele antes de usar com pacientes de verdade.
+    Decisão explícita do Silvan, ciente de que isso o faz aparecer na
+    agenda/relatórios/faturamento da própria clínica dele.
 
     `enviar_boas_vindas=False` (pedido do Silvan, 2026-09-10): usado só
     por auth.cadastro, que já manda a mensagem de boas-vindas ele mesmo
@@ -2681,7 +2688,7 @@ def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
     ver enviar_boas_vindas_whatsapp) - evita mandar a mensagem em
     DOBRO (uma sem aviso, daqui de dentro, e outra com aviso, de lá).
     Qualquer outro chamador (ex.: medico.testar_ia, pra médicos
-    cadastrados antes desta mudança que ainda não têm paciente de teste)
+    cadastrados antes desta mudança que ainda não têm esse paciente)
     continua com o comportamento de sempre.
 
     Pedido do Silvan (2026-09-06): usa o TELEFONE do próprio médico
@@ -2691,93 +2698,85 @@ def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
     app.whatsapp_envio.enviar_boas_vindas_whatsapp), podendo testar o
     fluxo completo (inclusive responder por lá) como se fosse paciente.
 
-    Pedido do Silvan (2026-09-10): usa também o CPF e a DATA DE NASCIMENTO
-    reais do médico (Usuario.cpf/Usuario.data_nascimento), em vez do CPF
-    sintético "TESTE-IA-<id>" de antes - é isso que permite esse cadastro
-    ser ENCONTRADO pela identificação por CPF + data de nascimento que o
-    WhatsApp exige antes de aceitar perguntas (ver
-    app.whatsapp_conversa._localizar_paciente); com o CPF sintético, o
-    médico nunca conseguia se identificar de verdade mandando mensagem
-    pelo WhatsApp, só pela tela interna "Testar IA". Sem
-    Usuario.data_nascimento preenchida (médico cadastrado antes deste
-    campo existir, ver auth.meus_dados) a identificação pelo WhatsApp
-    continua não funcionando, mas a tela "Testar IA" funciona normalmente
-    do mesmo jeito - só o teste pelo canal do WhatsApp de verdade depende
-    disso. Se o CPF do médico já pertencer a outro Paciente cadastrado DE
-    VERDADE (ex.: o médico também é paciente em algum cadastro; CPF é
-    único no banco todo, ver uq_pacientes_cpf), cai de volta pro CPF
-    sintético só pra não quebrar a criação - a identificação pelo WhatsApp
-    fica indisponível nesse caso raro, mas a tela "Testar IA" continua ok.
+    Usa também o CPF e a DATA DE NASCIMENTO reais do médico
+    (Usuario.cpf/Usuario.data_nascimento) - é isso que permite esse
+    cadastro ser ENCONTRADO pela identificação por CPF + data de
+    nascimento que o WhatsApp exige antes de aceitar perguntas (ver
+    app.whatsapp_conversa._localizar_paciente). Sem Usuario.data_nascimento
+    preenchida (médico cadastrado antes deste campo existir, ver
+    auth.meus_dados) a identificação pelo WhatsApp continua não
+    funcionando, mas a tela "Testar IA" funciona normalmente do mesmo
+    jeito - só o teste pelo canal do WhatsApp de verdade depende disso.
 
-    Cuidado com pacientes de teste ÓRFÃOS (Silvan encontrou isso na prática,
-    2026-09-10, inclusive depois de recadastrar VÁRIAS vezes a mesma
-    conta): cada vez que o médico recadastra a própria conta (ex.: apaga e
-    cria de novo), o Usuario.id muda, e o paciente de teste anterior (preso
-    ao cadastrado_por_id antigo) vira órfão - ele CONTINUA ocupando o CPF
-    real do médico (é a mesma pessoa, mesmo CPF), então um recadastro atrás
-    do outro pode deixar VÁRIOS órfãos com esse mesmo CPF. Sem tratar isso,
-    o cadastro atual bateria em algum desses órfãos como se fosse "outro
-    paciente de verdade" e cairia pro CPF sintético (bug real, visto em
-    produção: depois de recadastrar, nem o CPF era mais reconhecido pelo
-    WhatsApp).
+    CPF já usado por OUTRA pessoa: localiza o Paciente do médico por
+    (cadastrado_por_id=medico.id) primeiro - se ele já existe, seu CPF é
+    só atualizado para acompanhar o do médico (ex.: corrigido depois em
+    "Meus dados"), sem checar conflito (é o mesmo registro, mudando o
+    próprio CPF). Só na CRIAÇÃO de um paciente novo para este médico, se o
+    CPF dele já pertencer a um Paciente com outro cadastrado_por_id (ex.:
+    o médico é paciente de verdade em outra clínica, ou dois médicos
+    diferentes compartilhando famnília/erro de digitação de CPF), a
+    criação é RECUSADA (levanta PacienteMedicoConflitanteError) em vez de
+    tentar resolver sozinha - diferente do mecanismo antigo (quando este
+    cadastro ainda era "de teste"), que sobrescrevia CPFs de órfãos
+    automaticamente porque sabia que eram descartáveis; agora que o
+    registro é um paciente real com histórico potencial de
+    agendamentos/mensagens, sobrescrever um CPF sozinho arriscaria misturar
+    ou perder dados de outra pessoa. Cabe a quem chamou decidir manualmente
+    (ex.: avisar o Silvan/dono para investigar o CPF duplicado).
 
-    Em vez de tentar migrar o histórico (Agendamento/ChatMensagem/etc.) de
-    um órfão para o registro atual - arriscado, um por um -, a solução é
-    mais simples: qualquer OUTRO Paciente com eh_teste=True que esteja
-    ocupando o CPF real do médico tem esse CPF liberado (devolvido pro
-    próprio CPF sintético dele, TESTE-IA-<id antigo>) antes de decidir o
-    CPF do registro atual - assim o CPF real do médico fica livre pro
-    cadastrado_por_id de agora, não importa quantos órfãos existam. Só
-    conflitos com um Paciente de VERDADE (eh_teste=False) continuam caindo
-    pro CPF sintético do médico atual, para não desfazer o cadastro de
-    alguém real."""
-    paciente = Paciente.query.filter_by(cadastrado_por_id=medico.id, eh_teste=True).first()
-
-    cpf_sintetico = f"TESTE-IA-{medico.id}"
-    cpf_desejado = medico.cpf or cpf_sintetico
-    if cpf_desejado != cpf_sintetico:
-        conflitos_query = Paciente.query.filter(Paciente.cpf == cpf_desejado)
-        if paciente:
-            conflitos_query = conflitos_query.filter(Paciente.id != paciente.id)
-        tem_conflito_de_verdade = False
-        for conflito in conflitos_query.all():
-            if conflito.eh_teste:
-                # Órfão de um recadastro anterior - libera o CPF real,
-                # devolvendo para um sintético baseado no PRÓPRIO id do
-                # Paciente (não do cadastrado_por_id, que pode colidir com
-                # o de outro órfão do mesmo médico antigo) - Paciente.id é
-                # sempre único, então nunca colide com outro sintético.
-                conflito.cpf = f"TESTE-IA-{conflito.id}"
-            else:
-                tem_conflito_de_verdade = True
-        if tem_conflito_de_verdade:
-            cpf_desejado = cpf_sintetico
+    Médico SEM CPF cadastrado: `Paciente.cpf` é NOT NULL no banco (embora
+    `Usuario.cpf` seja opcional, para não quebrar contas antigas de antes
+    de o CPF virar obrigatório no cadastro, ver auth.cadastro) - nesse
+    caso o paciente nasce com um CPF temporário sintético
+    (`SEM-CPF-<usuario.id>`, nunca reaproveitado de outro médico) só para
+    satisfazer a constraint; assim que o médico preencher o CPF de
+    verdade (em "Meus dados"), a próxima chamada aqui substitui o
+    sintético pelo real (mesmo caminho de "atualização" acima)."""
+    paciente = Paciente.query.filter_by(cadastrado_por_id=medico.id).first()
+    cpf_desejado = medico.cpf or f"SEM-CPF-{medico.id}"
 
     if paciente:
         # Mantém o cadastro em dia com os dados atuais do médico (ex.: ele
-        # preencheu a data de nascimento depois, em "Meus dados") - sem
-        # isso, quem já tinha testado antes deste ajuste ficaria preso ao
-        # CPF sintético/sem data de nascimento para sempre.
-        paciente.cpf = cpf_desejado
+        # preencheu a data de nascimento depois, em "Meus dados").
+        if cpf_desejado != paciente.cpf:
+            conflito = Paciente.query.filter(
+                Paciente.cpf == cpf_desejado, Paciente.id != paciente.id
+            ).first()
+            if conflito:
+                raise PacienteMedicoConflitanteError(
+                    f"O CPF {cpf_desejado} já pertence a outro paciente cadastrado "
+                    f"(id {conflito.id}, cadastrado por usuário {conflito.cadastrado_por_id}) - "
+                    "não é possível atualizar automaticamente."
+                )
+            paciente.cpf = cpf_desejado
+        paciente.nome = medico.nome
         paciente.data_nascimento = medico.data_nascimento
         paciente.telefone = medico.telefone
         db.session.commit()
         return paciente
 
+    conflito = Paciente.query.filter_by(cpf=cpf_desejado).first()
+    if conflito:
+        raise PacienteMedicoConflitanteError(
+            f"O CPF {cpf_desejado} já pertence a outro paciente cadastrado "
+            f"(id {conflito.id}, cadastrado por usuário {conflito.cadastrado_por_id}) - "
+            "não é possível criar o cadastro deste médico como paciente."
+        )
+
     paciente = Paciente(
-        nome=f"Paciente de teste (uso interno de {medico.nome})",
+        nome=medico.nome,
         cpf=cpf_desejado,
         data_nascimento=medico.data_nascimento,
         telefone=medico.telefone,
         cadastrado_por_id=medico.id,
         status_cadastro="aprovado",
-        eh_teste=True,
     )
     db.session.add(paciente)
     db.session.commit()
-    # Só na criação (não em reaproveitamentos futuros do mesmo cadastro de
-    # teste) - mesmo comportamento de "boas-vindas uma vez só" que vale
-    # para o cadastro de paciente de verdade. Ver docstring acima sobre
+    # Só na criação (não em reaproveitamentos futuros do mesmo cadastro) -
+    # mesmo comportamento de "boas-vindas uma vez só" que vale para o
+    # cadastro de paciente de verdade. Ver docstring acima sobre
     # `enviar_boas_vindas`.
     if enviar_boas_vindas:
         enviar_boas_vindas_whatsapp(paciente)
@@ -2882,10 +2881,32 @@ def testar_ia():
         elif not pergunta_enviada:
             flash("Digite uma pergunta para testar.", "danger")
         else:
-            paciente_teste = _paciente_teste_do_medico(current_user)
-            # Pedido do Silvan (2026-09-10): garante que o paciente de
-            # teste tenha ESTE exame como "em preparo" - sem isso, mesmo
-            # já identificado por CPF/data de nascimento, o WhatsApp
+            try:
+                paciente_teste = _paciente_teste_do_medico(current_user)
+            except PacienteMedicoConflitanteError:
+                # Pedido do Silvan (2026-09-10): o CPF do médico já
+                # pertence a outro Paciente cadastrado (não é mais
+                # sobrescrito automaticamente, ver docstring de
+                # _paciente_teste_do_medico) - avisa e não deixa a tela
+                # quebrar com erro 500.
+                flash(
+                    "Não foi possível preparar seu cadastro de paciente para teste: "
+                    "seu CPF já está em uso por outro cadastro de paciente na plataforma. "
+                    "Fale com o suporte para revisar isso antes de usar o Testar IA.",
+                    "danger",
+                )
+                return render_template(
+                    "medico/testar_ia.html",
+                    exames=exames_do_medico,
+                    resposta_ia=None,
+                    pergunta_enviada=pergunta_enviada,
+                    exame_id_selecionado=exame_id_selecionado,
+                    origem=None,
+                    encaminhada=False,
+                )
+            # Pedido do Silvan (2026-09-10): garante que este paciente
+            # tenha ESTE exame como "em preparo" - sem isso, mesmo já
+            # identificado por CPF/data de nascimento, o WhatsApp
             # respondia "Não encontramos nenhum exame em preparo" (ver
             # _garantir_agendamento_teste e
             # app.whatsapp_conversa._agendamentos_ativos).

@@ -106,7 +106,9 @@ def apagar_todos_os_dados(dono_atual):
     GrupoMembro.query.delete(synchronize_session=False)
     Grupo.query.delete(synchronize_session=False)
 
-    # 6. Pacientes (inclusive os "de teste", ver Paciente.eh_teste).
+    # 6. Pacientes (inclusive o cadastro do próprio médico como paciente,
+    # ver routes_medico._paciente_teste_do_medico - desde 2026-09-10 é um
+    # paciente real, não mais "de teste").
     Paciente.query.delete(synchronize_session=False)
 
     # 7. Catálogo de medicamentos (cadastrado pela equipe, não é dado de

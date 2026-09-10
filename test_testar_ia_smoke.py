@@ -40,13 +40,26 @@ html2 = r2.get_data(as_text=True)
 checar("Pergunta enviada aparece na tela", "Posso comer batata antes do exame?" in html2)
 
 with app.app_context():
-    paciente_teste = Paciente.query.filter_by(cpf=f"TESTE-IA-{medico.id}", eh_teste=True).first()
-    checar("Paciente de teste sintético foi criado com eh_teste=True", paciente_teste is not None)
+    # Pedido do Silvan (2026-09-10, revisão desta mesma data): o paciente
+    # criado automaticamente ao testar a IA deixou de ser "de teste" -
+    # agora é um Paciente real, com o próprio nome do médico (ver
+    # routes_medico._paciente_teste_do_medico). O CPF usado é o do médico
+    # quando ele tem um cadastrado; sem CPF (caso desta médica de seed,
+    # cadastrada antes de o campo virar obrigatório), cai no CPF
+    # temporário sintético "SEM-CPF-<id>", só para satisfazer a coluna
+    # NOT NULL de Paciente.cpf.
+    paciente_medico = Paciente.query.filter_by(cadastrado_por_id=medico.id).first()
+    checar("Paciente do médico foi criado", paciente_medico is not None)
+    cpf_esperado = medico.cpf or f"SEM-CPF-{medico.id}"
+    checar("Paciente do médico usa o CPF certo (real, ou sintético se o médico não tem CPF)", paciente_medico.cpf == cpf_esperado)
+    checar("Paciente do médico nasce com o nome real dele (não mais 'de teste')", paciente_medico.nome == medico.nome)
 
-# O paciente de teste NUNCA deve aparecer na lista normal de pacientes do médico.
+# Esse paciente É o próprio médico - ele DEVE aparecer normalmente na
+# lista de pacientes (decisão do Silvan: o médico vira paciente de
+# verdade da própria clínica, para aprender o sistema na própria pele).
 r3 = client.get("/equipe/pacientes")
 html3 = r3.get_data(as_text=True)
-checar("Paciente de teste NÃO aparece na lista normal de pacientes", "Paciente de teste" not in html3)
+checar("Paciente do médico aparece na lista normal de pacientes", medico.nome in html3)
 
 client.get("/logout")
 

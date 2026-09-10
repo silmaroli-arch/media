@@ -14,27 +14,12 @@
        de filial aqui; a filial aparece em cada AGENDAMENTO do paciente. #}
     <thead><tr><th>Nome</th><th>CPF</th><th>Telefone (login)</th><th>Data de nascimento</th><th>Status</th><th></th></tr></thead>
     <tbody>
-      {% if paciente_teste %}
-      {# Pedido do Silvan (2026-09-10): mostra aqui, sinalizado, o paciente
-         sintético "de teste" que a tela medico.testar_ia usa por baixo
-         (ver Paciente.eh_teste e _paciente_teste_do_medico) - continua de
-         fora de qualquer contagem/relatório de paciente de verdade (ver
-         _filtro_pacientes_da_empresa), então NUNCA é misturado na lista
-         de "pacientes" acima; aparece só aqui, num bloco à parte, pra
-         ajudar o médico a entender o que aquela tela usa. #}
-      <tr class="table-light">
-        <td>{{ paciente_teste.nome }} <span class="badge bg-secondary">Teste</span></td>
-        <td>{{ paciente_teste.cpf }}</td>
-        <td>{{ paciente_teste.telefone or '-' }}</td>
-        <td>{{ paciente_teste.data_nascimento.strftime('%d/%m/%Y') if paciente_teste.data_nascimento else '-' }}</td>
-        <td><span class="badge bg-secondary">Paciente de teste (Testar IA)</span></td>
-        {# Sem botão "Detalhes": medico.pacientes_detalhe também usa
-           _filtro_pacientes_da_empresa() (exclui eh_teste=True) e daria
-           404 - de propósito, esse cadastro não tem tela de detalhe
-           própria, é só a âncora técnica da tela "Testar IA". #}
-        <td class="text-muted small">usado por "Testar IA"</td>
-      </tr>
-      {% endif %}
+      {# Pedido do Silvan (2026-09-10, revisão desta mesma data): o
+         paciente criado automaticamente no cadastro do médico (ver
+         routes_medico._paciente_teste_do_medico) deixou de ter
+         tratamento especial nesta tela - ele já vem incluído em
+         `pacientes` (é um Paciente real, como outro qualquer), com
+         Detalhes funcionando normalmente. #}
       {% for p in pacientes %}
       <tr>
         <td>{{ p.nome }}</td>
@@ -53,9 +38,7 @@
         <td><a href="{{ url_for('medico.pacientes_detalhe', paciente_id=p.id) }}" class="btn btn-sm btn-outline-secondary">Detalhes</a></td>
       </tr>
       {% else %}
-      {% if not paciente_teste %}
       <tr><td colspan="6" class="text-muted text-center">Nenhum paciente cadastrado ainda.</td></tr>
-      {% endif %}
       {% endfor %}
     </tbody>
   </table>

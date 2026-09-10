@@ -515,16 +515,29 @@ def cadastro():
         # ainda consegue usar "Testar IA" normalmente depois, só sem essa
         # mensagem proativa.
         if papel == "medico" and usuario.telefone:
-            from app.routes_medico import _paciente_teste_do_medico
+            from app.routes_medico import PacienteMedicoConflitanteError, _paciente_teste_do_medico
 
-            paciente_teste = _paciente_teste_do_medico(usuario, enviar_boas_vindas=False)
-            enviar_boas_vindas_whatsapp(
-                paciente_teste,
-                aviso_extra=(
-                    "Antes de testar, cadastre um modelo de preparo em "
-                    '"Meus preparos" — assim que cadastrar, avisamos por aqui que já pode testar.'
-                ),
-            )
+            try:
+                paciente_teste = _paciente_teste_do_medico(usuario, enviar_boas_vindas=False)
+                enviar_boas_vindas_whatsapp(
+                    paciente_teste,
+                    aviso_extra=(
+                        "Antes de testar, cadastre um modelo de preparo em "
+                        '"Meus preparos" — assim que cadastrar, avisamos por aqui que já pode testar.'
+                    ),
+                )
+            except PacienteMedicoConflitanteError:
+                # Pedido do Silvan (2026-09-10): o CPF deste médico já
+                # pertence a outro Paciente cadastrado na plataforma - não
+                # bloqueia a criação da conta do médico (já commitada
+                # acima) nem tenta resolver sozinho (ver docstring de
+                # _paciente_teste_do_medico); só pula, em silêncio, a
+                # criação do cadastro de paciente e a mensagem de
+                # boas-vindas. O médico continua conseguindo usar o
+                # sistema normalmente, só sem o atalho de "Testar IA" até
+                # esse CPF duplicado ser resolvido manualmente (ex.: pelo
+                # dono/suporte).
+                pass
 
         flash(
             f"Conta criada com sucesso, {usuario.nome}! Bem-vindo(a) ao MedIA.",

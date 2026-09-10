@@ -408,6 +408,86 @@ nesta rodada, possivelmente sobras do serviço de auto-commit ou de trabalho ant
 ainda não commitado. Antes de comitar em bloco, confirmar com o Silvan o que cada arquivo
 extra contém.
 
+### Mudança de arquitetura (mesma rodada, depois da entrega acima): o médico agora TAMBÉM é um paciente real
+
+Pergunta do Silvan que motivou isso: "Tomando como base que agora o médico se torna uma
+paciente também, eu poderia realizar um agendamento de uma consulta para o paciente
+médico para fins de testes?" — resposta original era não, porque o Paciente sintético
+criado no cadastro do médico (`_paciente_teste_do_medico`, ver seção acima) tinha
+`eh_teste=True` e era excluído de propósito de **toda** lista/contagem/relatório/agenda
+via `_filtro_pacientes_da_empresa()`, então nem aparecia como opção para agendar.
+
+**Decisão do Silvan, com o alcance todo confirmado explicitamente antes de implementar**:
+em vez de só destravar o agendamento, ele preferiu simplificar o conceito por completo —
+o Paciente criado no cadastro do médico **deixou de ser "de teste"** e passou a ser um
+**paciente real desde a criação**, com o nome/CPF de verdade do médico (antes usava
+`"Paciente de teste (uso interno de <nome>)"` e, sem CPF, um sintético
+`TESTE-IA-<id>`). Consequência aceita conscientemente pelo Silvan: esse paciente-médico
+agora aparece na agenda de qualquer secretária/médico da própria clínica, conta em
+relatórios de volume/faturamento, e pode ser importado por outra clínica pelo CPF dele —
+exatamente como qualquer outro paciente.
+
+**O que mudou, por arquivo:**
+- `app/models.py`: nada removido (a coluna `Paciente.eh_teste` continua existindo no
+  banco por compatibilidade com dados históricos), mas ninguém mais grava `True` nela.
+- `app/routes_medico.py`:
+  - `_filtro_pacientes_da_empresa()` não exclui mais `eh_teste=True` — é esse filtro
+    central, usado em quase toda tela de paciente/relatório, que agora inclui o
+    paciente-médico automaticamente em tudo.
+  - `_paciente_teste_do_medico()` (nome da função mantido por não valer a pena renomear
+    tudo) foi **reescrita** — usa o CPF real do médico como identidade (com um CPF
+    temporário sintético `SEM-CPF-<usuario.id>` só para médicos cadastrados antes do CPF
+    virar obrigatório, até eles completarem o cadastro). Nova classe de exceção
+    `PacienteMedicoConflitanteError`: se o CPF do médico já pertencer a OUTRO paciente
+    (outro `cadastrado_por_id`), a função **recusa** criar/atualizar em vez de tentar
+    resolver sozinha — decisão deliberada de segurança, ver próximo parágrafo.
+  - `pacientes_lista()` não busca mais o paciente-médico à parte — ele já vem incluído
+    normalmente na lista principal.
+- `app/routes_auth.py` (`cadastro()`): captura `PacienteMedicoConflitanteError` em
+  silêncio (não bloqueia a criação da CONTA do médico, que já foi commitada antes desse
+  ponto) — só pula a criação do paciente-espelho e a mensagem de boas-vindas nesse caso
+  raro.
+- `app/templates/medico/pacientes_lista.html`: removido o bloco visual que mostrava o
+  paciente-de-teste separado com badge "Teste" (implementado horas antes, na mesma
+  rodada) — ficou obsoleto, já que ele agora está na lista normal com botão "Detalhes"
+  funcionando (antes dava 404 de propósito).
+- `test_testar_ia_smoke.py`: os dois asserts que checavam `eh_teste=True` e "não aparece
+  na lista normal" foram invertidos para checar o oposto (paciente real, aparece
+  normalmente).
+
+**Por que a trava manual (`PacienteMedicoConflitanteError`) em vez de resolver sozinho**:
+o mecanismo ANTIGO (documentado na seção "5ª rodada" acima, antes desta revisão) sabia
+que podia sobrescrever o CPF de um "órfão" de recadastro porque ele era descartável
+(`eh_teste=True`, sem histórico que importasse). Isso deixou de ser seguro: o
+paciente-médico agora pode ter agendamentos e mensagens reais associados. Se um médico
+recadastrar a própria conta (apagar e criar de novo) e o CPF colidir com o
+paciente-espelho do cadastro anterior (ou com qualquer outro paciente real), o sistema
+agora **recusa** e não mexe em nada sozinho — cabe a alguém (Silvan/dono) investigar
+manualmente esse CPF duplicado. Isso ainda não foi testado em um cenário de recadastro
+de verdade nesta rodada — vale ficar de olho se acontecer em produção.
+
+**Achado à parte, não corrigido nesta rodada** (registrado para investigação futura): o
+`Agendamento` sintético que `_garantir_agendamento_teste()` cria/atualiza para a tela
+"Testar IA" usa `data_hora=agora` (não nulo) e não tem qualquer filtro que o esconda de
+`Agendamento.query` — ele já podia estar aparecendo na lista de "próximos agendamentos"
+e na contagem do dashboard do médico mesmo ANTES desta mudança de arquitetura (esse
+comportamento é independente do que foi decidido aqui, é mais uma consequência de como
+"Testar IA" sempre funcionou). Vale confirmar visualmente em produção e decidir se isso é
+aceitável ou se esse agendamento-âncora deveria ganhar algum sinalizador.
+
+Testes rodados depois desta mudança (banco limpo + seed por arquivo, mesma disciplina de
+sempre): `test_testar_ia_smoke.py` (reescrito), `test_medico_independente.py`,
+`test_licenca_medico.py`, `test_painel_agenda_do_medico.py`, `test_meus_dados.py`,
+`test_conta_unica_paciente.py`, `test_grupo_agendamento.py`, `test_paciente_da_empresa.py`,
+`test_cadastro_global_importar_cpf.py`, `test_status_lista_pacientes.py`,
+`test_reverter_status_cadastro_paciente.py`, `test_dono_conteudo_clinico.py` — todos
+passando. `test_smoke.py` continua com a mesma falha pré-existente já documentada em
+rodadas anteriores (`colonoscopia_id = colonoscopia.id`, linha ~1298), confirmada
+independente desta mudança rodando com e sem o código novo (`git stash`). Também validado
+manualmente (script ad-hoc, depois apagado) que um médico cadastrado com CPF consegue de
+fato ter uma consulta agendada de verdade via `medico.agenda_novo` (POST) usando o
+próprio cadastro de paciente — o pedido original do Silvan nesta rodada.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
