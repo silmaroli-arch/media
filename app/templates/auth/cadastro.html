@@ -37,6 +37,17 @@
             <label class="form-label">CRM (número)</label>
             <input type="text" inputmode="numeric" name="crm_numero" id="crm_numero" class="form-control" placeholder="123456">
           </div>
+          <div class="col-md-3" id="campo-data-nascimento" style="display:none;">
+            {# Pedido do Silvan (2026-09-10): só pro médico - vira a
+               identificação (CPF + data de nascimento) do "paciente de
+               teste" usado em medico.testar_ia, permitindo testar o fluxo
+               do WhatsApp com identificação de verdade (ver
+               routes_medico._paciente_teste_do_medico). #}
+            <label class="form-label">Sua data de nascimento</label>
+            <input type="text" inputmode="numeric" name="data_nascimento" id="data_nascimento"
+                   class="form-control" placeholder="DD/MM/AAAA" autocomplete="bday">
+            <div class="invalid-feedback" id="data_nascimento_status"></div>
+          </div>
           <div class="col-md-3" id="campo-crm-uf" style="display:none;">
             <label class="form-label">CRM (UF de emissão)</label>
             <select name="crm_uf" id="crm_uf" class="form-select">
@@ -140,6 +151,8 @@ function atualizarCampoCrm() {
   document.getElementById('campo-crm-uf').style.display = ehMedico ? 'block' : 'none';
   document.getElementById('crm_numero').required = ehMedico;
   document.getElementById('crm_uf').required = ehMedico;
+  document.getElementById('campo-data-nascimento').style.display = ehMedico ? 'block' : 'none';
+  document.getElementById('data_nascimento').required = ehMedico;
 }
 atualizarCampoCrm();
 
@@ -161,6 +174,7 @@ function aplicarMascaraFixa(campo, padrao) {
   });
 }
 aplicarMascaraFixa(document.getElementById('cpf'), '999.999.999-99');
+aplicarMascaraFixa(document.getElementById('data_nascimento'), '99/99/9999');
 aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
 aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
 
@@ -208,6 +222,35 @@ document.getElementById('telefone').addEventListener('blur', function () {
   marcarTelefoneValido('telefone', 'telefone_status', false);
 });
 
+// ---------- Validação de data de nascimento (só existe/exige para médico) ----------
+var campoDataNasc = document.getElementById('data_nascimento');
+function dataNascimentoValida(valor) {
+  var d = valor.replace(/\D/g, '');
+  if (d.length !== 8) return false;
+  var dia = parseInt(d.slice(0, 2), 10);
+  var mes = parseInt(d.slice(2, 4), 10);
+  var ano = parseInt(d.slice(4, 8), 10);
+  if (mes < 1 || mes > 12 || dia < 1 || ano < 1900) return false;
+  var data = new Date(ano, mes - 1, dia);
+  return data.getFullYear() === ano && data.getMonth() === mes - 1 && data.getDate() === dia;
+}
+function marcarDataNascimentoValida() {
+  var status = document.getElementById('data_nascimento_status');
+  var d = campoDataNasc.value.replace(/\D/g, '');
+  if (!campoDataNasc.required && !d) { status.textContent = ''; campoDataNasc.classList.remove('is-invalid'); return true; }
+  if (dataNascimentoValida(campoDataNasc.value)) {
+    status.textContent = '';
+    campoDataNasc.classList.remove('is-invalid');
+    return true;
+  }
+  status.textContent = d.length < 8
+    ? 'Data incompleta — preencha dia, mês e ano (DD/MM/AAAA).'
+    : 'Data inválida — confira o dia e o mês digitados.';
+  campoDataNasc.classList.add('is-invalid');
+  return false;
+}
+campoDataNasc.addEventListener('blur', marcarDataNascimentoValida);
+
 // ---------- Busca de endereço por CEP via ViaCEP ----------
 function configurarBuscaCep(idCep, idRua, idBairro, idCidade, idUf, idStatus) {
   var campo = document.getElementById(idCep);
@@ -254,8 +297,9 @@ document.querySelector('form').addEventListener('submit', function (evento) {
     return true;
   }
   var cepPessoalOk = cepOk('cep', 'cep_status');
+  var dataNascOk = marcarDataNascimentoValida();
 
-  if (!cpfOk || !telefoneOk || !cepPessoalOk) {
+  if (!cpfOk || !telefoneOk || !cepPessoalOk || !dataNascOk) {
     evento.preventDefault();
     var primeiroInvalido = document.querySelector('.is-invalid');
     if (primeiroInvalido) primeiroInvalido.focus();

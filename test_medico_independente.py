@@ -59,6 +59,7 @@ r = client.post("/cadastro", data={
     "nome": "Dr. João Autônomo",
     "papel": "medico",
     "cpf": "852.963.741-00", "crm_numero": "44444", "crm_uf": "ES",
+    "data_nascimento": "10/05/1980",
     "email": "joao.autonomo@example.com",
     "senha": "123456",
 }, follow_redirects=True)
@@ -172,6 +173,7 @@ client.get("/logout")
 r = client.post("/cadastro", data={
     "nome": "Bruno Pavan",
     "cpf": "168.995.350-09", "crm_numero": "77777", "crm_uf": "ES",
+    "data_nascimento": "10/05/1980",
     "email": "bruno.pavan@example.com",
     "senha": "123456",
     "papel": "medico",
@@ -190,6 +192,7 @@ r = client.post("/cadastro", data={
     "nome": "Dra. Convidada Solo",
     "papel": "medico",
     "cpf": "104.332.181-00", "crm_numero": "55555", "crm_uf": "ES",
+    "data_nascimento": "10/05/1980",
     "email": "convidada.solo@example.com",
     "senha": "123456",
 }, follow_redirects=True)

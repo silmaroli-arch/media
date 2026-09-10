@@ -369,6 +369,14 @@ UPDATE plataforma_config SET aviso_inadimplencia_meses = (
 -- aparecer nas listas/contagens normais de pacientes (ver
 -- _filtro_pacientes_da_empresa em routes_medico.py).
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS eh_teste BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Data de nascimento do médico (pedido do Silvan, 2026-09-10, ver
+-- Usuario.data_nascimento em models.py) - usada para o "paciente de
+-- teste" (routes_medico._paciente_teste_do_medico) poder ser encontrado
+-- pela identificação de CPF + data de nascimento do WhatsApp
+-- (app.whatsapp_conversa._localizar_paciente), permitindo testar o fluxo
+-- completo mandando mensagem de verdade, não só pela tela "Testar IA".
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS data_nascimento DATE;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

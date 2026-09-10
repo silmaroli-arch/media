@@ -45,6 +45,21 @@
             <input type="text" inputmode="numeric" name="telefone" id="telefone" class="form-control" placeholder="(27) 99999-9999" value="{{ current_user.telefone or '' }}">
             <div class="invalid-feedback" id="telefone_status"></div>
           </div>
+          {% if current_user.tipo == "medico" %}
+          {# Pedido do Silvan (2026-09-10): só o médico precisa - vira a
+             identificação (CPF + data de nascimento) do "paciente de
+             teste" usado em medico.testar_ia, permitindo testar o fluxo do
+             WhatsApp com identificação de verdade (ver
+             routes_medico._paciente_teste_do_medico). Médicos cadastrados
+             antes deste campo existir preenchem aqui. #}
+          <div class="col-md-6">
+            <label class="form-label">Data de nascimento</label>
+            <input type="text" inputmode="numeric" name="data_nascimento" id="data_nascimento" class="form-control"
+                   placeholder="DD/MM/AAAA" autocomplete="bday"
+                   value="{{ current_user.data_nascimento.strftime('%d/%m/%Y') if current_user.data_nascimento else '' }}" required>
+            <div class="invalid-feedback" id="data_nascimento_status"></div>
+          </div>
+          {% endif %}
         </div>
 
         <h6 class="mb-0 mt-4">Endereço</h6>
@@ -150,6 +165,7 @@ function aplicarMascaraFixa(campo, padrao) {
   });
 }
 aplicarMascaraFixa(document.getElementById('cpf'), '999.999.999-99');
+aplicarMascaraFixa(document.getElementById('data_nascimento'), '99/99/9999');
 aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
 aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
 
@@ -194,6 +210,35 @@ function marcarTelefoneValido() {
 }
 document.getElementById('telefone').addEventListener('blur', marcarTelefoneValido);
 
+// ---------- Validação de data de nascimento (só existe para médico) ----------
+var campoDataNasc = document.getElementById('data_nascimento');
+function dataNascimentoValida(valor) {
+  var d = valor.replace(/\D/g, '');
+  if (d.length !== 8) return false;
+  var dia = parseInt(d.slice(0, 2), 10);
+  var mes = parseInt(d.slice(2, 4), 10);
+  var ano = parseInt(d.slice(4, 8), 10);
+  if (mes < 1 || mes > 12 || dia < 1 || ano < 1900) return false;
+  var data = new Date(ano, mes - 1, dia);
+  return data.getFullYear() === ano && data.getMonth() === mes - 1 && data.getDate() === dia;
+}
+function marcarDataNascimentoValida() {
+  if (!campoDataNasc) return true;
+  var status = document.getElementById('data_nascimento_status');
+  var d = campoDataNasc.value.replace(/\D/g, '');
+  if (dataNascimentoValida(campoDataNasc.value)) {
+    status.textContent = '';
+    campoDataNasc.classList.remove('is-invalid');
+    return true;
+  }
+  status.textContent = d.length < 8
+    ? 'Data incompleta — preencha dia, mês e ano (DD/MM/AAAA).'
+    : 'Data inválida — confira o dia e o mês digitados.';
+  campoDataNasc.classList.add('is-invalid');
+  return false;
+}
+if (campoDataNasc) campoDataNasc.addEventListener('blur', marcarDataNascimentoValida);
+
 // ---------- Busca de endereço por CEP via ViaCEP ----------
 var campoCep = document.getElementById('cep');
 campoCep.addEventListener('blur', function () {
@@ -225,7 +270,8 @@ campoCep.addEventListener('blur', function () {
 document.getElementById('form-meus-dados').addEventListener('submit', function (evento) {
   var cpfOk = marcarCpfValido();
   var telefoneOk = marcarTelefoneValido();
-  if (!cpfOk || !telefoneOk) {
+  var dataNascOk = marcarDataNascimentoValida();
+  if (!cpfOk || !telefoneOk || !dataNascOk) {
     evento.preventDefault();
     var primeiroInvalido = document.querySelector('.is-invalid');
     if (primeiroInvalido) primeiroInvalido.focus();

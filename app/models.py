@@ -130,6 +130,19 @@ class Usuario(db.Model, UserMixin):
     cidade = db.Column(db.String(100))
     uf = db.Column(db.String(2))
 
+    # Data de nascimento do MÉDICO (pedido do Silvan, 2026-09-10): sem ela,
+    # o "paciente de teste" que a tela medico.testar_ia usa como âncora
+    # (ver routes_medico._paciente_teste_do_medico) não tinha data de
+    # nascimento nenhuma, e por isso nunca era encontrado pela identificação
+    # do WhatsApp (CPF + data de nascimento, ver
+    # app.whatsapp_conversa._localizar_paciente) - com este campo
+    # preenchido, o paciente de teste passa a usar o CPF e a data de
+    # nascimento REAIS do médico, permitindo testar o fluxo completo (com
+    # identificação) mandando mensagem de verdade pelo WhatsApp. Obrigatório
+    # só para tipo == "medico" (mesma exigência condicional do CRM, ver
+    # auth.cadastro) - secretária/dono não precisam preencher.
+    data_nascimento = db.Column(db.Date)
+
     # CRM (registro no Conselho Regional de Medicina) - só faz sentido
     # para tipo == "medico". Dois campos porque o CRM é emitido por
     # estado (ex.: "12345" + "ES") - o número sozinho não identifica o

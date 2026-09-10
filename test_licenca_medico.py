@@ -58,6 +58,7 @@ r = client.post("/cadastro", data={
     "nome": "Dra. Licença Teste",
     "papel": "medico",
     "cpf": "123.456.789-09", "crm_numero": "11111", "crm_uf": "ES",
+    "data_nascimento": "10/05/1980",
     "email": "licenca.medica@example.com",
     "senha": "123456",
 }, follow_redirects=True)

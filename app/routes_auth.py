@@ -279,6 +279,19 @@ def meus_dados():
             flash("CEP incompleto — digite os 8 números.", "danger")
             return render_template("auth/meus_dados.html", confirmado=True)
 
+        # Pedido do Silvan (2026-09-10): só o médico tem esse campo (ver
+        # auth/meus_dados.html) - vira a identificação (CPF + data de
+        # nascimento) do "paciente de teste" de medico.testar_ia (ver
+        # routes_medico._paciente_teste_do_medico). Médicos cadastrados
+        # antes deste campo existir passam por aqui pra preencher depois.
+        data_nascimento = current_user.data_nascimento
+        if current_user.tipo == "medico":
+            data_nascimento_str = request.form.get("data_nascimento", "").strip()
+            data_nascimento = _parse_data_nascimento(data_nascimento_str)
+            if not data_nascimento:
+                flash("Informe sua data de nascimento (DD/MM/AAAA).", "danger")
+                return render_template("auth/meus_dados.html", confirmado=True)
+
         # E-mail/CPF são credenciais de login (ver auth.login) - não podem
         # colidir com a conta de outra pessoa (comparação de CPF ignora
         # pontuação, mesma lógica usada pra localizar a conta no login).
@@ -303,6 +316,7 @@ def meus_dados():
         current_user.nome = nome
         current_user.email = email
         current_user.cpf = cpf
+        current_user.data_nascimento = data_nascimento
         current_user.telefone = normalizar_telefone(request.form.get("telefone", ""))
         current_user.cep = request.form.get("cep", "").strip()
         current_user.rua = request.form.get("rua", "").strip()
@@ -388,8 +402,21 @@ def cadastro():
             if not crm_numero or not crm_uf:
                 flash("Informe o número e o estado (UF) do seu CRM.", "danger")
                 return render_template("auth/cadastro.html")
+
+            # Pedido do Silvan (2026-09-10): só o médico precisa informar -
+            # é o CPF+data de nascimento do PRÓPRIO médico (não do
+            # paciente) que vira a identificação do "paciente de teste" na
+            # tela medico.testar_ia, permitindo testar o fluxo do WhatsApp
+            # de ponta a ponta com identificação de verdade (ver
+            # routes_medico._paciente_teste_do_medico).
+            data_nascimento_str = request.form.get("data_nascimento", "").strip()
+            data_nascimento = _parse_data_nascimento(data_nascimento_str)
+            if not data_nascimento:
+                flash("Informe sua data de nascimento (DD/MM/AAAA).", "danger")
+                return render_template("auth/cadastro.html")
         else:
             crm_numero = crm_uf = None
+            data_nascimento = None
 
         if len(senha) < 6:
             flash("A senha deve ter pelo menos 6 caracteres.", "danger")
@@ -411,6 +438,7 @@ def cadastro():
         usuario.uf = request.form.get("uf", "").strip().upper() or None
         usuario.crm_numero = crm_numero
         usuario.crm_uf = crm_uf
+        usuario.data_nascimento = data_nascimento
 
         # Fatia 8 (licença individual): a cobrança é por médico e vale a
         # partir do cadastro, independente de Grupo (decisão do Silvan) -

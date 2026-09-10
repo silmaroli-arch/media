@@ -83,6 +83,7 @@ client.get("/logout")
 r = client.post("/cadastro", data={
     "nome": "Dr. Fundador Agenda",
     "cpf": "852.963.741-00", "crm_numero": "66666", "crm_uf": "ES",
+    "data_nascimento": "10/05/1980",
     "email": "fundador.agenda@example.com",
     "senha": "123456",
     "papel": "medico",

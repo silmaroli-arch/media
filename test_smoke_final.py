@@ -207,6 +207,7 @@ r = client.post("/cadastro", data={
     "nome": "Dr. Ricardo Alves",
     "cpf": "111.444.777-35",
     "crm_numero": "88899", "crm_uf": "ES",
+    "data_nascimento": "10/05/1980",
     "email": "ricardo@clinicasolo.com",
     "senha": "senha123",
     "papel": "medico",

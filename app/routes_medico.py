@@ -2645,22 +2645,59 @@ def _paciente_teste_do_medico(medico):
     """Get-or-create do Paciente sintético usado como âncora técnica das
     perguntas de teste deste médico (ver Paciente.eh_teste e
     medico.testar_ia) - um por médico, criado sob demanda na primeira vez
-    que ele testa a IA. CPF fixo e claramente artificial (nunca colide com
-    um CPF de paciente de verdade, que só tem dígitos).
+    que ele testa a IA. Localizado por (cadastrado_por_id, eh_teste), não
+    mais pelo CPF - ver abaixo.
 
     Pedido do Silvan (2026-09-06): usa o TELEFONE do próprio médico
     (Usuario.telefone, informado no cadastro dele) - assim, na primeira
     vez que ele usa esta tela, recebe no próprio WhatsApp a mesma
     mensagem de boas-vindas que um paciente de verdade recebe (ver
     app.whatsapp_envio.enviar_boas_vindas_whatsapp), podendo testar o
-    fluxo completo (inclusive responder por lá) como se fosse paciente."""
-    cpf_teste = f"TESTE-IA-{medico.id}"
-    paciente = Paciente.query.filter_by(cpf=cpf_teste, eh_teste=True).first()
+    fluxo completo (inclusive responder por lá) como se fosse paciente.
+
+    Pedido do Silvan (2026-09-10): usa também o CPF e a DATA DE NASCIMENTO
+    reais do médico (Usuario.cpf/Usuario.data_nascimento), em vez do CPF
+    sintético "TESTE-IA-<id>" de antes - é isso que permite esse cadastro
+    ser ENCONTRADO pela identificação por CPF + data de nascimento que o
+    WhatsApp exige antes de aceitar perguntas (ver
+    app.whatsapp_conversa._localizar_paciente); com o CPF sintético, o
+    médico nunca conseguia se identificar de verdade mandando mensagem
+    pelo WhatsApp, só pela tela interna "Testar IA". Sem
+    Usuario.data_nascimento preenchida (médico cadastrado antes deste
+    campo existir, ver auth.meus_dados) a identificação pelo WhatsApp
+    continua não funcionando, mas a tela "Testar IA" funciona normalmente
+    do mesmo jeito - só o teste pelo canal do WhatsApp de verdade depende
+    disso. Se o CPF do médico já pertencer a outro Paciente cadastrado
+    (ex.: o médico também é paciente de verdade em algum cadastro; CPF é
+    único no banco todo, ver uq_pacientes_cpf), cai de volta pro CPF
+    sintético só pra não quebrar a criação - a identificação pelo WhatsApp
+    fica indisponível nesse caso raro, mas a tela "Testar IA" continua ok."""
+    paciente = Paciente.query.filter_by(cadastrado_por_id=medico.id, eh_teste=True).first()
+
+    cpf_sintetico = f"TESTE-IA-{medico.id}"
+    cpf_desejado = medico.cpf or cpf_sintetico
+    if cpf_desejado != cpf_sintetico:
+        conflito_query = Paciente.query.filter(Paciente.cpf == cpf_desejado)
+        if paciente:
+            conflito_query = conflito_query.filter(Paciente.id != paciente.id)
+        if conflito_query.first():
+            cpf_desejado = cpf_sintetico
+
     if paciente:
+        # Mantém o cadastro em dia com os dados atuais do médico (ex.: ele
+        # preencheu a data de nascimento depois, em "Meus dados") - sem
+        # isso, quem já tinha testado antes deste ajuste ficaria preso ao
+        # CPF sintético/sem data de nascimento para sempre.
+        paciente.cpf = cpf_desejado
+        paciente.data_nascimento = medico.data_nascimento
+        paciente.telefone = medico.telefone
+        db.session.commit()
         return paciente
+
     paciente = Paciente(
         nome=f"Paciente de teste (uso interno de {medico.nome})",
-        cpf=cpf_teste,
+        cpf=cpf_desejado,
+        data_nascimento=medico.data_nascimento,
         telefone=medico.telefone,
         cadastrado_por_id=medico.id,
         status_cadastro="aprovado",
