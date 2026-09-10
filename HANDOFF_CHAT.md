@@ -578,6 +578,36 @@ HTTP direta, sem abrir de fato num celular) que os 3 links aparecem duplicados n
 HTML (uma cópia "completa" oculta em telas grandes, uma cópia mobile), o que é o
 comportamento esperado desse padrão de menu.
 
+### "Exames & preparo" no celular do médico leva a um aviso, não à tela real (mesma rodada)
+
+Pedido do Silvan (2026-09-10, mesmo dia): "Exames & preparo" também devia aparecer no
+menu reduzido do celular do médico, mas essa configuração é "mais delicada" - o
+Silvan prefere que só seja feita pela versão web (computador), porque se o médico for
+testar o sistema pelo celular ele poderia se perder tentando editar um preparo ali.
+
+**Implementado**:
+- Nova rota `medico.preparo_modelos_aviso_mobile`
+  (`GET /equipe/preparo-modelos/aviso-mobile`, mesmos decoradores
+  `@login_required @staff_required` do resto do arquivo) em
+  `app/routes_medico.py`, logo antes de `medico.preparo_modelos_lista` - só
+  renderiza um aviso, não bloqueia nem redireciona a rota real (que continua
+  acessível normalmente pelo computador, e por link direto se precisar).
+- Novo template `app/templates/medico/preparo_modelos_aviso_mobile.html`: um
+  `alert alert-warning` com o texto *"A configuração de exames e preparos é mais
+  delicada e só pode ser feita pela versão web (computador) do MedIA. Acesse pelo
+  navegador do computador para cadastrar ou editar um preparo."* e um botão
+  "Voltar ao Painel".
+- Em `app/templates/base.html`, o item mobile (`d-md-none`) de "Exames & preparo"
+  no menu reduzido do celular aponta para este NOVO aviso
+  (`medico.preparo_modelos_aviso_mobile`), diferente do item "completo" (visível em
+  tablet/desktop, oculto no celular via `oculto_no_celular_do_medico`), que continua
+  apontando direto para `medico.preparo_modelos_lista` (a tela real).
+
+Confirmado manualmente (requisição HTTP direta): a rota de aviso responde 200 com a
+mensagem e o botão de volta, e os dois links de "Exames & preparo" no HTML apontam
+para URLs diferentes (`/equipe/preparo-modelos` no item desktop,
+`/equipe/preparo-modelos/aviso-mobile` no item mobile), como esperado.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

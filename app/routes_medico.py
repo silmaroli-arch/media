@@ -1419,6 +1419,26 @@ def exames_por_filial_excluir(exame_id):
 
 # ---------- Modelos de preparo (reaproveitáveis entre exames) ----------
 
+@medico_bp.route("/preparo-modelos/aviso-mobile")
+@login_required
+@staff_required
+def preparo_modelos_aviso_mobile():
+    """Pedido do Silvan (2026-09-10): "Exames & preparo" também precisava
+    aparecer no menu reduzido do celular (ver "Meus dados"/"Pacientes"/
+    "Agendar exame" adicionados ao mesmo menu na mesma rodada), mas essa
+    tela em si (cadastro/edição de modelo de preparo) é uma configuração
+    "mais delicada" - o Silvan prefere que só seja feita pela versão web
+    (computador), não pelo celular, porque o médico testando pelo celular
+    (ver medico.testar_ia) poderia se perder tentando editar ali. Por
+    isso, o item do menu no celular NÃO leva direto para
+    medico.preparo_modelos_lista - leva para este aviso simples, que só
+    explica isso e oferece um botão de volta ao Painel. A tela real
+    continua acessível normalmente pelo computador (e por link direto, se
+    alguém precisar, já que não há bloqueio de verdade na rota - é só
+    orientação de uso)."""
+    return render_template("medico/preparo_modelos_aviso_mobile.html")
+
+
 @medico_bp.route("/preparo-modelos")
 @login_required
 @staff_required

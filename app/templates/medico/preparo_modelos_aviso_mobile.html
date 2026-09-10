@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block titulo %}Exames & preparo{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Exames &amp; preparo</h3>
+
+{# Pedido do Silvan (2026-09-10): esta tela substitui, só no menu reduzido
+   do celular, o acesso direto a medico.preparo_modelos_lista - ver
+   docstring de medico.preparo_modelos_aviso_mobile em routes_medico.py. #}
+<div class="alert alert-warning d-flex align-items-start" role="alert">
+  <i class="bi bi-laptop fs-3 me-3"></i>
+  <div>
+    A configuração de exames e preparos é mais delicada e só pode ser feita pela
+    versão web (computador) do MedIA. Acesse pelo navegador do computador para
+    cadastrar ou editar um preparo.
+  </div>
+</div>
+
+<a href="{{ url_for('medico.dashboard') }}" class="btn btn-primary">
+  <i class="bi bi-arrow-left"></i> Voltar ao Painel
+</a>
+{% endblock %}

@@ -266,6 +266,19 @@
         </a>
       </li>
 
+      {# "Exames & preparo" no celular (pedido do Silvan, 2026-09-10): NÃO
+         leva direto para a tela de cadastro/edição (medico.preparo_
+         modelos_lista, usada em tablet/desktop dentro do item "completo"
+         mais acima) - leva para um aviso simples explicando que essa
+         configuração deve ser feita pela versão web, porque é mais
+         delicada e o médico testando pelo celular poderia se perder ali
+         (ver medico.preparo_modelos_aviso_mobile). #}
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'medico.preparo_modelos_aviso_mobile' %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_aviso_mobile') }}">
+          <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
+        </a>
+      </li>
+
       {# Versão mobile do link "Portal de atendimento rápido" (o outro,
          dentro de "Médico + IA" mais acima, continua servindo
          tablet/desktop) - aqui SEM target="_blank": abrir uma aba nova
