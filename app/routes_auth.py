@@ -472,6 +472,29 @@ def cadastro():
         db.session.commit()
         login_user(usuario)
 
+        # Pedido do Silvan (2026-09-10): médico recebe a mensagem de
+        # boas-vindas no PRÓPRIO WhatsApp já no cadastro (não só quando
+        # abre "Testar IA" pela primeira vez, ver
+        # routes_medico._paciente_teste_do_medico), avisando que falta
+        # cadastrar um modelo de preparo antes de poder testar. Import
+        # local (não no topo do arquivo) para não criar um acoplamento
+        # direto entre os módulos de rota auth/medico - mesmo padrão já
+        # usado em app/__init__.py:_registrar_deploy_atual. Sem telefone
+        # (campo opcional no cadastro), o envio é só pulado - a pessoa
+        # ainda consegue usar "Testar IA" normalmente depois, só sem essa
+        # mensagem proativa.
+        if papel == "medico" and usuario.telefone:
+            from app.routes_medico import _paciente_teste_do_medico
+
+            paciente_teste = _paciente_teste_do_medico(usuario, enviar_boas_vindas=False)
+            enviar_boas_vindas_whatsapp(
+                paciente_teste,
+                aviso_extra=(
+                    "Antes de testar, cadastre um modelo de preparo em "
+                    '"Meus preparos" — assim que cadastrar, avisamos por aqui que já pode testar.'
+                ),
+            )
+
         flash(
             f"Conta criada com sucesso, {usuario.nome}! Bem-vindo(a) ao MedIA.",
             "success",
