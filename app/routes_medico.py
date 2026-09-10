@@ -2712,6 +2712,52 @@ def _paciente_teste_do_medico(medico):
     return paciente
 
 
+def _garantir_agendamento_teste(medico, paciente_teste, exame):
+    """Get-or-update do Agendamento sintético (sem 'data_hora' real, é só
+    uma âncora técnica) que representa "este exame está em preparo" para o
+    paciente de teste - sem ele, a identificação por WhatsApp funciona
+    (ver _paciente_teste_do_medico) mas a mensagem seguinte cai em
+    MENSAGEM_SEM_EXAME_ATIVO (ver app.whatsapp_conversa._agendamentos_ativos,
+    que só considera Agendamento com encerrado_em nulo) - a tela "Testar
+    IA" nunca cria agendamento nenhum, só chama a IA/FAQ direto para o
+    PreparoModelo escolhido.
+
+    Pedido do Silvan (2026-09-10, mesmo pedido da data de nascimento):
+    reaproveita um único agendamento de teste por médico (não um por
+    exame testado) e apenas TROCA o exame nele a cada teste - assim, ao
+    testar um exame diferente pela tela, o WhatsApp passa a mostrar esse
+    novo exame em foco, sem acumular um agendamento "fantasma" por exame
+    já testado alguma vez. Localizado por (paciente_id, encerrado_em nulo)
+    - se por algum motivo já existir mais de um (não deveria), usa o mais
+    recente e ignora os demais, sem apagá-los."""
+    agendamento = (
+        Agendamento.query.filter_by(paciente_id=paciente_teste.id, encerrado_em=None)
+        .order_by(Agendamento.id.desc())
+        .first()
+    )
+    agora = datetime.utcnow()
+    if agendamento:
+        agendamento.exame_id = exame.id
+        agendamento.medico_id = medico.id
+        agendamento.grupo_id = exame.grupo_id
+        agendamento.criado_por_id = exame.criado_por_id
+        agendamento.data_hora = agora
+        db.session.commit()
+        return agendamento
+
+    agendamento = Agendamento(
+        grupo_id=exame.grupo_id,
+        criado_por_id=exame.criado_por_id,
+        paciente_id=paciente_teste.id,
+        exame_id=exame.id,
+        medico_id=medico.id,
+        data_hora=agora,
+    )
+    db.session.add(agendamento)
+    db.session.commit()
+    return agendamento
+
+
 @medico_bp.route("/testar-ia", methods=["GET", "POST"])
 @login_required
 def testar_ia():
@@ -2765,6 +2811,13 @@ def testar_ia():
             flash("Digite uma pergunta para testar.", "danger")
         else:
             paciente_teste = _paciente_teste_do_medico(current_user)
+            # Pedido do Silvan (2026-09-10): garante que o paciente de
+            # teste tenha ESTE exame como "em preparo" - sem isso, mesmo
+            # já identificado por CPF/data de nascimento, o WhatsApp
+            # respondia "Não encontramos nenhum exame em preparo" (ver
+            # _garantir_agendamento_teste e
+            # app.whatsapp_conversa._agendamentos_ativos).
+            _garantir_agendamento_teste(current_user, paciente_teste, exame_selecionado)
             grupo_id_ancora = exame_selecionado.grupo_id
             criado_por_id_ancora = exame_selecionado.criado_por_id
 
