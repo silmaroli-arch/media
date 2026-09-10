@@ -2667,11 +2667,25 @@ def _paciente_teste_do_medico(medico):
     campo existir, ver auth.meus_dados) a identificação pelo WhatsApp
     continua não funcionando, mas a tela "Testar IA" funciona normalmente
     do mesmo jeito - só o teste pelo canal do WhatsApp de verdade depende
-    disso. Se o CPF do médico já pertencer a outro Paciente cadastrado
-    (ex.: o médico também é paciente de verdade em algum cadastro; CPF é
+    disso. Se o CPF do médico já pertencer a outro Paciente cadastrado DE
+    VERDADE (ex.: o médico também é paciente em algum cadastro; CPF é
     único no banco todo, ver uq_pacientes_cpf), cai de volta pro CPF
     sintético só pra não quebrar a criação - a identificação pelo WhatsApp
-    fica indisponível nesse caso raro, mas a tela "Testar IA" continua ok."""
+    fica indisponível nesse caso raro, mas a tela "Testar IA" continua ok.
+
+    Cuidado com pacientes de teste ÓRFÃOS (Silvan encontrou isso na prática,
+    2026-09-10): se o médico recadastra a própria conta (ex.: apagou e
+    criou de novo), o Usuario.id muda, e o paciente de teste antigo (preso
+    ao id antigo, que pode nem existir mais) vira órfão - ele CONTINUA
+    ocupando o CPF real do médico (é o mesmo CPF, a pessoa é a mesma).
+    Sem tratar esse caso à parte, o cadastro novo bateria nesse órfão como
+    se fosse "outro paciente de verdade" e cairia pro CPF sintético
+    (bug real, visto em produção: depois de um recadastro, nem o CPF
+    reconhecia mais pelo WhatsApp). Por isso, quando o conflito de CPF é
+    com outro Paciente que também é eh_teste=True, REAPROVEITA esse
+    registro (realoca pro cadastrado_por_id atual) em vez de tratá-lo como
+    conflito de terceiro - evita acumular um paciente de teste órfão por
+    recadastro."""
     paciente = Paciente.query.filter_by(cadastrado_por_id=medico.id, eh_teste=True).first()
 
     cpf_sintetico = f"TESTE-IA-{medico.id}"
@@ -2680,7 +2694,21 @@ def _paciente_teste_do_medico(medico):
         conflito_query = Paciente.query.filter(Paciente.cpf == cpf_desejado)
         if paciente:
             conflito_query = conflito_query.filter(Paciente.id != paciente.id)
-        if conflito_query.first():
+        conflito = conflito_query.first()
+        if conflito and conflito.eh_teste:
+            # Órfão de um recadastro anterior do mesmo médico (mesmo CPF) -
+            # reaproveita esse registro em vez de criar/cair pro sintético.
+            if paciente and paciente.id != conflito.id:
+                # Já existia um paciente de teste "correto" (cadastrado_por_id
+                # atual) E um órfão com o mesmo CPF - situação rara demais
+                # pra reconciliar automaticamente sem risco; mantém o atual e
+                # deixa o órfão de lado (nunca é escolhido por nenhuma busca
+                # daqui pra frente, some sozinho).
+                pass
+            else:
+                paciente = conflito
+                paciente.cadastrado_por_id = medico.id
+        elif conflito:
             cpf_desejado = cpf_sintetico
 
     if paciente:
