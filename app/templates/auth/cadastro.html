@@ -83,7 +83,7 @@
           </div>
           <div class="col-md-6">
             <label class="form-label">Telefone</label>
-            <input type="text" inputmode="numeric" name="telefone" id="telefone" class="form-control" placeholder="(27) 99999-9999">
+            <input type="text" inputmode="numeric" name="telefone" id="telefone" class="form-control" placeholder="(27) 99999-9999" required>
             <div class="invalid-feedback" id="telefone_status"></div>
           </div>
           <div class="col-md-6">
@@ -95,22 +95,33 @@
             <input type="password" name="senha" class="form-control" minlength="6" required>
             <div class="form-text">Mínimo de 6 caracteres.</div>
           </div>
+          <div class="col-md-6">
+            <label class="form-label">Confirmar senha</label>
+            <input type="password" name="senha_confirmacao" id="senha_confirmacao" class="form-control" minlength="6" required>
+            <div class="invalid-feedback" id="senha_confirmacao_status"></div>
+          </div>
         </div>
 
         <h6 class="mb-0 mt-3">Seu endereço</h6>
         <div class="row g-3 mt-0">
           <div class="col-md-3">
             <label class="form-label">CEP</label>
-            <input type="text" inputmode="numeric" name="cep" id="cep" class="form-control" placeholder="00000-000">
+            <input type="text" inputmode="numeric" name="cep" id="cep" class="form-control" placeholder="00000-000" required>
             <div class="form-text" id="cep_status"></div>
           </div>
           <div class="col-md-6">
             <label class="form-label">Rua</label>
-            <input type="text" name="rua" id="rua" class="form-control bg-light" readonly>
+            {# Pedido do Silvan (2026-09-10): campo de endereço virou
+               obrigatório - por isso não pode mais ficar "readonly" (senão
+               a pessoa nunca consegue preencher manualmente quando o CEP
+               não é encontrado pelo ViaCEP, ver configurarBuscaCep abaixo).
+               Continua sendo preenchido automaticamente quando o CEP é
+               reconhecido, mas agora também é editável à mão. #}
+            <input type="text" name="rua" id="rua" class="form-control" required>
           </div>
           <div class="col-md-3">
             <label class="form-label">Número</label>
-            <input type="text" name="numero" class="form-control">
+            <input type="text" name="numero" class="form-control" required>
           </div>
           <div class="col-md-4">
             <label class="form-label">Complemento</label>
@@ -118,15 +129,15 @@
           </div>
           <div class="col-md-4">
             <label class="form-label">Bairro</label>
-            <input type="text" name="bairro" id="bairro" class="form-control bg-light" readonly>
+            <input type="text" name="bairro" id="bairro" class="form-control" required>
           </div>
           <div class="col-md-3">
             <label class="form-label">Cidade</label>
-            <input type="text" name="cidade" id="cidade" class="form-control bg-light" readonly>
+            <input type="text" name="cidade" id="cidade" class="form-control" required>
           </div>
           <div class="col-md-1">
             <label class="form-label">UF</label>
-            <input type="text" name="uf" id="uf" class="form-control bg-light" maxlength="2" readonly>
+            <input type="text" name="uf" id="uf" class="form-control" maxlength="2" required>
           </div>
         </div>
 
@@ -219,7 +230,27 @@ function marcarTelefoneValido(idCampo, idStatus, obrigatorio) {
   return false;
 }
 document.getElementById('telefone').addEventListener('blur', function () {
-  marcarTelefoneValido('telefone', 'telefone_status', false);
+  marcarTelefoneValido('telefone', 'telefone_status', true);
+});
+
+// ---------- Validação de confirmação de senha (pedido do Silvan, 2026-09-10) ----------
+function marcarSenhaConfirmacaoValida() {
+  var campoSenha = document.querySelector('input[name="senha"]');
+  var campoConfirmacao = document.getElementById('senha_confirmacao');
+  var status = document.getElementById('senha_confirmacao_status');
+  if (!campoConfirmacao.value) { status.textContent = ''; campoConfirmacao.classList.remove('is-invalid'); return false; }
+  if (campoConfirmacao.value !== campoSenha.value) {
+    status.textContent = 'A confirmação não corresponde à senha digitada.';
+    campoConfirmacao.classList.add('is-invalid');
+    return false;
+  }
+  status.textContent = '';
+  campoConfirmacao.classList.remove('is-invalid');
+  return true;
+}
+document.getElementById('senha_confirmacao').addEventListener('blur', marcarSenhaConfirmacaoValida);
+document.querySelector('input[name="senha"]').addEventListener('input', function () {
+  if (document.getElementById('senha_confirmacao').value) marcarSenhaConfirmacaoValida();
 });
 
 // ---------- Validação de data de nascimento (só existe/exige para médico) ----------
@@ -284,12 +315,13 @@ configurarBuscaCep('cep', 'rua', 'bairro', 'cidade', 'uf', 'cep_status');
 
 document.querySelector('form').addEventListener('submit', function (evento) {
   var cpfOk = marcarCpfValido();
-  var telefoneOk = marcarTelefoneValido('telefone', 'telefone_status', false);
+  var telefoneOk = marcarTelefoneValido('telefone', 'telefone_status', true);
+  var senhaConfirmacaoOk = marcarSenhaConfirmacaoValida();
 
   function cepOk(idCampo, idStatus) {
     var campo = document.getElementById(idCampo);
     var d = campo.value.replace(/\D/g, '');
-    if (d && d.length !== 8) {
+    if (d.length !== 8) {
       campo.classList.add('is-invalid');
       document.getElementById(idStatus).textContent = 'CEP incompleto — digite os 8 números.';
       return false;
@@ -299,7 +331,7 @@ document.querySelector('form').addEventListener('submit', function (evento) {
   var cepPessoalOk = cepOk('cep', 'cep_status');
   var dataNascOk = marcarDataNascimentoValida();
 
-  if (!cpfOk || !telefoneOk || !cepPessoalOk || !dataNascOk) {
+  if (!cpfOk || !telefoneOk || !cepPessoalOk || !dataNascOk || !senhaConfirmacaoOk) {
     evento.preventDefault();
     var primeiroInvalido = document.querySelector('.is-invalid');
     if (primeiroInvalido) primeiroInvalido.focus();

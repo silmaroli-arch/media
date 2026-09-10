@@ -372,12 +372,36 @@ def cadastro():
         nome = request.form.get("nome", "").strip()
         email = request.form.get("email", "").strip().lower()
         senha = request.form.get("senha", "")
+        senha_confirmacao = request.form.get("senha_confirmacao", "")
         cpf = request.form.get("cpf", "").strip()
 
         papel = request.form.get("papel", "secretaria")
 
-        if not nome or not email or not senha or not cpf:
-            flash("Preencha todos os campos obrigatórios (nome, e-mail, senha e CPF).", "danger")
+        # Pedido do Silvan (2026-09-10): todo o formulário de cadastro
+        # (exceto Complemento, que nem todo endereço tem) virou
+        # obrigatório - antes só nome/e-mail/senha/CPF eram exigidos de
+        # verdade, telefone e CEP só validavam formato quando preenchidos
+        # (podiam ficar em branco), e o resto do endereço (rua, número,
+        # bairro, cidade, UF) não tinha validação nenhuma. Vale só para
+        # cadastros NOVOS a partir de agora - contas já existentes com
+        # esses campos vazios não são bloqueadas nem avisadas.
+        campos_endereco = {
+            "rua": request.form.get("rua", "").strip(),
+            "numero": request.form.get("numero", "").strip(),
+            "bairro": request.form.get("bairro", "").strip(),
+            "cidade": request.form.get("cidade", "").strip(),
+            "uf": request.form.get("uf", "").strip(),
+        }
+        if (
+            not nome
+            or not email
+            or not senha
+            or not cpf
+            or not request.form.get("telefone", "").strip()
+            or not request.form.get("cep", "").strip()
+            or not all(campos_endereco.values())
+        ):
+            flash("Preencha todos os campos obrigatórios (todos, exceto Complemento).", "danger")
             return render_template("auth/cadastro.html")
 
         if not validar_cpf(cpf):
@@ -420,6 +444,13 @@ def cadastro():
 
         if len(senha) < 6:
             flash("A senha deve ter pelo menos 6 caracteres.", "danger")
+            return render_template("auth/cadastro.html")
+
+        # Pedido do Silvan (2026-09-10): confirmação de senha (digitar
+        # duas vezes) só no cadastro inicial - outras telas de senha
+        # (trocar-senha, etc.) ficam como estão por enquanto.
+        if senha != senha_confirmacao:
+            flash("A confirmação não corresponde à senha digitada.", "danger")
             return render_template("auth/cadastro.html")
 
         if Usuario.query.filter_by(email=email).first():
