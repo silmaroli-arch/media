@@ -131,22 +131,18 @@
         </a>
       </li>
 
-      {# Checklist opcional (atalho na tela de início, modelo de preparo,
-         exame) - acessível a qualquer momento, não é mais forçado logo
-         após o cadastro (ver auth.cadastro / medico.primeiros_passos). #}
-      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
-        <a class="nav-link {% if request.endpoint in ['medico.primeiros_passos', 'medico.atalhos'] %}active{% endif %}" href="{{ url_for('medico.primeiros_passos') }}">
-          <i class="bi bi-rocket-takeoff me-2"></i>Primeiros passos
-        </a>
-      </li>
+      {# Pedido do Silvan (2026-09-10, revisado com a nova ordem de menu):
+         "Primeiros passos" saiu do menu lateral (o checklist/atalho em si
+         continua existindo em medico.primeiros_passos, só não tem mais
+         link fixo aqui). #}
 
-      {# Trabalho compartilhado (grupo) — BBP MedIA. Camada nova, adicional
-         ao modelo de Empresa/Clínica/"locais de atendimento" abaixo (ver
-         app/routes_grupo.py); a migração completa do restante do sistema
-         para este conceito ainda está pendente. #}
+      {# Reorganização de menus (pedido do Silvan, 2026-09-10): ordem fixa
+         Painel / Meus dados / Exames & preparo / Pacientes / Meus exames
+         agendados / Médico + IA / Grupos de trabalho / Minha licença. #}
+
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
-        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('grupo.') %}active{% endif %}" href="{{ url_for('grupo.meus_grupos') }}">
-          <i class="bi bi-people me-2"></i>Grupos de trabalho
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">
+          <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
         </a>
       </li>
 
@@ -177,53 +173,6 @@
            aqui). Este item é um dos 2 que continuam no menu reduzido do
            celular do médico - por isso NÃO leva a classe
            oculto_no_celular_do_medico. #}
-      </li>
-
-      {% if current_user.tipo == "medico" %}
-      {# Versão mobile do link "Portal de atendimento rápido" (o outro,
-         dentro de "Médico + IA" mais abaixo, continua servindo
-         tablet/desktop) - aqui SEM target="_blank": abrir uma aba nova
-         dentro de um PWA instalado em modo standalone tende a jogar a
-         pessoa pra fora do app (pro Safari/Chrome "de verdade"), o que
-         não faz sentido nesse atalho pensado justamente pra quem está
-         usando o app pelo celular. #}
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint == 'medico.portal_atendimento' %}active{% endif %}" href="{{ url_for('medico.portal_atendimento') }}">
-          <i class="bi bi-box-arrow-up-right me-2"></i>Portal de atendimento
-        </a>
-      </li>
-
-      {# Versão mobile do link "Testar IA nos meus preparos" (pedido do
-         Silvan: também precisa aparecer no app do médico, não só no
-         desktop/tablet) - o outro, dentro de "Médico + IA" mais abaixo,
-         fica oculto no menu reduzido do celular (ver
-         oculto_no_celular_do_medico), então esta cópia é o único jeito de
-         chegar lá pelo celular. #}
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint == 'medico.testar_ia' %}active{% endif %}" href="{{ url_for('medico.testar_ia') }}">
-          <i class="bi bi-robot me-2"></i>Testar IA nos meus preparos
-        </a>
-      </li>
-
-      {# Fatia 8 (licença individual): pedido explícito do Silvan de que o
-         médico tenha acesso a isso pelo app Mobile - por isso este item
-         NÃO leva oculto_no_celular_do_medico nem d-md-none, fica visível
-         tanto no menu reduzido do celular quanto no desktop. #}
-      <li class="nav-item mb-1">
-        <a class="nav-link {% if request.endpoint == 'medico.minha_licenca' %}active{% endif %}" href="{{ url_for('medico.minha_licenca') }}">
-          <i class="bi bi-patch-check me-2"></i>Minha licença
-        </a>
-      </li>
-      {% endif %}
-
-      {# Reorganização de menus: o menu "Relatórios" deixou de existir -
-         as rotas (relatorios.index/agenda/pacientes/desempenho_medico)
-         continuam existindo, só sem link no menu. #}
-
-      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
-        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">
-          <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
-        </a>
       </li>
 
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
@@ -271,6 +220,57 @@
           </ul>
         </div>
       </li>
+
+      {# Trabalho compartilhado (grupo) — BBP MedIA. Camada nova, adicional
+         ao modelo de Empresa/Clínica/"locais de atendimento" abaixo (ver
+         app/routes_grupo.py); a migração completa do restante do sistema
+         para este conceito ainda está pendente. #}
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('grupo.') %}active{% endif %}" href="{{ url_for('grupo.meus_grupos') }}">
+          <i class="bi bi-people me-2"></i>Grupos de trabalho
+        </a>
+      </li>
+
+      {% if current_user.tipo == "medico" %}
+      {# Versão mobile do link "Portal de atendimento rápido" (o outro,
+         dentro de "Médico + IA" mais acima, continua servindo
+         tablet/desktop) - aqui SEM target="_blank": abrir uma aba nova
+         dentro de um PWA instalado em modo standalone tende a jogar a
+         pessoa pra fora do app (pro Safari/Chrome "de verdade"), o que
+         não faz sentido nesse atalho pensado justamente pra quem está
+         usando o app pelo celular. #}
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'medico.portal_atendimento' %}active{% endif %}" href="{{ url_for('medico.portal_atendimento') }}">
+          <i class="bi bi-box-arrow-up-right me-2"></i>Portal de atendimento
+        </a>
+      </li>
+
+      {# Versão mobile do link "Testar IA nos meus preparos" (pedido do
+         Silvan: também precisa aparecer no app do médico, não só no
+         desktop/tablet) - o outro, dentro de "Médico + IA" mais acima,
+         fica oculto no menu reduzido do celular (ver
+         oculto_no_celular_do_medico), então esta cópia é o único jeito de
+         chegar lá pelo celular. #}
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'medico.testar_ia' %}active{% endif %}" href="{{ url_for('medico.testar_ia') }}">
+          <i class="bi bi-robot me-2"></i>Testar IA nos meus preparos
+        </a>
+      </li>
+
+      {# Fatia 8 (licença individual): pedido explícito do Silvan de que o
+         médico tenha acesso a isso pelo app Mobile - por isso este item
+         NÃO leva oculto_no_celular_do_medico nem d-md-none, fica visível
+         tanto no menu reduzido do celular quanto no desktop. #}
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if request.endpoint == 'medico.minha_licenca' %}active{% endif %}" href="{{ url_for('medico.minha_licenca') }}">
+          <i class="bi bi-patch-check me-2"></i>Minha licença
+        </a>
+      </li>
+      {% endif %}
+
+      {# Reorganização de menus: o menu "Relatórios" deixou de existir -
+         as rotas (relatorios.index/agenda/pacientes/desempenho_medico)
+         continuam existindo, só sem link no menu. #}
     </ul>
   </nav>
   {# Fundo escurecido atrás da gaveta do menu - toque nele fecha o menu

@@ -150,18 +150,27 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // ---------- Máscaras (mesma lógica de auth/cadastro.html) ----------
+function formatarComMascaraFixa(valor, padrao) {
+  var maxDigitos = (padrao.match(/9/g) || []).length;
+  var digitos = valor.replace(/\D/g, '').slice(0, maxDigitos);
+  if (!digitos) return '';
+  var resultado = '', pos = 0;
+  for (var i = 0; i < padrao.length && pos < digitos.length; i++) {
+    if (padrao[i] === '9') { resultado += digitos[pos]; pos++; }
+    else { resultado += padrao[i]; }
+  }
+  return resultado;
+}
 function aplicarMascaraFixa(campo, padrao) {
   if (!campo) return;
-  var maxDigitos = (padrao.match(/9/g) || []).length;
+  // Pedido do Silvan (2026-09-10): o telefone (e os demais campos com
+  // máscara fixa) vinham do banco sem formatação nenhuma na primeira
+  // exibição desta tela — a máscara só entrava em ação a partir do
+  // próximo caractere digitado pelo usuário. Formata o valor já carregado
+  // assim que a página abre, e não só durante a digitação.
+  campo.value = formatarComMascaraFixa(campo.value, padrao);
   campo.addEventListener('input', function () {
-    var digitos = campo.value.replace(/\D/g, '').slice(0, maxDigitos);
-    if (!digitos) { campo.value = ''; return; }
-    var resultado = '', pos = 0;
-    for (var i = 0; i < padrao.length && pos < digitos.length; i++) {
-      if (padrao[i] === '9') { resultado += digitos[pos]; pos++; }
-      else { resultado += padrao[i]; }
-    }
-    campo.value = resultado;
+    campo.value = formatarComMascaraFixa(campo.value, padrao);
   });
 }
 aplicarMascaraFixa(document.getElementById('cpf'), '999.999.999-99');
