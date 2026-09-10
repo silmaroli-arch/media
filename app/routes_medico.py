@@ -36,7 +36,10 @@ from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
 from app.ia_preparo import responder_com_ia
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.custo_ia import registrar_chamada_ia
-from app.whatsapp_envio import enviar_boas_vindas_whatsapp, enviar_preparo_cadastrado_whatsapp
+from app.whatsapp_envio import (
+    enviar_boas_vindas_whatsapp, enviar_preparo_cadastrado_whatsapp,
+    enviar_agendamento_criado_whatsapp,
+)
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -2263,6 +2266,15 @@ def agenda_novo():
         )
         db.session.add(agendamento)
         db.session.commit()
+        # Pedido do Silvan (2026-09-10): avisar o paciente no WhatsApp que
+        # o agendamento foi criado (data/hora + lembrete de que aquele
+        # número é o canal para dúvidas sobre o preparo) - só na CRIAÇÃO
+        # inicial (não em edição/reagendamento), e só aqui, que é o único
+        # lugar do sistema onde um agendamento REAL é criado (ver
+        # enviar_agendamento_criado_whatsapp em app/whatsapp_envio.py;
+        # nunca chamada para o agendamento sintético de
+        # _garantir_agendamento_teste, usado só por "Testar IA").
+        enviar_agendamento_criado_whatsapp(agendamento)
         flash("Agendamento criado com sucesso.", "success")
         return redirect(url_for("medico.agenda"))
 

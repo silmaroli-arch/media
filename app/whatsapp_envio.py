@@ -54,6 +54,19 @@ repositório, ver .env.example):
   abaixo, chamada em app.routes_medico.preparo_modelos_novo) - COM uma
   variável (o nome do médico). Também quase sempre fora da janela de
   24h, e também opcional (sem ele, o envio é só pulado).
+- WHATSAPP_META_TEMPLATE_AGENDAMENTO_CRIADO (opcional, pedido do Silvan,
+  2026-09-10): nome do template aprovado usado para avisar o PACIENTE, no
+  próprio WhatsApp, que um agendamento foi criado para ele (ver
+  enviar_agendamento_criado_whatsapp mais abaixo, chamada em
+  app.routes_medico.agenda_novo, só na criação inicial do agendamento -
+  não em reagendamentos/edições) - COM TRÊS variáveis: {{1}} o nome do
+  paciente, {{2}} o nome do exame, {{3}} a data/hora formatada
+  (dd/mm/aaaa às HH:MM). A mensagem também avisa que aquele número é o
+  canal para tirar dúvidas sobre o preparo. Quase sempre fora da janela
+  de 24h (o paciente raramente acabou de mandar mensagem), e opcional:
+  sem esse template configurado, o envio é só pulado (mesmo padrão de
+  "falha aberta" do resto deste módulo) - o agendamento em si nunca falha
+  por causa disso.
 - WHATSAPP_META_TEMPLATE_IDIOMA (opcional, padrão "pt_BR"): o código de
   idioma cadastrado junto com o template na aprovação.
 - WHATSAPP_META_API_VERSION (opcional, padrão "v22.0"): versão da Graph
@@ -191,11 +204,21 @@ def enviar_boas_vindas_whatsapp(paciente, aviso_extra=""):
     `aviso_extra` (pedido do Silvan, 2026-09-10): texto adicional que
     aparece só para o MÉDICO no momento do próprio cadastro (avisando que
     ele precisa cadastrar um modelo de preparo antes de poder testar) -
-    fica em BRANCO para o paciente real, que não deveria ver esse aviso.
-    É a 2ª variável do MESMO template WHATSAPP_META_TEMPLATE_BOAS_VINDAS
-    (em vez de um template separado) - o template, ao ser (re)aprovado na
-    Meta, precisa ter duas variáveis no corpo: {{1}} o nome, {{2}} este
-    aviso extra (ou vazio).
+    fica em BRANCO (só um espaço, ver abaixo) para o paciente real, que
+    não deveria ver esse aviso. É a 2ª variável do MESMO template
+    WHATSAPP_META_TEMPLATE_BOAS_VINDAS (em vez de um template separado) -
+    o template, ao ser (re)aprovado na Meta, precisa ter duas variáveis no
+    corpo, cada uma com texto fixo antes/depois (a Meta recusa variável
+    colada no início ou no fim do corpo): {{1}} o nome, {{2}} este aviso
+    extra. Corpo aprovado (2026-09-10): "Olá {{1}}, tudo bem? Este é o
+    WhatsApp da clínica - salve este número para tirar dúvidas sobre o
+    preparo dos seus exames. {{2}} Qualquer coisa, estamos por aqui!".
+
+    Importante: a Graph API rejeita variável de template como string
+    vazia - por isso, quando não há aviso extra (paciente real), manda um
+    espaço (" ") em vez de "" para {{2}}; como o corpo já tem texto fixo
+    logo antes e logo depois dessa variável, um espaço a mais passa
+    despercebido no resultado final.
 
     É sempre a PRIMEIRA mensagem trocada com esse número - nunca há uma
     janela de 24h aberta ainda -, então SEMPRE precisa do template
@@ -208,7 +231,7 @@ def enviar_boas_vindas_whatsapp(paciente, aviso_extra=""):
     return enviar_mensagem_whatsapp(
         paciente.telefone,
         texto=f"Olá, {paciente.nome}! Este é o WhatsApp da clínica — salve este número para tirar dúvidas sobre o preparo dos seus exames.",
-        content_variables=[paciente.nome, aviso_extra],
+        content_variables=[paciente.nome, aviso_extra.strip() or " "],
         nome_template_env="WHATSAPP_META_TEMPLATE_BOAS_VINDAS",
     )
 
@@ -242,4 +265,45 @@ def enviar_preparo_cadastrado_whatsapp(medico):
         ),
         content_variables=[medico.nome],
         nome_template_env="WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO",
+    )
+
+
+def enviar_agendamento_criado_whatsapp(agendamento):
+    """Pedido do Silvan (2026-09-10): avisar o PACIENTE, no próprio
+    WhatsApp, assim que um agendamento é criado para ele - a mensagem traz
+    a data/hora do exame e reforça que aquele número é o canal certo para
+    tirar dúvidas sobre o preparo. Chamada em
+    app.routes_medico.agenda_novo, uma única vez, logo após o commit da
+    CRIAÇÃO do agendamento (decisão do Silvan: reagendamentos/edições não
+    reenviam este aviso - só a criação inicial dispara).
+
+    Importante: NÃO deve ser chamada para o agendamento sintético que
+    app.routes_medico._garantir_agendamento_teste cria/atualiza para a
+    tela "Testar IA nos meus preparos" - aquele não é um agendamento real
+    experimentado por um paciente de verdade, então não deve gerar este
+    aviso.
+
+    `agendamento` é a instância recém-criada de Agendamento, já com
+    `paciente` e `exame` carregáveis via relacionamento (ver Agendamento
+    em app/models.py) - usamos paciente.telefone como destino.
+
+    Mensagem iniciada pela clínica, quase sempre fora da janela de 24h -
+    por isso usa seu PRÓPRIO template
+    (WHATSAPP_META_TEMPLATE_AGENDAMENTO_CRIADO, com três variáveis: nome
+    do paciente, nome do exame, data/hora formatada), separado dos demais.
+    Sem esse template configurado, o envio é só pulado (mesmo padrão de
+    "falha aberta" do resto deste módulo) - a criação do agendamento em si
+    nunca falha por causa disso."""
+    paciente = agendamento.paciente
+    exame = agendamento.exame
+    data_hora_formatada = agendamento.data_hora.strftime("%d/%m/%Y às %H:%M")
+    return enviar_mensagem_whatsapp(
+        paciente.telefone,
+        texto=(
+            f"Olá, {paciente.nome}! Seu exame {exame.nome} foi agendado para "
+            f"{data_hora_formatada}. Salve este número: é por aqui que você tira "
+            "dúvidas sobre o preparo do exame."
+        ),
+        content_variables=[paciente.nome, exame.nome, data_hora_formatada],
+        nome_template_env="WHATSAPP_META_TEMPLATE_AGENDAMENTO_CRIADO",
     )

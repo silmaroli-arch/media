@@ -488,6 +488,63 @@ manualmente (script ad-hoc, depois apagado) que um médico cadastrado com CPF co
 fato ter uma consulta agendada de verdade via `medico.agenda_novo` (POST) usando o
 próprio cadastro de paciente — o pedido original do Silvan nesta rodada.
 
+### Novo aviso de WhatsApp: paciente é avisado quando um agendamento é criado (mesma rodada)
+
+Pedido do Silvan (2026-09-10, mesmo dia): quando um agendamento REAL é criado para um
+paciente, ele deve receber um aviso pelo WhatsApp com a data/hora do exame, e ser
+lembrado de que aquele número é o canal para tirar dúvidas sobre o preparo.
+
+**Implementado**:
+- Nova função `enviar_agendamento_criado_whatsapp(agendamento)` em
+  `app/whatsapp_envio.py`, seguindo exatamente o mesmo padrão das outras (fail-open,
+  usa `paciente.telefone`, template Meta próprio via nova variável de ambiente
+  `WHATSAPP_META_TEMPLATE_AGENDAMENTO_CRIADO`, COM TRÊS variáveis: `{{1}}` nome do
+  paciente, `{{2}}` nome do exame, `{{3}}` data/hora formatada
+  (`dd/mm/aaaa às HH:MM`)).
+- Texto sugerido do corpo do template (aprovado pelo Silvan nesta rodada, "curto e
+  direto"): *"Olá {{1}}, tudo bem? Seu exame {{2}} foi agendado para {{3}}. Salve este
+  número: é por aqui que você tira dúvidas sobre o preparo do exame."* — respeita a
+  regra da Meta de não iniciar/terminar o corpo com uma variável. **Este template
+  ainda não existe no WhatsApp Manager** — precisa ser criado e submetido para
+  aprovação pelo Silvan, como os 3 anteriores (`boas_vindas_clinica`,
+  `preparo_cadastrado_medico`, `resposta_duvida_paciente`), categoria "Marketing",
+  idioma `pt_BR`.
+- Chamada inserida em `app/routes_medico.py`, dentro de `medico.agenda_novo` (POST),
+  logo após o `db.session.commit()` que cria o `Agendamento` — **confirmado por
+  investigação nesta rodada que esse é o ÚNICO lugar do sistema onde um agendamento
+  REAL é criado** (o grep por `Agendamento(` em `app/routes_grupo.py` não encontrou
+  nenhuma criação lá, só um comentário; agendamento por Grupo passa pela mesma rota
+  `medico.agenda_novo`, só varia a filial). Dispara **só na criação inicial** — não
+  há hoje uma rota de edição/reagendamento que precisasse do mesmo aviso (decisão do
+  Silvan: só criação, por enquanto).
+- **Importante, para não confundir com o achado do parágrafo anterior**: este aviso
+  NÃO é (e não deve ser) disparado para o agendamento sintético que
+  `_garantir_agendamento_teste()` cria para a tela "Testar IA" — só o agendamento
+  real feito por `medico.agenda_novo` chama `enviar_agendamento_criado_whatsapp`.
+  Testado explicitamente (script ad-hoc com mock, depois apagado): a chamada acontece
+  exatamente uma vez ao criar um agendamento real via POST, e zero vezes ao usar
+  "Testar IA".
+
+**Pendências para o Silvan**:
+1. Criar o template `WHATSAPP_META_TEMPLATE_AGENDAMENTO_CRIADO` no WhatsApp Manager
+   (nome sugerido: `agendamento_criado`) com o corpo de 3 variáveis acima, submeter
+   para aprovação da Meta.
+2. Depois de aprovado, configurar a variável de ambiente
+   `WHATSAPP_META_TEMPLATE_AGENDAMENTO_CRIADO` em `media-dev` (Render → Environment)
+   com o nome exato do template aprovado — sem essa variável configurada, o envio é
+   só pulado (mesmo padrão de falha aberta de sempre), o agendamento em si nunca
+   quebra por causa disso.
+3. Validar em produção, depois de configurado, que a mensagem chega corretamente ao
+   criar um agendamento de verdade.
+
+Testes rodados depois desta mudança (banco limpo + seed): `test_testar_ia_smoke.py`
+(sem alterações necessárias, continua passando) e um script ad-hoc
+(`test_whatsapp_agendamento_criado.py`, criado e apagado nesta rodada) que usa
+`unittest.mock.patch` para confirmar a chamada e seus parâmetros sem depender de
+credenciais reais da Meta — todos passando. `test_smoke.py` continua com a mesma
+falha pré-existente já documentada (`colonoscopia_id`, linha ~1298), não relacionada
+a esta mudança.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
