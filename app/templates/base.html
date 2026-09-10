@@ -242,6 +242,30 @@
       </li>
 
       {% if current_user.tipo == "medico" %}
+      {# Versões mobile de "Meus dados", "Pacientes" e "Agendar exame"
+         (pedido do Silvan, 2026-09-10): esses 3 itens ficam ocultos no
+         menu reduzido do celular do médico (ver oculto_no_celular_do_medico
+         nos itens "completos" mais acima), então precisam desta cópia,
+         mesmo padrão já usado para "Portal de atendimento" e "Testar IA"
+         logo abaixo - só aparecem em telas pequenas (d-md-none). #}
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'auth.meus_dados' %}active{% endif %}" href="{{ url_for('auth.meus_dados') }}">
+          <i class="bi bi-person-circle me-2"></i>Meus dados
+        </a>
+      </li>
+
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">
+          <i class="bi bi-journal-plus me-2"></i>Pacientes
+        </a>
+      </li>
+
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'medico.agenda_novo' %}active{% endif %}" href="{{ url_for('medico.agenda_novo') }}">
+          <i class="bi bi-calendar-plus me-2"></i>Agendar exame
+        </a>
+      </li>
+
       {# Versão mobile do link "Portal de atendimento rápido" (o outro,
          dentro de "Médico + IA" mais acima, continua servindo
          tablet/desktop) - aqui SEM target="_blank": abrir uma aba nova

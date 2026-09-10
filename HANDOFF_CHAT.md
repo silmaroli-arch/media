@@ -557,6 +557,27 @@ Segue o mesmo padrão dos outros itens (fica oculto no menu reduzido do celular 
 médico, `oculto_no_celular_do_medico`, igual a "Pacientes" e "Exames & preparo").
 Confirmado manualmente que o link aparece e aponta pra URL certa.
 
+### "Meus dados", "Pacientes" e "Agendar exame" também no menu reduzido do celular (mesma rodada)
+
+Pedido do Silvan (2026-09-10, mesmo dia): esses 3 itens também precisavam aparecer no
+"portal do médico" — esclarecido via pergunta ao Silvan que isso significa o **menu
+reduzido do celular do médico** (não a tela `portal/atendimento.html` em si), que hoje
+só tinha "Portal de atendimento", "Testar IA nos meus preparos" e "Minha licença"
+fixos (o resto do menu completo fica escondido nesse tamanho de tela via a classe
+`oculto_no_celular_do_medico`, ver `app/templates/base.html`).
+
+Adicionadas 3 cópias mobile (`d-md-none`) em `app/templates/base.html`, logo antes do
+link mobile de "Portal de atendimento" já existente — mesmo padrão já usado ali:
+- "Meus dados" (ícone `bi-person-circle`) → `auth.meus_dados`
+- "Pacientes" (ícone `bi-journal-plus`) → `medico.pacientes_lista`
+- "Agendar exame" (ícone `bi-calendar-plus`) → `medico.agenda_novo` (o mesmo item
+  novo do menu completo, ver seção anterior)
+
+Nenhuma mudança de backend/rota — só navegação. Confirmado manualmente (requisição
+HTTP direta, sem abrir de fato num celular) que os 3 links aparecem duplicados no
+HTML (uma cópia "completa" oculta em telas grandes, uma cópia mobile), o que é o
+comportamento esperado desse padrão de menu.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
