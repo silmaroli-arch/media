@@ -326,9 +326,84 @@
     </div>
   </div>
 
+  {# Zona de risco (pedido do Silvan, 2026-09-10): apaga TODOS os dados
+     operacionais da plataforma de uma vez - ver app/limpar_dados.py para
+     o histórico completo (substitui uma ferramenta parecida que já tinha
+     sido removida antes por insegura; o Silvan foi avisado disso e
+     confirmou que queria mesmo assim, inclusive em produção). Fica separada
+     visualmente do resto das configurações de propósito, com um modal de
+     confirmação em vez de um form inline - a ação tem duas travas reais
+     (senha + a frase "APAGAR TUDO" digitada por extenso), verificadas no
+     servidor em dono.limpar_dados_banco; o texto vermelho e o modal são só
+     pra reduzir clique acidental, não são a proteção de verdade. #}
+  <div class="card border-danger mt-4">
+    <div class="card-header bg-danger bg-opacity-10 text-danger">
+      <i class="bi bi-exclamation-triangle-fill me-1"></i><strong>Zona de risco</strong>
+    </div>
+    <div class="card-body">
+      <h6 class="text-danger">Apagar todos os dados</h6>
+      <p class="text-muted small mb-3">
+        Apaga permanentemente TODOS os médicos, secretárias, pacientes, grupos, exames, preparos,
+        agendamentos, conversas de WhatsApp e histórico de IA desta instalação. Sua conta de dono
+        continua ativa depois. <strong>Não existe desfazer</strong> — não há backup automático antes
+        desta ação. Use só se tiver certeza absoluta (ex.: para zerar um ambiente de teste/dev).
+      </p>
+      <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modalLimparDados">
+        Apagar todos os dados
+      </button>
+    </div>
+  </div>
+
+  <div class="modal fade" id="modalLimparDados" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="post" action="{{ url_for('dono.limpar_dados_banco') }}" id="formLimparDados">
+          <div class="modal-header border-danger">
+            <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>Apagar todos os dados</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p>
+              Isso vai apagar <strong>permanentemente</strong> todos os médicos, secretárias, pacientes,
+              grupos, exames, preparos, agendamentos, conversas de WhatsApp e histórico de IA. Sua conta
+              de dono continua ativa. <strong>Não tem volta.</strong>
+            </p>
+            <div class="mb-3">
+              <label class="form-label">Para confirmar, digite <code>APAGAR TUDO</code> abaixo</label>
+              <input type="text" name="frase_confirmacao" id="fraseConfirmacaoLimparDados" class="form-control"
+                     placeholder="APAGAR TUDO" autocomplete="off" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Sua senha</label>
+              <input type="password" name="senha_confirmacao" class="form-control"
+                     placeholder="sua senha" autocomplete="current-password" required>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-danger" id="botaoConfirmarLimparDados" disabled>Apagar todos os dados</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
+// Zona de risco: o botão de confirmar só destrava depois de digitar a
+// frase exata - trava extra no cliente, além da que o servidor já exige
+// (dono.limpar_dados_banco confere de novo, então isso é só UX).
+(function () {
+  var campoFrase = document.getElementById('fraseConfirmacaoLimparDados');
+  var botaoConfirmar = document.getElementById('botaoConfirmarLimparDados');
+  if (campoFrase && botaoConfirmar) {
+    campoFrase.addEventListener('input', function () {
+      botaoConfirmar.disabled = campoFrase.value.trim() !== 'APAGAR TUDO';
+    });
+  }
+})();
+
 // Se a página chegou com uma âncora tipo "#painel-usuarios" (link vindo
 // de outra tela do painel - ver dono/_menu.html), abre a aba
 // correspondente em vez de sempre cair em "Visão geral".

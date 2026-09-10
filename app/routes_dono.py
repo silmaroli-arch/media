@@ -10,6 +10,7 @@ from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 from app.mercadopago_integration import criar_preferencia_pagamento, MercadoPagoNaoConfigurado
 from app.exclusao_usuario import verificar_bloqueios_exclusao, excluir_usuario_e_dados
+from app.limpar_dados import apagar_todos_os_dados
 
 dono_bp = Blueprint("dono", __name__, url_prefix="/dono")
 
@@ -480,6 +481,46 @@ def usuario_excluir(usuario_id):
     db.session.commit()
     flash(f'"{nome}" e todos os dados associados foram excluídos permanentemente.', "success")
     return redirect(url_for("dono.usuarios"))
+
+
+@dono_bp.route("/limpar-dados", methods=["POST"])
+@login_required
+@dono_required
+def limpar_dados_banco():
+    """Apaga TODOS os dados operacionais da plataforma (médicos,
+    secretárias, pacientes, grupos, exames, preparos, agendamentos,
+    conversas de WhatsApp, histórico de IA etc.) - pedido explícito do
+    Silvan (2026-09-10). Ver app/limpar_dados.py para o histórico completo
+    de por que isso é sensível (substituiu uma ferramenta parecida que já
+    tinha sido removida antes por ser insegura) e o que exatamente é
+    apagado/preservado.
+
+    Disponível para qualquer dono da plataforma, em QUALQUER ambiente
+    (inclusive produção) - decisão explícita do Silvan, mesmo depois de
+    avisado do histórico acima. Duas confirmações antes de executar,
+    nenhuma delas contornável: a senha do próprio dono (mesmo padrão de
+    usuario_excluir) e a digitação literal de "APAGAR TUDO" - a ideia é
+    tornar bem difícil de disparar isso sem querer, já que não tem volta
+    (nenhum backup automático é feito aqui)."""
+    senha_confirmacao = request.form.get("senha_confirmacao", "")
+    frase_confirmacao = request.form.get("frase_confirmacao", "").strip()
+
+    if frase_confirmacao != "APAGAR TUDO":
+        flash('Digite exatamente "APAGAR TUDO" para confirmar - nada foi apagado.', "danger")
+        return redirect(url_for("dono.dashboard"))
+
+    if not current_user.checar_senha(senha_confirmacao):
+        flash("Senha incorreta - nada foi apagado.", "danger")
+        return redirect(url_for("dono.dashboard"))
+
+    apagar_todos_os_dados(current_user)
+    db.session.commit()
+    flash(
+        "Todos os dados foram apagados (médicos, secretárias, pacientes, grupos, exames, preparos, "
+        "agendamentos, conversas e histórico de IA). Sua conta de dono continua ativa.",
+        "warning",
+    )
+    return redirect(url_for("dono.dashboard"))
 
 
 @dono_bp.route("/usuarios")
