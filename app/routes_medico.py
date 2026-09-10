@@ -531,7 +531,25 @@ def pacientes_lista():
         )
     else:
         pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).order_by(Paciente.nome).all()
-    return render_template("medico/pacientes_lista.html", pacientes=pacientes)
+
+    # Pedido do Silvan (2026-09-10): o paciente sintético "de teste" (ver
+    # Paciente.eh_teste e _paciente_teste_do_medico) continua de propósito
+    # fora de _filtro_pacientes_da_empresa() - não deve contar em nenhuma
+    # métrica/relatório/contagem de paciente de verdade. Mas, só NESTA
+    # tela, o médico (quando é ele mesmo, com perm_pacientes - quem tem
+    # essa permissão é quem também usa "Testar IA") pode querer ver esse
+    # cadastro pra entender o que a tela de teste está usando por baixo -
+    # entra como um item à parte, sinalizado no template, nunca misturado
+    # silenciosamente com pacientes reais.
+    paciente_teste = None
+    if eh_medico() and current_user.perm_pacientes:
+        paciente_teste = Paciente.query.filter_by(
+            cadastrado_por_id=current_user.id, eh_teste=True
+        ).first()
+
+    return render_template(
+        "medico/pacientes_lista.html", pacientes=pacientes, paciente_teste=paciente_teste
+    )
 
 
 @medico_bp.route("/pacientes/solicitacoes")
