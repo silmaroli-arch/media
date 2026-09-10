@@ -80,7 +80,18 @@ def apagar_todos_os_dados(dono_atual):
     # 2. Agendamentos (o ResultadoExame ligado a cada um já foi acima).
     Agendamento.query.delete(synchronize_session=False)
 
-    # 3. Conteúdo de preparo (dependem de PreparoModelo).
+    # 3. Associação médico<->exame (tabela simples, sem model próprio) e os
+    # exames em si - PRECISA vir antes do PreparoModelo, porque
+    # Exame.preparo_modelo_id é FK para preparo_modelos.id (no Postgres do
+    # Render essa ordem importa de verdade; no SQLite local, usado na maior
+    # parte dos testes deste recurso, a constraint não é validada por
+    # padrão e o bug ficou invisível até reproduzir contra Postgres real).
+    db.session.execute(exame_medicos_associados.delete())
+    Exame.query.delete(synchronize_session=False)
+
+    # 4. Conteúdo de preparo (dependem de PreparoModelo) e o próprio
+    # PreparoModelo - só agora, com os Exame que apontavam pra ele já
+    # apagados acima.
     PreparoCorte.query.delete(synchronize_session=False)
     PreparoInfoGeral.query.delete(synchronize_session=False)
     PreparoAlimento.query.delete(synchronize_session=False)
@@ -88,11 +99,6 @@ def apagar_todos_os_dados(dono_atual):
     PreparoMedicamentoSuspenso.query.delete(synchronize_session=False)
     PreparoMedicamentoMantido.query.delete(synchronize_session=False)
     PreparoModelo.query.delete(synchronize_session=False)
-
-    # 4. Associação médico<->exame (tabela simples, sem model próprio) e
-    # os exames em si.
-    db.session.execute(exame_medicos_associados.delete())
-    Exame.query.delete(synchronize_session=False)
 
     # 5. Grupos e tudo ligado a eles.
     GrupoConvite.query.delete(synchronize_session=False)
