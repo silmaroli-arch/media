@@ -47,7 +47,18 @@ services:
     # ADD COLUMN IF NOT EXISTS), rodar a cada start do serviço (inclusive
     # quando o free tier "acorda" depois de dormir por inatividade) é
     # seguro.
-    startCommand: "python migrar_banco.py && gunicorn application:application --timeout 120"
+    #
+    # gerar_deploy_info_render.py (pedido do Silvan, 2026-09-10): gera o
+    # "deploy_info.json" que alimenta a versão e o "ver histórico" da tela
+    # de login (auth/login.html). Esse arquivo só era gerado pelo pipeline
+    # do GitHub Actions (.github/workflows/deploy.yml), que não roda mais
+    # para a branch "dev" desde que o media-dev passou a ser publicado
+    # direto pelo Render (2026-09-04) - sem esse passo aqui, o histórico
+    # de versões tinha sumido da tela de login neste ambiente. Com ";" (e
+    # não "&&") antes do migrar_banco.py de propósito: mesmo que geração
+    # da versão falhe por algum motivo, o deploy não deve travar por
+    # causa disso - é só uma informação de bastidor, não algo essencial.
+    startCommand: "python gerar_deploy_info_render.py; python migrar_banco.py && gunicorn application:application --timeout 120"
     envVars:
       - key: DATABASE_URL
         fromDatabase:
