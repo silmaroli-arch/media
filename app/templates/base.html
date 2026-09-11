@@ -84,13 +84,6 @@
 {% set eh_staff_logado = current_user.is_authenticated and current_user.is_staff %}
 <div class="d-flex">
   {% if eh_staff_logado %}
-  {# "medico.perguntas_respondidas", "medico.portal_atendimento" e as
-     rotas de "medico.faq_*" saíram desta lista (pedido do Silvan,
-     2026-09-11): os itens correspondentes ("Últimas respondidas",
-     "Portal de atendimento rápido" e "Base de conhecimento") saíram do
-     submenu colapsável "Médico + IA" e viraram itens diretos do menu,
-     logo abaixo de "Meus exames agendados" - ver mais abaixo. #}
-  {% set grupo_ia = ['medico.perguntas_pendentes', 'medico.perguntas_responder'] %}
   {# Restruturação de 2026-09 (pedido do Silvan): "Exames", "Exames &
      Preparo" e "Associar exames entre filiais" viraram uma única tela
      ("Modelos de preparo" - ver medico.preparo_modelos_novo). As rotas
@@ -143,7 +136,8 @@
          2026-09-11): ordem fixa Painel / Meus dados / Exames & preparo /
          Pacientes / Agendar exame / Meus exames agendados / Portal de
          atendimento rápido / Últimas respondidas / Base de conhecimento /
-         Médico + IA / Grupos de trabalho / Minha licença. #}
+         Grupos de trabalho / Minha licença ("Médico + IA" foi removido -
+         ver comentário mais abaixo). #}
 
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">
@@ -192,8 +186,10 @@
 
       {# Pedido do Silvan (2026-09-11): "Portal de atendimento rápido",
          "Últimas respondidas" e "Base de conhecimento" saíram de dentro
-         do submenu "Médico + IA" (mais abaixo) e viraram itens diretos
-         do menu, logo abaixo de "Meus exames agendados", nessa ordem.
+         do que era o submenu "Médico + IA" (removido por completo depois,
+         ainda em 2026-09-11 - ver comentário mais abaixo) e viraram
+         itens diretos do menu, logo abaixo de "Meus exames agendados",
+         nessa ordem.
          "Portal de atendimento rápido" é um dos 2 itens que continuam no
          menu reduzido do celular do médico (junto com "Meus exames
          agendados" - ver comentário acima sobre
@@ -220,30 +216,17 @@
         </a>
       </li>
 
-      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuIA" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_ia else 'false' }}">
-          <span><i class="bi bi-robot me-2"></i>Médico + IA</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
-        </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_ia %}show{% endif %}" id="menuIA">
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.perguntas_pendentes' or request.endpoint == 'medico.perguntas_responder' %}active{% endif %}" href="{{ url_for('medico.perguntas_pendentes') }}">Perguntas dos pacientes</a>
-            </li>
-            {% if current_user.tipo == "medico" %}
-            {# Pedido do Silvan: tela onde o médico testa a IA fazendo
-               perguntas sobre os próprios preparos - só faz sentido para
-               quem tem preparo próprio (médico), por isso não aparece
-               para secretária/dono, diferente do outro item deste
-               submenu. #}
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.testar_ia' %}active{% endif %}" href="{{ url_for('medico.testar_ia') }}">Testar IA nos meus preparos</a>
-            </li>
-            {% endif %}
-          </ul>
-        </div>
-      </li>
+      {# O menu "Médico + IA" (submenu colapsável com "Perguntas dos
+         pacientes" e "Testar IA nos meus preparos") foi removido a
+         pedido do Silvan, 2026-09-11 - as rotas medico.perguntas_
+         pendentes/perguntas_responder e medico.testar_ia continuam
+         existindo e acessíveis por link direto (mesmo padrão já usado em
+         outros itens removidos do menu, ver equipe_lista/filiais_lista
+         mais abaixo), só não têm mais nenhum link fixo no menu. Quem
+         precisa responder pergunta pendente no dia a dia usa "Portal de
+         atendimento rápido" (tela separada, já com a mesma lista e o
+         mesmo formulário de resposta) ou o link do próprio aviso de
+         WhatsApp/push (ver app.push_notificacoes). #}
 
       {# Trabalho compartilhado (grupo) — BBP MedIA. Camada nova, adicional
          ao modelo de Empresa/Clínica/"locais de atendimento" abaixo (ver
@@ -300,17 +283,10 @@
          + IA"), sem a classe oculto_no_celular_do_medico - já aparece
          em qualquer tamanho de tela sozinho, sem precisar de cópia. #}
 
-      {# Versão mobile do link "Testar IA nos meus preparos" (pedido do
-         Silvan: também precisa aparecer no app do médico, não só no
-         desktop/tablet) - o outro, dentro de "Médico + IA" mais acima,
-         fica oculto no menu reduzido do celular (ver
-         oculto_no_celular_do_medico), então esta cópia é o único jeito de
-         chegar lá pelo celular. #}
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint == 'medico.testar_ia' %}active{% endif %}" href="{{ url_for('medico.testar_ia') }}">
-          <i class="bi bi-robot me-2"></i>Testar IA nos meus preparos
-        </a>
-      </li>
+      {# A versão mobile do link "Testar IA nos meus preparos" que existia
+         aqui foi removida em 2026-09-11, junto com o menu "Médico + IA"
+         (ver comentário mais acima) - a rota medico.testar_ia continua
+         existindo, só sem link em nenhum tamanho de tela agora. #}
 
       {# Fatia 8 (licença individual): pedido explícito do Silvan de que o
          médico tenha acesso a isso pelo app Mobile - por isso este item
