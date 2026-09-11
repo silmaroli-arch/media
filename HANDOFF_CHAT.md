@@ -944,6 +944,22 @@ Silvan reparou (com prints de uma conversa de WhatsApp em que "posso comer mandi
 
 - **Pendência**: o equivalente em `app/routes_paciente.py:chat()` (área web) não ganhou teste automatizado dedicado nesta rodada (mesma lacuna já registrada antes para esse arquivo) - a mudança é estruturalmente igual à do WhatsApp, mas vale confirmar manualmente. Rodar antes de subir pra produção: `python test_whatsapp_pergunta.py`, `python test_whatsapp_identificacao.py`, e a suíte completa (`test_smoke.py`/`test_smoke_final.py`) - `device_bash` continua indisponível na máquina do Silvan, então nada disso foi executado aqui.
 
+### WhatsApp: paciente precisa digitar "1" antes de cada pergunta (evita que uma saudação solta seja tratada como pergunta nova)
+
+Silvan reportou (com prints de uma conversa real) um efeito colateral do convite direto a perguntar (implementado mais acima nesta mesma rodada, quando o menu numerado foi removido): sem nenhuma barreira, digitar qualquer coisa - até um simples "Oi" - era tratado como pergunta nova e encaminhado pra equipe (chegando a avisar o médico por WhatsApp), poluindo a fila de `/equipe/perguntas` sem necessidade. Sugestão do próprio Silvan, que foi a implementada: acrescentar "Digite 1 para fazer uma nova pergunta" ao final do convite, forçando esse passo antes de aceitar qualquer texto como pergunta.
+
+**Implementado em `app/whatsapp_conversa.py`** (`processar_mensagem`, na parte depois da identificação/escolha de exame):
+- Reaproveitado o campo `ConversaWhatsapp.aguardando_pergunta` (`Boolean`, já existia no banco - tinha sido criado pro antigo menu numerado "2) Fazer uma pergunta", removido horas antes nesta mesma rodada, e ficou sem uso até agora) - **nenhuma migração de banco foi necessária**.
+- `_texto_pedir_pergunta` (o convite mostrado depois de identificar/escolher exame/responder uma pergunta) trocou o texto de "Pode digitar sua pergunta..." para **"Digite *1* para fazer uma pergunta sobre o preparo deste exame."**.
+- Nova constante `MENSAGEM_DIGITE_PERGUNTA` ("Pode digitar sua pergunta sobre o preparo deste exame.") - mostrada só depois que o paciente digita "1", confirmando que a PRÓXIMA mensagem será tratada como o texto da pergunta.
+- Fluxo: paciente digita "1" → `aguardando_pergunta = True`, mostra `MENSAGEM_DIGITE_PERGUNTA`. Próxima mensagem → tratada como a pergunta em si (mesmo caminho de sempre: FAQ/alimento/medicamento/IA, ver seções acima), e `aguardando_pergunta` volta a `False`. Qualquer mensagem recebida SEM ter digitado "1" antes (saudação, comentário, etc.) só repete o convite - nunca cria `PerguntaPendente` nem `ChatMensagem`, nunca avisa a equipe. O comando "trocar" continua funcionando em qualquer momento (mesmo já tendo digitado "1"), e zera `aguardando_pergunta`.
+- `MENSAGEM_PERGUNTA_VAZIA` simplificada para "Não recebi nenhum texto." (o texto anterior, "...Pode digitar sua pergunta sobre o preparo.", ficaria ambíguo agora que existe o passo do "1").
+- `app/models.py`: comentário do campo `ConversaWhatsapp.aguardando_pergunta` atualizado pra descrever o novo uso (documentando também a origem/reaproveitamento do campo).
+
+**Testes**: `test_whatsapp_identificacao.py` ganhou dois casos novos (4a e 4b) confirmando que uma saudação solta ("Oi") sem ter digitado "1" só repete o convite sem ativar `aguardando_pergunta`, e que digitar "1" ativa esse estado corretamente - e os testes existentes que checavam o texto antigo do convite ("Pode digitar sua pergunta") foram ajustados pra checar o texto novo ("Digite *1*"). `test_whatsapp_pergunta.py` (todos os caminhos que enviam uma pergunta de verdade) ganhou um `processar_mensagem(telefone, "1")` antes de cada pergunta enviada, pra continuar batendo com o fluxo real.
+
+- **Pendência**: mesma de sempre - rodar `python test_whatsapp_identificacao.py`, `python test_whatsapp_pergunta.py` e a suíte completa antes de subir pra produção (não executados aqui, `device_bash` indisponível). Vale confirmar visualmente com uma conversa real de WhatsApp depois do deploy, já que esse fluxo teve várias idas e voltas no mesmo dia.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

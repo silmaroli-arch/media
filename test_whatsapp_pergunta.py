@@ -1,20 +1,21 @@
 """Testa o passo 5 do plano da área de WhatsApp (ver PLANO_WHATSAPP.md e
-app/whatsapp_conversa.py:_responder_pergunta): a pergunta livre digitada
-direto (sem passo intermediário de menu - o antigo "2) Fazer uma
-pergunta" foi removido a pedido do Silvan, 2026-09-11) reaproveita a
-MESMA lógica de app.routes_paciente.chat() — sem ANTHROPIC_API_KEY/
-OPENAI_API_KEY configuradas neste ambiente de teste, a IA nunca responde
-de verdade (ver app/ia_preparo.py), então os três caminhos testáveis
-diretamente aqui são: base de conhecimento (FAQ já cadastrada no
-seed.py, única que responde direto ao paciente), resposta pronta de
-alimento (a partir do preparo cadastrado - pedido do Silvan, 2026-09-11:
-vira rascunho aguardando aprovação do médico, igual à IA, NUNCA vai
-direto ao paciente) e encaminhamento como pergunta pendente (quando nada
-bate). Ao final, usa `unittest.mock.patch` para confirmar o próprio
-ORDENAMENTO da consulta (pedido do Silvan, 2026-09-11: FAQ/alimento/
-medicamento antes da IA, não depois) - sem o mock não dá pra provar que
-a IA foi ou não chamada, já que ela sempre retorna None neste ambiente
-de qualquer forma."""
+app/whatsapp_conversa.py:_responder_pergunta): a pergunta livre - hoje
+sempre precedida de "1" (gatilho pedido de volta pelo Silvan, 2026-09-11,
+depois de perceber que qualquer mensagem solta era tratada como pergunta
+nova sem essa barreira - ver test_whatsapp_identificacao.py, que testa o
+gatilho em si) - reaproveita a MESMA lógica de app.routes_paciente.chat()
+— sem ANTHROPIC_API_KEY/OPENAI_API_KEY configuradas neste ambiente de
+teste, a IA nunca responde de verdade (ver app/ia_preparo.py), então os
+três caminhos testáveis diretamente aqui são: base de conhecimento (FAQ
+já cadastrada no seed.py, única que responde direto ao paciente),
+resposta pronta de alimento (a partir do preparo cadastrado - pedido do
+Silvan, 2026-09-11: vira rascunho aguardando aprovação do médico, igual
+à IA, NUNCA vai direto ao paciente) e encaminhamento como pergunta
+pendente (quando nada bate). Ao final, usa `unittest.mock.patch` para
+confirmar o próprio ORDENAMENTO da consulta (pedido do Silvan,
+2026-09-11: FAQ/alimento/medicamento antes da IA, não depois) - sem o
+mock não dá pra provar que a IA foi ou não chamada, já que ela sempre
+retorna None neste ambiente de qualquer forma."""
 from unittest.mock import patch
 
 from app import create_app, db
@@ -45,9 +46,13 @@ with app.app_context():
     faq_agua = FaqItem.query.filter_by(pergunta="Posso beber água durante o jejum?").first()
     vezes_usada_antes = faq_agua.vezes_utilizada
 
+    # Precisa digitar "1" antes - sem isso, a mensagem seria só um convite
+    # repetido, sem virar pergunta de verdade (ver test_whatsapp_
+    # identificacao.py, que testa esse gatilho isoladamente).
+    processar_mensagem(telefone, "1")
     resposta = processar_mensagem(telefone, "Posso beber água durante o jejum?")
     checar("Pergunta que bate com FAQ devolve a resposta cadastrada", "água pura é permitida" in resposta)
-    checar("Depois de responder, convida a perguntar de novo", "Pode digitar sua pergunta" in resposta)
+    checar("Depois de responder, convida a digitar \"1\" para perguntar de novo", "Digite *1*" in resposta)
 
     faq_agua_depois = FaqItem.query.get(faq_agua.id)
     checar("FAQ usada tem o contador de uso incrementado", faq_agua_depois.vezes_utilizada == vezes_usada_antes + 1)
@@ -65,6 +70,7 @@ with app.app_context():
     # aprovar; só depois disso vira FAQ e passa a responder direto (ver
     # Caminho 1, acima). ---
     pendentes_antes_alimento = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
+    processar_mensagem(telefone, "1")
     resposta = processar_mensagem(telefone, "Posso comer amendoim antes do exame?")
     checar("Pergunta sobre alimento cadastrado NÃO devolve a resposta direto, avisa que foi encaminhada", "encaminhada" in resposta.lower())
 
@@ -88,6 +94,7 @@ with app.app_context():
 
     # --- Caminho 3: não bate com nada -> encaminhada como pendente ---
     pendentes_antes = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
+    processar_mensagem(telefone, "1")
     resposta = processar_mensagem(telefone, "Posso dirigir sozinho depois do exame de colonoscopia?")
     checar("Pergunta sem correspondência avisa que foi encaminhada", "encaminhada" in resposta.lower())
 
@@ -121,11 +128,13 @@ with app.app_context():
     ultima_pendente.status = "respondida"
     db.session.commit()
 
+    processar_mensagem(telefone, "1")
     with patch("app.whatsapp_conversa.responder_com_ia") as ia_mock:
         resposta = processar_mensagem(telefone, "Posso beber água durante o jejum?")
     checar("Pergunta que já bate com FAQ cadastrada NÃO chama a IA", not ia_mock.called)
     checar("Mesmo assim devolve a resposta já cadastrada na FAQ", "água pura é permitida" in resposta)
 
+    processar_mensagem(telefone, "1")
     with patch("app.whatsapp_conversa.responder_com_ia", return_value=None) as ia_mock2:
         processar_mensagem(telefone, "Essa pergunta aqui não bate com nenhuma FAQ nem alimento nem medicamento cadastrado")
     checar("Pergunta sem correspondência na FAQ/alimento/medicamento AINDA chama a IA", ia_mock2.called)

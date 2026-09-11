@@ -1385,15 +1385,7 @@ class ChatMensagem(db.Model):
     agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=True)
     pergunta = db.Column(db.Text, nullable=False)
     resposta = db.Column(db.Text)
-    # origem: faq (respondida direto, já aprovada antes), ia_aguardando /
-    # alimento_aguard / medicamento_aguard (resposta pronta - da IA ou
-    # calculada a partir do preparo cadastrado - esperando aprovação do
-    # médico, pedido do Silvan 2026-09-11: nenhuma delas vai direto pro
-    # paciente antes de revisão humana), pendente (encaminhada sem
-    # nenhuma sugestão pronta). Valores antigos "ia"/"alimento"/
-    # "medicamento" (sem "_aguard(ando)") podem existir em registros
-    # anteriores a essa mudança, de quando essas respostas iam direto ao
-    # paciente sem aprovação.
+    # origem: faq, ia, ia_aguardando (resposta da IA esperando aprovação do médico), alimento, medicamento, pendente (encaminhada)
     origem = db.Column(db.String(20))
     # Fatia 7 (WhatsApp): canal por onde a pergunta chegou - "web" (tela de
     # dúvidas do app, valor padrão, cobre todo o histórico anterior a este
@@ -1436,10 +1428,16 @@ class ConversaWhatsapp(db.Model):
     # Agendamento/exame em foco na conversa agora (quando o paciente tem
     # mais de um ativo e já escolheu um pela lista numerada).
     agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=True)
-    # Fatia 7 passo 5: True logo depois que o paciente escolhe "2) Fazer
-    # uma pergunta" no menu - a PRÓXIMA mensagem recebida é tratada como o
-    # texto da pergunta em si (não como uma opção do menu). Volta a False
-    # assim que a pergunta é processada (ou cancelada com "0").
+    # Fatia 7 passo 5: True logo depois que o paciente digita "1" para
+    # avisar que vai fazer uma pergunta - a PRÓXIMA mensagem recebida é
+    # tratada como o texto da pergunta em si (ver app.whatsapp_conversa.
+    # processar_mensagem). Volta a False assim que a pergunta é
+    # processada (ou quando o paciente digita "trocar" antes de chegar a
+    # perguntar). Campo originalmente criado pro antigo menu numerado
+    # ("2) Fazer uma pergunta", removido em 2026-09-11) e reaproveitado no
+    # mesmo dia, mais tarde, quando o Silvan pediu essa mesma barreira de
+    # volta - sem ela, qualquer mensagem solta (ex.: "oi") era tratada
+    # como pergunta nova e encaminhada pra equipe.
     aguardando_pergunta = db.Column(db.Boolean, nullable=False, default=False)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
