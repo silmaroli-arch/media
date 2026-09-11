@@ -860,15 +860,15 @@ Pedido do Silvan: trocar o texto da mensagem de boas-vindas que o médico recebe
   Qualquer dúvida, estamos por aqui!
   ```
 - `aviso_extra` (a 2ª variável) passou a ter um padrão não-vazio (`_AVISO_PADRAO_PACIENTE` = "Salve este número para tirar dúvidas sobre o preparo dos seus exames.") em vez de mandar um espaço em branco - antes esse texto ficava FIXO no corpo, agora ele mora na variável para o caso do paciente real.
-- Chamada do lado do médico (`app/routes_auth.py:cadastro()`) atualizada com o texto final pedido pelo Silvan (com lista numerada):
+- Chamada do lado do médico (`app/routes_auth.py:cadastro()`) atualizada com o texto final pedido pelo Silvan (com lista numerada, e depois ajustada de novo na mesma rodada para nomear os menus certos - "Exames & preparo" e "Agendar exame", exatamente como aparecem na barra lateral, ver `app/templates/base.html`):
   ```
   seus pacientes irão conversar com este número pelo WhatsApp.
   O MedIA já criou um paciente de teste no sistema com os dados necessários para você realizar os testes. Agora você deverá:
 
-  1. Cadastrar um modelo de preparo, importando um PDF.
-  2. Criar um agendamento para o seu paciente de teste.
+  1. Cadastrar um modelo de preparo, importando um PDF no menu "Exames & preparo".
+  2. Criar um agendamento para o seu paciente de teste no menu "Agendar exame".
   ```
-  Mensagem final vista pelo médico (juntando corpo fixo + esse trecho): "Olá, Silvan Oliveira! Tudo bem?\nEste é o WhatsApp da MedIA — seus pacientes irão conversar com este número pelo WhatsApp.\nO MedIA já criou um paciente de teste no sistema com os dados necessários para você realizar os testes. Agora você deverá:\n\n1. Cadastrar um modelo de preparo, importando um PDF.\n2. Criar um agendamento para o seu paciente de teste.\n\nQualquer dúvida, estamos por aqui!"
+  Mensagem final vista pelo médico (juntando corpo fixo + esse trecho): "Olá, Silvan Oliveira! Tudo bem?\nEste é o WhatsApp da MedIA — seus pacientes irão conversar com este número pelo WhatsApp.\nO MedIA já criou um paciente de teste no sistema com os dados necessários para você realizar os testes. Agora você deverá:\n\n1. Cadastrar um modelo de preparo, importando um PDF no menu \"Exames & preparo\".\n2. Criar um agendamento para o seu paciente de teste no menu \"Agendar exame\".\n\nQualquer dúvida, estamos por aqui!"
 - Chamada do lado do paciente real (`app/routes_auth.py:cadastro_paciente_global`, sem passar `aviso_extra`) não precisou mudar - cai automaticamente no padrão novo.
 
 **Pendência para o Silvan**: editar o template `boas_vindas_clinica` no WhatsApp Manager da Meta (mesma tela do print) com o novo corpo acima (com as quebras de linha), e reenviar para aprovação (edição de corpo de template sempre exige reaprovação). Amostras de variável sugeridas para a Meta analisar: `{{1}}` = "João Silva", `{{2}}` = "Salve este número para tirar dúvidas sobre o preparo dos seus exames." (o texto do paciente, mais neutro para a análise da Meta do que o do médico).

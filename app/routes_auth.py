@@ -525,8 +525,8 @@ def cadastro():
                         "seus pacientes irão conversar com este número pelo WhatsApp.\n"
                         "O MedIA já criou um paciente de teste no sistema com os dados "
                         "necessários para você realizar os testes. Agora você deverá:\n\n"
-                        "1. Cadastrar um modelo de preparo, importando um PDF.\n"
-                        "2. Criar um agendamento para o seu paciente de teste."
+                        '1. Cadastrar um modelo de preparo, importando um PDF no menu "Exames & preparo".\n'
+                        '2. Criar um agendamento para o seu paciente de teste no menu "Agendar exame".'
                     ),
                 )
             except PacienteMedicoConflitanteError:
