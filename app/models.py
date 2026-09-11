@@ -1385,7 +1385,15 @@ class ChatMensagem(db.Model):
     agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=True)
     pergunta = db.Column(db.Text, nullable=False)
     resposta = db.Column(db.Text)
-    # origem: faq, ia, ia_aguardando (resposta da IA esperando aprovação do médico), alimento, medicamento, pendente (encaminhada)
+    # origem: faq (respondida direto, já aprovada antes), ia_aguardando /
+    # alimento_aguard / medicamento_aguard (resposta pronta - da IA ou
+    # calculada a partir do preparo cadastrado - esperando aprovação do
+    # médico, pedido do Silvan 2026-09-11: nenhuma delas vai direto pro
+    # paciente antes de revisão humana), pendente (encaminhada sem
+    # nenhuma sugestão pronta). Valores antigos "ia"/"alimento"/
+    # "medicamento" (sem "_aguard(ando)") podem existir em registros
+    # anteriores a essa mudança, de quando essas respostas iam direto ao
+    # paciente sem aprovação.
     origem = db.Column(db.String(20))
     # Fatia 7 (WhatsApp): canal por onde a pergunta chegou - "web" (tela de
     # dúvidas do app, valor padrão, cobre todo o histórico anterior a este

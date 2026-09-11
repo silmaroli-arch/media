@@ -247,12 +247,17 @@ def chat():
             # exata no caso de FAQs geradas pela própria IA, ver
             # app.faq_engine.buscar_resposta), a resposta já cadastrada
             # volta direto pro paciente, sem chamar a IA de novo nem passar
-            # pelo médico. Antes disso, TODA pergunta ia pra IA primeiro,
-            # mesmo repetindo uma já respondida — o médico tinha que
-            # aprovar de novo, gastando uma chamada de IA à toa. As
-            # respostas prontas de alimento/medicamento (calculadas na
-            # hora a partir do preparo, sem depender de FAQ cadastrada)
-            # continuam vindo em seguida, antes da IA, pelo mesmo motivo.
+            # pelo médico — é a ÚNICA fonte que pode responder direto, já
+            # que já foi revisada por alguém da equipe antes. As respostas
+            # prontas de alimento/medicamento (calculadas na hora a partir
+            # do preparo, sem depender de FAQ cadastrada) continuam vindo
+            # em seguida, antes da IA, mas (pedido do Silvan, 2026-09-11 —
+            # segurança do sistema) NUNCA vão direto pro paciente: mesmo
+            # vindo do preparo, entram como rascunho aguardando aprovação
+            # do médico igual à IA (ver bloco `elif resposta_alimento or
+            # resposta_medicamento` abaixo) — só depois de aprovada uma vez
+            # é que cai na base de FAQ e passa a responder direto da
+            # próxima vez (pelo caminho `faq_item` acima).
             faq_item, score = buscar_resposta(
                 pergunta_enviada,
                 grupo_id=grupo_id_ancora,
@@ -273,12 +278,23 @@ def chat():
                 db.session.commit()
                 resposta_ia = faq_item.resposta
                 origem = "faq"
-            elif resposta_alimento:
-                resposta_ia = resposta_alimento
-                origem = "alimento"
-            elif resposta_medicamento:
-                resposta_ia = resposta_medicamento
-                origem = "medicamento"
+            elif resposta_alimento or resposta_medicamento:
+                # Nomes curtos de propósito: ChatMensagem.origem é String(20), e
+                # "medicamento_aguardando" (22 caracteres) não caberia.
+                origem = "alimento_aguard" if resposta_alimento else "medicamento_aguard"
+                pendente = PerguntaPendente(
+                    grupo_id=grupo_id_ancora,
+                    criado_por_id=criado_por_id_ancora,
+                    paciente_id=paciente.id,
+                    exame_id=exame_id_selecionado,
+                    pergunta=pergunta_enviada,
+                    status="aguardando_aprovacao",
+                    resposta_sugerida_ia=resposta_alimento if resposta_alimento else resposta_medicamento,
+                )
+                db.session.add(pendente)
+                db.session.commit()
+                notificar_equipe_nova_pergunta(pendente)
+                encaminhada = True
             else:
                 # Nada bateu na base de conhecimento nem nas respostas
                 # prontas — só agora a IA (quando configurada) é

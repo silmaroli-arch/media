@@ -6,13 +6,15 @@ MESMA lógica de app.routes_paciente.chat() — sem ANTHROPIC_API_KEY/
 OPENAI_API_KEY configuradas neste ambiente de teste, a IA nunca responde
 de verdade (ver app/ia_preparo.py), então os três caminhos testáveis
 diretamente aqui são: base de conhecimento (FAQ já cadastrada no
-seed.py), resposta pronta de alimento (a partir do preparo cadastrado) e
-encaminhamento como pergunta pendente (quando nada bate). Ao final,
-usa `unittest.mock.patch` para confirmar o próprio ORDENAMENTO da
-consulta (pedido do Silvan, 2026-09-11: FAQ/alimento/medicamento antes
-da IA, não depois) - sem o mock não dá pra provar que a IA foi ou não
-chamada, já que ela sempre retorna None neste ambiente de qualquer
-forma."""
+seed.py, única que responde direto ao paciente), resposta pronta de
+alimento (a partir do preparo cadastrado - pedido do Silvan, 2026-09-11:
+vira rascunho aguardando aprovação do médico, igual à IA, NUNCA vai
+direto ao paciente) e encaminhamento como pergunta pendente (quando nada
+bate). Ao final, usa `unittest.mock.patch` para confirmar o próprio
+ORDENAMENTO da consulta (pedido do Silvan, 2026-09-11: FAQ/alimento/
+medicamento antes da IA, não depois) - sem o mock não dá pra provar que
+a IA foi ou não chamada, já que ela sempre retorna None neste ambiente
+de qualquer forma."""
 from unittest.mock import patch
 
 from app import create_app, db
@@ -56,12 +58,33 @@ with app.app_context():
     checar("Histórico guarda a resposta de verdade (não só o aviso de encaminhamento)", "água pura é permitida" in ultima_mensagem.resposta)
 
     # --- Caminho 2: sem FAQ, mas bate com um alimento proibido cadastrado
-    # no preparo (Amendoim, ver seed.py) ---
+    # no preparo (Amendoim, ver seed.py) - pedido do Silvan (2026-09-11,
+    # segurança do sistema): mesmo tendo uma resposta pronta a partir do
+    # preparo, ela NÃO vai direto pro paciente - fica como PerguntaPendente
+    # "aguardando_aprovacao" (mesmo fluxo da IA) até o médico revisar e
+    # aprovar; só depois disso vira FAQ e passa a responder direto (ver
+    # Caminho 1, acima). ---
+    pendentes_antes_alimento = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
     resposta = processar_mensagem(telefone, "Posso comer amendoim antes do exame?")
-    checar("Pergunta sobre alimento cadastrado devolve resposta pronta", "Amendoim" in resposta and "proibid" in resposta)
+    checar("Pergunta sobre alimento cadastrado NÃO devolve a resposta direto, avisa que foi encaminhada", "encaminhada" in resposta.lower())
+
+    pendentes_depois_alimento = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
+    checar("Pergunta sobre alimento cria uma PerguntaPendente nova", pendentes_depois_alimento == pendentes_antes_alimento + 1)
+
+    pendente_alimento = PerguntaPendente.query.filter_by(paciente_id=joao.id).order_by(PerguntaPendente.id.desc()).first()
+    checar('PerguntaPendente do alimento criada com status "aguardando_aprovacao"', pendente_alimento.status == "aguardando_aprovacao")
+    checar("PerguntaPendente do alimento já vem com a resposta pronta sugerida", pendente_alimento.resposta_sugerida_ia and "Amendoim" in pendente_alimento.resposta_sugerida_ia and "proibid" in pendente_alimento.resposta_sugerida_ia)
 
     ultima_mensagem = ChatMensagem.query.filter_by(paciente_id=joao.id).order_by(ChatMensagem.id.desc()).first()
-    checar("Pergunta respondida por alimento fica no histórico com origem alimento", ultima_mensagem.origem == "alimento")
+    checar("Pergunta sobre alimento fica no histórico sem resposta ainda (aguardando aprovação)", ultima_mensagem.resposta is None)
+    checar("Pergunta sobre alimento fica no histórico com origem alimento_aguard", ultima_mensagem.origem == "alimento_aguard")
+
+    # Simula o médico já tendo aprovado essa pergunta, só para poder seguir
+    # testando os próximos cenários nesta mesma conversa sem o aviso de
+    # "aguardando resposta" no meio (mesmo padrão usado mais abaixo, para a
+    # pergunta pendente do Caminho 3).
+    pendente_alimento.status = "respondida"
+    db.session.commit()
 
     # --- Caminho 3: não bate com nada -> encaminhada como pendente ---
     pendentes_antes = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()

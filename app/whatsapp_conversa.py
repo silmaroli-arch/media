@@ -216,27 +216,34 @@ def _resolver_exame_em_foco(conversa, paciente, agendamentos):
 
 def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     """Replica a lógica de app.routes_paciente.chat() (POST) para uma
-    pergunta livre recebida por WhatsApp: a base de conhecimento (FAQ) e
-    as respostas prontas de alimento/medicamento são consultadas PRIMEIRO
-    (pedido do Silvan, 2026-09-11 - antes disso a IA era sempre consultada
-    primeiro, então uma pergunta repetida ia pra IA/médico de novo, em vez
-    de reaproveitar a resposta já cadastrada); só quando nada disso bate é
-    que a IA (quando configurada) é consultada - a resposta dela NUNCA vai
-    direto pro paciente, fica como PerguntaPendente "aguardando_aprovacao"
-    até o médico revisar; sem IA (ou sem resposta da IA), encaminha como
-    pergunta pendente pra equipe responder manualmente. Sempre grava um
-    ChatMensagem (canal="whatsapp") no mesmo histórico que a equipe já vê
-    hoje (ver medico.atendimento). Toda PerguntaPendente criada aqui
+    pergunta livre recebida por WhatsApp: a base de conhecimento (FAQ) é
+    consultada PRIMEIRO (pedido do Silvan, 2026-09-11) - é a ÚNICA fonte
+    que responde direto ao paciente sem passar pelo médico, porque já foi
+    revisada e aprovada por alguém da equipe antes (ou é uma repetição
+    exata de uma resposta de IA já aprovada, ver app.faq_engine.
+    buscar_resposta). As respostas prontas de alimento/medicamento
+    (calculadas na hora a partir do preparo cadastrado) NUNCA vão direto
+    pro paciente (pedido do Silvan, 2026-09-11 - segurança do sistema:
+    mesmo vindo do preparo, é uma resposta "nova" aos olhos do sistema e
+    precisa de aprovação humana antes da primeira vez) - entram como
+    PerguntaPendente "aguardando_aprovacao" com a resposta pronta já
+    preenchida em `resposta_sugerida_ia` (mesmo campo usado pela IA),
+    pronta pro médico só revisar e confirmar; depois de aprovada uma vez,
+    a pergunta cai na base de FAQ e as próximas iguais/parecidas já
+    respondem direto (via `faq_item` acima). Só quando nada disso bate é
+    que a IA (quando configurada) é consultada - a resposta dela também
+    NUNCA vai direto pro paciente, mesmo fluxo de aprovação. Sempre grava
+    um ChatMensagem (canal="whatsapp") no mesmo histórico que a equipe já
+    vê hoje (ver medico.atendimento). Toda PerguntaPendente criada aqui
     guarda `telefone` (o remetente desta conversa) - é o que permite ao
     sistema mandar a resposta de volta pelo WhatsApp automaticamente
     assim que o médico/equipe responder (ver
     app.routes_medico.perguntas_responder). Devolve uma tupla (texto de
     resposta a mandar de volta pro paciente agora, a PerguntaPendente
-    criada - ou None se já foi respondida na hora por FAQ/alimento/
-    medicamento) - o chamador usa o segundo item para avisar a equipe por
-    notificação (push e/ou WhatsApp, ver
-    app.push_notificacoes.notificar_equipe_nova_pergunta), só depois de
-    commitar de verdade."""
+    criada - ou None se já foi respondida na hora pela FAQ) - o chamador
+    usa o segundo item para avisar a equipe por notificação (push e/ou
+    WhatsApp, ver app.push_notificacoes.notificar_equipe_nova_pergunta),
+    só depois de commitar de verdade."""
     exame = agendamento.exame if agendamento else None
     grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame, agendamento)
 
@@ -260,10 +267,25 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
         faq_item.vezes_utilizada += 1
         resposta_final = faq_item.resposta
         origem = "faq"
-    elif resposta_alimento:
-        resposta_final, origem = resposta_alimento, "alimento"
-    elif resposta_medicamento:
-        resposta_final, origem = resposta_medicamento, "medicamento"
+    elif resposta_alimento or resposta_medicamento:
+        # Resposta pronta (alimento ou medicamento) - vira rascunho
+        # aguardando aprovação do médico, igual à IA, em vez de ir direto
+        # pro paciente (ver docstring desta função).
+        resposta_pronta = resposta_alimento if resposta_alimento else resposta_medicamento
+        # Nomes curtos de propósito: ChatMensagem.origem é String(20), e
+        # "medicamento_aguardando" (22 caracteres) não caberia.
+        origem = "alimento_aguard" if resposta_alimento else "medicamento_aguard"
+        pergunta_pendente_criada = PerguntaPendente(
+            grupo_id=grupo_id_ancora,
+            criado_por_id=criado_por_id_ancora,
+            paciente_id=paciente.id,
+            exame_id=exame.id if exame else None,
+            pergunta=pergunta_texto,
+            status="aguardando_aprovacao",
+            resposta_sugerida_ia=resposta_pronta,
+            telefone_whatsapp=telefone,
+        )
+        db.session.add(pergunta_pendente_criada)
     else:
         resultado_ia = responder_com_ia(pergunta_texto, exame, paciente_id=paciente.id) if exame else None
         if resultado_ia and resultado_ia["final"]:
