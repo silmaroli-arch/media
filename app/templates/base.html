@@ -84,10 +84,14 @@
 {% set eh_staff_logado = current_user.is_authenticated and current_user.is_staff %}
 <div class="d-flex">
   {% if eh_staff_logado %}
+  {# "medico.perguntas_respondidas" e "medico.portal_atendimento" saíram
+     desta lista (pedido do Silvan, 2026-09-11): os dois itens
+     correspondentes ("Últimas respondidas" e "Portal de atendimento
+     rápido") saíram do submenu colapsável "Médico + IA" e viraram itens
+     diretos do menu, logo abaixo de "Meus exames agendados" - ver mais
+     abaixo. #}
   {% set grupo_ia = ['medico.perguntas_pendentes', 'medico.perguntas_responder',
-                      'medico.perguntas_respondidas',
-                      'medico.faq_lista', 'medico.faq_novo',
-                      'medico.portal_atendimento'] %}
+                      'medico.faq_lista', 'medico.faq_novo'] %}
   {# Restruturação de 2026-09 (pedido do Silvan): "Exames", "Exames &
      Preparo" e "Associar exames entre filiais" viraram uma única tela
      ("Modelos de preparo" - ver medico.preparo_modelos_novo). As rotas
@@ -136,9 +140,11 @@
          continua existindo em medico.primeiros_passos, só não tem mais
          link fixo aqui). #}
 
-      {# Reorganização de menus (pedido do Silvan, 2026-09-10): ordem fixa
-         Painel / Meus dados / Exames & preparo / Pacientes / Meus exames
-         agendados / Médico + IA / Grupos de trabalho / Minha licença. #}
+      {# Reorganização de menus (pedido do Silvan, 2026-09-10, ajustada em
+         2026-09-11): ordem fixa Painel / Meus dados / Exames & preparo /
+         Pacientes / Agendar exame / Meus exames agendados / Portal de
+         atendimento rápido / Últimas respondidas / Médico + IA / Grupos
+         de trabalho / Minha licença. #}
 
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">
@@ -185,6 +191,29 @@
            oculto_no_celular_do_medico. #}
       </li>
 
+      {# Pedido do Silvan (2026-09-11): "Portal de atendimento rápido" e
+         "Últimas respondidas" saíram de dentro do submenu "Médico + IA"
+         (mais abaixo) e viraram itens diretos do menu, logo abaixo de
+         "Meus exames agendados". "Portal de atendimento rápido" é um dos
+         2 itens que continuam no menu reduzido do celular do médico
+         (junto com "Meus exames agendados" - ver comentário acima sobre
+         `oculto_no_celular_do_medico`), por isso NÃO leva essa classe -
+         substitui a antiga cópia "d-md-none" que existia só pra isso
+         (removida, ver mais abaixo). "Últimas respondidas" continua só
+         em tablet/desktop (leva a classe), como já era antes dentro do
+         submenu. #}
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if request.endpoint == 'medico.portal_atendimento' %}active{% endif %}" href="{{ url_for('medico.portal_atendimento') }}">
+          <i class="bi bi-box-arrow-up-right me-2"></i>Portal de atendimento rápido
+        </a>
+      </li>
+
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint == 'medico.perguntas_respondidas' %}active{% endif %}" href="{{ url_for('medico.perguntas_respondidas') }}">
+          <i class="bi bi-clock-history me-2"></i>Últimas respondidas
+        </a>
+      </li>
+
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuIA" role="button"
            aria-expanded="{{ 'true' if request.endpoint in grupo_ia else 'false' }}">
@@ -197,36 +226,18 @@
               <a class="nav-link {% if request.endpoint == 'medico.perguntas_pendentes' or request.endpoint == 'medico.perguntas_responder' %}active{% endif %}" href="{{ url_for('medico.perguntas_pendentes') }}">Perguntas dos pacientes</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.perguntas_respondidas' %}active{% endif %}" href="{{ url_for('medico.perguntas_respondidas') }}">Últimas respondidas</a>
-            </li>
-            <li class="nav-item">
               <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">Base de conhecimento</a>
             </li>
             {% if current_user.tipo == "medico" %}
             {# Pedido do Silvan: tela onde o médico testa a IA fazendo
                perguntas sobre os próprios preparos - só faz sentido para
                quem tem preparo próprio (médico), por isso não aparece
-               para secretária/dono, diferente dos outros itens deste
+               para secretária/dono, diferente do outro item deste
                submenu. #}
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint == 'medico.testar_ia' %}active{% endif %}" href="{{ url_for('medico.testar_ia') }}">Testar IA nos meus preparos</a>
             </li>
             {% endif %}
-            {# Atalho adicional (não substitui o acesso normal acima): tela
-               enxuta, só com as perguntas pendentes + histórico - pensada
-               para o médico salvar como atalho separado na tela de início
-               do celular e abrir rapidinho pra responder. Usa o mesmo
-               menu/barra de topo do resto do app (portal/atendimento.html
-               também estende base.html) - por isso navega na mesma aba,
-               como qualquer outro item do menu. Em telas menores (celular
-               do médico) esse item some daqui (todo o "Médico + IA" fica
-               oculto) e um link equivalente aparece direto no menu (ver
-               acima). #}
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.portal_atendimento' %}active{% endif %}" href="{{ url_for('medico.portal_atendimento') }}">
-                <i class="bi bi-box-arrow-up-right me-1"></i>Portal de atendimento rápido
-              </a>
-            </li>
           </ul>
         </div>
       </li>
@@ -280,18 +291,11 @@
         </a>
       </li>
 
-      {# Versão mobile do link "Portal de atendimento rápido" (o outro,
-         dentro de "Médico + IA" mais acima, continua servindo
-         tablet/desktop) - aqui SEM target="_blank": abrir uma aba nova
-         dentro de um PWA instalado em modo standalone tende a jogar a
-         pessoa pra fora do app (pro Safari/Chrome "de verdade"), o que
-         não faz sentido nesse atalho pensado justamente pra quem está
-         usando o app pelo celular. #}
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint == 'medico.portal_atendimento' %}active{% endif %}" href="{{ url_for('medico.portal_atendimento') }}">
-          <i class="bi bi-box-arrow-up-right me-2"></i>Portal de atendimento
-        </a>
-      </li>
+      {# A versão mobile do link "Portal de atendimento rápido" que existia
+         aqui foi removida em 2026-09-11: o item agora é direto no menu
+         (logo abaixo de "Meus exames agendados", fora do submenu "Médico
+         + IA"), sem a classe oculto_no_celular_do_medico - já aparece
+         em qualquer tamanho de tela sozinho, sem precisar de cópia. #}
 
       {# Versão mobile do link "Testar IA nos meus preparos" (pedido do
          Silvan: também precisa aparecer no app do médico, não só no
