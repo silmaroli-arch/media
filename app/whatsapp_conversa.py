@@ -120,19 +120,33 @@ def _texto_lista_exames(agendamentos, preambulo="Você tem mais de um exame em p
     return preambulo + "\n" + "\n".join(linhas)
 
 
-def _texto_pedir_pergunta(paciente, agendamento, saudacao=True, tem_mais_de_um_exame=False):
+def _texto_pedir_pergunta(paciente, agendamento, saudacao=True, outros_agendamentos=None):
     """Substitui o antigo menu numerado (ver docstring do módulo) - depois
     de identificado e com um exame em foco, a mensagem já convida
-    diretamente a perguntar. Só menciona o comando "trocar" quando faz
-    sentido (mais de um exame ativo)."""
+    diretamente a perguntar. Quando há outro(s) exame(s) ativo(s) além do
+    que está em foco, NOMEIA cada um deles aqui (em vez de só mencionar
+    genericamente o comando "trocar") - correção pedida pelo Silvan
+    (2026-09-11): antes disso, quando um segundo exame passava a existir
+    DEPOIS que a conversa já tinha fixado o primeiro (ex.: paciente já
+    identificado, e um novo agendamento é criado enquanto a sessão de
+    WhatsApp ainda não expirou), o paciente ficava "logado" no exame
+    antigo sem nenhum aviso claro de que havia outro - só um lembrete
+    genérico de "trocar", fácil de não notar. Repetir aqui é seguro porque
+    `outros_agendamentos` é sempre recalculado na hora (ver
+    `processar_mensagem`), nunca guardado - qualquer novo agendamento
+    aparece automaticamente na próxima mensagem, sem precisar pedir CPF/
+    nascimento de novo."""
     cabecalho = f"Olá, {paciente.nome.split(' ')[0]}! " if saudacao else ""
     corpo = (
         f"{cabecalho}Exame em foco: *{agendamento.exame.nome}* — "
         f"{agendamento.data_hora.strftime('%d/%m/%Y')}.\n\n"
         "Pode digitar sua pergunta sobre o preparo deste exame."
     )
-    if tem_mais_de_um_exame:
-        corpo += "\n\n(Ou digite *trocar* para mudar de exame.)"
+    if outros_agendamentos:
+        nomes = "; ".join(
+            f"{a.exame.nome} — {a.data_hora.strftime('%d/%m/%Y')}" for a in outros_agendamentos
+        )
+        corpo += f"\n\n(Você também tem agendado: {nomes}. Digite *trocar* para falar sobre outro exame.)"
     return corpo
 
 
@@ -195,7 +209,7 @@ def _resolver_exame_em_foco(conversa, paciente, agendamentos):
         return MENSAGEM_SEM_EXAME_ATIVO
     if len(agendamentos) == 1:
         conversa.agendamento_id = agendamentos[0].id
-        return _texto_pedir_pergunta(paciente, agendamentos[0], tem_mais_de_um_exame=False)
+        return _texto_pedir_pergunta(paciente, agendamentos[0])
     conversa.agendamento_id = None
     return _texto_lista_exames(agendamentos)
 
@@ -378,7 +392,8 @@ def processar_mensagem(telefone, corpo_mensagem):
         agendamento_escolhido = agendamentos[indice - 1]
         conversa.agendamento_id = agendamento_escolhido.id
         db.session.commit()
-        return _texto_pedir_pergunta(paciente, agendamento_escolhido, tem_mais_de_um_exame=True)
+        outros = [a for a in agendamentos if a.id != agendamento_escolhido.id]
+        return _texto_pedir_pergunta(paciente, agendamento_escolhido, outros_agendamentos=outros)
 
     # Identificado e com exame em foco: pede a pergunta diretamente (o
     # antigo menu numerado foi removido, ver docstring do módulo). Quem
@@ -408,10 +423,11 @@ def processar_mensagem(telefone, corpo_mensagem):
         return MENSAGEM_PERGUNTA_VAZIA
 
     resposta_pergunta, pergunta_criada = _responder_pergunta(paciente, agendamento, texto, telefone)
+    outros_agendamentos = [a for a in agendamentos_ativos if a.id != agendamento.id] if tem_mais_de_um_exame else None
     complemento = (
         MENSAGEM_AGUARDANDO_RESPOSTA
         if _tem_pergunta_pendente(paciente)
-        else _texto_pedir_pergunta(paciente, agendamento, saudacao=False, tem_mais_de_um_exame=tem_mais_de_um_exame)
+        else _texto_pedir_pergunta(paciente, agendamento, saudacao=False, outros_agendamentos=outros_agendamentos)
     )
     resposta = resposta_pergunta + "\n\n" + complemento
     db.session.commit()

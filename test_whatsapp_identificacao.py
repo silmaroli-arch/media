@@ -94,6 +94,42 @@ with app.app_context():
     resposta = processar_mensagem(telefone_joao, "")
     checar("Mensagem vazia pede pra digitar a pergunta", "Não recebi nenhum texto" in resposta)
 
+    # 4b) Correção do bug relatado pelo Silvan (2026-09-11, com print da
+    # conversa e do painel do médico): um segundo exame passa a existir
+    # DEPOIS que a conversa por WhatsApp já tinha fixado o primeiro (a
+    # sessão ainda não expirou) - antes desta correção, a próxima pergunta
+    # simplesmente respondia sobre o exame antigo, sem avisar que um novo
+    # exame tinha aparecido (só um lembrete genérico do comando "trocar",
+    # fácil de não notar - daí a impressão de "ficar logado" no primeiro
+    # exame). Agora a mensagem depois de responder já NOMEIA o(s) outro(s)
+    # exame(s) ativo(s), recalculados do banco a cada mensagem - sem
+    # precisar pedir CPF/data de nascimento de novo (a sugestão do Silvan
+    # de "sempre pedir CPF" foi descartada: quebraria a conveniência da
+    # sessão já identificada só para resolver isso).
+    agendamento_joao_original = Agendamento.query.filter_by(paciente_id=joao.id, encerrado_em=None).first()
+    novo_agendamento_joao = Agendamento(
+        grupo_id=agendamento_joao_original.grupo_id,
+        paciente_id=joao.id,
+        exame_id=agendamento_joao_original.exame_id,
+        medico_id=agendamento_joao_original.medico_id,
+        data_hora=datetime(2026, 9, 20, 9, 0),
+    )
+    db.session.add(novo_agendamento_joao)
+    db.session.commit()
+
+    resposta = processar_mensagem(telefone_joao, "Posso beber água durante o jejum?")
+    checar("Novo exame surgido no meio da conversa NÃO volta a pedir CPF", "CPF" not in resposta)
+    checar(
+        "Avisa explicitamente (nomeando) sobre o novo exame surgido depois da identificação",
+        "Você também tem agendado" in resposta and "20/09/2026" in resposta,
+    )
+    checar("Continua mencionando o comando \"trocar\"", "trocar" in resposta.lower())
+    conversa = ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first()
+    checar(
+        "agendamento_id continua o mesmo (exame antigo) até o paciente pedir para trocar",
+        conversa.agendamento_id == agendamento_joao_original.id,
+    )
+
     # 5) Paciente com múltiplos exames ativos: dá um segundo agendamento
     # ativo ao João (mesmo exame, data diferente) e simula uma conversa nova.
     agendamento_existente = Agendamento.query.filter_by(paciente_id=joao.id, encerrado_em=None).first()
