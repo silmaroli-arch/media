@@ -971,17 +971,16 @@ Depois de ver o aviso de WhatsApp em uso (print de uma conversa real), Silvan pe
 
 - Sem teste automatizado dedicado (é só montagem de texto/URL) - confirmar visualmente que o novo aviso de WhatsApp chega com `https://media-dev.onrender.com/equipe/portal` (ou o valor de `APP_URL_PUBLICA`, se configurada) e que o link abre a tela certa.
 
-### Reorganização do menu lateral: "Portal de atendimento rápido", "Últimas respondidas" e "Base de conhecimento" saem do submenu "Médico + IA"
+### Reorganização do menu lateral: "Portal de atendimento rápido", "Últimas respondidas" e "Base de conhecimento" saem do submenu "Médico + IA" - e o próprio menu "Médico + IA" é removido
 
-Pedido do Silvan (com prints do menu lateral, em duas mensagens): tirar "Portal de atendimento rápido", "Últimas respondidas" e (depois) "Base de conhecimento" de dentro do submenu colapsável "Médico + IA" e colocá-los como itens diretos do menu, logo abaixo de "Meus exames agendados", nessa ordem.
+Pedido do Silvan, em três mensagens ao longo do mesmo dia (com prints do menu lateral cada vez): primeiro tirar "Portal de atendimento rápido" e "Últimas respondidas" de dentro do submenu colapsável "Médico + IA" e colocá-los como itens diretos do menu, logo abaixo de "Meus exames agendados"; depois fazer o mesmo com "Base de conhecimento" (indo pra baixo de "Últimas respondidas"); e por fim, com o submenu já reduzido a só "Perguntas dos pacientes" e "Testar IA nos meus preparos", pediu pra **remover o menu "Médico + IA" por completo, com todos os seus submenus**.
 
-**Implementado em `app/templates/base.html`**:
-- Novos itens diretos (fora do submenu), na ordem: Meus exames agendados → **Portal de atendimento rápido** → **Últimas respondidas** → **Base de conhecimento** → Médico + IA (agora só com Perguntas dos pacientes / Testar IA nos meus preparos) → Grupos de trabalho → Minha licença.
-- "Portal de atendimento rápido" **não** leva a classe `oculto_no_celular_do_medico` - continua sendo um dos 2 itens do menu reduzido do celular do médico (junto com "Meus exames agendados"), exatamente como já era antes. Isso tornou desnecessária a cópia separada "d-md-none" que existia só para aparecer no celular (removida).
-- "Últimas respondidas" e "Base de conhecimento" levam a classe `oculto_no_celular_do_medico` - continuam só em tablet/desktop, mesma visibilidade que já tinham antes (dentro do submenu, também ficavam ocultas no celular).
-- A lista `grupo_ia` (usada para manter o submenu "Médico + IA" expandido quando a página atual é uma das dele) perdeu `'medico.perguntas_respondidas'`, `'medico.portal_atendimento'`, `'medico.faq_lista'` e `'medico.faq_novo'` - só ficaram as rotas de "Perguntas dos pacientes", já que é o único item (além de "Testar IA", condicional) que continua de fato dentro do submenu.
+**Implementado em `app/templates/base.html`** (estado final):
+- Itens diretos do menu, na ordem: Meus exames agendados → **Portal de atendimento rápido** → **Últimas respondidas** → **Base de conhecimento** → Grupos de trabalho → Minha licença. O submenu "Médico + IA" (toggle colapsável + `#menuIA`) foi removido inteiramente, junto com a variável Jinja `grupo_ia` (usada só para manter esse submenu expandido) e a cópia mobile ("d-md-none") de "Testar IA nos meus preparos" que existia só para compensar o submenu ficar oculto no celular do médico.
+- **As rotas não foram removidas** (mesmo padrão já usado em outros itens tirados do menu nesta mesma sessão, ver equipe_lista/filiais_lista) - `medico.perguntas_pendentes`/`perguntas_responder` e `medico.testar_ia` continuam funcionando normalmente por URL direta, só sem nenhum link no menu lateral agora. Quem precisa responder pergunta pendente no dia a dia tem "Portal de atendimento rápido" (mesma lista, mesmo formulário de resposta) ou o link do próprio aviso de WhatsApp/push.
+- "Portal de atendimento rápido" continua sendo um dos 2 itens do menu reduzido do celular do médico (junto com "Meus exames agendados") - não leva a classe `oculto_no_celular_do_medico`. "Últimas respondidas" e "Base de conhecimento" continuam só em tablet/desktop (levam essa classe).
 
-- Sem teste automatizado dedicado (é só reorganização de menu/HTML) - confirmar visualmente que os três itens aparecem na nova posição/ordem, que "Médico + IA" continua funcionando com os itens restantes, e que o menu reduzido do celular do médico continua mostrando só "Meus exames agendados" e "Portal de atendimento rápido".
+- Sem teste automatizado dedicado (é só reorganização de menu/HTML) - confirmar visualmente a nova ordem do menu, que o "Médico + IA" não aparece mais em nenhum tamanho de tela, e que `medico.perguntas_pendentes`/`medico.testar_ia` ainda abrem normalmente por URL direta.
 
 ## Como continuar
 
