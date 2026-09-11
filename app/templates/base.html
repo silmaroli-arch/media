@@ -84,14 +84,13 @@
 {% set eh_staff_logado = current_user.is_authenticated and current_user.is_staff %}
 <div class="d-flex">
   {% if eh_staff_logado %}
-  {# "medico.perguntas_respondidas" e "medico.portal_atendimento" saíram
-     desta lista (pedido do Silvan, 2026-09-11): os dois itens
-     correspondentes ("Últimas respondidas" e "Portal de atendimento
-     rápido") saíram do submenu colapsável "Médico + IA" e viraram itens
-     diretos do menu, logo abaixo de "Meus exames agendados" - ver mais
-     abaixo. #}
-  {% set grupo_ia = ['medico.perguntas_pendentes', 'medico.perguntas_responder',
-                      'medico.faq_lista', 'medico.faq_novo'] %}
+  {# "medico.perguntas_respondidas", "medico.portal_atendimento" e as
+     rotas de "medico.faq_*" saíram desta lista (pedido do Silvan,
+     2026-09-11): os itens correspondentes ("Últimas respondidas",
+     "Portal de atendimento rápido" e "Base de conhecimento") saíram do
+     submenu colapsável "Médico + IA" e viraram itens diretos do menu,
+     logo abaixo de "Meus exames agendados" - ver mais abaixo. #}
+  {% set grupo_ia = ['medico.perguntas_pendentes', 'medico.perguntas_responder'] %}
   {# Restruturação de 2026-09 (pedido do Silvan): "Exames", "Exames &
      Preparo" e "Associar exames entre filiais" viraram uma única tela
      ("Modelos de preparo" - ver medico.preparo_modelos_novo). As rotas
@@ -143,8 +142,8 @@
       {# Reorganização de menus (pedido do Silvan, 2026-09-10, ajustada em
          2026-09-11): ordem fixa Painel / Meus dados / Exames & preparo /
          Pacientes / Agendar exame / Meus exames agendados / Portal de
-         atendimento rápido / Últimas respondidas / Médico + IA / Grupos
-         de trabalho / Minha licença. #}
+         atendimento rápido / Últimas respondidas / Base de conhecimento /
+         Médico + IA / Grupos de trabalho / Minha licença. #}
 
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">
@@ -191,17 +190,18 @@
            oculto_no_celular_do_medico. #}
       </li>
 
-      {# Pedido do Silvan (2026-09-11): "Portal de atendimento rápido" e
-         "Últimas respondidas" saíram de dentro do submenu "Médico + IA"
-         (mais abaixo) e viraram itens diretos do menu, logo abaixo de
-         "Meus exames agendados". "Portal de atendimento rápido" é um dos
-         2 itens que continuam no menu reduzido do celular do médico
-         (junto com "Meus exames agendados" - ver comentário acima sobre
+      {# Pedido do Silvan (2026-09-11): "Portal de atendimento rápido",
+         "Últimas respondidas" e "Base de conhecimento" saíram de dentro
+         do submenu "Médico + IA" (mais abaixo) e viraram itens diretos
+         do menu, logo abaixo de "Meus exames agendados", nessa ordem.
+         "Portal de atendimento rápido" é um dos 2 itens que continuam no
+         menu reduzido do celular do médico (junto com "Meus exames
+         agendados" - ver comentário acima sobre
          `oculto_no_celular_do_medico`), por isso NÃO leva essa classe -
          substitui a antiga cópia "d-md-none" que existia só pra isso
-         (removida, ver mais abaixo). "Últimas respondidas" continua só
-         em tablet/desktop (leva a classe), como já era antes dentro do
-         submenu. #}
+         (removida, ver mais abaixo). "Últimas respondidas" e "Base de
+         conhecimento" continuam só em tablet/desktop (levam a classe),
+         mesma visibilidade que já tinham antes dentro do submenu. #}
       <li class="nav-item mb-1">
         <a class="nav-link {% if request.endpoint == 'medico.portal_atendimento' %}active{% endif %}" href="{{ url_for('medico.portal_atendimento') }}">
           <i class="bi bi-box-arrow-up-right me-2"></i>Portal de atendimento rápido
@@ -215,6 +215,12 @@
       </li>
 
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">
+          <i class="bi bi-journal-text me-2"></i>Base de conhecimento
+        </a>
+      </li>
+
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuIA" role="button"
            aria-expanded="{{ 'true' if request.endpoint in grupo_ia else 'false' }}">
           <span><i class="bi bi-robot me-2"></i>Médico + IA</span>
@@ -224,9 +230,6 @@
           <ul class="nav flex-column">
             <li class="nav-item">
               <a class="nav-link {% if request.endpoint == 'medico.perguntas_pendentes' or request.endpoint == 'medico.perguntas_responder' %}active{% endif %}" href="{{ url_for('medico.perguntas_pendentes') }}">Perguntas dos pacientes</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">Base de conhecimento</a>
             </li>
             {% if current_user.tipo == "medico" %}
             {# Pedido do Silvan: tela onde o médico testa a IA fazendo
