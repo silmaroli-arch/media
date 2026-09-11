@@ -4,11 +4,18 @@ direto (sem passo intermediário de menu - o antigo "2) Fazer uma
 pergunta" foi removido a pedido do Silvan, 2026-09-11) reaproveita a
 MESMA lógica de app.routes_paciente.chat() — sem ANTHROPIC_API_KEY/
 OPENAI_API_KEY configuradas neste ambiente de teste, a IA nunca responde
-(ver app/ia_preparo.py), então os três caminhos testáveis aqui são: base
-de conhecimento (FAQ já cadastrada no seed.py), resposta pronta de
-alimento (a partir do preparo cadastrado) e encaminhamento como pergunta
-pendente (quando nada bate)."""
-from app import create_app
+de verdade (ver app/ia_preparo.py), então os três caminhos testáveis
+diretamente aqui são: base de conhecimento (FAQ já cadastrada no
+seed.py), resposta pronta de alimento (a partir do preparo cadastrado) e
+encaminhamento como pergunta pendente (quando nada bate). Ao final,
+usa `unittest.mock.patch` para confirmar o próprio ORDENAMENTO da
+consulta (pedido do Silvan, 2026-09-11: FAQ/alimento/medicamento antes
+da IA, não depois) - sem o mock não dá pra provar que a IA foi ou não
+chamada, já que ela sempre retorna None neste ambiente de qualquer
+forma."""
+from unittest.mock import patch
+
+from app import create_app, db
 from app.models import ChatMensagem, ConversaWhatsapp, FaqItem, Paciente, PerguntaPendente
 from app.whatsapp_conversa import processar_mensagem
 
@@ -79,5 +86,25 @@ with app.app_context():
     checar("Com pergunta pendente, nova mensagem só mostra o aviso de aguardando resposta", "ainda está sendo respondida" in resposta)
     pendentes_depois2 = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
     checar("Mensagem durante pendência não cria PerguntaPendente nova", pendentes_depois2 == pendentes_depois)
+
+    # --- Regressão do bug relatado pelo Silvan (2026-09-11): antes desta
+    # correção, a IA era SEMPRE consultada primeiro - uma pergunta que já
+    # batia com uma FAQ cadastrada (ex.: repetida) mesmo assim ia pra IA
+    # de novo e ficava pendente de aprovação do médico, em vez de já
+    # devolver a resposta cadastrada direto pro paciente. Libera a
+    # pergunta pendente do caminho 3 acima (simula o médico já tendo
+    # respondido) só para poder seguir testando outros cenários nesta
+    # mesma conversa, sem o aviso de "aguardando resposta" no meio.
+    ultima_pendente.status = "respondida"
+    db.session.commit()
+
+    with patch("app.whatsapp_conversa.responder_com_ia") as ia_mock:
+        resposta = processar_mensagem(telefone, "Posso beber água durante o jejum?")
+    checar("Pergunta que já bate com FAQ cadastrada NÃO chama a IA", not ia_mock.called)
+    checar("Mesmo assim devolve a resposta já cadastrada na FAQ", "água pura é permitida" in resposta)
+
+    with patch("app.whatsapp_conversa.responder_com_ia", return_value=None) as ia_mock2:
+        processar_mensagem(telefone, "Essa pergunta aqui não bate com nenhuma FAQ nem alimento nem medicamento cadastrado")
+    checar("Pergunta sem correspondência na FAQ/alimento/medicamento AINDA chama a IA", ia_mock2.called)
 
     print("\nTodos os testes de pergunta livre por WhatsApp (passo 5) passaram.")

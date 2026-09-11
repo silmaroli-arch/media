@@ -12,11 +12,12 @@
   continua existindo (só quando há mais de um exame ativo), agora
   acionado pela palavra "trocar" em vez de um número de menu.
 - Passo 5 (este arquivo): a pergunta livre reaproveita a MESMA lógica de
-  app.routes_paciente.chat() (IA primeiro, com a resposta ficando
-  pendente de aprovação do médico; sem IA, base de conhecimento/
-  alimento/medicamento; sem nada disso, encaminhada pra equipe) - importa
-  o helper `_resolver_ancora` de lá em vez de duplicar a regra de
-  roteamento pra Grupo/dono pessoal.
+  app.routes_paciente.chat() (base de conhecimento/alimento/medicamento
+  primeiro - pedido do Silvan, 2026-09-11; só quando nada bate a IA é
+  consultada, com a resposta ficando pendente de aprovação do médico; sem
+  IA, ou sem resposta dela, encaminhada pra equipe) - importa o helper
+  `_resolver_ancora` de lá em vez de duplicar a regra de roteamento pra
+  Grupo/dono pessoal.
 
 Este módulo é só a LÓGICA de conversa (recebe telefone + texto da
 mensagem, devolve o texto da resposta) — não sabe nada sobre Twilio nem
@@ -201,68 +202,77 @@ def _resolver_exame_em_foco(conversa, paciente, agendamentos):
 
 def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     """Replica a lógica de app.routes_paciente.chat() (POST) para uma
-    pergunta livre recebida por WhatsApp: a IA (quando configurada) é
-    SEMPRE consultada primeiro, mas a resposta dela NUNCA vai direto pro
-    paciente - fica como PerguntaPendente "aguardando_aprovacao" até o
-    médico revisar; sem IA (ou sem resposta da IA), tenta a base de
-    conhecimento (FAQ) e as respostas prontas de alimento/medicamento;
-    sem nada disso, encaminha como pergunta pendente pra equipe responder
-    manualmente. Sempre grava um ChatMensagem (canal="whatsapp") no mesmo
-    histórico que a equipe já vê hoje (ver medico.atendimento). Toda
-    PerguntaPendente criada aqui guarda `telefone` (o remetente desta
-    conversa) - é o que permite ao sistema mandar a resposta de volta
-    pelo WhatsApp automaticamente assim que o médico/equipe responder
-    (ver app.routes_medico.perguntas_responder). Devolve uma tupla
-    (texto de resposta a mandar de volta pro paciente agora, a
-    PerguntaPendente criada - ou None se já foi respondida na hora por
-    FAQ/alimento/medicamento) - o chamador usa o segundo item para
-    avisar a equipe por notificação push (ver
+    pergunta livre recebida por WhatsApp: a base de conhecimento (FAQ) e
+    as respostas prontas de alimento/medicamento são consultadas PRIMEIRO
+    (pedido do Silvan, 2026-09-11 - antes disso a IA era sempre consultada
+    primeiro, então uma pergunta repetida ia pra IA/médico de novo, em vez
+    de reaproveitar a resposta já cadastrada); só quando nada disso bate é
+    que a IA (quando configurada) é consultada - a resposta dela NUNCA vai
+    direto pro paciente, fica como PerguntaPendente "aguardando_aprovacao"
+    até o médico revisar; sem IA (ou sem resposta da IA), encaminha como
+    pergunta pendente pra equipe responder manualmente. Sempre grava um
+    ChatMensagem (canal="whatsapp") no mesmo histórico que a equipe já vê
+    hoje (ver medico.atendimento). Toda PerguntaPendente criada aqui
+    guarda `telefone` (o remetente desta conversa) - é o que permite ao
+    sistema mandar a resposta de volta pelo WhatsApp automaticamente
+    assim que o médico/equipe responder (ver
+    app.routes_medico.perguntas_responder). Devolve uma tupla (texto de
+    resposta a mandar de volta pro paciente agora, a PerguntaPendente
+    criada - ou None se já foi respondida na hora por FAQ/alimento/
+    medicamento) - o chamador usa o segundo item para avisar a equipe por
+    notificação (push e/ou WhatsApp, ver
     app.push_notificacoes.notificar_equipe_nova_pergunta), só depois de
     commitar de verdade."""
     exame = agendamento.exame if agendamento else None
     grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame, agendamento)
 
-    resultado_ia = responder_com_ia(pergunta_texto, exame, paciente_id=paciente.id) if exame else None
     resposta_final = None
     origem = None
     pergunta_pendente_criada = None
 
-    if resultado_ia and resultado_ia["final"]:
-        origem = "ia_aguardando"
-        pergunta_pendente_criada = PerguntaPendente(
-            grupo_id=grupo_id_ancora,
-            criado_por_id=criado_por_id_ancora,
-            paciente_id=paciente.id,
-            exame_id=exame.id,
-            pergunta=pergunta_texto,
-            status="aguardando_aprovacao",
-            resposta_sugerida_ia=resultado_ia["final"],
-            resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
-            resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
-            resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
-            # Nomes das IAs que deram erro de chamada nesta pergunta (ver
-            # app.ia_preparo.responder_com_ia) - mostrado como aviso na
-            # tela de aprovação, mesmo quando a reserva "tapou o buraco"
-            # e o rascunho final saiu normal (ver medico/perguntas.html).
-            ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
-            telefone_whatsapp=telefone,
-        )
-        db.session.add(pergunta_pendente_criada)
+    faq_item, _score = buscar_resposta(
+        pergunta_texto,
+        grupo_id=grupo_id_ancora,
+        exame_id=exame.id if exame else None,
+        criado_por_id=criado_por_id_ancora,
+    )
+    resposta_alimento = buscar_resposta_alimento(pergunta_texto, exame, paciente) if not faq_item and exame else None
+    resposta_medicamento = (
+        buscar_resposta_medicamento(pergunta_texto, exame, paciente)
+        if not faq_item and not resposta_alimento and exame else None
+    )
+
+    if faq_item:
+        faq_item.vezes_utilizada += 1
+        resposta_final = faq_item.resposta
+        origem = "faq"
+    elif resposta_alimento:
+        resposta_final, origem = resposta_alimento, "alimento"
+    elif resposta_medicamento:
+        resposta_final, origem = resposta_medicamento, "medicamento"
     else:
-        faq_item, _score = buscar_resposta(
-            pergunta_texto,
-            grupo_id=grupo_id_ancora,
-            exame_id=exame.id if exame else None,
-            criado_por_id=criado_por_id_ancora,
-        )
-        if faq_item:
-            faq_item.vezes_utilizada += 1
-            resposta_final = faq_item.resposta
-            origem = "faq"
-        elif exame and (resposta_alimento := buscar_resposta_alimento(pergunta_texto, exame, paciente)):
-            resposta_final, origem = resposta_alimento, "alimento"
-        elif exame and (resposta_medicamento := buscar_resposta_medicamento(pergunta_texto, exame, paciente)):
-            resposta_final, origem = resposta_medicamento, "medicamento"
+        resultado_ia = responder_com_ia(pergunta_texto, exame, paciente_id=paciente.id) if exame else None
+        if resultado_ia and resultado_ia["final"]:
+            origem = "ia_aguardando"
+            pergunta_pendente_criada = PerguntaPendente(
+                grupo_id=grupo_id_ancora,
+                criado_por_id=criado_por_id_ancora,
+                paciente_id=paciente.id,
+                exame_id=exame.id,
+                pergunta=pergunta_texto,
+                status="aguardando_aprovacao",
+                resposta_sugerida_ia=resultado_ia["final"],
+                resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
+                resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
+                resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
+                # Nomes das IAs que deram erro de chamada nesta pergunta (ver
+                # app.ia_preparo.responder_com_ia) - mostrado como aviso na
+                # tela de aprovação, mesmo quando a reserva "tapou o buraco"
+                # e o rascunho final saiu normal (ver medico/perguntas.html).
+                ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
+                telefone_whatsapp=telefone,
+            )
+            db.session.add(pergunta_pendente_criada)
         else:
             origem = "pendente"
             pergunta_pendente_criada = PerguntaPendente(

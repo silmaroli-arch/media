@@ -239,80 +239,91 @@ def chat():
 
         if pergunta_enviada:
 
-            # A IA (quando configurada — ver app.ia_preparo) é SEMPRE
-            # consultada primeiro, e não a base de conhecimento (FAQ) — ela
-            # interpreta o preparo com mais flexibilidade do que a
-            # correspondência por palavra-chave abaixo. A resposta da IA,
-            # porém, NÃO vai direto para o paciente: fica como um rascunho
-            # (PerguntaPendente com status "aguardando_aprovacao") até o
-            # médico revisar, editar se precisar, e aprovar — só nesse
-            # momento ela é mostrada ao paciente e gravada na base de
-            # conhecimento (FaqItem), igual a uma resposta manual. Cada
-            # pergunta continua sendo encaminhada à IA de novo, mesmo que
-            # pareça repetida — não há atalho pela FAQ aqui.
-            resultado_ia = (
-                responder_com_ia(pergunta_enviada, exame_selecionado, paciente_id=paciente.id)
-                if exame_selecionado else None
-            )
             grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame_selecionado, agendamento_selecionado)
 
-            if resultado_ia and resultado_ia["final"]:
-                origem = "ia_aguardando"
-                pendente = PerguntaPendente(
-                    grupo_id=grupo_id_ancora,
-                    criado_por_id=criado_por_id_ancora,
-                    paciente_id=paciente.id,
-                    exame_id=exame_selecionado.id,
-                    pergunta=pergunta_enviada,
-                    status="aguardando_aprovacao",
-                    resposta_sugerida_ia=resultado_ia["final"],
-                    # Guardadas à parte para a tela de aprovação mostrar a
-                    # resposta de cada IA lado a lado, além da junção
-                    # (ver medico/perguntas.html) - só as 2 escolhidas pelo
-                    # dono vêm preenchidas (ver app.ia_preparo.responder_com_ia).
-                    resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
-                    resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
-                    resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
-                    # Nomes das IAs que deram erro de chamada nesta
-                    # pergunta (ver app.ia_preparo.responder_com_ia) -
-                    # mostrado como aviso na tela de aprovação, mesmo
-                    # quando a reserva "tapou o buraco" e o rascunho final
-                    # saiu normal (ver medico/perguntas.html).
-                    ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
-                )
-                db.session.add(pendente)
+            # Pedido do Silvan (2026-09-11): a base de conhecimento (FAQ) é
+            # consultada PRIMEIRO, antes da IA — se a pergunta já bate com
+            # algo já respondido antes (por semelhança, ou por igualdade
+            # exata no caso de FAQs geradas pela própria IA, ver
+            # app.faq_engine.buscar_resposta), a resposta já cadastrada
+            # volta direto pro paciente, sem chamar a IA de novo nem passar
+            # pelo médico. Antes disso, TODA pergunta ia pra IA primeiro,
+            # mesmo repetindo uma já respondida — o médico tinha que
+            # aprovar de novo, gastando uma chamada de IA à toa. As
+            # respostas prontas de alimento/medicamento (calculadas na
+            # hora a partir do preparo, sem depender de FAQ cadastrada)
+            # continuam vindo em seguida, antes da IA, pelo mesmo motivo.
+            faq_item, score = buscar_resposta(
+                pergunta_enviada,
+                grupo_id=grupo_id_ancora,
+                exame_id=exame_selecionado.id if exame_selecionado else None,
+                criado_por_id=criado_por_id_ancora,
+            )
+            resposta_alimento = (
+                buscar_resposta_alimento(pergunta_enviada, exame_selecionado, paciente)
+                if not faq_item and exame_selecionado else None
+            )
+            resposta_medicamento = (
+                buscar_resposta_medicamento(pergunta_enviada, exame_selecionado, paciente)
+                if not faq_item and not resposta_alimento and exame_selecionado else None
+            )
+
+            if faq_item:
+                faq_item.vezes_utilizada += 1
                 db.session.commit()
-                notificar_equipe_nova_pergunta(pendente)
-                # Mesma mensagem de "aguarde" usada quando ninguém sabe
-                # responder ainda — o paciente só vê a resposta final depois
-                # que o médico aprovar (ela aparece no histórico abaixo).
-                encaminhada = True
+                resposta_ia = faq_item.resposta
+                origem = "faq"
+            elif resposta_alimento:
+                resposta_ia = resposta_alimento
+                origem = "alimento"
+            elif resposta_medicamento:
+                resposta_ia = resposta_medicamento
+                origem = "medicamento"
             else:
-                # A IA não respondeu (não está configurada, deu erro, ou não
-                # há exame selecionado para dar contexto ao preparo) — só
-                # nesse caso a base de conhecimento e as respostas prontas
-                # de alimento/medicamento entram como alternativa.
-                faq_item, score = buscar_resposta(
-                    pergunta_enviada,
-                    grupo_id=grupo_id_ancora,
-                    exame_id=int(exame_id_selecionado) if exame_id_selecionado else None,
-                    criado_por_id=criado_por_id_ancora,
+                # Nada bateu na base de conhecimento nem nas respostas
+                # prontas — só agora a IA (quando configurada) é
+                # consultada. A resposta dela NÃO vai direto para o
+                # paciente: fica como um rascunho (PerguntaPendente com
+                # status "aguardando_aprovacao") até o médico revisar,
+                # editar se precisar, e aprovar — só nesse momento ela é
+                # mostrada ao paciente e gravada na base de conhecimento
+                # (FaqItem), igual a uma resposta manual (e passa a valer
+                # pra próxima pergunta igual/parecida, pelo caminho acima).
+                resultado_ia = (
+                    responder_com_ia(pergunta_enviada, exame_selecionado, paciente_id=paciente.id)
+                    if exame_selecionado else None
                 )
-                if faq_item:
-                    faq_item.vezes_utilizada += 1
+                if resultado_ia and resultado_ia["final"]:
+                    origem = "ia_aguardando"
+                    pendente = PerguntaPendente(
+                        grupo_id=grupo_id_ancora,
+                        criado_por_id=criado_por_id_ancora,
+                        paciente_id=paciente.id,
+                        exame_id=exame_selecionado.id,
+                        pergunta=pergunta_enviada,
+                        status="aguardando_aprovacao",
+                        resposta_sugerida_ia=resultado_ia["final"],
+                        # Guardadas à parte para a tela de aprovação mostrar a
+                        # resposta de cada IA lado a lado, além da junção
+                        # (ver medico/perguntas.html) - só as 2 escolhidas pelo
+                        # dono vêm preenchidas (ver app.ia_preparo.responder_com_ia).
+                        resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
+                        resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
+                        resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
+                        # Nomes das IAs que deram erro de chamada nesta
+                        # pergunta (ver app.ia_preparo.responder_com_ia) -
+                        # mostrado como aviso na tela de aprovação, mesmo
+                        # quando a reserva "tapou o buraco" e o rascunho final
+                        # saiu normal (ver medico/perguntas.html).
+                        ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
+                    )
+                    db.session.add(pendente)
                     db.session.commit()
-                    resposta_ia = faq_item.resposta
-                    origem = "faq"
-                elif exame_selecionado and (resposta_alimento := buscar_resposta_alimento(
-                    pergunta_enviada, exame_selecionado, paciente
-                )):
-                    resposta_ia = resposta_alimento
-                    origem = "alimento"
-                elif exame_selecionado and (resposta_medicamento := buscar_resposta_medicamento(
-                    pergunta_enviada, exame_selecionado, paciente
-                )):
-                    resposta_ia = resposta_medicamento
-                    origem = "medicamento"
+                    notificar_equipe_nova_pergunta(pendente)
+                    # Mesma mensagem de "aguarde" usada quando ninguém sabe
+                    # responder ainda — o paciente só vê a resposta final depois
+                    # que o médico aprovar (ela aparece no histórico abaixo).
+                    encaminhada = True
                 else:
                     pendente = PerguntaPendente(
                         grupo_id=grupo_id_ancora,
