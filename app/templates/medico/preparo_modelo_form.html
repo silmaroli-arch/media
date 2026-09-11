@@ -41,13 +41,16 @@
 {% if not modelo %}
 <div class="mb-3">
   {# Importar preenche este formulário - por isso o botão mora aqui, não
-     na lista. Abre um popup pra escolher o arquivo (Excel ou PDF). PDF é
-     lido diretamente pela IA (ver app.ia_pdf_preparo), com fallback
-     automático pra extração por regex se a IA não estiver disponível -
-     não existe mais uma etapa intermediária de gerar Excel a partir do
-     PDF. #}
+     na lista. Abre um popup pra escolher o arquivo. PDF é lido
+     diretamente pela IA (ver app.ia_pdf_preparo), com fallback automático
+     pra extração por regex se a IA não estiver disponível - não existe
+     mais uma etapa intermediária de gerar Excel a partir do PDF.
+     Importação por planilha (.xlsx) continua existindo no backend (ver
+     medico.preparo_modelos_importar_xlsx), mas deixou de aparecer aqui
+     nesta tela (pedido do Silvan, 2026-09-11) - só a opção de PDF é
+     mostrada, pra não confundir quem está cadastrando. #}
   <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx">
-    <i class="bi bi-file-earmark-arrow-up"></i> Importar de um Excel ou PDF
+    <i class="bi bi-file-earmark-arrow-up"></i> Importar de um PDF
   </button>
   <span class="form-text d-block mt-1">A importação lê o arquivo e preenche os campos abaixo pra você revisar — nada é salvo antes do Salvar.</span>
 </div>
@@ -362,21 +365,20 @@
     <div class="modal-content">
       <form method="post" action="{{ url_for('medico.preparo_modelos_importar_xlsx') }}" enctype="multipart/form-data" id="form-importar-xlsx">
         <div class="modal-header">
-          <h6 class="modal-title"><i class="bi bi-file-earmark-arrow-up"></i> Importar de um Excel ou PDF</h6>
+          <h6 class="modal-title"><i class="bi bi-file-earmark-arrow-up"></i> Importar de um PDF</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
           <p class="text-muted small">
-            Envie a planilha (.xlsx) no formato com as colunas Tipo/Ação/Agrupador/Nome/Dias antes/
-            Horas antes/Hora exata, ou um PDF com o preparo (lido diretamente por IA). Os dados
-            extraídos preenchem o formulário pra você revisar — nada é salvo antes do Salvar.
+            Envie um PDF com o preparo (lido diretamente por IA). Os dados extraídos preenchem o
+            formulário pra você revisar — nada é salvo antes do Salvar.
           </p>
           <div id="alerta-erro-importar-xlsx" class="alert alert-danger d-none" role="alert"></div>
           <div id="aviso-progresso-ia" class="alert alert-warning fw-bold text-center d-none" role="status">
             <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
             <span id="aviso-progresso-ia-texto"></span>
           </div>
-          <input type="file" name="arquivo_xlsx" id="input-arquivo-importar" class="form-control" accept=".xlsx,.pdf" required>
+          <input type="file" name="arquivo_xlsx" id="input-arquivo-importar" class="form-control" accept=".pdf" required>
           <input type="hidden" name="texto_extraido_cliente" id="input-texto-extraido-cliente">
           <div class="form-check mt-2 d-none" id="opcao-usar-ia-wrapper">
             <input type="checkbox" class="form-check-input" id="checkbox-usar-ia" checked>

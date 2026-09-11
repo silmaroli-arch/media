@@ -874,6 +874,20 @@ Pedido do Silvan: trocar o texto da mensagem de boas-vindas que o médico recebe
 **Pendência para o Silvan**: editar o template `boas_vindas_clinica` no WhatsApp Manager da Meta (mesma tela do print) com o novo corpo acima (com as quebras de linha), e reenviar para aprovação (edição de corpo de template sempre exige reaprovação). Amostras de variável sugeridas para a Meta analisar: `{{1}}` = "João Silva", `{{2}}` = "Salve este número para tirar dúvidas sobre o preparo dos seus exames." (o texto do paciente, mais neutro para a análise da Meta do que o do médico).
 
 - Sem teste automatizado dedicado nesta rodada (é só uma troca de texto/parâmetro, sem lógica condicional nova para cobrir) - confirmar visualmente depois que o template for reaprovado: cadastro de médico com telefone deve receber o texto novo (com a lista numerada do fluxo de teste), cadastro de paciente real deve receber o texto padrão (sem falar de teste/PDF/agendamento).
+- Template enviado para análise na Meta nesta rodada (via `boas_vindas_clinica`, corpo/amostras conferidos junto com o Silvan antes do envio).
+
+### Tela "Novo modelo de preparo": só aparece a opção de importar por PDF (Excel escondido)
+
+Pedido do Silvan (print da tela): o botão de importação mostrava "Importar de um Excel ou PDF" e o campo de arquivo aceitava `.xlsx` ou `.pdf` - ele quer que só apareça a opção de PDF.
+
+**Implementado em `app/templates/medico/preparo_modelo_form.html`** - mudança só de front-end/apresentação, nada de backend:
+- Texto do botão que abre o popup: "Importar de um Excel ou PDF" → "Importar de um PDF".
+- Título do popup e o parágrafo de instrução dentro dele: removida toda menção a planilha/`.xlsx`/colunas - agora só fala do PDF (lido direto por IA).
+- `accept` do campo de arquivo (`input type="file"`): de `".xlsx,.pdf"` para só `".pdf"` - o seletor de arquivo do navegador não deixa mais escolher uma planilha nessa tela.
+- **Nada mudou no backend** (`app.routes_medico.preparo_modelos_importar_xlsx` continua aceitando `.xlsx` normalmente, se algum dia precisar reativar a opção ou alguém chamar a rota diretamente) - é só a tela que deixou de oferecer essa opção visualmente, a pedido do Silvan.
+- O checkbox "Usar IA para extrair" (que só faz sentido para PDF) já tinha lógica de JS que o esconde quando o arquivo não é `.pdf` - como agora só PDF é aceito, ele passa a aparecer sempre, sem precisar de nenhuma mudança nesse trecho.
+
+- Sem teste automatizado (é só texto/atributo HTML) - confirmar visualmente que o botão/popup mostram só a opção de PDF, e que a importação de PDF continua funcionando normalmente (comportamento inalterado, só a apresentação mudou).
 
 ## Como continuar
 
