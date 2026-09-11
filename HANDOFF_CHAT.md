@@ -847,6 +847,20 @@ Silvan reportou (com prints da conversa de WhatsApp e do painel "Meu painel", mo
 - Testes: `test_whatsapp_identificacao.py` ganhou um novo bloco (item "4b") que identifica o paciente com um só exame ativo, cria um segundo agendamento DEPOIS (simulando exatamente o cenário relatado), e confirma que a próxima pergunta (a) não volta a pedir CPF, (b) nomeia o novo exame explicitamente com sua data, e (c) mantém o `agendamento_id` fixado no exame antigo até o paciente digitar "trocar".
 - **Pendência**: mesma limitação de sempre - `device_bash` continua indisponível na máquina do Silvan nesta rodada, então o teste foi escrito "no papel" (revisado com cuidado, sem execução real). Rodar localmente antes de subir pra produção: `python test_whatsapp_identificacao.py` (e a suíte completa, `test_whatsapp_pergunta.py` / `test_smoke.py` / `test_smoke_final.py`).
 
+### Texto da mensagem de boas-vindas reescrito (diferente para médico e para paciente real)
+
+Pedido do Silvan: trocar o texto da mensagem de boas-vindas que o médico recebe no próprio cadastro (print da conversa + print da tela de edição do template na Meta) para um texto mais detalhado, explicando o fluxo de teste (cadastrar preparo via PDF, criar agendamento para o paciente de teste). Esclarecido antes de implementar: esse texto novo é específico do médico (fala de "seus pacientes", "paciente de teste") e não faz sentido para um paciente de verdade - a solução manteve os dois públicos com o MESMO template, só variando o trecho da 2ª variável.
+
+**Implementado em `app/whatsapp_envio.py`** (`enviar_boas_vindas_whatsapp`):
+- O corpo fixo do template (que precisa ser reeditado/reaprovado na Meta) muda de "Este é o WhatsApp da clínica — salve este número..." para: **"Olá {{1}}, tudo bem? Este é o WhatsApp da MedIA — {{2}} Qualquer coisa, estamos por aqui!"**
+- `aviso_extra` (a 2ª variável) passou a ter um padrão não-vazio (`_AVISO_PADRAO_PACIENTE` = "Salve este número para tirar dúvidas sobre o preparo dos seus exames.") em vez de mandar um espaço em branco - antes esse texto ficava FIXO no corpo, agora ele mora na variável para o caso do paciente real.
+- Chamada do lado do médico (`app/routes_auth.py:cadastro()`) atualizada com o texto completo pedido pelo Silvan: "Os seus pacientes irão conversar com esse número de celular pelo WhatsApp. O MedIA criou um paciente no sistema com seus dados para que você possa realizar testes. Você deverá agora cadastrar um modelo de preparo importando um PDF e em seguida criar um agendamento para o seu paciente de teste."
+- Chamada do lado do paciente real (`app/routes_auth.py:cadastro_paciente_global`, sem passar `aviso_extra`) não precisou mudar - cai automaticamente no padrão novo.
+
+**Pendência para o Silvan**: editar o template `boas_vindas_clinica` no WhatsApp Manager da Meta (mesma tela do print) com o novo corpo acima, e reenviar para aprovação (edição de corpo de template sempre exige reaprovação). Amostras de variável sugeridas para a Meta analisar: `{{1}}` = "João Silva", `{{2}}` = "Salve este número para tirar dúvidas sobre o preparo dos seus exames." (o texto do paciente, mais neutro para a análise da Meta do que o do médico).
+
+- Sem teste automatizado dedicado nesta rodada (é só uma troca de texto/parâmetro, sem lógica condicional nova para cobrir) - confirmar visualmente depois que o template for reaprovado: cadastro de médico com telefone deve receber o texto novo (com o trecho do paciente de teste), cadastro de paciente real deve receber o texto padrão (sem falar de teste/PDF/agendamento).
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

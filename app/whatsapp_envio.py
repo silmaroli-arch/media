@@ -38,15 +38,21 @@ repositório, ver .env.example):
   paciente é cadastrado (ver enviar_boas_vindas_whatsapp mais abaixo,
   chamada em app.routes_medico.pacientes_novo e
   app.routes_auth.cadastro_paciente_global) - COM DUAS variáveis: {{1}}
-  o nome da pessoa, {{2}} um aviso extra que só o MÉDICO recebe no
-  próprio cadastro (pedido do Silvan, 2026-09-10 - avisando que ele
-  precisa cadastrar um modelo de preparo antes de testar); para um
-  paciente de verdade, {{2}} chega vazio. Se este template já estava
-  aprovado com só UMA variável (versão anterior a 2026-09-10), precisa
-  ser editado/reaprovado na Meta para aceitar a segunda. É a PRIMEIRA
-  mensagem que a clínica manda a essa pessoa, então está sempre fora da
-  janela de 24h - sem este template configurado, o envio é só pulado
-  (nada quebra, mesmo padrão de "falha aberta" do resto deste módulo).
+  o nome da pessoa, {{2}} um trecho que varia conforme quem recebe - o
+  MÉDICO, no próprio cadastro, recebe um trecho explicando o fluxo de
+  teste (cadastrar um modelo de preparo, importar PDF, criar um
+  agendamento para o paciente de teste - pedido do Silvan, 2026-09-11);
+  um paciente de verdade recebe um trecho mais simples (salvar o número
+  para tirar dúvidas sobre o preparo). Corpo aprovado (2026-09-11, ver
+  docstring de enviar_boas_vindas_whatsapp para o texto completo): "Olá
+  {{1}}, tudo bem? Este é o WhatsApp da MedIA — {{2}} Qualquer coisa,
+  estamos por aqui!". Se este template já estava aprovado com um corpo
+  diferente (ex.: "Este é o WhatsApp da CLÍNICA...", versão anterior a
+  2026-09-11), precisa ser editado/reaprovado na Meta com o novo corpo.
+  É a PRIMEIRA mensagem que a clínica manda a essa pessoa, então está
+  sempre fora da janela de 24h - sem este template configurado, o envio
+  é só pulado (nada quebra, mesmo padrão de "falha aberta" do resto
+  deste módulo).
 - WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO (opcional, pedido do
   Silvan, 2026-09-10): nome do template aprovado usado para avisar o
   médico, no próprio WhatsApp, que um modelo de preparo foi cadastrado e
@@ -185,6 +191,9 @@ def enviar_mensagem_whatsapp(telefone_destino, texto, content_variables=None, no
         return False
 
 
+_AVISO_PADRAO_PACIENTE = "Salve este número para tirar dúvidas sobre o preparo dos seus exames."
+
+
 def enviar_boas_vindas_whatsapp(paciente, aviso_extra=""):
     """Pedido do Silvan (2026-09-06): mandar uma mensagem de WhatsApp para
     o paciente assim que ele é cadastrado, para que ele já tenha o número
@@ -201,24 +210,33 @@ def enviar_boas_vindas_whatsapp(paciente, aviso_extra=""):
     essa mensagem já no CADASTRO do médico, não só quando ele abre
     "Testar IA" pela primeira vez).
 
-    `aviso_extra` (pedido do Silvan, 2026-09-10): texto adicional que
-    aparece só para o MÉDICO no momento do próprio cadastro (avisando que
-    ele precisa cadastrar um modelo de preparo antes de poder testar) -
-    fica em BRANCO (só um espaço, ver abaixo) para o paciente real, que
-    não deveria ver esse aviso. É a 2ª variável do MESMO template
-    WHATSAPP_META_TEMPLATE_BOAS_VINDAS (em vez de um template separado) -
-    o template, ao ser (re)aprovado na Meta, precisa ter duas variáveis no
-    corpo, cada uma com texto fixo antes/depois (a Meta recusa variável
-    colada no início ou no fim do corpo): {{1}} o nome, {{2}} este aviso
-    extra. Corpo aprovado (2026-09-10): "Olá {{1}}, tudo bem? Este é o
-    WhatsApp da clínica - salve este número para tirar dúvidas sobre o
-    preparo dos seus exames. {{2}} Qualquer coisa, estamos por aqui!".
+    `aviso_extra` é a 2ª variável do MESMO template
+    WHATSAPP_META_TEMPLATE_BOAS_VINDAS (em vez de um template separado
+    por audiência) - o template, ao ser (re)aprovado na Meta, precisa ter
+    duas variáveis no corpo, cada uma com texto fixo antes/depois (a Meta
+    recusa variável colada no início ou no fim do corpo): {{1}} o nome,
+    {{2}} este trecho. Corpo aprovado (2026-09-11, reescrito a pedido do
+    Silvan - antes falava genericamente "da clínica"): "Olá {{1}}, tudo
+    bem? Este é o WhatsApp da MedIA — {{2}} Qualquer coisa, estamos por
+    aqui!".
+
+    Quem chama decide o conteúdo de `aviso_extra` conforme a audiência
+    (pedido do Silvan, 2026-09-11 - antes disso só o médico tinha um
+    trecho extra, e o paciente real recebia {{2}} em branco):
+    - **Médico, no próprio cadastro** (ver app.routes_auth.cadastro):
+      passa um trecho explicando o fluxo de teste (cadastrar modelo de
+      preparo, importar PDF, criar agendamento para o paciente de
+      teste) - ver a chamada em app.routes_auth.cadastro para o texto
+      exato.
+    - **Paciente real** (chamadores que não passam `aviso_extra`): cai no
+      trecho padrão abaixo (`_AVISO_PADRAO_PACIENTE`), sobre salvar o
+      número para tirar dúvidas sobre o preparo - antes disso ({{2}} em
+      branco) o corpo aprovado tinha esse texto FIXO em vez de variável,
+      então o comportamento visto pelo paciente não muda.
 
     Importante: a Graph API rejeita variável de template como string
-    vazia - por isso, quando não há aviso extra (paciente real), manda um
-    espaço (" ") em vez de "" para {{2}}; como o corpo já tem texto fixo
-    logo antes e logo depois dessa variável, um espaço a mais passa
-    despercebido no resultado final.
+    vazia - por isso, mesmo com `aviso_extra` vazio, sempre cai no
+    trecho padrão do paciente em vez de mandar um espaço em branco.
 
     É sempre a PRIMEIRA mensagem trocada com esse número - nunca há uma
     janela de 24h aberta ainda -, então SEMPRE precisa do template
@@ -228,10 +246,11 @@ def enviar_boas_vindas_whatsapp(paciente, aviso_extra=""):
     por causa disso. `texto` aqui é só o rótulo do parâmetro obrigatório
     de enviar_mensagem_whatsapp; nunca chega a ser usado de fato, porque
     texto livre fora da janela de 24h a Meta sempre recusa."""
+    aviso = aviso_extra.strip() if aviso_extra else _AVISO_PADRAO_PACIENTE
     return enviar_mensagem_whatsapp(
         paciente.telefone,
-        texto=f"Olá, {paciente.nome}! Este é o WhatsApp da clínica — salve este número para tirar dúvidas sobre o preparo dos seus exames.",
-        content_variables=[paciente.nome, aviso_extra.strip() or " "],
+        texto=f"Olá, {paciente.nome}! Este é o WhatsApp da MedIA — {aviso} Qualquer coisa, estamos por aqui!",
+        content_variables=[paciente.nome, aviso],
         nome_template_env="WHATSAPP_META_TEMPLATE_BOAS_VINDAS",
     )
 
