@@ -47,7 +47,10 @@ import hmac
 import os
 
 from flask import Blueprint, current_app, jsonify, request
+from sqlalchemy.exc import IntegrityError
 
+from app.extensions import db
+from app.models import WhatsappMensagemProcessada
 from app.whatsapp_conversa import normalizar_telefone_whatsapp, processar_mensagem
 from app.whatsapp_envio import enviar_mensagem_whatsapp
 
@@ -82,11 +85,13 @@ def _assinatura_valida():
 def _extrair_mensagens_de_texto(payload):
     """Percorre a estrutura aninhada do payload da Meta
     (entry[].changes[].value.messages[]) e devolve uma lista de tuplas
-    (telefone, texto) só para mensagens de TEXTO — outros tipos (imagem,
-    áudio, botão, figurinha etc.) e notificações de status de entrega/
-    leitura (que vêm em `value.statuses`, sem `value.messages`) são
-    ignorados silenciosamente, já que o menu desta conversa é 100%
-    baseado em texto digitado."""
+    (telefone, texto, mensagem_id) só para mensagens de TEXTO — outros
+    tipos (imagem, áudio, botão, figurinha etc.) e notificações de status
+    de entrega/leitura (que vêm em `value.statuses`, sem `value.messages`)
+    são ignorados silenciosamente, já que o menu desta conversa é 100%
+    baseado em texto digitado. `mensagem_id` é o campo "id" que a Meta
+    inclui em toda mensagem (único por mensagem) - usado só para dedupe
+    de reentrega do webhook, ver `_mensagem_ja_processada`."""
     mensagens = []
     for entrada in payload.get("entry", []):
         for mudanca in entrada.get("changes", []):
@@ -96,9 +101,42 @@ def _extrair_mensagens_de_texto(payload):
                     continue
                 telefone = normalizar_telefone_whatsapp(msg.get("from"))
                 texto = msg.get("text", {}).get("body", "")
+                mensagem_id = msg.get("id")
                 if telefone:
-                    mensagens.append((telefone, texto))
+                    mensagens.append((telefone, texto, mensagem_id))
     return mensagens
+
+
+def _mensagem_ja_processada(mensagem_id):
+    """True se este id de mensagem (ver `_extrair_mensagens_de_texto`) já
+    tinha sido registrado antes - protege contra a Meta reentregar o
+    mesmo webhook mais de uma vez (comportamento documentado da Cloud
+    API, sobretudo quando o processamento demora para devolver 200; ver
+    docstring de `app.models.WhatsappMensagemProcessada` para o bug real
+    que isso causava: o mesmo aviso chegando duplicado ao paciente).
+
+    Sem `mensagem_id` (não deveria acontecer - a Meta sempre inclui esse
+    campo em toda mensagem), processa normalmente: não dá pra dedupar o
+    que não tem identificador, e falhar fechado aqui bloquearia mensagens
+    de verdade sem necessidade.
+
+    O INSERT já serve como o próprio lock contra corrida entre duas
+    requisições quase simultâneas para o mesmíssimo id (webhooks
+    reentregues muito próximos um do outro): a segunda cai no
+    IntegrityError da constraint UNIQUE e também é tratada como
+    duplicada, mesmo que a primeira SELECT (acima) não tivesse
+    encontrado nada ainda."""
+    if not mensagem_id:
+        return False
+    if WhatsappMensagemProcessada.query.filter_by(mensagem_id=mensagem_id).first():
+        return True
+    db.session.add(WhatsappMensagemProcessada(mensagem_id=mensagem_id))
+    try:
+        db.session.commit()
+        return False
+    except IntegrityError:
+        db.session.rollback()
+        return True
 
 
 @whatsapp_bp.route("/webhook", methods=["GET"])
@@ -131,13 +169,25 @@ def webhook():
     Sempre responde 200, mesmo quando recusa por assinatura inválida ou
     ausente, ou quando o payload não traz nenhuma mensagem de texto —
     devolver um erro HTTP faria a Meta reentregar a mesma notificação
-    várias vezes, achando que falhou."""
+    várias vezes, achando que falhou. Mesmo respondendo 200 rápido, a
+    Meta às vezes reentrega o mesmo webhook de qualquer forma (bug
+    relatado pelo Silvan, 2026-09-11: o mesmo aviso chegando duplicado ao
+    paciente) - por isso cada mensagem é dedupada pelo próprio id que a
+    Meta atribui a ela antes de processar (ver `_mensagem_ja_processada`
+    e `app.models.WhatsappMensagemProcessada`)."""
     if not _assinatura_valida():
         current_app.logger.warning("Webhook de WhatsApp recusado: assinatura inválida ou ausente.")
         return jsonify(ok=True)
 
     payload = request.get_json(silent=True) or {}
-    for telefone, corpo in _extrair_mensagens_de_texto(payload):
+    for telefone, corpo, mensagem_id in _extrair_mensagens_de_texto(payload):
+        if _mensagem_ja_processada(mensagem_id):
+            current_app.logger.info(
+                "WhatsApp: mensagem %s (de %s) já tinha sido processada antes - "
+                "ignorando reentrega do webhook da Meta.", mensagem_id, telefone,
+            )
+            continue
+
         current_app.logger.info("WhatsApp recebido de %s: %r", telefone, corpo)
         resposta = processar_mensagem(telefone, corpo)
         if resposta:

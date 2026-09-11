@@ -12,13 +12,24 @@ tem seu próprio teste em test_whatsapp_identificacao.py - aqui só
 confirma que o webhook está de fato encaminhando pra ela (e, no caso da
 mensagem de teste "oi", que NÃO é CPF/data, o envio de resposta de volta
 é apenas pulado, já que não há WHATSAPP_META_ACCESS_TOKEN configurado
-neste ambiente de teste - ver app/whatsapp_envio.py)."""
+neste ambiente de teste - ver app/whatsapp_envio.py).
+
+Também testa a dedupe por id de mensagem (`_mensagem_ja_processada`,
+pedido do Silvan em 2026-09-11 depois de ver - com prints de conversa -
+o mesmo aviso chegando duplicado ao paciente): mesmo com assinatura
+válida, reentregar o MESMO id de mensagem (a Meta pode fazer isso de
+verdade, ver docstring de app.routes_whatsapp e app.models.
+WhatsappMensagemProcessada) não deve chamar `processar_mensagem` de
+novo."""
 import hashlib
 import hmac
 import json
 import os
+from unittest.mock import patch
 
-from app import create_app
+from app import create_app, db
+from app.models import WhatsappMensagemProcessada
+import app.routes_whatsapp as routes_whatsapp_mod
 
 app = create_app()
 client = app.test_client()
@@ -128,6 +139,46 @@ r5 = client.post(
     headers={"X-Hub-Signature-256": assinatura_status},
 )
 checar("Notificação de status (sem mensagem): responde 200 sem quebrar", r5.status_code == 200)
+
+# 6) Dedupe por id de mensagem: reentregar o MESMO payload (mesmo "id":
+# "wamid.teste", já processado no passo 4 acima) com assinatura válida
+# de novo não deve chamar processar_mensagem uma segunda vez - simula a
+# Meta reentregando o mesmo webhook (comportamento real documentado dela).
+with app.app_context():
+    checar(
+        "O id da mensagem do passo 4 já foi registrado como processado",
+        WhatsappMensagemProcessada.query.filter_by(mensagem_id="wamid.teste").first() is not None,
+    )
+
+with patch.object(routes_whatsapp_mod, "processar_mensagem") as mock_processar:
+    r6 = client.post(
+        "/whatsapp/webhook", data=CORPO_JSON, content_type="application/json",
+        headers={"X-Hub-Signature-256": assinatura_valida},
+    )
+checar("Reentrega do mesmo id de mensagem: ainda responde 200", r6.status_code == 200)
+checar("Reentrega do mesmo id de mensagem: NÃO chama processar_mensagem de novo", not mock_processar.called)
+
+with app.app_context():
+    checar(
+        "Reentrega do mesmo id NÃO duplica o registro em WhatsappMensagemProcessada",
+        WhatsappMensagemProcessada.query.filter_by(mensagem_id="wamid.teste").count() == 1,
+    )
+
+# 7) Uma mensagem NOVA (id diferente) do mesmo payload continua sendo
+# processada normalmente - a dedupe é só por id, não trava mensagens
+# novas do mesmo paciente.
+payload_mensagem_nova = json.loads(CORPO_JSON)
+payload_mensagem_nova["entry"][0]["changes"][0]["value"]["messages"][0]["id"] = "wamid.teste-2"
+corpo_mensagem_nova = json.dumps(payload_mensagem_nova).encode("utf-8")
+assinatura_mensagem_nova = _assinar(corpo_mensagem_nova, "app-secret-de-teste")
+
+with patch.object(routes_whatsapp_mod, "processar_mensagem") as mock_processar2:
+    r7 = client.post(
+        "/whatsapp/webhook", data=corpo_mensagem_nova, content_type="application/json",
+        headers={"X-Hub-Signature-256": assinatura_mensagem_nova},
+    )
+checar("Mensagem com id novo: responde 200", r7.status_code == 200)
+checar("Mensagem com id novo (nunca visto antes): chama processar_mensagem normalmente", mock_processar2.called)
 
 os.environ.pop("WHATSAPP_META_APP_SECRET", None)
 print("\nTodos os testes do webhook de WhatsApp (Meta Cloud API) passaram.")

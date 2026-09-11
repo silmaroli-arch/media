@@ -1456,6 +1456,34 @@ class ConversaWhatsapp(db.Model):
         return minutos_parados > self.MINUTOS_EXPIRACAO
 
 
+class WhatsappMensagemProcessada(db.Model):
+    """Registra o id de cada mensagem do WhatsApp (campo "id" de
+    value.messages[] no payload do webhook da Meta - único por mensagem,
+    garantido pela própria Meta) assim que o webhook começa a processá-la
+    - existe só para EVITAR PROCESSAR A MESMA MENSAGEM DUAS VEZES.
+
+    Motivo (bug relatado pelo Silvan, 2026-09-11, com prints de conversa
+    mostrando o mesmo aviso "Sua pergunta ainda está sendo respondida..."
+    chegando duas vezes ao paciente, minutos - ou só segundos - depois):
+    a Cloud API da Meta pode REENTREGAR o mesmo webhook mais de uma vez
+    (comportamento documentado dela, sobretudo se o processamento demorar
+    para devolver 200) - sem nenhuma proteção, `processar_mensagem`
+    rodava de novo do zero para a mesma mensagem já processada, e o texto
+    de "aguardando resposta" (calculado de novo, já encontrando a
+    PerguntaPendente criada na primeira rodada) chegava como um segundo
+    aviso duplicado. Ver `app.routes_whatsapp._mensagem_ja_processada`.
+
+    Tabela nova (sem ALTER TABLE necessário - `db.create_all()`, chamado
+    em `create_app`, cria sozinha qualquer tabela que ainda não existir em
+    nenhum ambiente, mesmo padrão já usado para `conversas_whatsapp` e
+    `push_subscriptions`, ver migrar_banco.py)."""
+    __tablename__ = "whatsapp_mensagens_processadas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    mensagem_id = db.Column(db.String(100), nullable=False, unique=True, index=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class ResultadoExame(db.Model):
     """Um resultado de exame (PDF) anexado pela equipe a um agendamento —
     o paciente pode baixar esse mesmo arquivo pelo aplicativo."""
