@@ -5,17 +5,39 @@
 
 {# Pedido do Silvan (2026-09-10): esta tela substitui, só no menu reduzido
    do celular, o acesso direto a medico.preparo_modelos_lista - ver
-   docstring de medico.preparo_modelos_aviso_mobile em routes_medico.py. #}
+   docstring de medico.preparo_modelos_aviso_mobile em routes_medico.py.
+
+   Pedido do Silvan (2026-09-11): a edição manual completa (todas as
+   abas: cortes, medicamentos, alimentos etc.) continua só pelo
+   computador, mas IMPORTAR um PDF passou a ser permitido também por
+   aqui - é o que o médico é orientado a fazer na própria mensagem de
+   boas-vindas do WhatsApp (ver app.routes_auth.cadastro), então ele
+   precisa conseguir fazer isso pelo celular, de onde normalmente lê
+   aquela mensagem. Depois de extrair os dados do PDF, a tela de revisão
+   que abre É a mesma tela completa (com todas as abas) usada no
+   computador - inevitável, não existe uma tela de revisão separada só
+   para o que vem do PDF; ainda assim, chegar lá revisando um rascunho já
+   preenchido é bem mais simples do que preencher tudo do zero no
+   celular. #}
 <div class="alert alert-warning d-flex align-items-start" role="alert">
   <i class="bi bi-laptop fs-3 me-3"></i>
   <div>
-    A configuração de exames e preparos é mais delicada e só pode ser feita pela
-    versão web (computador) do MedIA. Acesse pelo navegador do computador para
-    cadastrar ou editar um preparo.
+    Cadastrar ou editar um preparo do zero é mais delicado e só pode ser feito pela
+    versão web (computador) do MedIA. Mas se você já tem o preparo em um PDF, pode
+    importá-lo direto por aqui.
   </div>
+</div>
+
+<div class="mb-3">
+  <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx">
+    <i class="bi bi-file-earmark-arrow-up"></i> Importar de um PDF
+  </button>
+  <span class="form-text d-block mt-1">A importação lê o arquivo e leva você pra tela de revisão pra confirmar os dados — nada é salvo antes de você revisar e salvar.</span>
 </div>
 
 <a href="{{ url_for('medico.dashboard') }}" class="btn btn-primary">
   <i class="bi bi-arrow-left"></i> Voltar ao Painel
 </a>
+
+{% include "medico/_importar_preparo_pdf.html" %}
 {% endblock %}

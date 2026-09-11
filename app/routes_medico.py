@@ -1427,17 +1427,33 @@ def exames_por_filial_excluir(exame_id):
 def preparo_modelos_aviso_mobile():
     """Pedido do Silvan (2026-09-10): "Exames & preparo" também precisava
     aparecer no menu reduzido do celular (ver "Meus dados"/"Pacientes"/
-    "Agendar exame" adicionados ao mesmo menu na mesma rodada), mas essa
-    tela em si (cadastro/edição de modelo de preparo) é uma configuração
-    "mais delicada" - o Silvan prefere que só seja feita pela versão web
-    (computador), não pelo celular, porque o médico testando pelo celular
-    (ver medico.testar_ia) poderia se perder tentando editar ali. Por
-    isso, o item do menu no celular NÃO leva direto para
-    medico.preparo_modelos_lista - leva para este aviso simples, que só
-    explica isso e oferece um botão de volta ao Painel. A tela real
-    continua acessível normalmente pelo computador (e por link direto, se
-    alguém precisar, já que não há bloqueio de verdade na rota - é só
-    orientação de uso)."""
+    "Agendar exame" adicionados ao mesmo menu na mesma rodada), mas o
+    CADASTRO MANUAL completo (todas as abas: cortes, medicamentos,
+    alimentos etc.) é uma configuração "mais delicada" - o Silvan prefere
+    que só seja feito pela versão web (computador), não pelo celular,
+    porque o médico testando pelo celular (ver medico.testar_ia) poderia
+    se perder tentando editar ali. Por isso, o item do menu no celular
+    NÃO leva direto para medico.preparo_modelos_lista - leva para esta
+    tela, que explica isso e oferece um botão de volta ao Painel. A tela
+    real continua acessível normalmente pelo computador (e por link
+    direto, se alguém precisar, já que não há bloqueio de verdade na
+    rota - é só orientação de uso).
+
+    Atualização (pedido do Silvan, 2026-09-11): IMPORTAR um PDF passou a
+    ser permitido direto por aqui, mesmo no celular - é o que a própria
+    mensagem de boas-vindas do WhatsApp orienta o médico a fazer (ver
+    app.routes_auth.cadastro), e ele normalmente lê essa mensagem no
+    celular, não no computador. Por isso esta tela ganhou o botão
+    "Importar de um PDF" (reaproveitando o mesmo popup/JS de
+    medico/preparo_modelo_form.html, extraído para o partial
+    medico/_importar_preparo_pdf.html). Depois de extrair os dados, o
+    médico é levado para a MESMA tela de revisão completa usada no
+    computador (medico.preparo_modelos_importar_xlsx →
+    _renderizar_revisao_de_preparo_importado) - não existe uma tela de
+    revisão separada só para quem importou pelo celular; a ressalva
+    acima (cadastro manual do zero é melhor no computador) continua
+    valendo, só o caminho de importação por PDF deixou de ser
+    bloqueado."""
     return render_template("medico/preparo_modelos_aviso_mobile.html")
 
 

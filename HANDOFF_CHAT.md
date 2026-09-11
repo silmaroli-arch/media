@@ -889,6 +889,21 @@ Pedido do Silvan (print da tela): o botão de importação mostrava "Importar de
 
 - Sem teste automatizado (é só texto/atributo HTML) - confirmar visualmente que o botão/popup mostram só a opção de PDF, e que a importação de PDF continua funcionando normalmente (comportamento inalterado, só a apresentação mudou).
 
+### Importar PDF de preparo também pelo celular (menu reduzido do médico)
+
+Pedido do Silvan: hoje "Exames & preparo" no menu reduzido do celular só mostra um aviso dizendo que a configuração deve ser feita pelo computador (decisão da rodada anterior, ver seção "'Exames & preparo' no celular do médico leva a um aviso, não à tela real" acima) - ele quer permitir importar um PDF direto por ali também. Motivo prático: a própria mensagem de boas-vindas do WhatsApp (ver seção "Texto da mensagem de boas-vindas..." acima) já orienta o médico a "cadastrar um modelo de preparo importando um PDF" - e ele lê essa mensagem no celular, não seguido de estar no computador.
+
+**Esclarecido antes de implementar** (pergunta feita ao Silvan): importar um PDF sempre cai na MESMA tela de revisão completa usada no cadastro manual (todas as abas: cortes, medicamentos, alimentos etc.) - não existe uma tela de revisão separada só pra PDF. Confirmado: manter o aviso na tela mobile (o cadastro 100% manual do zero continua desencorajado no celular), mas adicionar um botão "Importar de um PDF" nela - ao usar, o médico é levado pra tela de revisão completa mesmo assim (inevitável), só que chegando lá com um rascunho já preenchido pelo PDF, bem mais simples do que preencher tudo à mão no celular.
+
+**Implementado:**
+- **Novo partial `app/templates/medico/_importar_preparo_pdf.html`**: o popup "Importar de um PDF" (modal + campo de arquivo) e toda a lógica de JS de extração (streaming de progresso da IA, fallback de extração local com pdfjs, tratamento de erro de rede/timeout - ~230 linhas) foram extraídos de `preparo_modelo_form.html` para este partial, pra poder ser incluído em mais de uma tela sem duplicar o JS. Quem inclui o partial só precisa ter, antes dele, um botão que abra o modal (`data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx"`).
+- **`app/templates/medico/preparo_modelo_form.html`**: o popup e o JS de importação foram substituídos por `{% include "medico/_importar_preparo_pdf.html" %}` (dentro do mesmo `{% if not modelo %}` de antes) - comportamento na tela do computador **inalterado**, só deixou de duplicar o código.
+- **`app/templates/medico/preparo_modelos_aviso_mobile.html`**: ganhou um botão "Importar de um PDF" (mesmo estilo do botão já usado em `preparo_modelo_form.html`) e o `{% include %}` do mesmo partial. O texto do aviso foi ajustado para deixar claro que só o cadastro manual do zero continua exigindo o computador ("Cadastrar ou editar um preparo do zero é mais delicado... Mas se você já tem o preparo em um PDF, pode importá-lo direto por aqui.").
+- Ao concluir a extração com sucesso, o próprio JS do partial substitui a página inteira (`document.write`) pelo HTML que o servidor devolve (a tela de revisão) - funciona independente de qual tela (computador ou aviso mobile) chamou a importação, já que é a página toda que troca, não um trecho dela.
+- Nenhuma mudança de backend/rota (`medico.preparo_modelos_importar_xlsx` continua exatamente igual) - é só uma mudança de onde, no front-end, o botão de importar aparece.
+
+**Pendência**: sem teste automatizado dedicado (é extração de template/JS, sem lógica de servidor nova) - confirmar visualmente pelo celular: o botão "Importar de um PDF" aparece na tela de aviso, abre o popup, a extração funciona e leva pra tela de revisão completa; e, pelo computador, confirmar que `preparo_modelo_form.html` continua funcionando exatamente como antes (nada deveria ter mudado ali, é só reaproveitamento de código).
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
