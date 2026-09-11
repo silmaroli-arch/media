@@ -1,6 +1,8 @@
 # Handoff — Continuação do chat com Claude sobre o projeto Media/MedIA
 
-> Atualizado em 2026-09-10 (5ª rodada — ver seção no final). Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
+> Atualizado em 2026-09-11 (6ª rodada — ver seção "6ª rodada" perto do final). Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
+>
+> **A partir da 6ª rodada, toda alteração de código feita numa sessão precisa ser documentada aqui** (pedido explícito do Silvan) - não só ao final da sessão.
 >
 > **Mudança de infraestrutura importante desde a 4ª rodada (registrada abaixo, mas avisando já aqui em cima porque afeta TUDO que este documento diz sobre AWS/Elastic Beanstalk)**: o ambiente `media-dev` foi migrado do AWS Elastic Beanstalk para o **Render** (`render.yaml` na raiz do repo, serviço `media-dev` em dashboard.render.com). Onde as seções abaixo mencionam "Elastic Beanstalk", "`.platform/hooks/predeploy/`" ou variáveis de ambiente configuradas "no Elastic Beanstalk", leia como "no Render" — o mecanismo mudou (ver 5ª rodada), mas a lista de variáveis e o propósito de cada uma continuam os mesmos.
 
@@ -780,6 +782,45 @@ Hipóteses já testadas e DESCARTADAS como causa (todas reproduzem o mesmo erro)
 - Não há nada pendente do lado do código do MedIA para este bloqueio - é
   puramente uma questão de configuração/infra do lado do Mercado Pago a ser
   resolvida com o suporte deles antes de retomar o teste end-to-end.
+
+## 6ª rodada (2026-09-11) — causa raiz da boas-vindas sem chegar, menu do WhatsApp simplificado, aviso ao médico
+
+### Convenção nova a partir desta rodada: documentar toda alteração aqui
+
+Pedido explícito do Silvan: a partir de agora, **toda alteração de código feita numa sessão precisa ser documentada neste arquivo** (`HANDOFF_CHAT.md`), não só quando a sessão está prestes a terminar - é assim que ele acompanha o que foi mudado e retoma o trabalho em qualquer sessão nova.
+
+### Diagnóstico: mensagem de boas-vindas do WhatsApp não chegava
+
+Silvan cadastrou um médico de teste (`/cadastro`, papel "Médico(a)") com telefone preenchido e a mensagem de boas-vindas (`enviar_boas_vindas_whatsapp`, template `boas_vindas_clinica`) não chegou. Investigação, sem nenhuma mudança de código (o problema era de configuração na Meta, não no MedIA):
+
+- As variáveis de ambiente no Render (`WHATSAPP_META_ACCESS_TOKEN`, `WHATSAPP_META_PHONE_NUMBER_ID`, `WHATSAPP_META_TEMPLATE_BOAS_VINDAS` e as demais) já estavam todas configuradas corretamente.
+- O código (`app/whatsapp_envio.py`) só registra log quando a chamada à Graph API FALHA (HTTP >= 400) ou quando falta configuração - quando a Meta aceita a chamada (retorna sucesso), a função não loga nada, o que sozinho não prova sucesso de entrega.
+- **Causa raiz encontrada**: a conta comercial do WhatsApp ("Silmaroli", em developers.facebook.com → Media → Casos de uso → Conectar no WhatsApp → Personalizar → Etapa 2. Configuração da produção) não tinha **forma de pagamento cadastrada**. Mensagens **iniciadas pela empresa** (todo template fora da janela de 24h, que é o caso de TODOS os avisos proativos do MedIA - boas-vindas, preparo cadastrado, agendamento criado, resposta de pergunta fora da janela) exigem forma de pagamento configurada na conta - sem isso, a Meta aceita a chamada da API mas a mensagem não é entregue, sem gerar erro nenhum do lado do código.
+- **Resolvido**: Silvan cadastrou um cartão em "Adicione informações de pagamento para enviar mensagens iniciadas pela empresa" (Billing Hub do Meta Business Manager). Item concluído com sucesso ("Pagamento adicionado").
+- **Pendência**: falta repetir um cadastro de teste (ou usar o testador "Enviar mensagem" da própria tela da Meta) para confirmar que a mensagem chega agora. Se algum dia isso voltar a "sumir" sem erro no log, verificar de novo essa forma de pagamento antes de qualquer outra hipótese.
+
+### WhatsApp do paciente: menu numerado removido, pergunta direta
+
+Pedido do Silvan: depois que o paciente se identifica (CPF + data de nascimento) e o exame em foco é resolvido, ele não deve mais ver um menu ("1) Ver informações do preparo / 2) Fazer uma pergunta / 3) Trocar de exame") - deve poder digitar a pergunta diretamente.
+
+**Implementado em `app/whatsapp_conversa.py`**:
+- Removidas as opções "1) Ver informações do preparo" e "2) Fazer uma pergunta" (e toda a lógica de estado "aguardando_pergunta" que dependia de digitar "2" antes) - a mensagem mostrada depois de identificado (ou depois de escolher o exame, quando há mais de um) já convida direto: "Pode digitar sua pergunta sobre o preparo deste exame."
+- "3) Trocar de exame" continua existindo (só aparece/funciona quando o paciente tem mais de um exame ativo), mas agora é acionado pela palavra **"trocar"** (case-insensitive) digitada como mensagem, em vez do número "3" de um menu que não existe mais. Quando há mais de um exame ativo, a mensagem de convite à pergunta menciona esse comando; com um só exame ativo, não menciona (não faz sentido).
+- Coluna `ConversaWhatsapp.aguardando_pergunta` no banco não foi removida (evita migração), só deixou de ser usada no código - mesmo padrão já usado antes com `Paciente.eh_teste`.
+- `MENSAGEM_PEDIR_PERGUNTA` (antiga mensagem de "digite sua pergunta, ou 0 para cancelar") foi removida; `_texto_pedir_pergunta()` (nova função) monta essa mensagem dinamicamente, com ou sem a menção ao comando "trocar".
+- Testes reescritos: `test_whatsapp_identificacao.py` e `test_whatsapp_pergunta.py` (removidos os testes do menu antigo/"2"/"0" de cancelar; adicionados testes do convite direto e do comando "trocar", incluindo em maiúsculas).
+
+**Pendência**: a suíte de testes não pôde ser executada nesta sessão porque o `device_bash` na máquina do Silvan estava indisponível (mesmo bug do Windows já visto antes) - os dois arquivos de teste foram reescritos "no papel" (lógica revisada com cuidado, sem rodar de verdade) e entregues direto na pasta via `device_commit_files`. **Rodar localmente antes de subir para produção**: `python test_whatsapp_identificacao.py`, `python test_whatsapp_pergunta.py`, e a suíte completa (`test_smoke.py`/`test_smoke_final.py`) para garantir que nada mais dependia do menu antigo.
+
+### Aviso ao médico por WhatsApp quando chega pergunta nova (complementa o push do PWA)
+
+Pedido do Silvan: quando um paciente faz uma pergunta (por WhatsApp ou pela área web), o médico responsável deve ser avisado também por WhatsApp, não só pelo push do PWA (Fatia 8, ver seção acima - que continua existindo, sem mudança).
+
+**Implementado em `app/push_notificacoes.py`** (mesmo ponto central já chamado pelos três lugares que criam `PerguntaPendente`: `app/routes_paciente.py` x2 e `app/whatsapp_conversa.py`):
+- `notificar_equipe_nova_pergunta(pergunta)` agora, além do push (se VAPID configurado), também chama a nova função `_notificar_whatsapp_medicos(pergunta, usuarios_ids)` - os dois canais são independentes (um falhar ou estar desconfigurado não afeta o outro).
+- Reaproveita a MESMA lista de destinatários já calculada por `_usuarios_para_notificar` (só o(s) médico(s) responsável(is) pelo exame da pergunta, ou médicos com `perm_pacientes` para pergunta geral - a mesma regra que decide o que cada médico vê em `/equipe/perguntas`).
+- **Decisão explícita do Silvan**: por ora, texto livre (sem template aprovado na Meta) - `enviar_mensagem_whatsapp(medico.telefone, texto=...)` sem `content_variables`, forçando o caminho de texto livre. Isso significa que esse aviso só chega de fato se o médico tiver mandado mensagem para o número da clínica nas últimas 24h - fora dessa janela (o caso mais comum), a Meta recusa e o aviso simplesmente não sai, sem quebrar nada (mesmo padrão de "falha aberta" do resto do projeto).
+- **Se isso se mostrar pouco confiável na prática**: o próximo passo é criar um template aprovado dedicado (mesmo padrão dos outros avisos: boas-vindas, preparo cadastrado, agendamento criado), o que exige submeter à Meta e esperar aprovação antes de funcionar de forma confiável independente da janela de 24h.
 
 ## Como continuar
 
