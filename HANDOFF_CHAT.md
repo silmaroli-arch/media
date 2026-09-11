@@ -904,6 +904,18 @@ Pedido do Silvan: hoje "Exames & preparo" no menu reduzido do celular só mostra
 
 **Pendência**: sem teste automatizado dedicado (é extração de template/JS, sem lógica de servidor nova) - confirmar visualmente pelo celular: o botão "Importar de um PDF" aparece na tela de aviso, abre o popup, a extração funciona e leva pra tela de revisão completa; e, pelo computador, confirmar que `preparo_modelo_form.html` continua funcionando exatamente como antes (nada deveria ter mudado ali, é só reaproveitamento de código).
 
+### Texto da mensagem "preparo cadastrado" também reescrito (orienta a cadastrar um agendamento, não mais a testar a IA)
+
+Pedido do Silvan: agora que o fluxo do médico é cadastrar preparo → cadastrar agendamento (ver mudanças da mensagem de boas-vindas, acima), a mensagem que ele recebe assim que cadastra o modelo de preparo (`preparo_cadastrado_medico`) também precisava mudar - antes orientava a "testar o assistente de IA fazendo uma pergunta de teste em Testar IA nos meus preparos", agora deve orientar a cadastrar um agendamento para o paciente de teste.
+
+**Implementado em `app/whatsapp_envio.py`** (`enviar_preparo_cadastrado_whatsapp`):
+- Novo corpo aprovado: **"Boa notícia, {{1}}! Seu modelo de preparo foi cadastrado com sucesso.\nAgora você já pode continuar os seus testes: cadastre um agendamento para o paciente de teste (criado com o seu nome)."** - continua com uma única variável ({{1}} = nome do médico), só o texto fixo mudou.
+- Sem mudança de assinatura/chamada - `app.routes_medico.preparo_modelos_novo` continua chamando igual, nada de código fora deste arquivo precisou mudar.
+
+**Pendência para o Silvan**: editar o template `preparo_cadastrado_medico` no WhatsApp Manager da Meta com o novo corpo acima (com a quebra de linha) e reenviar para aprovação - mesmo procedimento já feito para `boas_vindas_clinica` nesta mesma rodada.
+
+- Sem teste automatizado dedicado (é só troca de texto, sem lógica condicional nova) - confirmar visualmente depois que o template for reaprovado.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

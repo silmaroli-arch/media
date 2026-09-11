@@ -55,11 +55,16 @@ repositório, ver .env.example):
   deste módulo).
 - WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO (opcional, pedido do
   Silvan, 2026-09-10): nome do template aprovado usado para avisar o
-  médico, no próprio WhatsApp, que um modelo de preparo foi cadastrado e
-  ele já pode testar a IA (ver enviar_preparo_cadastrado_whatsapp mais
-  abaixo, chamada em app.routes_medico.preparo_modelos_novo) - COM uma
-  variável (o nome do médico). Também quase sempre fora da janela de
-  24h, e também opcional (sem ele, o envio é só pulado).
+  médico, no próprio WhatsApp, que um modelo de preparo foi cadastrado
+  (ver enviar_preparo_cadastrado_whatsapp mais abaixo, chamada em
+  app.routes_medico.preparo_modelos_novo) - COM uma variável (o nome do
+  médico). Corpo aprovado (2026-09-11, reescrito a pedido do Silvan -
+  antes orientava a "fazer uma pergunta de teste", agora orienta a
+  "cadastrar um agendamento"): "Boa notícia, {{1}}! Seu modelo de
+  preparo foi cadastrado com sucesso.\\nAgora você já pode continuar os
+  seus testes: cadastre um agendamento para o paciente de teste (criado
+  com o seu nome).". Também quase sempre fora da janela de 24h, e também
+  opcional (sem ele, o envio é só pulado).
 - WHATSAPP_META_TEMPLATE_AGENDAMENTO_CRIADO (opcional, pedido do Silvan,
   2026-09-10): nome do template aprovado usado para avisar o PACIENTE, no
   próprio WhatsApp, que um agendamento foi criado para ele (ver
@@ -279,13 +284,21 @@ def enviar_preparo_cadastrado_whatsapp(medico):
     com uma variável: o nome do médico), separado do de boas-vindas. Sem
     esse template configurado, o envio é só pulado (mesmo padrão de
     "falha aberta" do resto deste módulo) - o cadastro do preparo em si
-    nunca falha por causa disso."""
+    nunca falha por causa disso.
+
+    Texto reescrito a pedido do Silvan (2026-09-11 - a orientação de
+    próximo passo mudou de "faça uma pergunta de teste" para "cadastre um
+    agendamento", já que agora é isso que falta para o fluxo de teste
+    ficar completo, ver enviar_boas_vindas_whatsapp). Corpo aprovado:
+    "Boa notícia, {{1}}! Seu modelo de preparo foi cadastrado com
+    sucesso.\\nAgora você já pode continuar os seus testes: cadastre um
+    agendamento para o paciente de teste (criado com o seu nome)."."""
     return enviar_mensagem_whatsapp(
         medico.telefone,
         texto=(
-            f"Boa notícia, {medico.nome}! Seu modelo de preparo foi cadastrado. "
-            "Agora você já pode testar o assistente de IA fazendo uma pergunta de teste "
-            'em "Testar IA nos meus preparos".'
+            f"Boa notícia, {medico.nome}! Seu modelo de preparo foi cadastrado com sucesso.\n"
+            "Agora você já pode continuar os seus testes: cadastre um agendamento para o "
+            "paciente de teste (criado com o seu nome)."
         ),
         content_variables=[medico.nome],
         nome_template_env="WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO",
