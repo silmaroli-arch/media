@@ -33,19 +33,20 @@ na Meta. Texto livre só é entregue de fato se o médico tiver mandado
 mensagem para o número da clínica nas últimas 24h (ver docstring de
 app.whatsapp_envio.enviar_mensagem_whatsapp) - fora dessa janela (o caso
 mais comum), a Meta recusa e o aviso simplesmente não chega, sem quebrar
-nada (o push e a fila em /equipe/perguntas continuam funcionando
+nada (o push e a fila de perguntas pendentes continuam funcionando
 normalmente). Se isso se mostrar pouco confiável na prática, o próximo
 passo é criar um template aprovado dedicado (mesmo padrão dos outros
 avisos em app.whatsapp_envio) para não depender da janela de 24h.
 
 Link clicável no aviso (pedido do Silvan, 2026-09-11): o texto do aviso
 tenta incluir um link direto e completo (com https://...) para a tela
-/equipe/perguntas, em vez de só o caminho relativo - ver _link_perguntas.
-Isso depende da env var opcional APP_URL_PUBLICA (ex.:
-"https://dev.media.med.br") com a URL pública do site; sem essa
-variável configurada, o texto cai no caminho relativo de sempre (sem
-link clicável no WhatsApp, mas nada quebra) - mesmo padrão de falha
-aberta usado no resto do módulo.
+/equipe/portal (não /equipe/perguntas - troca pedida pelo Silvan em
+2026-09-11, depois de ver o link em uso: /equipe/portal é a tela que ele
+realmente quer que o médico abra a partir do aviso), em vez de só o
+caminho relativo - ver _link_perguntas. A URL usada é a env var opcional
+APP_URL_PUBLICA quando configurada; sem ela, cai no domínio de produção
+do Render (https://media-dev.onrender.com) como padrão - sempre um link
+completo e clicável, nunca só o caminho relativo.
 """
 import json
 import logging
@@ -157,19 +158,18 @@ def notificar_equipe_nova_pergunta(pergunta):
 
 
 def _link_perguntas():
-    """Monta o link para a tela /equipe/perguntas usando a URL pública do
+    """Monta o link para a tela /equipe/portal usando a URL pública do
     site (env var opcional APP_URL_PUBLICA, ex.: "https://dev.media.med.br")
     - com ela configurada, retorna um link completo e clicável (ex.:
-    "https://dev.media.med.br/equipe/perguntas"); sem ela, cai no caminho
-    relativo de sempre ("/equipe/perguntas", sem link clicável no
-    WhatsApp) - ver docstring do módulo. Não usa url_for(_external=True)
-    de propósito: sem SERVER_NAME/ProxyFix configurado, o esquema gerado
-    poderia sair como "http://" mesmo em produção (atrás do proxy do
-    Render)."""
-    base = os.environ.get("APP_URL_PUBLICA")
-    if base:
-        return f"{base.rstrip('/')}/equipe/perguntas"
-    return "/equipe/perguntas"
+    "https://dev.media.med.br/equipe/portal"); sem ela, usa como padrão o
+    domínio de produção do Render (pedido do Silvan, 2026-09-11:
+    "https://media-dev.onrender.com/equipe/portal") - sempre um link
+    completo e clicável, nunca só o caminho relativo. Não usa
+    url_for(_external=True) de propósito: sem SERVER_NAME/ProxyFix
+    configurado, o esquema gerado poderia sair como "http://" mesmo em
+    produção (atrás do proxy do Render)."""
+    base = os.environ.get("APP_URL_PUBLICA", "https://media-dev.onrender.com")
+    return f"{base.rstrip('/')}/equipe/portal"
 
 
 def _notificar_whatsapp_medicos(pergunta, usuarios_ids):
