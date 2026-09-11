@@ -624,24 +624,50 @@ checar("Paciente vê a lista de alimentos proibidos com o horário calculado a p
        "Leite e derivados" in texto and "09/08/2026 às 20:00" in texto)
 checar("Paciente vê a lista de alimentos sugeridos para consumo", "Água de coco" in texto)
 
-# O chat responde automaticamente sobre um alimento cadastrado, mesmo sem FAQ manual.
+# O chat calcula automaticamente a resposta sobre um alimento cadastrado (mesmo
+# sem FAQ manual), mas - por instrução do Silvan (2026-09-11: "toda a resposta,
+# mesmo estando no preparo, deve passar por aprovação nesse momento - só não
+# passa por aprovação se já estiver na base de conhecimento do médico") - essa
+# resposta calculada fica esperando aprovação do médico antes de chegar ao
+# paciente, exatamente como uma resposta da IA (ver app/routes_paciente.py e
+# app/templates/paciente/chat.html, origem 'alimento_aguard'/'medicamento_aguard').
 r = client.post("/paciente/chat", data={"pergunta": "posso tomar água de coco?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
-checar("Chat responde automaticamente que água de coco é permitida, sem precisar de FAQ cadastrada",
-       "água de coco" in texto.lower() and "sim" in texto.lower())
+checar("Chat NÃO responde direto sobre água de coco - a resposta calculada espera aprovação do médico",
+       "água de coco" not in texto.lower() and "revisada pelo médico" in texto.lower())
 
 r = client.post("/paciente/chat", data={"pergunta": "posso comer leite e derivados antes do exame?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
-checar("Chat responde automaticamente que leite e derivados é proibido, com o prazo calculado",
-       "leite e derivados" in texto.lower() and "não" in texto.lower() and "09/08/2026" in texto)
+checar("Chat NÃO responde direto sobre leite e derivados - a resposta calculada espera aprovação do médico",
+       "09/08/2026" not in texto and "revisada pelo médico" in texto.lower())
 
-# Pequenos erros de digitação não devem fazer a pergunta cair como "pendente"
-# (ex.: "amendoin" em vez de "amendoim") — a correspondência tolera isso.
+# Pequenos erros de digitação não devem impedir o reconhecimento do alimento
+# (ex.: "amendoin" em vez de "amendoim") - a correspondência ainda tolera isso,
+# mas a resposta calculada também fica esperando aprovação do médico.
 r = client.post("/paciente/chat", data={"pergunta": "Posso comer amendoin?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
-checar("Chat reconhece 'amendoin' (com erro de digitação) como 'amendoim' e responde automaticamente",
-       "amendoim" in texto.lower() and "não" in texto.lower() and "pendente" not in texto.lower())
+checar("Chat reconhece 'amendoin' (com erro de digitação) como 'amendoim', mas espera aprovação do médico antes de responder",
+       "amendoim" not in texto.lower() and "revisada pelo médico" in texto.lower())
 client.get("/logout")
+
+with app.app_context():
+    pend_agua = PerguntaPendente.query.filter_by(
+        grupo_id=clinica_vitoria_id, pergunta="posso tomar água de coco?", status="aguardando_aprovacao",
+    ).first()
+    checar("A resposta calculada sobre água de coco fica salva em PerguntaPendente, com o texto já pronto",
+           pend_agua is not None and "água de coco" in pend_agua.resposta_sugerida_ia.lower() and "sim" in pend_agua.resposta_sugerida_ia.lower())
+
+    pend_leite = PerguntaPendente.query.filter_by(
+        grupo_id=clinica_vitoria_id, pergunta="posso comer leite e derivados antes do exame?", status="aguardando_aprovacao",
+    ).first()
+    checar("A resposta calculada sobre leite e derivados fica salva em PerguntaPendente, com o prazo já calculado",
+           pend_leite is not None and "09/08/2026" in pend_leite.resposta_sugerida_ia)
+
+    pend_amendoim = PerguntaPendente.query.filter_by(
+        grupo_id=clinica_vitoria_id, pergunta="Posso comer amendoin?", status="aguardando_aprovacao",
+    ).first()
+    checar("A resposta calculada sobre amendoim (com erro de digitação) fica salva em PerguntaPendente",
+           pend_amendoim is not None and "amendoim" in pend_amendoim.resposta_sugerida_ia.lower())
 
 # Cadastro manual de alimentos num modelo de preparo, via formulário do médico/secretária.
 with app.app_context():
@@ -712,14 +738,27 @@ checar("Paciente vê a lista de medicamentos que pode manter", "AAS" in texto an
 # palavra-chave, agora sobre o catálogo de medicamentos do preparo.
 r = client.post("/paciente/chat", data={"pergunta": "Posso tomar AAS?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
-checar("Chat reconhece que AAS pode ser mantido (medicamento cadastrado como 'não suspender')",
-       "sim" in texto.lower() and "aas" in texto.lower() and "pendente" not in texto.lower())
+checar("Chat NÃO responde direto sobre AAS - a resposta calculada também espera aprovação do médico",
+       "revisada pelo médico" in texto.lower())
 
 r = client.post("/paciente/chat", data={"pergunta": "Posso continuar tomando Xarelto?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
-checar("Chat reconhece que Xarelto precisa ser suspenso, com o prazo calculado",
-       "não" in texto.lower() and "xarelto" in texto.lower() and "07/08/2026" in texto and "pendente" not in texto.lower())
+checar("Chat NÃO responde direto sobre Xarelto - a resposta calculada também espera aprovação do médico",
+       "07/08/2026" not in texto and "revisada pelo médico" in texto.lower())
 client.get("/logout")
+
+with app.app_context():
+    pend_aas = PerguntaPendente.query.filter_by(
+        grupo_id=clinica_vitoria_id, pergunta="Posso tomar AAS?", status="aguardando_aprovacao",
+    ).first()
+    checar("A resposta calculada sobre AAS (medicamento mantido) fica salva em PerguntaPendente",
+           pend_aas is not None and "sim" in pend_aas.resposta_sugerida_ia.lower() and "aas" in pend_aas.resposta_sugerida_ia.lower())
+
+    pend_xarelto = PerguntaPendente.query.filter_by(
+        grupo_id=clinica_vitoria_id, pergunta="Posso continuar tomando Xarelto?", status="aguardando_aprovacao",
+    ).first()
+    checar("A resposta calculada sobre Xarelto (medicamento suspenso) fica salva em PerguntaPendente, com o prazo calculado",
+           pend_xarelto is not None and "07/08/2026" in pend_xarelto.resposta_sugerida_ia)
 
 # O preparo cadastrou a categoria genérica "Frutas" (não item por item) —
 # o chat precisa reconhecer que uma fruta específica (ex.: laranja, banana)
@@ -728,14 +767,27 @@ client.get("/logout")
 login_paciente("123.456.789-00", "1985-04-12")
 r = client.post("/paciente/chat", data={"pergunta": "Posso chupar laranja?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
-checar("Chat reconhece que 'laranja' está coberta pela categoria genérica 'Frutas' cadastrada no preparo",
-       "frutas" in texto.lower() and "não" in texto.lower() and "pendente" not in texto.lower())
+checar("Chat reconhece que 'laranja' está coberta pela categoria genérica 'Frutas', mas espera aprovação do médico",
+       "frutas" not in texto.lower() and "revisada pelo médico" in texto.lower())
 
 r = client.post("/paciente/chat", data={"pergunta": "Posso comer banana?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
-checar("Chat também reconhece 'banana' (outro item da categoria 'Frutas')",
-       "frutas" in texto.lower() and "não" in texto.lower() and "pendente" not in texto.lower())
+checar("Chat também reconhece 'banana' (outro item da categoria 'Frutas'), mas espera aprovação do médico",
+       "frutas" not in texto.lower() and "revisada pelo médico" in texto.lower())
 client.get("/logout")
+
+with app.app_context():
+    pend_laranja = PerguntaPendente.query.filter_by(
+        grupo_id=clinica_vitoria_id, pergunta="Posso chupar laranja?", status="aguardando_aprovacao",
+    ).first()
+    checar("A resposta calculada sobre laranja (categoria 'Frutas') fica salva em PerguntaPendente",
+           pend_laranja is not None and "frutas" in pend_laranja.resposta_sugerida_ia.lower())
+
+    pend_banana = PerguntaPendente.query.filter_by(
+        grupo_id=clinica_vitoria_id, pergunta="Posso comer banana?", status="aguardando_aprovacao",
+    ).first()
+    checar("A resposta calculada sobre banana (categoria 'Frutas') fica salva em PerguntaPendente",
+           pend_banana is not None and "frutas" in pend_banana.resposta_sugerida_ia.lower())
 
 # Bug real reportado: uma pergunta sobre um produto específico que só
 # MENCIONA uma fruta como sabor/descrição (ex.: "gatorade de uva") não pode
@@ -868,12 +920,24 @@ with app.app_context():
     checar("A IA é consultada de novo mesmo com uma FAQ idêntica já aprovada antes, e seu rascunho novo prevalece sobre o antigo",
            novo_rascunho is not None and "fórmula alterada" in novo_rascunho.resposta_sugerida_ia.lower())
 
-# Bug real reportado: uma FAQ aprendida da IA sobre um sabor específico
-# (uva) não pode ser reaproveitada para uma pergunta parecida mas sobre
-# OUTRO sabor (limão) — mesmo compartilhando quase todas as outras
-# palavras, a resposta certa pode ser diferente. Sem chamar a IA de novo
-# aqui (fica None), a pergunta deve cair para a fila da secretaria, e
-# NÃO reaproveitar a resposta específica sobre uva.
+# Bug real reportado (e corrigido em 2026-09-11): uma FAQ aprendida da IA
+# sobre um sabor específico (uva) não pode ser reaproveitada para uma
+# pergunta parecida mas sobre OUTRO sabor (limão) — mesmo compartilhando
+# quase todas as outras palavras, a resposta certa pode ser diferente.
+# Sem chamar a IA de novo aqui (fica None), a pergunta deve cair para a
+# fila da secretaria, e NÃO reaproveitar a resposta específica sobre uva.
+#
+# Causa raiz (a mesma do bug relatado pelo Silvan em 2026-09-11 sobre
+# "mandioca"/"batata" respondidas igual a "aipim"): app/faq_engine.py
+# :buscar_resposta() fazia correspondência POR SEMELHANÇA (um guard
+# `item.criado_por == "Assistente (IA)"` deveria evitar reaproveitar FAQs
+# aprendidas da IA, mas era código morto - app/routes_medico.py
+# :perguntas_responder() nunca grava esse valor, sempre grava
+# `criado_por=current_user.nome`). A pedido do Silvan ("só deve voltar a
+# resposta automática ao paciente se a pergunta for idêntica a que já
+# existir no FAQ"), buscar_resposta() agora só casa por igualdade exata
+# (depois de normalizar), o que corrige os dois bugs de uma vez - sem
+# precisar de guard nenhum.
 login_paciente("123.456.789-00", "1985-04-12")
 with patch.object(routes_paciente_mod, "responder_com_ia", return_value=None):
     r = client.post(
@@ -882,27 +946,9 @@ with patch.object(routes_paciente_mod, "responder_com_ia", return_value=None):
         follow_redirects=True,
     )
 texto = r.get_data(as_text=True)
-# NOTA (bug pré-existente, NÃO introduzido pela Fatia 5): o guard em
-# app/faq_engine.py:buscar_resposta() só evita reaproveitar uma FAQ por
-# correspondência aproximada quando `item.criado_por == "Assistente (IA)"`,
-# mas app/routes_medico.py:perguntas_responder() NUNCA grava esse valor -
-# sempre grava `criado_por=current_user.nome` (ex.: "Dr. Carlos Andrade"),
-# mesmo quando a resposta aprovada veio de `pergunta.resposta_sugerida_ia`.
-# Ou seja, o guard é morto (nunca dispara) e essa FAQ acaba sendo
-# reaproveitada indevidamente para "limão". Confirmado via
-# `grep -rn '"Assistente (IA)"' app/` (só aparece no próprio guard) e
-# `git log -p --all -- app/routes_medico.py` (nunca foi ligado). Isso é
-# anterior à Fatia 5 (não mexe com Empresa/Clinica/Grupo), então - por
-# instrução explícita de não tocar em app/ para bugs fora do escopo desta
-# tarefa - registramos aqui sem travar o restante do script.
-bug_faq_ia_reaproveitada = "gatorade de cor clara" in texto.lower()
-if bug_faq_ia_reaproveitada:
-    print("[BUG PRE-EXISTENTE, NAO CORRIGIDO AQUI] FAQ aprendida sobre 'uva' foi reaproveitada "
-          "indevidamente para pergunta sobre 'limão' - ver app/faq_engine.py:buscar_resposta() "
-          "e app/routes_medico.py:perguntas_responder() (criado_por nunca é 'Assistente (IA)').")
-else:
-    checar("FAQ aprendida sobre um sabor (uva) NÃO é reaproveitada para uma pergunta sobre outro sabor (limão)",
-           "encaminhei" in texto.lower() or "pendente" in texto.lower())
+checar("FAQ aprendida sobre um sabor (uva) NÃO é reaproveitada para uma pergunta sobre outro sabor (limão) - agora que buscar_resposta() só casa por igualdade exata",
+       "gatorade de cor clara" not in texto.lower()
+       and ("encaminhei" in texto.lower() or "pendente" in texto.lower()))
 
 # Quando a IA está configurada mas sinaliza que não sabe responder (fora do
 # escopo do preparo), o comportamento continua o mesmo de sempre: cai para a
@@ -1197,8 +1243,14 @@ client.get("/logout")
 # ---------- Chat do paciente e aprendizado da IA (regressão) ----------
 
 login_paciente("123.456.789-00", "1985-04-12")
-r = client.post("/paciente/chat", data={"pergunta": "Posso comer batata antes do exame?", "exame_id": "1"}, follow_redirects=True)
-checar("IA responde pergunta conhecida sobre batata", "fibra" in r.get_data(as_text=True).lower())
+# A pergunta precisa ser IDÊNTICA (depois de normalizar) à cadastrada em
+# seed.py ("Posso comer batata antes da colonoscopia?") - a partir de
+# 2026-09-11, buscar_resposta() só casa por igualdade exata, nunca por
+# semelhança aproximada (ver app/faq_engine.py e a correção do bug relatado
+# pelo Silvan, em que "mandioca"/"batata" eram respondidas com o texto de
+# uma FAQ aprovada sobre "aipim" por pura semelhança de palavras).
+r = client.post("/paciente/chat", data={"pergunta": "Posso comer batata antes da colonoscopia?", "exame_id": "1"}, follow_redirects=True)
+checar("FAQ responde pergunta idêntica à cadastrada sobre batata", "fibra" in r.get_data(as_text=True).lower())
 
 r = client.post("/paciente/chat", data={"pergunta": "Posso fazer exercício físico pesado antes da colonoscopia?", "exame_id": "1"}, follow_redirects=True)
 checar("Pergunta nova é encaminhada para secretaria", "encaminhei" in r.get_data(as_text=True).lower())

@@ -2,11 +2,29 @@
 Motor simples de busca de perguntas e respostas (a "IA" do sistema).
 
 Não usa modelos de linguagem externos: compara a pergunta do paciente com
-as perguntas já cadastradas na base de FAQ (por exame) usando uma mistura
-de similaridade textual (difflib) e sobreposição de palavras-chave.
+as perguntas já cadastradas na base de FAQ (por exame). Pedido do Silvan
+(2026-09-11): a FAQ só responde automaticamente (sem passar pela
+aprovação do médico) quando a pergunta é IDÊNTICA (depois de normalizar
+acentuação/pontuação/maiúsculas) a uma pergunta já cadastrada - nunca por
+semelhança aproximada, nem por sobreposição de palavras-chave, mesmo para
+FAQs cadastradas manualmente pela equipe (antes disso só as FAQs geradas
+pela própria IA exigiam igualdade exata; as manuais aceitavam
+correspondência aproximada via `similaridade()`, removida nesta rodada -
+ver git history se precisar recuperá-la). Motivo: correspondência
+aproximada gera falsos positivos - ex.: um alimento cadastrado com vários
+sinônimos juntos (ex.: "Mandioca / Aipim") sendo reconhecido por engano
+numa pergunta sobre "batata"; ou (bug pré-existente, também sanado por
+tabela com esta mudança) uma FAQ aprendida da IA sobre um sabor (ex.:
+"gatorade de uva") sendo reaproveitada indevidamente pra pergunta sobre
+outro sabor (ex.: "limão") - o guard antigo que tentava evitar isso
+(`item.criado_por == "Assistente (IA)"`, mais abaixo neste arquivo antes
+desta mudança) nunca disparava de verdade, porque
+app.routes_medico.perguntas_responder sempre grava o nome de quem
+aprovou (o médico), nunca esse valor - ver test_smoke.py e HANDOFF_CHAT.md.
 
-Quando uma pergunta nova é respondida pela secretária/médico, ela é
-adicionada à base de FAQ — é assim que o sistema "aprende".
+Quando uma pergunta nova é respondida pela secretária/médico (ou pela IA,
+depois de aprovada), ela é adicionada à base de FAQ — é assim que o
+sistema "aprende", mas só vale pra repetição EXATA dali em diante.
 """
 import re
 import unicodedata
@@ -25,8 +43,6 @@ STOPWORDS = {
     "no", "na", "nos", "nas", "meu", "minha", "os", "as", "ao", "aos", "às",
     "sobre", "antes", "depois", "vou", "estou", "tem", "ter", "seria",
 }
-
-LIMIAR_CONFIANCA = 0.45
 
 
 def normalizar(texto: str) -> str:
@@ -154,34 +170,25 @@ def _quantidade_correspondencias_alimento(kw_alimento: set, kw_pergunta: set) ->
     )
 
 
-def similaridade(pergunta_a: str, pergunta_b: str) -> float:
-    a_norm, b_norm = normalizar(pergunta_a), normalizar(pergunta_b)
-    ratio_texto = SequenceMatcher(None, a_norm, b_norm).ratio()
-
-    kw_a, kw_b = palavras_chave(pergunta_a), palavras_chave(pergunta_b)
-    if kw_a and kw_b:
-        intersecao = len(kw_a & kw_b)
-        uniao = len(kw_a | kw_b)
-        ratio_kw = intersecao / uniao if uniao else 0
-    else:
-        ratio_kw = 0
-
-    # média ponderada: palavras-chave pesam mais que a similaridade bruta de string
-    return 0.4 * ratio_texto + 0.6 * ratio_kw
-
-
 def buscar_resposta(pergunta_usuario: str, grupo_id, exame_id=None, criado_por_id=None):
     """
-    Procura a melhor resposta na base de FAQ, restrita ao Grupo (Fatia 4) do
-    paciente (para não misturar conhecimento entre clínicas diferentes).
-    Prioriza itens específicos do exame, mas também considera FAQs gerais.
+    Procura na base de FAQ uma pergunta IDÊNTICA (depois de normalizar
+    acentuação/pontuação/maiúsculas) à do paciente, restrita ao Grupo
+    (Fatia 4) do paciente (para não misturar conhecimento entre clínicas
+    diferentes) - também considera FAQs gerais do exame (sem exame_id
+    específico).
 
     Fatia 6: quando não há Grupo (`grupo_id` None - conta solo), a busca é
     restrita ao dono pessoal (`criado_por_id`) em vez de por Grupo - mesmo
     padrão de clinica_utils.filtro_escopo_atual().
 
-    Retorna (faq_item, score) ou (None, melhor_score) se não houver
-    confiança suficiente.
+    Pedido do Silvan (2026-09-11): só EXATA, nunca por semelhança
+    aproximada - ver docstring do módulo para o motivo (dois bugs reais
+    que a correspondência aproximada causava).
+
+    Retorna (faq_item, 1.0) quando acha, ou (None, 0.0) quando não acha -
+    o score é mantido só por compatibilidade com quem já desempacota a
+    tupla (sempre 1.0/0.0 agora, nunca um valor intermediário).
     """
     if grupo_id is not None:
         escopo = FaqItem.grupo_id == grupo_id
@@ -193,36 +200,10 @@ def buscar_resposta(pergunta_usuario: str, grupo_id, exame_id=None, criado_por_i
     ).all()
 
     pergunta_normalizada = normalizar(pergunta_usuario)
-
-    melhor_item = None
-    melhor_score = 0.0
-
     for item in candidatos:
-        if item.criado_por == "Assistente (IA)":
-            # FAQs geradas pela IA (ver app.ia_preparo) NUNCA são
-            # reaproveitadas por semelhança aproximada — só quando a
-            # pergunta nova é essencialmente idêntica (após normalizar
-            # acentuação/pontuação/maiúsculas). Uma resposta da IA tende a
-            # depender de um detalhe bem específico da pergunta original
-            # (ex.: um sabor, uma marca): "gatorade de uva" e "gatorade de
-            # limão" compartilham quase todas as palavras, mas a resposta
-            # certa pode ser diferente — similaridade "aproximada" não é
-            # confiável o suficiente para diferenciar esse tipo de caso.
-            if normalizar(item.pergunta) == pergunta_normalizada:
-                return item, 1.0
-            continue
-
-        score = similaridade(pergunta_usuario, item.pergunta)
-        # dá uma pequena vantagem para FAQs específicas do exame perguntado
-        if exame_id is not None and item.exame_id == exame_id:
-            score += 0.03
-        if score > melhor_score:
-            melhor_score = score
-            melhor_item = item
-
-    if melhor_item and melhor_score >= LIMIAR_CONFIANCA:
-        return melhor_item, melhor_score
-    return None, melhor_score
+        if normalizar(item.pergunta) == pergunta_normalizada:
+            return item, 1.0
+    return None, 0.0
 
 
 def buscar_resposta_alimento(pergunta_usuario: str, exame, paciente=None):
