@@ -37,9 +37,19 @@ nada (o push e a fila em /equipe/perguntas continuam funcionando
 normalmente). Se isso se mostrar pouco confiável na prática, o próximo
 passo é criar um template aprovado dedicado (mesmo padrão dos outros
 avisos em app.whatsapp_envio) para não depender da janela de 24h.
+
+Link clicável no aviso (pedido do Silvan, 2026-09-11): o texto do aviso
+tenta incluir um link direto e completo (com https://...) para a tela
+/equipe/perguntas, em vez de só o caminho relativo - ver _link_perguntas.
+Isso depende da env var opcional APP_URL_PUBLICA (ex.:
+"https://dev.media.med.br") com a URL pública do site; sem essa
+variável configurada, o texto cai no caminho relativo de sempre (sem
+link clicável no WhatsApp, mas nada quebra) - mesmo padrão de falha
+aberta usado no resto do módulo.
 """
 import json
 import logging
+import os
 
 from flask import current_app
 from pywebpush import WebPushException, webpush
@@ -146,6 +156,22 @@ def notificar_equipe_nova_pergunta(pergunta):
     _notificar_whatsapp_medicos(pergunta, usuarios_ids)
 
 
+def _link_perguntas():
+    """Monta o link para a tela /equipe/perguntas usando a URL pública do
+    site (env var opcional APP_URL_PUBLICA, ex.: "https://dev.media.med.br")
+    - com ela configurada, retorna um link completo e clicável (ex.:
+    "https://dev.media.med.br/equipe/perguntas"); sem ela, cai no caminho
+    relativo de sempre ("/equipe/perguntas", sem link clicável no
+    WhatsApp) - ver docstring do módulo. Não usa url_for(_external=True)
+    de propósito: sem SERVER_NAME/ProxyFix configurado, o esquema gerado
+    poderia sair como "http://" mesmo em produção (atrás do proxy do
+    Render)."""
+    base = os.environ.get("APP_URL_PUBLICA")
+    if base:
+        return f"{base.rstrip('/')}/equipe/perguntas"
+    return "/equipe/perguntas"
+
+
 def _notificar_whatsapp_medicos(pergunta, usuarios_ids):
     """Manda um aviso de texto livre pelo WhatsApp para cada médico
     responsável (mesma lista de `usuarios_ids` do push, calculada por
@@ -154,7 +180,8 @@ def _notificar_whatsapp_medicos(pergunta, usuarios_ids):
     enviar_mensagem_whatsapp sem template (content_variables=None), que
     força o caminho de texto livre independente de qualquer
     WHATSAPP_META_TEMPLATE_* configurado - ver
-    app.whatsapp_envio.enviar_mensagem_whatsapp."""
+    app.whatsapp_envio.enviar_mensagem_whatsapp. O link incluído no texto
+    vem de _link_perguntas (ver docstring dela)."""
     medicos = Usuario.query.filter(
         Usuario.id.in_(usuarios_ids),
         Usuario.telefone.isnot(None),
@@ -164,6 +191,6 @@ def _notificar_whatsapp_medicos(pergunta, usuarios_ids):
             medico.telefone,
             texto=(
                 f'Nova pergunta de {pergunta.paciente.nome}: '
-                f'"{pergunta.pergunta}". Responda em /equipe/perguntas.'
+                f'"{pergunta.pergunta}". Responda em {_link_perguntas()}.'
             ),
         )

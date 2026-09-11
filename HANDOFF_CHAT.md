@@ -916,6 +916,19 @@ Pedido do Silvan: agora que o fluxo do médico é cadastrar preparo → cadastra
 
 - Sem teste automatizado dedicado (é só troca de texto, sem lógica condicional nova) - confirmar visualmente depois que o template for reaprovado.
 
+### Aviso de "pergunta nova" ao médico agora inclui link clicável direto para a tela
+
+Pedido do Silvan (a partir dos prints do aviso "Nova pergunta de Silvan Oliveira: ... Responda em /equipe/perguntas."): incluir o link da APP e do menu direto nesse aviso de WhatsApp, em vez de só o caminho relativo (que não é clicável fora do site).
+
+**Implementado em `app/push_notificacoes.py`**:
+- Nova função `_link_perguntas()`: monta `f"{APP_URL_PUBLICA}/equipe/perguntas"` quando a env var opcional `APP_URL_PUBLICA` estiver configurada (ex.: `https://dev.media.med.br`); sem ela, cai no caminho relativo de sempre (`/equipe/perguntas`, sem link clicável) - mesmo padrão de falha aberta do resto do módulo.
+- `_notificar_whatsapp_medicos` agora usa `_link_perguntas()` no texto, em vez do caminho relativo fixo.
+- **Decisão técnica**: não usei `url_for(_external=True)` porque o projeto não tem `ProxyFix`/`SERVER_NAME`/`PREFERRED_URL_SCHEME` configurado (confirmado por busca no código) - atrás do proxy do Render, isso poderia gerar um link `http://` em vez de `https://`. Uma env var explícita evita esse risco.
+
+**Pendência para o Silvan**: configurar a nova variável de ambiente `APP_URL_PUBLICA=https://dev.media.med.br` (ou o domínio correto do ambiente) no Render, para o link passar a aparecer no aviso - documentado também em `.env.example`. Sem essa variável configurada, o aviso continua chegando igual, só sem o link clicável (nada quebra).
+
+- Sem teste automatizado dedicado (é só montagem de texto, sem lógica condicional nova) - confirmar visualmente depois que a env var for configurada em produção.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
