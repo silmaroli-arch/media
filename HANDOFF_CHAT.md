@@ -694,6 +694,93 @@ documentada (`colonoscopia_id`, linha ~1298), não relacionada a esta mudança.
 Configurações (aba do print que você mandou) antes que qualquer médico consiga ver
 a opção de cobrança anual em "Minha licença" - hoje esse campo nasce vazio.
 
+## Setup do Mercado Pago (teste) - BLOQUEADO em 2026-09-11, ver antes de mexer
+
+Depois de implementada a feature de licença anual, o Silvan começou a configurar o
+Mercado Pago de verdade (Checkout Pro, API de Preferências) para testar o fluxo de
+ponta a ponta. Ao longo do processo foram encontrados e corrigidos vários problemas
+de configuração (documentados abaixo, já resolvidos), mas o teste final ficou
+travado num erro que parece ser do lado do Mercado Pago, não do código nem da
+configuração local. Isto NÃO é um bug no código do MedIA - os testes automatizados
+de `criar_preferencia_pagamento`/`criar_preferencia_pagamento_anual` e do webhook
+continuam passando.
+
+**Problemas já identificados e corrigidos nesta configuração:**
+1. Erro "Uma das partes com as quais você está tentando efetuar o pagamento é de
+   teste" ao pagar com o cartão de teste estando logado com a conta REAL do
+   Mercado Pago (como comprador) ou usando um Access Token da conta principal do
+   Silvan (mesmo gerado como "de teste") como vendedor. Correção: é preciso usar
+   duas identidades de teste dedicadas, criadas em Developers → "Contas de teste" -
+   uma "Seller Test User" (vendedor) e uma "Buyer Test User" (comprador). O token
+   correto a usar no `MERCADOPAGO_ACCESS_TOKEN` do Render é o token de **produção**
+   de uma aplicação criada estando LOGADO como a Seller Test User (a própria
+   identidade já é sandbox, então usa-se a credencial "de produção" dela, não a
+   "de teste" dela). O Mercado Pago criou automaticamente uma aplicação
+   "TestApp-33941ca7" sob essa identidade.
+2. Webhook da aplicação de teste veio com a URL incompleta
+   (`https://media-dev.onrender.com/webhooks/`, faltando `/mercadopago`) e com o
+   evento errado marcado ("Vinculação de aplicações"/"Alertas de fraude"; o correto
+   para o código atual, que consulta `GET /v1/payments/{id}`, é **"Pagamentos
+   (legacy)"** - NÃO "Order (Mercado Pago)", que é da API de Orders, incompatível
+   com o código atual). Corrigido manualmente na tela de Webhooks da aplicação, e a
+   "Assinatura secreta" gerada foi colocada em `MERCADOPAGO_WEBHOOK_SECRET` no
+   Render.
+3. Preference-id "grudado": reabrir uma aba/link de pagamento antigo depois de
+   trocar o Access Token no Render continua usando a preferência antiga (criada
+   com o token errado) - é preciso gerar uma cobrança NOVA depois de qualquer troca
+   de credencial para obter um preference-id novo.
+4. Cartão de teste usado: Visa `4235 6477 2802 5682`, validade `11/30`, CVV `123`,
+   nome do titular `APRO` (simula aprovação), CPF `123.456.789-09`.
+
+**Bloqueio atual (não resolvido):** com a Seller Test User configurada
+corretamente e uma cobrança nova gerada, a tela de checkout ("Revise o seu
+pagamento") sempre trava com o botão "Pagar" desabilitado (cinza), mesmo com todos
+os dados do cartão preenchidos corretamente. O console do navegador (F12) mostra
+sempre o mesmo erro, em qualquer situação testada:
+
+```
+Executing inline script violates the following Content Security Policy directive
+'script-src ... strict-dynamic ... unsafe-eval https: unsafe-inline ...'. Note
+that 'unsafe-inline' is ignored if either a hash or nonce value is present in
+the source list. The action has been blocked.
+```
+
+Às vezes acompanhado de `requestStorageAccessFor: ... Permission denied.` Esse
+erro parece ser a própria página do Mercado Pago servindo um header de CSP
+incompatível com o script inline que ela mesma tenta executar para habilitar o
+botão de pagamento - ou seja, um problema do lado da infraestrutura de teste do
+Mercado Pago, não algo configurável por nós.
+
+Hipóteses já testadas e DESCARTADAS como causa (todas reproduzem o mesmo erro):
+- Cartão de teste diferente (testado Visa e outro bandeira/cartão salvo) - mesmo
+  erro.
+- Extensões do Chrome - removidas 3 extensões sinalizadas como malware pelo
+  próprio Chrome (Downloader de vídeo definitivo, Tube Video Downloader, Video
+  Downloader Pro) por segurança, mas não eram a causa (já estavam desativadas).
+- Política de TI da INFLOR no Chrome (`chrome://policy`) - conferida, só tem
+  regras inofensivas de rede local e restauração de abas, nada de proxy/CSP/DLP.
+- Navegador: mesmo erro no Chrome E no Edge.
+- Janela anônima/InPrivate vs. janela normal (perfil separado) - mesmo erro nos
+  dois casos.
+- Recriar a aplicação do zero na Seller Test User (nova aplicação, novo Access
+  Token, novo Webhook) - mesmo erro persiste na aplicação nova.
+- Testado também no celular (fora da rede da empresa, dados móveis) - lá o erro
+  foi diferente ("é de teste", por ter tentado pagar como convidado sem logar como
+  Buyer Test User primeiro), então esse teste específico não foi conclusivo sobre
+  o CSP, mas todos os testes no computador (onde o login como Buyer Test User FOI
+  feito corretamente antes de abrir o link) bateram nesse mesmo erro de CSP.
+
+**Próximos passos sugeridos (ainda não feitos, decisão pausada pelo Silvan em
+2026-09-11):**
+- Abrir chamado no suporte oficial do Mercado Pago relatando esse erro de CSP
+  específico (prints e texto do erro disponíveis).
+- Como teste adicional (não feito ainda): tentar com um Access Token de PRODUÇÃO
+  real (fora do sandbox/Seller Test User) para confirmar se o problema é exclusivo
+  do ambiente de teste deles ou acontece também fora dele.
+- Não há nada pendente do lado do código do MedIA para este bloqueio - é
+  puramente uma questão de configuração/infra do lado do Mercado Pago a ser
+  resolvida com o suporte deles antes de retomar o teste end-to-end.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
