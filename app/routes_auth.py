@@ -522,11 +522,11 @@ def cadastro():
                 enviar_boas_vindas_whatsapp(
                     paciente_teste,
                     aviso_extra=(
-                        "Os seus pacientes irão conversar com esse número de celular pelo "
-                        "WhatsApp. O MedIA criou um paciente no sistema com seus dados para "
-                        "que você possa realizar testes. Você deverá agora cadastrar um "
-                        "modelo de preparo importando um PDF e em seguida criar um "
-                        "agendamento para o seu paciente de teste."
+                        "seus pacientes irão conversar com este número pelo WhatsApp.\n"
+                        "O MedIA já criou um paciente de teste no sistema com os dados "
+                        "necessários para você realizar os testes. Agora você deverá:\n\n"
+                        "1. Cadastrar um modelo de preparo, importando um PDF.\n"
+                        "2. Criar um agendamento para o seu paciente de teste."
                     ),
                 )
             except PacienteMedicoConflitanteError:

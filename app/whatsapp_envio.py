@@ -215,19 +215,20 @@ def enviar_boas_vindas_whatsapp(paciente, aviso_extra=""):
     por audiência) - o template, ao ser (re)aprovado na Meta, precisa ter
     duas variáveis no corpo, cada uma com texto fixo antes/depois (a Meta
     recusa variável colada no início ou no fim do corpo): {{1}} o nome,
-    {{2}} este trecho. Corpo aprovado (2026-09-11, reescrito a pedido do
-    Silvan - antes falava genericamente "da clínica"): "Olá {{1}}, tudo
-    bem? Este é o WhatsApp da MedIA — {{2}} Qualquer coisa, estamos por
-    aqui!".
+    {{2}} este trecho (pode ter várias linhas/parágrafos - a Meta aceita
+    quebra de linha dentro do corpo do template). Corpo aprovado
+    (2026-09-11, reescrito a pedido do Silvan - antes falava
+    genericamente "da clínica"):
+    "Olá, {{1}}! Tudo bem?\\nEste é o WhatsApp da MedIA — {{2}}\\n\\nQualquer dúvida, estamos por aqui!".
 
     Quem chama decide o conteúdo de `aviso_extra` conforme a audiência
     (pedido do Silvan, 2026-09-11 - antes disso só o médico tinha um
     trecho extra, e o paciente real recebia {{2}} em branco):
     - **Médico, no próprio cadastro** (ver app.routes_auth.cadastro):
-      passa um trecho explicando o fluxo de teste (cadastrar modelo de
-      preparo, importar PDF, criar agendamento para o paciente de
-      teste) - ver a chamada em app.routes_auth.cadastro para o texto
-      exato.
+      passa um trecho mais elaborado (com lista numerada) explicando o
+      fluxo de teste (cadastrar modelo de preparo, importar PDF, criar
+      agendamento para o paciente de teste) - ver a chamada em
+      app.routes_auth.cadastro para o texto exato.
     - **Paciente real** (chamadores que não passam `aviso_extra`): cai no
       trecho padrão abaixo (`_AVISO_PADRAO_PACIENTE`), sobre salvar o
       número para tirar dúvidas sobre o preparo - antes disso ({{2}} em
@@ -249,7 +250,11 @@ def enviar_boas_vindas_whatsapp(paciente, aviso_extra=""):
     aviso = aviso_extra.strip() if aviso_extra else _AVISO_PADRAO_PACIENTE
     return enviar_mensagem_whatsapp(
         paciente.telefone,
-        texto=f"Olá, {paciente.nome}! Este é o WhatsApp da MedIA — {aviso} Qualquer coisa, estamos por aqui!",
+        texto=(
+            f"Olá, {paciente.nome}! Tudo bem?\n"
+            f"Este é o WhatsApp da MedIA — {aviso}\n\n"
+            "Qualquer dúvida, estamos por aqui!"
+        ),
         content_variables=[paciente.nome, aviso],
         nome_template_env="WHATSAPP_META_TEMPLATE_BOAS_VINDAS",
     )
