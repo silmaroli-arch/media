@@ -2,14 +2,18 @@
 - Passo 3: identificação do paciente por CPF + data de nascimento, com
   sessão de conversa que expira por inatividade (ver `ConversaWhatsapp`
   em app/models.py).
-- Passo 4: uma vez identificado (e com um exame em foco escolhido), o
-  menu de opções - "1) Ver informações do preparo" reaproveita
-  app.faq_engine.texto_preparo_whatsapp (mesmos dados/cálculo de prazo
-  que a tela paciente/preparo.html já usa) e "3) Trocar de exame"
-  reaproveita a mesma lógica de seleção da identificação inicial.
-- Passo 5 (este arquivo): "2) Fazer uma pergunta" reaproveita a MESMA
-  lógica de app.routes_paciente.chat() (IA primeiro, com a resposta
-  ficando pendente de aprovação do médico; sem IA, base de conhecimento/
+- Passo 4 (removido a pedido do Silvan, 2026-09-11): uma vez identificado
+  (e com um exame em foco escolhido), o paciente já pode digitar a
+  pergunta direto - o menu antigo ("1) Ver informações do preparo" / "2)
+  Fazer uma pergunta") foi removido; quem quiser saber o preparo sem
+  perguntar nada específico pode simplesmente perguntar "qual é o
+  preparo?" e a IA/FAQ responde normalmente, pelo mesmo caminho de
+  qualquer outra pergunta livre (passo 5, abaixo). "Trocar de exame"
+  continua existindo (só quando há mais de um exame ativo), agora
+  acionado pela palavra "trocar" em vez de um número de menu.
+- Passo 5 (este arquivo): a pergunta livre reaproveita a MESMA lógica de
+  app.routes_paciente.chat() (IA primeiro, com a resposta ficando
+  pendente de aprovação do médico; sem IA, base de conhecimento/
   alimento/medicamento; sem nada disso, encaminhada pra equipe) - importa
   o helper `_resolver_ancora` de lá em vez de duplicar a regra de
   roteamento pra Grupo/dono pessoal.
@@ -26,7 +30,6 @@ from app.faq_engine import (
     buscar_resposta,
     buscar_resposta_alimento,
     buscar_resposta_medicamento,
-    texto_preparo_whatsapp,
 )
 from app.ia_preparo import responder_com_ia
 from app.models import Agendamento, ChatMensagem, ConversaWhatsapp, Paciente, PerguntaPendente
@@ -116,33 +119,20 @@ def _texto_lista_exames(agendamentos, preambulo="Você tem mais de um exame em p
     return preambulo + "\n" + "\n".join(linhas)
 
 
-MENU_OPCOES_SEM_TROCAR = (
-    "1) Ver informações do preparo\n"
-    "2) Fazer uma pergunta"
-)
-MENU_OPCOES_COM_TROCAR = (
-    "1) Ver informações do preparo\n"
-    "2) Fazer uma pergunta\n"
-    "3) Trocar de exame"
-)
-
-
-def _menu_opcoes(paciente):
-    """"3) Trocar de exame" só faz sentido - e só aparece - quando o
-    paciente tem mais de um exame ativo no momento; com um só, o menu fica
-    só com as duas opções relevantes (a opção de trocar confundia quem só
-    tinha um exame)."""
-    tem_mais_de_um_exame = len(_agendamentos_ativos(paciente)) > 1
-    return MENU_OPCOES_COM_TROCAR if tem_mais_de_um_exame else MENU_OPCOES_SEM_TROCAR
-
-
-def _texto_menu(paciente, agendamento, saudacao=True):
+def _texto_pedir_pergunta(paciente, agendamento, saudacao=True, tem_mais_de_um_exame=False):
+    """Substitui o antigo menu numerado (ver docstring do módulo) - depois
+    de identificado e com um exame em foco, a mensagem já convida
+    diretamente a perguntar. Só menciona o comando "trocar" quando faz
+    sentido (mais de um exame ativo)."""
     cabecalho = f"Olá, {paciente.nome.split(' ')[0]}! " if saudacao else ""
-    return (
+    corpo = (
         f"{cabecalho}Exame em foco: *{agendamento.exame.nome}* — "
         f"{agendamento.data_hora.strftime('%d/%m/%Y')}.\n\n"
-        f"{_menu_opcoes(paciente)}"
+        "Pode digitar sua pergunta sobre o preparo deste exame."
     )
+    if tem_mais_de_um_exame:
+        corpo += "\n\n(Ou digite *trocar* para mudar de exame.)"
+    return corpo
 
 
 MENSAGEM_PEDIR_CPF = (
@@ -166,17 +156,7 @@ MENSAGEM_SEM_EXAME_ATIVO = (
     "um engano, entre em contato com a clínica."
 )
 MENSAGEM_OPCAO_INVALIDA_EXAME = "Não entendi. Responda só com o número do exame na lista abaixo:"
-
-
-def _mensagem_opcao_invalida_menu(paciente):
-    return f"Não entendi. Escolha uma das opções abaixo:\n\n{_menu_opcoes(paciente)}"
-
-
-MENSAGEM_PEDIR_PERGUNTA = (
-    "Pode digitar sua pergunta sobre o preparo deste exame. "
-    "(Ou responda 0 para cancelar e voltar ao menu.)"
-)
-MENSAGEM_PERGUNTA_VAZIA = "Não recebi nenhum texto. Digite sua pergunta, ou responda 0 para cancelar."
+MENSAGEM_PERGUNTA_VAZIA = "Não recebi nenhum texto. Pode digitar sua pergunta sobre o preparo."
 MENSAGEM_PERGUNTA_ENCAMINHADA = (
     "Recebemos sua pergunta! Ela foi encaminhada para a equipe e você "
     "receberá a resposta assim que possível."
@@ -190,11 +170,11 @@ MENSAGEM_AGUARDANDO_RESPOSTA = (
 def _tem_pergunta_pendente(paciente):
     """True se o paciente tem alguma PerguntaPendente ainda sem resposta
     (status "pendente" ou "aguardando_aprovacao") - enquanto isso for
-    verdade, o menu de opções fica escondido: a única coisa que faz
-    sentido o paciente ver é o aviso de que a resposta está a caminho (ver
-    pedido do Silvan - antes disso, o menu completo reaparecia mesmo com
-    uma pergunta ainda pendente, o que dava a entender, por engano, que
-    dava pra mandar outra pergunta ou trocar de exame livremente)."""
+    verdade, o convite pra perguntar de novo fica escondido: a única
+    coisa que faz sentido o paciente ver é o aviso de que a resposta está
+    a caminho (ver pedido do Silvan - antes disso, dava a entender, por
+    engano, que dava pra mandar outra pergunta ou trocar de exame
+    livremente enquanto a anterior ainda não tinha resposta)."""
     return (
         PerguntaPendente.query.filter_by(paciente_id=paciente.id)
         .filter(PerguntaPendente.status != "respondida")
@@ -205,8 +185,8 @@ def _tem_pergunta_pendente(paciente):
 
 def _resolver_exame_em_foco(conversa, paciente, agendamentos):
     """Decide o próximo passo depois de identificar o paciente (na
-    entrada) ou depois de "3) Trocar de exame" (já identificado): com um
-    só exame ativo, fixa ele direto e mostra o menu; com mais de um, pede
+    entrada) ou depois de "trocar" (já identificado): com um só exame
+    ativo, fixa ele direto e já convida a perguntar; com mais de um, pede
     pra escolher (a escolha em si é tratada por processar_mensagem, na
     próxima mensagem que chegar)."""
     if not agendamentos:
@@ -214,7 +194,7 @@ def _resolver_exame_em_foco(conversa, paciente, agendamentos):
         return MENSAGEM_SEM_EXAME_ATIVO
     if len(agendamentos) == 1:
         conversa.agendamento_id = agendamentos[0].id
-        return _texto_menu(paciente, agendamentos[0])
+        return _texto_pedir_pergunta(paciente, agendamentos[0], tem_mais_de_um_exame=False)
     conversa.agendamento_id = None
     return _texto_lista_exames(agendamentos)
 
@@ -371,7 +351,7 @@ def processar_mensagem(telefone, corpo_mensagem):
 
     # Já identificado - falta só escolher qual exame (paciente com mais
     # de um agendamento ativo, seja na identificação inicial ou depois de
-    # "3) Trocar de exame").
+    # digitar "trocar").
     if not conversa.agendamento_id:
         paciente = conversa.paciente
         agendamentos = _agendamentos_ativos(paciente)
@@ -388,46 +368,19 @@ def processar_mensagem(telefone, corpo_mensagem):
         agendamento_escolhido = agendamentos[indice - 1]
         conversa.agendamento_id = agendamento_escolhido.id
         db.session.commit()
-        return _texto_menu(paciente, agendamento_escolhido)
+        return _texto_pedir_pergunta(paciente, agendamento_escolhido, tem_mais_de_um_exame=True)
 
-    # Identificado e com exame em foco: menu de opções.
+    # Identificado e com exame em foco: pede a pergunta diretamente (o
+    # antigo menu numerado foi removido, ver docstring do módulo). Quem
+    # tem mais de um exame ativo pode digitar "trocar" para escolher outro
+    # antes de perguntar.
     paciente, agendamento = conversa.paciente, conversa.agendamento
     texto = (corpo_mensagem or "").strip()
 
-    # Depois de escolher "2) Fazer uma pergunta", a PRÓXIMA mensagem é o
-    # texto da pergunta em si, não uma opção do menu de novo.
-    if conversa.aguardando_pergunta:
-        pergunta_criada = None
-        if texto == "0":
-            conversa.aguardando_pergunta = False
-            resposta = _texto_menu(paciente, agendamento, saudacao=False)
-        elif not texto:
-            resposta = MENSAGEM_PERGUNTA_VAZIA
-        else:
-            conversa.aguardando_pergunta = False
-            resposta_pergunta, pergunta_criada = _responder_pergunta(paciente, agendamento, texto, telefone)
-            # Se a pergunta acabou de ficar pendente/aguardando aprovação
-            # (ver _tem_pergunta_pendente), não mostra o menu de novo -
-            # só o aviso de que a resposta já foi encaminhada, sem dar a
-            # entender que dá pra perguntar de novo ou trocar de exame
-            # livremente enquanto isso.
-            complemento = (
-                MENSAGEM_AGUARDANDO_RESPOSTA
-                if _tem_pergunta_pendente(paciente)
-                else _menu_opcoes(paciente)
-            )
-            resposta = resposta_pergunta + "\n\n" + complemento
-        db.session.commit()
-        if pergunta_criada:
-            # Só depois do commit acima - o push é melhor esforço (ver
-            # push_notificacoes), não deve atrapalhar a resposta ao
-            # paciente se falhar.
-            notificar_equipe_nova_pergunta(pergunta_criada)
-        return resposta
-
-    # Enquanto houver uma pergunta pendente sem resposta da equipe, o
-    # menu de opções fica escondido - a única coisa que faz sentido o
-    # paciente ver é o aviso de que a resposta está a caminho.
+    # Enquanto houver uma pergunta pendente sem resposta da equipe, a
+    # única coisa que faz sentido o paciente ver é o aviso de que a
+    # resposta está a caminho - não dá a entender que dá pra perguntar de
+    # novo ou trocar de exame livremente enquanto isso.
     if _tem_pergunta_pendente(paciente):
         db.session.commit()
         return MENSAGEM_AGUARDANDO_RESPOSTA
@@ -435,15 +388,26 @@ def processar_mensagem(telefone, corpo_mensagem):
     agendamentos_ativos = _agendamentos_ativos(paciente)
     tem_mais_de_um_exame = len(agendamentos_ativos) > 1
 
-    if texto == "1":
-        resposta = texto_preparo_whatsapp(agendamento) + "\n\n" + _menu_opcoes(paciente)
-    elif texto == "2":
-        conversa.aguardando_pergunta = True
-        resposta = MENSAGEM_PEDIR_PERGUNTA
-    elif texto == "3" and tem_mais_de_um_exame:
+    if tem_mais_de_um_exame and texto.lower() == "trocar":
         resposta = _resolver_exame_em_foco(conversa, paciente, agendamentos_ativos)
-    else:
-        resposta = _mensagem_opcao_invalida_menu(paciente)
+        db.session.commit()
+        return resposta
 
+    if not texto:
+        db.session.commit()
+        return MENSAGEM_PERGUNTA_VAZIA
+
+    resposta_pergunta, pergunta_criada = _responder_pergunta(paciente, agendamento, texto, telefone)
+    complemento = (
+        MENSAGEM_AGUARDANDO_RESPOSTA
+        if _tem_pergunta_pendente(paciente)
+        else _texto_pedir_pergunta(paciente, agendamento, saudacao=False, tem_mais_de_um_exame=tem_mais_de_um_exame)
+    )
+    resposta = resposta_pergunta + "\n\n" + complemento
     db.session.commit()
+    if pergunta_criada:
+        # Só depois do commit acima - a notificação da equipe (push e/ou
+        # WhatsApp, ver push_notificacoes) é melhor esforço, não deve
+        # atrapalhar a resposta ao paciente se falhar.
+        notificar_equipe_nova_pergunta(pergunta_criada)
     return resposta

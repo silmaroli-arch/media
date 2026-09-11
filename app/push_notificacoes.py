@@ -1,27 +1,42 @@
-"""Notificação push (Web Push) para o PWA da equipe.
+"""Notificação da equipe (push do PWA + WhatsApp) quando chega uma
+pergunta nova de paciente.
 
-Objetivo: avisar o MÉDICO no celular assim que chega uma pergunta nova de
-paciente (por WhatsApp ou pela área web), sem depender do WhatsApp de
-volta - resolve o mesmo problema que a Fatia 7 tentava resolver via
-template aprovado na Meta, mas do lado da EQUIPE (o paciente
-continua conversando pelo WhatsApp normalmente). Decisão do Silvan: só o
-médico recebe (não secretária/administrativo), mesmo que outras pessoas
-tenham vínculo ativo no mesmo Grupo (ver _usuarios_para_notificar).
+Objetivo original (push): avisar o MÉDICO no celular assim que chega uma
+pergunta nova de paciente (por WhatsApp ou pela área web), sem depender
+do WhatsApp de volta - resolve o mesmo problema que a Fatia 7 tentava
+resolver via template aprovado na Meta, mas do lado da EQUIPE (o
+paciente continua conversando pelo WhatsApp normalmente). Decisão do
+Silvan: só o médico recebe (não secretária/administrativo), mesmo que
+outras pessoas tenham vínculo ativo no mesmo Grupo (ver
+_usuarios_para_notificar).
 
-Como funciona: o navegador (Chrome/Edge no Android, Safari no iOS 16.4+
-com o PWA instalado na tela de início) gera uma "inscrição" (endpoint +
-chaves de criptografia) quando o usuário autoriza notificações - isso é
-salvo em PushSubscription (ver app.models). Para mandar uma notificação,
-o servidor assina a mensagem com uma chave VAPID própria (par de chaves
-gerado uma vez, ver gerar_chaves_vapid.py) e entrega ao serviço de push
-do navegador (ex.: FCM do Chrome, APNs via webkit no Safari) - o
-navegador então entrega ao service worker (app/static/sw.js) mesmo com o
-site fechado.
+Como funciona o push: o navegador (Chrome/Edge no Android, Safari no iOS
+16.4+ com o PWA instalado na tela de início) gera uma "inscrição"
+(endpoint + chaves de criptografia) quando o usuário autoriza
+notificações - isso é salvo em PushSubscription (ver app.models). Para
+mandar uma notificação, o servidor assina a mensagem com uma chave VAPID
+própria (par de chaves gerado uma vez, ver gerar_chaves_vapid.py) e
+entrega ao serviço de push do navegador (ex.: FCM do Chrome, APNs via
+webkit no Safari) - o navegador então entrega ao service worker
+(app/static/sw.js) mesmo com o site fechado.
 
 Sem as chaves VAPID configuradas (env vars VAPID_PUBLIC_KEY/
-VAPID_PRIVATE_KEY/VAPID_CLAIM_EMAIL), toda notificação é silenciosamente
-pulada - mesmo padrão de "falha aberta sem quebrar o resto do sistema"
-usado em app.whatsapp_envio.
+VAPID_PRIVATE_KEY/VAPID_CLAIM_EMAIL), o push é silenciosamente pulado -
+mesmo padrão de "falha aberta sem quebrar o resto do sistema" usado em
+app.whatsapp_envio.
+
+Aviso por WhatsApp (pedido do Silvan, 2026-09-11): além do push, o
+médico responsável também recebe um aviso de texto livre no PRÓPRIO
+WhatsApp (ver _notificar_whatsapp_medicos) - decisão explícita do Silvan
+de tentar texto livre primeiro, em vez de criar já um template aprovado
+na Meta. Texto livre só é entregue de fato se o médico tiver mandado
+mensagem para o número da clínica nas últimas 24h (ver docstring de
+app.whatsapp_envio.enviar_mensagem_whatsapp) - fora dessa janela (o caso
+mais comum), a Meta recusa e o aviso simplesmente não chega, sem quebrar
+nada (o push e a fila em /equipe/perguntas continuam funcionando
+normalmente). Se isso se mostrar pouco confiável na prática, o próximo
+passo é criar um template aprovado dedicado (mesmo padrão dos outros
+avisos em app.whatsapp_envio) para não depender da janela de 24h.
 """
 import json
 import logging
@@ -31,6 +46,7 @@ from pywebpush import WebPushException, webpush
 
 from app.extensions import db
 from app.models import GrupoMembro, PushSubscription, Usuario
+from app.whatsapp_envio import enviar_mensagem_whatsapp
 
 logger = logging.getLogger(__name__)
 
@@ -104,25 +120,50 @@ def _enviar_para_subscription(subscription, payload):
 
 def notificar_equipe_nova_pergunta(pergunta):
     """Chamar logo depois de criar (e comitar) uma PerguntaPendente nova
-    com status "pendente" ou "aguardando_aprovacao" - ver os 4 pontos de
-    criação em app.routes_paciente e app.whatsapp_conversa."""
-    if not _vapid_configurado():
-        return
-
+    com status "pendente" ou "aguardando_aprovacao" - ver os pontos de
+    criação em app.routes_paciente e app.whatsapp_conversa. Manda push
+    (se VAPID configurado) e um aviso por WhatsApp (texto livre, ver
+    _notificar_whatsapp_medicos) para os mesmos médicos - os dois canais
+    são independentes: um falhar/estar desconfigurado não afeta o
+    outro."""
     usuarios_ids = _usuarios_para_notificar(pergunta)
     if not usuarios_ids:
         return
 
-    subscriptions = PushSubscription.query.filter(
-        PushSubscription.usuario_id.in_(usuarios_ids)
-    ).all()
-    if not subscriptions:
-        return
+    if _vapid_configurado():
+        subscriptions = PushSubscription.query.filter(
+            PushSubscription.usuario_id.in_(usuarios_ids)
+        ).all()
+        if subscriptions:
+            payload = {
+                "title": "Nova pergunta de paciente",
+                "body": f'{pergunta.paciente.nome}: "{pergunta.pergunta}"',
+                "url": "/equipe/perguntas",
+            }
+            for subscription in subscriptions:
+                _enviar_para_subscription(subscription, payload)
 
-    payload = {
-        "title": "Nova pergunta de paciente",
-        "body": f'{pergunta.paciente.nome}: "{pergunta.pergunta}"',
-        "url": "/equipe/perguntas",
-    }
-    for subscription in subscriptions:
-        _enviar_para_subscription(subscription, payload)
+    _notificar_whatsapp_medicos(pergunta, usuarios_ids)
+
+
+def _notificar_whatsapp_medicos(pergunta, usuarios_ids):
+    """Manda um aviso de texto livre pelo WhatsApp para cada médico
+    responsável (mesma lista de `usuarios_ids` do push, calculada por
+    _usuarios_para_notificar) que tenha telefone cadastrado - ver
+    docstring do módulo sobre a limitação da janela de 24h. Usa
+    enviar_mensagem_whatsapp sem template (content_variables=None), que
+    força o caminho de texto livre independente de qualquer
+    WHATSAPP_META_TEMPLATE_* configurado - ver
+    app.whatsapp_envio.enviar_mensagem_whatsapp."""
+    medicos = Usuario.query.filter(
+        Usuario.id.in_(usuarios_ids),
+        Usuario.telefone.isnot(None),
+    ).all()
+    for medico in medicos:
+        enviar_mensagem_whatsapp(
+            medico.telefone,
+            texto=(
+                f'Nova pergunta de {pergunta.paciente.nome}: '
+                f'"{pergunta.pergunta}". Responda em /equipe/perguntas.'
+            ),
+        )

@@ -1,11 +1,13 @@
 """Testa o passo 5 do plano da área de WhatsApp (ver PLANO_WHATSAPP.md e
-app/whatsapp_conversa.py:_responder_pergunta): "2) Fazer uma pergunta"
-reaproveita a MESMA lógica de app.routes_paciente.chat() — sem
-ANTHROPIC_API_KEY/OPENAI_API_KEY configuradas neste ambiente de teste, a
-IA nunca responde (ver app/ia_preparo.py), então os três caminhos
-testáveis aqui são: base de conhecimento (FAQ já cadastrada no seed.py),
-resposta pronta de alimento (a partir do preparo cadastrado) e
-encaminhamento como pergunta pendente (quando nada bate)."""
+app/whatsapp_conversa.py:_responder_pergunta): a pergunta livre digitada
+direto (sem passo intermediário de menu - o antigo "2) Fazer uma
+pergunta" foi removido a pedido do Silvan, 2026-09-11) reaproveita a
+MESMA lógica de app.routes_paciente.chat() — sem ANTHROPIC_API_KEY/
+OPENAI_API_KEY configuradas neste ambiente de teste, a IA nunca responde
+(ver app/ia_preparo.py), então os três caminhos testáveis aqui são: base
+de conhecimento (FAQ já cadastrada no seed.py), resposta pronta de
+alimento (a partir do preparo cadastrado) e encaminhamento como pergunta
+pendente (quando nada bate)."""
 from app import create_app
 from app.models import ChatMensagem, ConversaWhatsapp, FaqItem, Paciente, PerguntaPendente
 from app.whatsapp_conversa import processar_mensagem
@@ -22,9 +24,10 @@ def checar(nome, condicao):
 with app.app_context():
     telefone = "+5527900003333"
 
-    # Identifica o João (seed.py) - um só exame ativo (colonoscopia).
-    # CPF e data de nascimento agora são pedidos em duas mensagens
-    # separadas (ver app/whatsapp_conversa.py).
+    # Identifica o João (seed.py) - um só exame ativo (colonoscopia). CPF
+    # e data de nascimento são pedidos em duas mensagens separadas (ver
+    # app/whatsapp_conversa.py). Depois de identificado, já pode
+    # perguntar direto, sem nenhum passo intermediário de menu.
     processar_mensagem(telefone, "123.456.789-00")
     processar_mensagem(telefone, "12/04/1985")
     joao = Paciente.query.filter_by(cpf="123.456.789-00").first()
@@ -33,13 +36,9 @@ with app.app_context():
     faq_agua = FaqItem.query.filter_by(pergunta="Posso beber água durante o jejum?").first()
     vezes_usada_antes = faq_agua.vezes_utilizada
 
-    processar_mensagem(telefone, "2")
     resposta = processar_mensagem(telefone, "Posso beber água durante o jejum?")
     checar("Pergunta que bate com FAQ devolve a resposta cadastrada", "água pura é permitida" in resposta)
-    checar("Depois de responder, o menu aparece de novo", "Fazer uma pergunta" in resposta)
-
-    conversa = ConversaWhatsapp.query.filter_by(telefone=telefone).first()
-    checar('"aguardando_pergunta" volta a False depois de responder', conversa.aguardando_pergunta is False)
+    checar("Depois de responder, convida a perguntar de novo", "Pode digitar sua pergunta" in resposta)
 
     faq_agua_depois = FaqItem.query.get(faq_agua.id)
     checar("FAQ usada tem o contador de uso incrementado", faq_agua_depois.vezes_utilizada == vezes_usada_antes + 1)
@@ -51,7 +50,6 @@ with app.app_context():
 
     # --- Caminho 2: sem FAQ, mas bate com um alimento proibido cadastrado
     # no preparo (Amendoim, ver seed.py) ---
-    processar_mensagem(telefone, "2")
     resposta = processar_mensagem(telefone, "Posso comer amendoim antes do exame?")
     checar("Pergunta sobre alimento cadastrado devolve resposta pronta", "Amendoim" in resposta and "proibid" in resposta)
 
@@ -60,7 +58,6 @@ with app.app_context():
 
     # --- Caminho 3: não bate com nada -> encaminhada como pendente ---
     pendentes_antes = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
-    processar_mensagem(telefone, "2")
     resposta = processar_mensagem(telefone, "Posso dirigir sozinho depois do exame de colonoscopia?")
     checar("Pergunta sem correspondência avisa que foi encaminhada", "encaminhada" in resposta.lower())
 
@@ -75,12 +72,12 @@ with app.app_context():
     checar("Pergunta encaminhada fica no histórico sem resposta ainda", ultima_mensagem.resposta is None)
     checar("Pergunta encaminhada fica no histórico com origem pendente", ultima_mensagem.origem == "pendente")
 
-    # --- Cancelar com "0" não gera nenhuma pergunta/histórico novo ---
-    pendentes_antes = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
-    mensagens_antes = ChatMensagem.query.filter_by(paciente_id=joao.id).count()
-    processar_mensagem(telefone, "2")
-    processar_mensagem(telefone, "0")
-    checar("Cancelar com \"0\" não cria PerguntaPendente", PerguntaPendente.query.filter_by(paciente_id=joao.id).count() == pendentes_antes)
-    checar("Cancelar com \"0\" não cria ChatMensagem", ChatMensagem.query.filter_by(paciente_id=joao.id).count() == mensagens_antes)
+    # --- Enquanto a pergunta acima está pendente, o convite a perguntar
+    # de novo fica escondido - só aparece o aviso de que a resposta está
+    # a caminho, e nenhuma mensagem nova cria PerguntaPendente/ChatMensagem.
+    resposta = processar_mensagem(telefone, "Posso comer batata?")
+    checar("Com pergunta pendente, nova mensagem só mostra o aviso de aguardando resposta", "ainda está sendo respondida" in resposta)
+    pendentes_depois2 = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
+    checar("Mensagem durante pendência não cria PerguntaPendente nova", pendentes_depois2 == pendentes_depois)
 
-    print("\nTodos os testes de \"fazer uma pergunta\" por WhatsApp (passo 5) passaram.")
+    print("\nTodos os testes de pergunta livre por WhatsApp (passo 5) passaram.")
