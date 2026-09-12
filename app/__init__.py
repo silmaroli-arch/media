@@ -311,6 +311,13 @@ def create_app():
         _registrar_deploy_atual(info_deploy)
         historico_deploy_lista = _carregar_historico_deploy()
 
+    # Pedido do Silvan (2026-09-12): encerramento automático de conversas
+    # de WhatsApp por inatividade (ver app.whatsapp_encerramento) - inicia
+    # (ou não, sem WHATSAPP_META_ACCESS_TOKEN configurado, ver docstring do
+    # módulo) uma thread em segundo plano, uma única vez por processo.
+    from app.whatsapp_encerramento import iniciar_encerramento_automatico
+    iniciar_encerramento_automatico(app)
+
     @app.context_processor
     def injetar_info_deploy():
         # Disponível em TODOS os templates (não só para quem está logado),

@@ -1455,6 +1455,24 @@ class ConversaWhatsapp(db.Model):
         minutos_parados = (datetime.utcnow() - self.atualizado_em).total_seconds() / 60
         return minutos_parados > self.MINUTOS_EXPIRACAO
 
+    # Pedido do Silvan (2026-09-12): diferente de MINUTOS_EXPIRACAO acima
+    # (que só reseta a IDENTIFICAÇÃO, em silêncio, na PRÓXIMA mensagem que
+    # chegar - nunca apaga a linha nem avisa nada se ninguém escrever de
+    # novo), este aqui é usado por um job em segundo plano (ver
+    # app.whatsapp_encerramento) que ENCERRA a conversa DE VERDADE
+    # (apagando a linha) depois desse tempo sem nenhuma mensagem nova -
+    # mesmo sem nenhuma mensagem nova chegando -, mandando um aviso de
+    # encerramento antes. Vale em qualquer etapa da conversa (aguardando
+    # CPF, aguardando data de nascimento, ou já identificada), não só
+    # depois de identificado.
+    MINUTOS_INATIVIDADE_ENCERRAR = 5
+
+    def pronta_para_encerrar(self):
+        if not self.atualizado_em:
+            return False
+        minutos_parados = (datetime.utcnow() - self.atualizado_em).total_seconds() / 60
+        return minutos_parados > self.MINUTOS_INATIVIDADE_ENCERRAR
+
 
 class WhatsappMensagemProcessada(db.Model):
     """Registra o id de cada mensagem do WhatsApp (campo "id" de

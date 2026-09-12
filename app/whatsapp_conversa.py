@@ -33,7 +33,15 @@
 Este módulo é só a LÓGICA de conversa (recebe telefone + texto da
 mensagem, devolve o texto da resposta) — não sabe nada sobre Twilio nem
 sobre HTTP, para poder ser testado sem precisar simular um webhook (ver
-app/routes_whatsapp.py, que é a única coisa que fala com o provedor)."""
+app/routes_whatsapp.py, que é a única coisa que fala com o provedor).
+
+Encerramento automático por inatividade (pedido do Silvan, 2026-09-12): a
+conversa (`ConversaWhatsapp`, em qualquer etapa - aguardando CPF, data de
+nascimento, ou já identificada) é encerrada PROATIVAMENTE - com um aviso
+mandado ao paciente - depois de 5 minutos sem nenhuma mensagem nova, por
+um job em segundo plano (ver app.whatsapp_encerramento, iniciado em
+create_app). Diferente disso, o `expirada()` usado abaixo é passivo: só
+reseta a identificação (sem avisar nada) na PRÓXIMA mensagem que chegar."""
 import re
 from datetime import date, datetime
 
