@@ -20,9 +20,15 @@ substituiu:
   app/whatsapp_envio.py:enviar_mensagem_whatsapp), DEPOIS de já ter
   devolvido 200 para o webhook.
 - O payload é JSON (não form-encoded), com uma estrutura aninhada
-  (entry -> changes -> value -> messages) — ver `_extrair_mensagens_de_texto`.
+  (entry -> changes -> value -> messages) — ver `_extrair_mensagens`.
   A mesma URL também recebe notificações de status de entrega/leitura
   (`value.statuses`, sem `value.messages`) — são ignoradas.
+- Mensagem de ÁUDIO (pedido do Silvan, 2026-09-12): é baixada da Graph
+  API e transcrita por IA (Whisper da OpenAI, ver app.whatsapp_audio) - o
+  texto reconhecido é tratado como se o paciente tivesse digitado aquilo,
+  sem duplicar nenhuma lógica de conversa. Antes disso, áudio era
+  simplesmente ignorado (nem uma orientação de volta). Outros tipos
+  (imagem, vídeo, figurinha, botão etc.) continuam ignorados.
 
 A lógica de conversa em si (identificação por CPF + data de nascimento,
 menu de opções) mora em app/whatsapp_conversa.py, sem depender de
@@ -51,6 +57,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models import WhatsappMensagemProcessada
+from app.whatsapp_audio import MENSAGEM_AUDIO_NAO_TRANSCRITO, texto_de_audio_whatsapp
 from app.whatsapp_conversa import normalizar_telefone_whatsapp, processar_mensagem
 from app.whatsapp_envio import enviar_mensagem_whatsapp
 
@@ -82,28 +89,38 @@ def _assinatura_valida():
     return hmac.compare_digest(assinatura_recebida, assinatura_esperada)
 
 
-def _extrair_mensagens_de_texto(payload):
+def _extrair_mensagens(payload):
     """Percorre a estrutura aninhada do payload da Meta
     (entry[].changes[].value.messages[]) e devolve uma lista de tuplas
-    (telefone, texto, mensagem_id) só para mensagens de TEXTO — outros
-    tipos (imagem, áudio, botão, figurinha etc.) e notificações de status
-    de entrega/leitura (que vêm em `value.statuses`, sem `value.messages`)
-    são ignorados silenciosamente, já que o menu desta conversa é 100%
-    baseado em texto digitado. `mensagem_id` é o campo "id" que a Meta
-    inclui em toda mensagem (único por mensagem) - usado só para dedupe
-    de reentrega do webhook, ver `_mensagem_ja_processada`."""
+    (telefone, texto, mensagem_id, media_id_audio) - uma por mensagem de
+    TEXTO ou de ÁUDIO (pedido do Silvan, 2026-09-12 - ver
+    app.whatsapp_audio; antes disso, áudio era ignorado em silêncio, sem
+    nenhuma orientação pro paciente). Para texto, `texto` já vem
+    preenchido e `media_id_audio` é None; para áudio, `texto` vem None e
+    `media_id_audio` traz o id de mídia que o `webhook()` usa pra baixar
+    e transcrever (ver app.whatsapp_audio.texto_de_audio_whatsapp) - a
+    transcrição em si (rede + IA) não acontece AQUI, pra esta função
+    continuar sendo pura leitura do payload já recebido, sem depender de
+    rede. Outros tipos (imagem, vídeo, figurinha, botão etc.) e
+    notificações de status de entrega/leitura (que vêm em
+    `value.statuses`, sem `value.messages`) continuam ignorados
+    silenciosamente. `mensagem_id` é o campo "id" que a Meta inclui em
+    toda mensagem (único por mensagem) - usado só para dedupe de
+    reentrega do webhook, ver `_mensagem_ja_processada`."""
     mensagens = []
     for entrada in payload.get("entry", []):
         for mudanca in entrada.get("changes", []):
             valor = mudanca.get("value", {})
             for msg in valor.get("messages", []):
-                if msg.get("type") != "text":
-                    continue
                 telefone = normalizar_telefone_whatsapp(msg.get("from"))
-                texto = msg.get("text", {}).get("body", "")
+                if not telefone:
+                    continue
                 mensagem_id = msg.get("id")
-                if telefone:
-                    mensagens.append((telefone, texto, mensagem_id))
+                tipo = msg.get("type")
+                if tipo == "text":
+                    mensagens.append((telefone, msg.get("text", {}).get("body", ""), mensagem_id, None))
+                elif tipo == "audio":
+                    mensagens.append((telefone, None, mensagem_id, msg.get("audio", {}).get("id")))
     return mensagens
 
 
@@ -167,8 +184,8 @@ def webhook():
     já ter devolvido 200 aqui.
 
     Sempre responde 200, mesmo quando recusa por assinatura inválida ou
-    ausente, ou quando o payload não traz nenhuma mensagem de texto —
-    devolver um erro HTTP faria a Meta reentregar a mesma notificação
+    ausente, ou quando o payload não traz nenhuma mensagem de texto/áudio
+    — devolver um erro HTTP faria a Meta reentregar a mesma notificação
     várias vezes, achando que falhou. Mesmo respondendo 200 rápido, a
     Meta às vezes reentrega o mesmo webhook de qualquer forma (bug
     relatado pelo Silvan, 2026-09-11: o mesmo aviso chegando duplicado ao
@@ -180,13 +197,31 @@ def webhook():
         return jsonify(ok=True)
 
     payload = request.get_json(silent=True) or {}
-    for telefone, corpo, mensagem_id in _extrair_mensagens_de_texto(payload):
+    for telefone, corpo, mensagem_id, media_id_audio in _extrair_mensagens(payload):
         if _mensagem_ja_processada(mensagem_id):
             current_app.logger.info(
                 "WhatsApp: mensagem %s (de %s) já tinha sido processada antes - "
                 "ignorando reentrega do webhook da Meta.", mensagem_id, telefone,
             )
             continue
+
+        if media_id_audio:
+            # Pedido do Silvan (2026-09-12): transcreve o áudio (ver
+            # app.whatsapp_audio) e trata o texto reconhecido exatamente
+            # como se o paciente tivesse digitado aquilo - mesma
+            # "falha aberta" do resto do módulo: sem transcrição (sem
+            # OPENAI_API_KEY/WHATSAPP_META_ACCESS_TOKEN configuradas, ou
+            # qualquer erro na chamada), avisa o paciente a escrever em
+            # vez de processar um texto vazio ou ficar em silêncio.
+            corpo = texto_de_audio_whatsapp(media_id_audio)
+            if not corpo:
+                current_app.logger.info(
+                    "WhatsApp: não foi possível transcrever o áudio de %s (media_id=%s).",
+                    telefone, media_id_audio,
+                )
+                enviar_mensagem_whatsapp(telefone, MENSAGEM_AUDIO_NAO_TRANSCRITO)
+                continue
+            current_app.logger.info("WhatsApp: áudio de %s transcrito como: %r", telefone, corpo)
 
         current_app.logger.info("WhatsApp recebido de %s: %r", telefone, corpo)
         resposta = processar_mensagem(telefone, corpo)
