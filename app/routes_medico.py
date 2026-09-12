@@ -1421,7 +1421,7 @@ def exames_por_filial_excluir(exame_id):
 
 # ---------- Modelos de preparo (reaproveitáveis entre exames) ----------
 
-@medico_bp.route("/preparo-modelos/aviso-mobile")
+@medico_bp.route("/preparo-modelos/aviso-mobile", methods=["GET", "POST"])
 @login_required
 @staff_required
 def preparo_modelos_aviso_mobile():
@@ -1453,7 +1453,26 @@ def preparo_modelos_aviso_mobile():
     revisão separada só para quem importou pelo celular; a ressalva
     acima (cadastro manual do zero é melhor no computador) continua
     valendo, só o caminho de importação por PDF deixou de ser
-    bloqueado."""
+    bloqueado.
+
+    Correção (2026-09-12, bug relatado pelo Silvan com print de "Method
+    Not Allowed" no celular): o popup de importação (`_importar_preparo_
+    pdf.html`) troca a página inteira por `document.write(html)` depois
+    de extrair o PDF - isso substitui o CONTEÚDO da página pela tela de
+    revisão completa (`preparo_modelo_form.html`, com o `<form id=
+    "form-preparo">`), mas NÃO muda a URL na barra de endereço, que
+    continua sendo esta aqui (`/preparo-modelos/aviso-mobile`). E esse
+    `<form>` não tem `action` definido de propósito (funciona em
+    `/preparo-modelos/novo` e em `/preparo-modelos/<id>/editar` sem
+    precisar saber qual delas é, cada um submetendo pra si mesmo) - então,
+    ao clicar em "Salvar" depois de importar pelo celular, o navegador
+    envia o POST pra ESTA rota, que só aceitava GET. Correção: aceitar
+    POST aqui também e delegar pra mesma lógica de criação de
+    medico.preparo_modelos_novo (nunca existe `modelo` para editar nesse
+    caminho - a importação pelo celular só cria modelo NOVO, nunca edita
+    um existente)."""
+    if request.method == "POST":
+        return preparo_modelos_novo()
     return render_template("medico/preparo_modelos_aviso_mobile.html")
 
 
