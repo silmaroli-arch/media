@@ -514,6 +514,16 @@ def cadastro():
         # (campo opcional no cadastro), o envio é só pulado - a pessoa
         # ainda consegue usar "Testar IA" normalmente depois, só sem essa
         # mensagem proativa.
+        #
+        # Correção (2026-09-12): esse `aviso_extra`, por ser a 2ª variável
+        # de um template Meta, NÃO pode conter quebra de linha - a Graph
+        # API recusa o envio inteiro com erro #132018 ("Param text cannot
+        # have new-line/tab characters or more than 4 consecutive
+        # spaces"), e esse erro era só registrado no log (padrão de
+        # "falha aberta" de app.whatsapp_envio), então o cadastro do
+        # médico terminava normalmente mas a mensagem nunca saía. Por
+        # isso o texto abaixo virou um parágrafo único, sem "\n" nem
+        # lista numerada em linhas separadas.
         if papel == "medico" and usuario.telefone:
             from app.routes_medico import PacienteMedicoConflitanteError, _paciente_teste_do_medico
 
@@ -522,11 +532,11 @@ def cadastro():
                 enviar_boas_vindas_whatsapp(
                     paciente_teste,
                     aviso_extra=(
-                        "seus pacientes irão conversar com este número pelo WhatsApp.\n"
+                        "seus pacientes irão conversar com este número pelo WhatsApp. "
                         "O MedIA já criou um paciente de teste no sistema com os dados "
-                        "necessários para você realizar os testes. Agora você deverá:\n\n"
-                        '1. Cadastrar um modelo de preparo, importando um PDF no menu "Exames & preparo".\n'
-                        '2. Criar um agendamento para o seu paciente de teste no menu "Agendar exame".'
+                        "necessários para você realizar os testes. Agora você deverá: "
+                        '1) cadastrar um modelo de preparo, importando um PDF no menu "Exames & preparo"; '
+                        '2) criar um agendamento para o seu paciente de teste no menu "Agendar exame".'
                     ),
                 )
             except PacienteMedicoConflitanteError:

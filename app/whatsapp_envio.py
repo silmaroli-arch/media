@@ -91,6 +91,7 @@ sistema, só não sai pelo WhatsApp) - o paciente pode sempre ver a
 resposta acessando a área web, então a ausência de configuração aqui
 nunca impede o fluxo de responder perguntas."""
 import os
+import re
 
 from flask import current_app
 
@@ -102,6 +103,24 @@ def _numero_para_graph_api(telefone_e164):
     número), sem "+", espaço, parêntese ou traço - `telefone_e164` chega
     aqui no formato usado no resto do sistema (ex.: "+5527999998888")."""
     return "".join(c for c in telefone_e164 if c.isdigit())
+
+
+def _sanitizar_variavel_template(valor):
+    """Corrige (2026-09-12) o texto de uma variável {{n}} de template Meta
+    para o formato que a Graph API aceita - ela recusa (erro #132018) uma
+    variável com quebra de linha/tab ou 4+ espaços seguidos ("Param text
+    cannot have new-line/tab characters or more than 4 consecutive
+    spaces"). Descoberto porque a resposta livre do médico a uma pergunta
+    do paciente (routes_medico.py:perguntas_responder) e o aviso extra do
+    cadastro do médico (routes_auth.py:cadastro) frequentemente têm
+    quebra de linha - sem esta função, o ENVIO INTEIRO era recusado pela
+    Meta e a falha só ia para o log (ver enviar_mensagem_whatsapp), então
+    o paciente/médico simplesmente nunca recebia a mensagem.
+
+    Troca quebra de linha/tab por espaço e reduz qualquer sequência de
+    espaços a um só - preserva o conteúdo (nada é cortado), só deixa de
+    quebrar em várias linhas."""
+    return re.sub(r"\s+", " ", str(valor)).strip()
 
 
 def enviar_mensagem_whatsapp(telefone_destino, texto, content_variables=None, nome_template_env="WHATSAPP_META_TEMPLATE_RESPOSTA"):
@@ -124,7 +143,18 @@ def enviar_mensagem_whatsapp(telefone_destino, texto, content_variables=None, no
     para outros envios PROATIVOS (ex.: boas-vindas no cadastro, ver
     enviar_boas_vindas_whatsapp) usarem um template Meta DIFERENTE do de
     resposta de pergunta - cada tipo de mensagem iniciada pela clínica
-    fora da janela de 24h precisa do seu próprio template aprovado."""
+    fora da janela de 24h precisa do seu próprio template aprovado.
+
+    Correção (2026-09-12): cada item de `content_variables` passa por
+    `_sanitizar_variavel_template` antes de ir para a Graph API - a Meta
+    recusa (erro #132018) qualquer variável de template com quebra de
+    linha/tab ou 4+ espaços seguidos, e vários chamadores passam texto
+    livre digitado por alguém (ex.: a resposta do médico a uma pergunta
+    do paciente, em routes_medico.py:perguntas_responder, ou o aviso
+    extra do cadastro do médico, em routes_auth.py:cadastro) que pode
+    perfeitamente ter isso - sem essa sanitização, o envio falhava por
+    completo (e em silêncio, ver tratamento de falha abaixo) por causa
+    de um caractere que quem chama nem sabia ser proibido."""
     access_token = os.environ.get("WHATSAPP_META_ACCESS_TOKEN")
     phone_number_id = os.environ.get("WHATSAPP_META_PHONE_NUMBER_ID")
     template_nome = os.environ.get(nome_template_env)
@@ -158,7 +188,10 @@ def enviar_mensagem_whatsapp(telefone_destino, texto, content_variables=None, no
                 "language": {"code": template_idioma},
                 "components": [{
                     "type": "body",
-                    "parameters": [{"type": "text", "text": str(v)} for v in content_variables],
+                    "parameters": [
+                        {"type": "text", "text": _sanitizar_variavel_template(v)}
+                        for v in content_variables
+                    ],
                 }],
             },
         }
