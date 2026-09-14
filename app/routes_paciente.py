@@ -10,7 +10,7 @@ from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, GrupoPaciente, normalizar_telefone, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, GrupoPaciente, Grupo, Usuario, FaqItem, normalizar_telefone, formatar_nome_proprio, cep_incompleto, telefone_incompleto
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.ia_preparo import responder_com_ia
 from app.clinica_utils import verificar_vencimento_grupo
@@ -59,6 +59,51 @@ def _resolver_ancora(paciente, exame=None, agendamento=None):
             criado_por_id = paciente.cadastrado_por_id
 
     return grupo_id, criado_por_id
+
+
+def exige_aprovacao_pergunta(grupo_id, criado_por_id):
+    """Pedido do Silvan (2026-09-13): True (padrão, comportamento histórico
+    do sistema) quando as respostas de alimento/medicamento/IA para o
+    paciente precisam de aprovação do médico antes de ir para ele; False
+    quando esse Grupo (ou, sem Grupo, esse médico/dono - conta solo)
+    desativou essa exigência na tela "Perguntas pendentes" (ver
+    medico.perguntas_configuracao). Recebe o MESMO par (grupo_id,
+    criado_por_id) devolvido por `_resolver_ancora` acima - o "endereço"
+    de quem vai receber/responder aquela pergunta é também quem decide se
+    ela precisa de revisão humana. FAQ (correspondência exata já aprovada
+    antes) nunca passa por aqui - sempre direta, independente deste
+    parâmetro."""
+    if grupo_id:
+        grupo = Grupo.query.get(grupo_id)
+        return grupo.aprovacao_perguntas_paciente if grupo else True
+    if criado_por_id:
+        usuario = Usuario.query.get(criado_por_id)
+        return usuario.aprovacao_perguntas_paciente if usuario else True
+    return True
+
+
+def aprovar_pergunta_automaticamente(pergunta_pendente, resposta):
+    """Equivalente automático do que app.routes_medico.perguntas_responder
+    faz quando o médico aprova manualmente uma sugestão - usado só quando
+    `exige_aprovacao_pergunta` acima devolve False: marca a pergunta como
+    já respondida e alimenta a base de FAQ (pra próximas perguntas iguais/
+    parecidas responderem direto por ali, como qualquer resposta aprovada)
+    - sem mandar WhatsApp aqui, porque quem chamou (app.whatsapp_conversa.
+    _responder_pergunta ou o chat() abaixo) já devolve o texto direto pro
+    paciente pelo canal que ele está usando agora."""
+    pergunta_pendente.resposta = resposta
+    pergunta_pendente.status = "respondida"
+    pergunta_pendente.respondida_por = "Sistema (aprovação automática desativada)"
+    pergunta_pendente.respondida_em = datetime.utcnow()
+    db.session.add(FaqItem(
+        clinica_id=pergunta_pendente.clinica_id,
+        grupo_id=pergunta_pendente.grupo_id,
+        criado_por_id=pergunta_pendente.criado_por_id,
+        exame_id=pergunta_pendente.exame_id,
+        pergunta=pergunta_pendente.pergunta,
+        resposta=resposta,
+        criado_por="Sistema (aprovação automática desativada)",
+    ))
 
 
 def _meus_cadastros_ids():
@@ -240,6 +285,7 @@ def chat():
         if pergunta_enviada:
 
             grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame_selecionado, agendamento_selecionado)
+            exige_aprovacao = exige_aprovacao_pergunta(grupo_id_ancora, criado_por_id_ancora)
 
             # Pedido do Silvan (2026-09-11): a base de conhecimento (FAQ) é
             # consultada PRIMEIRO, antes da IA — se a pergunta já bate com
@@ -281,6 +327,7 @@ def chat():
             elif resposta_alimento or resposta_medicamento:
                 # Nomes curtos de propósito: ChatMensagem.origem é String(20), e
                 # "medicamento_aguardando" (22 caracteres) não caberia.
+                resposta_pronta = resposta_alimento if resposta_alimento else resposta_medicamento
                 origem = "alimento_aguard" if resposta_alimento else "medicamento_aguard"
                 pendente = PerguntaPendente(
                     grupo_id=grupo_id_ancora,
@@ -289,12 +336,22 @@ def chat():
                     exame_id=exame_id_selecionado,
                     pergunta=pergunta_enviada,
                     status="aguardando_aprovacao",
-                    resposta_sugerida_ia=resposta_alimento if resposta_alimento else resposta_medicamento,
+                    resposta_sugerida_ia=resposta_pronta,
                 )
                 db.session.add(pendente)
-                db.session.commit()
-                notificar_equipe_nova_pergunta(pendente)
-                encaminhada = True
+                if exige_aprovacao:
+                    db.session.commit()
+                    notificar_equipe_nova_pergunta(pendente)
+                    encaminhada = True
+                else:
+                    # Pedido do Silvan (2026-09-13): aprovação desativada
+                    # para este Grupo/médico - responde direto, sem
+                    # esperar revisão humana (ver exige_aprovacao_pergunta/
+                    # aprovar_pergunta_automaticamente acima).
+                    aprovar_pergunta_automaticamente(pendente, resposta_pronta)
+                    db.session.commit()
+                    resposta_ia = resposta_pronta
+                    origem = "alimento" if resposta_alimento else "medicamento"
             else:
                 # Nada bateu na base de conhecimento nem nas respostas
                 # prontas — só agora a IA (quando configurada) é
@@ -334,12 +391,20 @@ def chat():
                         ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
                     )
                     db.session.add(pendente)
-                    db.session.commit()
-                    notificar_equipe_nova_pergunta(pendente)
-                    # Mesma mensagem de "aguarde" usada quando ninguém sabe
-                    # responder ainda — o paciente só vê a resposta final depois
-                    # que o médico aprovar (ela aparece no histórico abaixo).
-                    encaminhada = True
+                    if exige_aprovacao:
+                        db.session.commit()
+                        notificar_equipe_nova_pergunta(pendente)
+                        # Mesma mensagem de "aguarde" usada quando ninguém sabe
+                        # responder ainda — o paciente só vê a resposta final depois
+                        # que o médico aprovar (ela aparece no histórico abaixo).
+                        encaminhada = True
+                    else:
+                        # Pedido do Silvan (2026-09-13): aprovação
+                        # desativada para este Grupo/médico.
+                        aprovar_pergunta_automaticamente(pendente, resultado_ia["final"])
+                        db.session.commit()
+                        resposta_ia = resultado_ia["final"]
+                        origem = "ia"
                 else:
                     pendente = PerguntaPendente(
                         grupo_id=grupo_id_ancora,

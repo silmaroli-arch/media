@@ -54,7 +54,7 @@ from app.faq_engine import (
 from app.ia_preparo import responder_com_ia
 from app.models import Agendamento, ChatMensagem, ConversaWhatsapp, Paciente, PerguntaPendente
 from app.push_notificacoes import notificar_equipe_nova_pergunta
-from app.routes_paciente import _resolver_ancora
+from app.routes_paciente import _resolver_ancora, aprovar_pergunta_automaticamente, exige_aprovacao_pergunta
 
 
 def normalizar_telefone_whatsapp(remetente_bruto):
@@ -267,12 +267,26 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     assim que o médico/equipe responder (ver
     app.routes_medico.perguntas_responder). Devolve uma tupla (texto de
     resposta a mandar de volta pro paciente agora, a PerguntaPendente
-    criada - ou None se já foi respondida na hora pela FAQ) - o chamador
-    usa o segundo item para avisar a equipe por notificação (push e/ou
-    WhatsApp, ver app.push_notificacoes.notificar_equipe_nova_pergunta),
-    só depois de commitar de verdade."""
+    criada - ou None se já foi respondida na hora, seja pela FAQ ou pela
+    aprovação automática abaixo) - o chamador usa o segundo item para
+    avisar a equipe por notificação (push e/ou WhatsApp, ver
+    app.push_notificacoes.notificar_equipe_nova_pergunta), só depois de
+    commitar de verdade.
+
+    Pedido do Silvan (2026-09-13): cada Grupo (ou médico/dono, numa conta
+    solo sem Grupo) pode desativar a exigência de aprovação humana para
+    essas respostas de alimento/medicamento/IA (ver
+    Grupo.aprovacao_perguntas_paciente / Usuario.
+    aprovacao_perguntas_paciente, e a tela medico.perguntas_configuracao) -
+    nesse caso elas são aprovadas automaticamente
+    (`aprovar_pergunta_automaticamente`, em app.routes_paciente) e vão
+    direto pro paciente, sem passar pela fila do médico. O padrão (True)
+    continua sendo o comportamento histórico, sem mudança nenhuma pra quem
+    não tocar nesse parâmetro. A FAQ nunca passa por essa decisão - já é
+    sempre direta, com ou sem esse parâmetro."""
     exame = agendamento.exame if agendamento else None
     grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame, agendamento)
+    exige_aprovacao = exige_aprovacao_pergunta(grupo_id_ancora, criado_por_id_ancora)
 
     resposta_final = None
     origem = None
@@ -313,6 +327,14 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             telefone_whatsapp=telefone,
         )
         db.session.add(pergunta_pendente_criada)
+        if not exige_aprovacao:
+            # Pedido do Silvan (2026-09-13): aprovação desativada para este
+            # Grupo/médico (ver exige_aprovacao_pergunta) - responde direto
+            # pelo WhatsApp, sem esperar o médico revisar.
+            aprovar_pergunta_automaticamente(pergunta_pendente_criada, resposta_pronta)
+            resposta_final = resposta_pronta
+            origem = "alimento" if resposta_alimento else "medicamento"
+            pergunta_pendente_criada = None
     else:
         resultado_ia = responder_com_ia(pergunta_texto, exame, paciente_id=paciente.id) if exame else None
         if resultado_ia and resultado_ia["final"]:
@@ -336,6 +358,13 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 telefone_whatsapp=telefone,
             )
             db.session.add(pergunta_pendente_criada)
+            if not exige_aprovacao:
+                # Pedido do Silvan (2026-09-13): aprovação desativada para
+                # este Grupo/médico.
+                aprovar_pergunta_automaticamente(pergunta_pendente_criada, resultado_ia["final"])
+                resposta_final = resultado_ia["final"]
+                origem = "ia"
+                pergunta_pendente_criada = None
         else:
             origem = "pendente"
             pergunta_pendente_criada = PerguntaPendente(

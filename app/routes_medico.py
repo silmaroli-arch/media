@@ -2619,9 +2619,52 @@ def perguntas_pendentes():
 
     pendentes = pendentes_q.order_by(PerguntaPendente.criado_em.desc()).all()
     aguardando = aguardando_q.order_by(PerguntaPendente.criado_em.desc()).all()
+
+    # Pedido do Silvan (2026-09-13): mostra o estado atual do parâmetro de
+    # aprovação nesta mesma tela (ver medico.perguntas_configuracao abaixo)
+    # - por Grupo quando há um, senão pela própria conta (conta solo).
+    grupo_atual = empresa_atual()
+    aprovacao_ativa = (
+        grupo_atual.aprovacao_perguntas_paciente if grupo_atual
+        else current_user.aprovacao_perguntas_paciente
+    )
+
     return render_template(
         "medico/perguntas.html", pendentes=pendentes, aguardando=aguardando,
+        aprovacao_ativa=aprovacao_ativa,
     )
+
+
+@medico_bp.route("/perguntas/configuracao", methods=["POST"])
+@login_required
+@staff_required
+def perguntas_configuracao():
+    """Pedido do Silvan (2026-09-13): liga/desliga a exigência de aprovação
+    do médico antes de uma resposta de alimento/medicamento (calculada a
+    partir do preparo cadastrado) ou da IA ir para o paciente (ver
+    Grupo.aprovacao_perguntas_paciente / Usuario.
+    aprovacao_perguntas_paciente, e app.routes_paciente.
+    exige_aprovacao_pergunta, chamada tanto pelo chat web quanto pelo
+    WhatsApp). Vale para todo o Grupo (equipe) quando há um; numa conta
+    solo (sem Grupo), vale só para a própria conta. A base de FAQ (pergunta
+    já respondida e aprovada antes) nunca passa por essa checagem - sempre
+    responde direto, com ou sem este parâmetro."""
+    # Checkbox desmarcado não é enviado pelo navegador (padrão HTML) - a
+    # ausência do campo já significa "desativar".
+    ativar = request.form.get("aprovacao_ativa") == "1"
+    grupo_atual = empresa_atual()
+    if grupo_atual:
+        grupo_atual.aprovacao_perguntas_paciente = ativar
+    else:
+        current_user.aprovacao_perguntas_paciente = ativar
+    db.session.commit()
+    flash(
+        "Aprovação do médico reativada: novas respostas de alimento/medicamento/IA voltam a esperar sua revisão."
+        if ativar else
+        "Aprovação do médico desativada: novas respostas de alimento/medicamento/IA vão direto para o paciente, sem esperar sua revisão.",
+        "success",
+    )
+    return redirect(url_for("medico.perguntas_pendentes"))
 
 
 @medico_bp.route("/perguntas/respondidas")

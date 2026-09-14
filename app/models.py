@@ -123,6 +123,15 @@ class Usuario(db.Model, UserMixin):
     perm_filiais = db.Column(db.Boolean, nullable=False, default=False)
     perm_dados_clinica = db.Column(db.Boolean, nullable=False, default=False)
 
+    # Pedido do Silvan (2026-09-13): equivalente pessoal de
+    # Grupo.aprovacao_perguntas_paciente (ver comentário lá) - usado quando
+    # esta conta NÃO tem Grupo (conta solo, ver Fatia 6): controla se as
+    # respostas de alimento/medicamento/IA para os PRÓPRIOS pacientes exigem
+    # aprovação antes de irem para o paciente (True, padrão) ou vão direto
+    # (False). Ignorado quando a conta pertence a um Grupo - nesse caso o
+    # campo do Grupo é que vale para todo mundo da equipe.
+    aprovacao_perguntas_paciente = db.Column(db.Boolean, nullable=False, default=True)
+
     # CPF e endereço PESSOAL de quem trabalha na plataforma (dono/médico/
     # secretária) - coletados no cadastro (auth.cadastro) e também no
     # cadastro/edição de membros da equipe (medico.equipe_novo/
@@ -697,6 +706,20 @@ class Grupo(db.Model):
     # (sem emissão automática de fatura), igual valia para Empresa.
     valor_por_medico = db.Column(db.Numeric(10, 2))
     codigo_cadastro_paciente = db.Column(db.String(20), unique=True, nullable=True)
+
+    # ---------- Chat do paciente (WhatsApp e web) ----------
+    # Pedido do Silvan (2026-09-13): por padrão (True, igual sempre foi),
+    # toda resposta de alimento/medicamento (calculada a partir do preparo
+    # cadastrado) ou gerada pela IA fica pendente de aprovação do médico
+    # antes de ir para o paciente (ver app.whatsapp_conversa._responder_
+    # pergunta e app.routes_paciente.chat()) — só a base de FAQ (pergunta já
+    # respondida e aprovada antes) responde direto, sempre, independente
+    # deste campo. Quando desativado (False), essas respostas passam a ir
+    # direto para o paciente, sem esperar revisão humana - decisão de cada
+    # Grupo (clínica com equipe); para uma conta solo (sem Grupo), o mesmo
+    # controle vive em Usuario.aprovacao_perguntas_paciente. Ver
+    # medico.perguntas_configuracao (tela "Perguntas pendentes").
+    aprovacao_perguntas_paciente = db.Column(db.Boolean, nullable=False, default=True)
 
     inscricao_estadual = db.Column(db.String(30))
     regime_tributario = db.Column(db.String(50))
