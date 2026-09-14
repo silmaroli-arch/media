@@ -33,14 +33,72 @@ Importante: é instruída a responder SÓ com base no preparo cadastrado, e a
 sinalizar quando não tem certeza (em vez de arriscar uma informação
 médica errada) — nesse caso a pergunta continua sendo encaminhada para a
 secretaria, exatamente como quando a correspondência por palavra-chave
-não encontra nada."""
+não encontra nada.
+
+Rede de segurança contra "recusa disfarçada de resposta" (pedido do
+Silvan, 2026-09-14, depois de um caso real: perguntado o tempo de
+antecedência pra chegar no exame - informação que não existe em nenhum
+campo estruturado do preparo -, o modelo NÃO respondeu com o marcador
+`NAO_SEI_ENCAMINHAR` como deveria; em vez disso, escreveu uma resposta em
+português corrida dizendo que não tinha essa informação e recomendando
+confirmar com a secretaria. Como o texto não era literalmente o
+marcador, o sistema tratou como uma resposta válida e mandou direto pro
+paciente, em vez de encaminhar pro médico. Isso é uma falha do modelo em
+seguir a instrução do prompt (não-determinístico - às vezes ele usa o
+marcador do jeito pedido, às vezes prefere formular a própria recusa em
+texto livre), então não dá pra confiar só no prompt pra evitar de novo.
+`_eh_recusa_generica_disfarcada` (abaixo) é uma checagem extra, no
+código, que reconhece esse padrão de resposta (uma declaração de "não
+tenho essa informação" combinada com uma recomendação de falar com a
+secretaria/clínica/equipe) e trata como se fosse o marcador - encaminha
+pro médico do mesmo jeito. Deliberadamente conservadora (as duas partes
+do padrão precisam bater) pra não descartar por engano uma resposta de
+verdade que só cita a secretaria de passagem (ex.: uma orientação válida
+que termina com "qualquer dúvida, fale com a secretaria")."""
 import os
+import re
+import unicodedata
 
 from flask import current_app
 
 from app.custo_ia import registrar_chamada_ia
 
 MARCADOR_NAO_SEI = "NAO_SEI_ENCAMINHAR"
+
+# Ver docstring do módulo ("Rede de segurança contra recusa disfarçada").
+# Primeiro grupo: a IA declarando que não tem a informação. Segundo grupo:
+# a IA recomendando falar com alguém da clínica. Só conta como recusa
+# disfarçada quando as duas partes aparecem na mesma resposta - qualquer
+# uma isolada é comum demais em respostas de verdade pra servir de sinal
+# sozinha (ex.: uma resposta válida pode perfeitamente terminar com "fale
+# com a secretaria em caso de dúvida" sem estar se recusando a responder).
+_PADROES_SEM_INFORMACAO = re.compile(
+    r"nao (?:ha|tenho|temos|possuo|encontrei|consta) "
+    r"(?:nenhuma |essa |esta |informa)|"
+    r"nao (?:esta|foi) (?:especificad|informad|cadastrad)"
+)
+_PADROES_ENCAMINHA_PARA_CLINICA = re.compile(
+    r"(?:confirm\w*|verifi\w*|entrar em contato|fal\w*|consult\w*).{0,30}"
+    r"(?:secretaria|clinica|equipe|recepcao)"
+)
+
+
+def _normalizar_para_deteccao(texto):
+    """Minúsculas e sem acento, só pra facilitar o casamento dos padrões
+    acima contra variações de acentuação - não é exibido a ninguém."""
+    sem_acento = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    return sem_acento.lower()
+
+
+def _eh_recusa_generica_disfarcada(texto):
+    """True quando o texto parece uma recusa em disfarce de resposta (ver
+    docstring do módulo) - a IA deveria ter usado MARCADOR_NAO_SEI, mas
+    preferiu formular a própria recusa em linguagem natural."""
+    texto_normalizado = _normalizar_para_deteccao(texto)
+    return bool(
+        _PADROES_SEM_INFORMACAO.search(texto_normalizado)
+        and _PADROES_ENCAMINHA_PARA_CLINICA.search(texto_normalizado)
+    )
 
 # Pode ser trocado por variável de ambiente sem precisar mexer no código —
 # útil pra ajustar custo/qualidade sem um novo deploy.
@@ -304,7 +362,7 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
         sucesso=True, paciente_id=paciente_id,
     )
     texto = "".join(getattr(bloco, "text", "") for bloco in mensagem.content).strip()
-    if not texto or MARCADOR_NAO_SEI in texto:
+    if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
         return None, chamada
     return texto, chamada
 
@@ -338,7 +396,7 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
         sucesso=True, paciente_id=paciente_id,
     )
     texto = (resposta.choices[0].message.content or "").strip()
-    if not texto or MARCADOR_NAO_SEI in texto:
+    if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
         return None, chamada
     return texto, chamada
 
@@ -375,7 +433,7 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
         sucesso=True, paciente_id=paciente_id,
     )
     texto = (getattr(resposta, "text", None) or "").strip()
-    if not texto or MARCADOR_NAO_SEI in texto:
+    if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
         return None, chamada
     return texto, chamada
 
@@ -563,10 +621,15 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     PerguntaPendente.resposta_sugerida_ia (já com a lógica de reforço
     mútuo acima aplicada) - vem None quando: nenhuma das duas IAs
     escolhidas está configurada; a(s) chamada(s) falharam (rede, limite
-    de uso etc.) mesmo depois da reserva (ver abaixo); ou a(s) IA(s)
-    sinalizaram que não têm certeza. Quando "final" é None, a pergunta
-    segue para a correspondência por palavra-chave e, por fim, para a
-    fila da secretaria — o comportamento de antes não muda.
+    de uso etc.) mesmo depois da reserva (ver abaixo); a(s) IA(s)
+    sinalizaram que não têm certeza (com o marcador `MARCADOR_NAO_SEI`);
+    ou a resposta bateu com o padrão de "recusa disfarçada de resposta"
+    (`_eh_recusa_generica_disfarcada`, ver docstring do módulo -
+    2026-09-14) - quando a IA, em vez de usar o marcador, escreve a
+    própria recusa em texto livre ("não tenho essa informação, confirme
+    com a secretaria"). Quando "final" é None, a pergunta segue para a
+    correspondência por palavra-chave e, por fim, para a fila da
+    secretaria — o comportamento de antes não muda.
 
     Reserva automática (2026-08-25): quando uma das duas IAs escolhidas
     pelo dono tem API key configurada mas a chamada falha de verdade (erro
