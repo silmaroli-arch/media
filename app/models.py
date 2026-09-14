@@ -1462,6 +1462,32 @@ class ConversaWhatsapp(db.Model):
     # volta - sem ela, qualquer mensagem solta (ex.: "oi") era tratada
     # como pergunta nova e encaminhada pra equipe.
     aguardando_pergunta = db.Column(db.Boolean, nullable=False, default=False)
+    # Documento "Clara" (itens 6 e 7, 2026-09-14): quantas vezes seguidas
+    # a identificação por CPF + data de nascimento falhou (par que não
+    # bateu com nenhum cadastro, ver app.whatsapp_conversa.
+    # _localizar_paciente) desde a última identificação bem-sucedida -
+    # NÃO reseta sozinho por inatividade/expiração (ver `expirada()`
+    # abaixo), de propósito: é uma proteção contra tentativa repetida de
+    # adivinhar CPF/data de nascimento de outra pessoa, não uma contagem
+    # por sessão. Zera de volta a 0 assim que uma identificação bate.
+    tentativas_identificacao = db.Column(db.Integer, nullable=False, default=0)
+    # Documento "Clara" (itens 6 e 7, 2026-09-14): True trava a conversa
+    # por completo - `processar_mensagem` passa a responder sempre a mesma
+    # mensagem fixa (ver MENSAGEM_CONVERSA_BLOQUEADA em
+    # app.whatsapp_conversa), sem processar mais nada, mesmo depois da
+    # conversa "expirar" por inatividade (`expirada()` só reseta a
+    # identificação, nunca desbloqueia - ver docstring dela). Acontece por
+    # dois motivos (ver `motivo_bloqueio`): o paciente avisou que é
+    # "número errado" (item 6), ou esgotou as tentativas de identificação
+    # (item 7, ver `tentativas_identificacao`/`LIMITE_TENTATIVAS_
+    # IDENTIFICACAO`). Não existe hoje uma tela pra desbloquear - por ora,
+    # só ajustando direto no banco (ver HANDOFF_CHAT.md para o registro
+    # dessa limitação e uma ideia de tela futura).
+    bloqueada = db.Column(db.Boolean, nullable=False, default=False)
+    # "numero_errado" ou "tentativas_excedidas" - só informativo (pra
+    # quem for investigar/desbloquear manualmente saber o motivo); veja
+    # `bloqueada` acima.
+    motivo_bloqueio = db.Column(db.String(30), nullable=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -1471,6 +1497,11 @@ class ConversaWhatsapp(db.Model):
     # Depois de quanto tempo sem mensagem a conversa deixa de valer como
     # identificação confirmada (volta a pedir CPF + data de nascimento).
     MINUTOS_EXPIRACAO = 240  # 4 horas
+
+    # Documento "Clara" (item 7, 2026-09-14): depois de quantas tentativas
+    # de identificação seguidas sem bater (ver `tentativas_identificacao`
+    # acima) a conversa é bloqueada.
+    LIMITE_TENTATIVAS_IDENTIFICACAO = 3
 
     def expirada(self):
         if not self.atualizado_em:

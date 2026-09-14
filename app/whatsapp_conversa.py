@@ -35,6 +35,35 @@ mensagem, devolve o texto da resposta) — não sabe nada sobre Twilio nem
 sobre HTTP, para poder ser testado sem precisar simular um webhook (ver
 app/routes_whatsapp.py, que é a única coisa que fala com o provedor).
 
+Documento "Clara" (2026-09-14) - três itens de baixo risco autorizados
+pelo Silvan ("Pode começar", nenhum deles desfaz nada que já existia):
+- Item 7: limite de tentativas de identificação. Cada vez que o par
+  CPF + data de nascimento não bate com nenhum cadastro (ver
+  `_localizar_paciente`), conta como uma tentativa
+  (`ConversaWhatsapp.tentativas_identificacao`); ao chegar no limite
+  (`ConversaWhatsapp.LIMITE_TENTATIVAS_IDENTIFICACAO`, hoje 3), a
+  conversa é BLOQUEADA (ver `ConversaWhatsapp.bloqueada` e
+  MENSAGEM_IDENTIFICACAO_BLOQUEADA) - proteção contra tentativa repetida
+  de adivinhar dados de outra pessoa. Não conta tentativas de CPF em
+  formato inválido (isso é só um erro de digitação, tratado à parte).
+- Item 6: fluxo formal de "número errado". Reconhece frases como "número
+  errado"/"não conheço essa pessoa" (ver `_eh_numero_errado`, em qualquer
+  etapa da conversa) e BLOQUEIA a conversa (mesmo campo `bloqueada`
+  acima) - já que a identificação normal é só por CPF/data de nascimento
+  (nunca pelo número de WhatsApp em si), isso pode acontecer ANTES de
+  identificar ninguém; nesse caso tenta achar, por aproximação de
+  telefone, qual Paciente cadastrado é o "dono" esperado desse número
+  (ver `_paciente_por_telefone_aproximado`) só para saber qual clínica
+  avisar (ver app.push_notificacoes.notificar_equipe_numero_errado) - sem
+  achar, o bloqueio acontece do mesmo jeito, só o aviso à equipe que fica
+  sem destinatário certo.
+- Item 9: reconhecimento de intenção de remarcação/cancelamento. Frases
+  como "quero remarcar"/"não vou conseguir ir" (ver
+  `_eh_pedido_reagendamento`, só depois de identificado e com exame em
+  foco) avisam a equipe (app.push_notificacoes.
+  notificar_equipe_reagendamento) - o sistema NUNCA confirma uma nova
+  data por conta própria, só avisa quem vai combinar com o paciente.
+
 Encerramento automático por inatividade (pedido do Silvan, 2026-09-12): a
 conversa (`ConversaWhatsapp`, em qualquer etapa - aguardando CPF, data de
 nascimento, ou já identificada) é encerrada PROATIVAMENTE - com um aviso
@@ -43,6 +72,7 @@ um job em segundo plano (ver app.whatsapp_encerramento, iniciado em
 create_app). Diferente disso, o `expirada()` usado abaixo é passivo: só
 reseta a identificação (sem avisar nada) na PRÓXIMA mensagem que chegar."""
 import re
+import unicodedata
 from datetime import date, datetime
 
 from app.extensions import db
@@ -52,8 +82,12 @@ from app.faq_engine import (
     buscar_resposta_medicamento,
 )
 from app.ia_preparo import responder_com_ia
-from app.models import Agendamento, ChatMensagem, ConversaWhatsapp, Paciente, PerguntaPendente
-from app.push_notificacoes import notificar_equipe_nova_pergunta
+from app.models import Agendamento, ChatMensagem, ConversaWhatsapp, Paciente, PerguntaPendente, normalizar_telefone
+from app.push_notificacoes import (
+    notificar_equipe_nova_pergunta,
+    notificar_equipe_numero_errado,
+    notificar_equipe_reagendamento,
+)
 from app.routes_paciente import _resolver_ancora, aprovar_pergunta_automaticamente, exige_aprovacao_pergunta
 
 
@@ -188,6 +222,41 @@ MENSAGEM_NASCIMENTO_INVALIDA = (
 MENSAGEM_NAO_ENCONTRADO = (
     "Não encontramos um cadastro com esses dados. Vamos tentar de novo — "
     "me envie seu CPF."
+)
+# Documento "Clara", item 7 (2026-09-14): mostrada em vez de
+# MENSAGEM_NAO_ENCONTRADO quando a identificação já falhou
+# `ConversaWhatsapp.LIMITE_TENTATIVAS_IDENTIFICACAO` vezes seguidas -
+# ver `processar_mensagem`.
+MENSAGEM_IDENTIFICACAO_BLOQUEADA = (
+    "Não conseguimos confirmar seus dados depois de várias tentativas. "
+    "Por segurança, vamos pausar as mensagens automáticas por aqui — "
+    "entre em contato diretamente com a clínica para continuar."
+)
+# Documento "Clara", item 6 (2026-09-14): resposta única de confirmação
+# quando o paciente avisa que é "número errado" - ver
+# `_eh_numero_errado`. A partir daqui, qualquer mensagem nova recebida
+# deste número recebe sempre a mesma resposta fixa (ver
+# MENSAGEM_CONVERSA_BLOQUEADA), sem processar mais nada.
+MENSAGEM_NUMERO_ERRADO_CONFIRMADO = (
+    "Entendido! Vamos parar de enviar mensagens automáticas para este "
+    "número. Avisamos a equipe da clínica para corrigir o cadastro."
+)
+# Documento "Clara", itens 6 e 7 (2026-09-14): resposta fixa pra qualquer
+# mensagem recebida de uma conversa já bloqueada (ver
+# `ConversaWhatsapp.bloqueada`) - checado antes de tudo, em
+# `processar_mensagem`.
+MENSAGEM_CONVERSA_BLOQUEADA = (
+    "As mensagens automáticas para este número estão pausadas. Se "
+    "precisar de algo, entre em contato diretamente com a clínica."
+)
+# Documento "Clara", item 9 (2026-09-14): resposta ao pedido de
+# remarcação/cancelamento - ver `_eh_pedido_reagendamento`. O sistema
+# nunca confirma uma nova data por conta própria, só avisa a equipe.
+MENSAGEM_REAGENDAMENTO_AVISADO = (
+    "Entendido! Avisamos a equipe da clínica sobre seu pedido de "
+    "remarcação/cancelamento — em breve alguém vai entrar em contato "
+    "para combinar uma nova data. Por enquanto, o exame continua "
+    "agendado como está."
 )
 MENSAGEM_SEM_EXAME_ATIVO = (
     "Não encontramos nenhum exame em preparo no momento. Se acha que isso é "
@@ -399,10 +468,102 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     return texto_resposta, pergunta_pendente_criada
 
 
+def _normalizar_texto(texto):
+    """Minúsculas e sem acentos, pra reconhecer frases (ver
+    `_eh_numero_errado`/`_eh_pedido_reagendamento`) mesmo com variação de
+    acentuação/caixa (ex.: "Número errado", "NUMERO ERRADO", "número
+    érrado" por erro de digitação de acento não seriam batidos por um
+    simples .lower())."""
+    texto = (texto or "").strip().lower()
+    texto = unicodedata.normalize("NFKD", texto)
+    return "".join(c for c in texto if not unicodedata.combining(c))
+
+
+# Documento "Clara", item 6 (2026-09-14): frases que indicam que quem
+# está respondendo não é a pessoa esperada pra esse número. Lista
+# deliberadamente conservadora (frases mais específicas, não palavras
+# soltas como "engano" isoladas) pra evitar bloquear por engano uma
+# mensagem que só CONTÉM uma dessas palavras com outro sentido.
+_FRASES_NUMERO_ERRADO = (
+    "numero errado",
+    "numero incorreto",
+    "nao e meu numero",
+    "esse numero nao e meu",
+    "trocou de numero",
+    "nao sou essa pessoa",
+    "nao conheco essa pessoa",
+    "voce esta enganado",
+    "engano de numero",
+)
+
+
+def _eh_numero_errado(texto_normalizado):
+    return any(frase in texto_normalizado for frase in _FRASES_NUMERO_ERRADO)
+
+
+# Documento "Clara", item 9 (2026-09-14): frases que indicam pedido de
+# remarcação/cancelamento - mesmo cuidado de usar frases específicas
+# (não palavras soltas) pra reduzir falso positivo.
+_FRASES_REAGENDAMENTO = (
+    "quero remarcar",
+    "preciso remarcar",
+    "gostaria de remarcar",
+    "quero reagendar",
+    "preciso reagendar",
+    "gostaria de reagendar",
+    "nao vou conseguir ir",
+    "nao poderei ir",
+    "nao posso ir",
+    "vou faltar",
+    "preciso cancelar",
+    "quero cancelar",
+    "gostaria de cancelar",
+)
+
+
+def _eh_pedido_reagendamento(texto_normalizado):
+    return any(frase in texto_normalizado for frase in _FRASES_REAGENDAMENTO)
+
+
+def _paciente_por_telefone_aproximado(telefone_whatsapp):
+    """Documento "Clara", item 6 (2026-09-14): acha, por aproximação,
+    qual Paciente cadastrado tem esse número de WhatsApp como telefone de
+    contato - usado só pro aviso de "número errado", pra saber qual
+    clínica avisar quando isso acontece ANTES de qualquer identificação
+    por CPF/data de nascimento (ver docstring do módulo). Compara só os
+    últimos dígitos (o telefone cadastrado em Paciente pode não ter o
+    código do país, diferente do formato E.164 usado aqui em
+    ConversaWhatsapp.telefone) - até 9 dígitos finais, o suficiente pra
+    não confundir números diferentes sem exigir bater o formato inteiro.
+    Sem nenhum candidato, devolve None (o bloqueio da conversa acontece
+    do mesmo jeito - só o aviso à equipe que fica sem destinatário
+    certo)."""
+    digitos_whatsapp = re.sub(r"\D", "", telefone_whatsapp or "")
+    if len(digitos_whatsapp) < 8:
+        return None
+    for paciente in Paciente.query.filter(Paciente.telefone.isnot(None)).all():
+        digitos_cadastro = normalizar_telefone(paciente.telefone)
+        if not digitos_cadastro or len(digitos_cadastro) < 8:
+            continue
+        tamanho = min(len(digitos_whatsapp), len(digitos_cadastro), 9)
+        if digitos_whatsapp[-tamanho:] == digitos_cadastro[-tamanho:]:
+            return paciente
+    return None
+
+
 def processar_mensagem(telefone, corpo_mensagem):
     """Ponto de entrada único usado pelo webhook (app/routes_whatsapp.py).
     Devolve o texto da resposta a enviar de volta pelo WhatsApp."""
     conversa = ConversaWhatsapp.query.filter_by(telefone=telefone).first()
+
+    # Documento "Clara", itens 6 e 7 (2026-09-14): conversa bloqueada
+    # (número errado ou tentativas de identificação esgotadas, ver
+    # ConversaWhatsapp.bloqueada) - checado ANTES de qualquer outra
+    # coisa, inclusive antes de `expirada()` (o bloqueio não deve ser
+    # contornado só esperando a sessão expirar).
+    if conversa and conversa.bloqueada:
+        return MENSAGEM_CONVERSA_BLOQUEADA
+
     if conversa and conversa.expirada():
         # Sessão vencida: volta a exigir CPF + data de nascimento antes de
         # continuar - o WhatsApp de quem está escrevendo pode não ser mais
@@ -422,6 +583,21 @@ def processar_mensagem(telefone, corpo_mensagem):
     # campo fosse alterado, e uma conversa já identificada expiraria pela
     # data da ÚLTIMA MUDANÇA de estado, não da última mensagem trocada.
     conversa.atualizado_em = datetime.utcnow()
+
+    # Documento "Clara", item 6 (2026-09-14): reconhecido em QUALQUER
+    # etapa da conversa (mesmo antes de identificar ninguém) - ver
+    # `_eh_numero_errado`/docstring do módulo.
+    if _eh_numero_errado(_normalizar_texto(corpo_mensagem)):
+        conversa.bloqueada = True
+        conversa.motivo_bloqueio = "numero_errado"
+        db.session.commit()
+        paciente_aproximado = _paciente_por_telefone_aproximado(telefone)
+        if paciente_aproximado:
+            grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente_aproximado)
+            notificar_equipe_numero_errado(
+                grupo_id_ancora, criado_por_id_ancora, telefone, paciente_aproximado.nome
+            )
+        return MENSAGEM_NUMERO_ERRADO_CONFIRMADO
 
     # Identificação em duas mensagens separadas: primeiro só o CPF, depois
     # só a data de nascimento (mais fácil de digitar certo no WhatsApp do
@@ -444,10 +620,22 @@ def processar_mensagem(telefone, corpo_mensagem):
         paciente = _localizar_paciente(conversa.cpf_pendente, data_nascimento)
         conversa.cpf_pendente = None
         if not paciente:
+            # Documento "Clara", item 7 (2026-09-14): conta mais uma
+            # tentativa de identificação que não bateu; ao chegar no
+            # limite, bloqueia a conversa em vez de convidar a tentar de
+            # novo (ver ConversaWhatsapp.tentativas_identificacao/
+            # LIMITE_TENTATIVAS_IDENTIFICACAO e docstring do módulo).
+            conversa.tentativas_identificacao = (conversa.tentativas_identificacao or 0) + 1
+            if conversa.tentativas_identificacao >= ConversaWhatsapp.LIMITE_TENTATIVAS_IDENTIFICACAO:
+                conversa.bloqueada = True
+                conversa.motivo_bloqueio = "tentativas_excedidas"
+                db.session.commit()
+                return MENSAGEM_IDENTIFICACAO_BLOQUEADA
             db.session.commit()
             return MENSAGEM_NAO_ENCONTRADO
 
         conversa.paciente_id = paciente.id
+        conversa.tentativas_identificacao = 0
         resposta = _resolver_exame_em_foco(conversa, paciente, _agendamentos_ativos(paciente))
         db.session.commit()
         return resposta
@@ -495,6 +683,22 @@ def processar_mensagem(telefone, corpo_mensagem):
     agendamentos_ativos = _agendamentos_ativos(paciente)
     tem_mais_de_um_exame = len(agendamentos_ativos) > 1
     outros_agendamentos = [a for a in agendamentos_ativos if a.id != agendamento.id] if tem_mais_de_um_exame else None
+
+    # Documento "Clara", item 9 (2026-09-14): pedido de remarcação/
+    # cancelamento - só avisa a equipe (nunca confirma uma nova data por
+    # conta própria, ver _eh_pedido_reagendamento/docstring do módulo).
+    # Checado antes do gatilho "trocar"/"1" - não precisa ter digitado
+    # "1" antes pra isso valer, é uma intenção diferente de uma pergunta
+    # sobre o preparo.
+    if _eh_pedido_reagendamento(_normalizar_texto(texto)):
+        grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(
+            paciente, agendamento.exame if agendamento else None, agendamento
+        )
+        notificar_equipe_reagendamento(
+            grupo_id_ancora, criado_por_id_ancora, paciente, agendamento, telefone
+        )
+        db.session.commit()
+        return MENSAGEM_REAGENDAMENTO_AVISADO
 
     if tem_mais_de_um_exame and texto.lower() == "trocar":
         resposta = _resolver_exame_em_foco(conversa, paciente, agendamentos_ativos)

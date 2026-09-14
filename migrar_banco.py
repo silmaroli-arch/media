@@ -395,6 +395,16 @@ ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS origem_anual BOOLEAN NOT
 -- Grupo/conta já existente.
 ALTER TABLE grupos ADD COLUMN IF NOT EXISTS aprovacao_perguntas_paciente BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprovacao_perguntas_paciente BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- Documento "Clara" (itens 6 e 7, 2026-09-14, ver ConversaWhatsapp em
+-- models.py e app.whatsapp_conversa.processar_mensagem): limite de
+-- tentativas de identificação e bloqueio formal da conversa ("número
+-- errado" ou tentativas esgotadas). Default 0/FALSE preserva o
+-- comportamento de sempre pra toda conversa já existente (nenhuma fica
+-- bloqueada nem com tentativa contada por essa migração).
+ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS tentativas_identificacao INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS bloqueada BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS motivo_bloqueio VARCHAR(30);
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

@@ -107,6 +107,36 @@ def _usuarios_para_notificar(pergunta):
     return []
 
 
+def _usuarios_do_grupo_ou_dono(grupo_id, criado_por_id):
+    """Mesma regra usada em `_usuarios_para_notificar` pra pergunta SEM
+    exame associado (Grupo: médicos com perm_pacientes; conta solo: o
+    próprio dono, se for médico com perm_pacientes) - reaproveitada pelos
+    avisos do documento "Clara" (2026-09-14) que também não têm um Exame
+    por trás: "número errado" (item 6, ver notificar_equipe_numero_errado)
+    e pedido de remarcação/cancelamento (item 9, ver
+    notificar_equipe_reagendamento). Recebe o par (grupo_id, criado_por_id)
+    já resolvido pelo chamador (ver app.routes_paciente._resolver_ancora)."""
+    if grupo_id:
+        membros = (
+            GrupoMembro.query
+            .join(Usuario, Usuario.id == GrupoMembro.usuario_id)
+            .filter(
+                GrupoMembro.grupo_id == grupo_id,
+                GrupoMembro.ativo.is_(True),
+                Usuario.tipo == "medico",
+                Usuario.perm_pacientes.is_(True),
+            )
+            .all()
+        )
+        return [m.usuario_id for m in membros]
+    if criado_por_id:
+        dono = Usuario.query.get(criado_por_id)
+        if dono and dono.tipo == "medico" and dono.perm_pacientes:
+            return [dono.id]
+        return []
+    return []
+
+
 def _enviar_para_subscription(subscription, payload):
     try:
         webpush(
@@ -192,5 +222,102 @@ def _notificar_whatsapp_medicos(pergunta, usuarios_ids):
             texto=(
                 f'Nova pergunta de {pergunta.paciente.nome}: '
                 f'"{pergunta.pergunta}". Responda em {_link_perguntas()}.'
+            ),
+        )
+
+
+def notificar_equipe_numero_errado(grupo_id, criado_por_id, telefone, nome_paciente):
+    """Documento "Clara" (item 6, 2026-09-14): quando quem responde por um
+    número de WhatsApp avisa que é "número errado" (não é a pessoa
+    esperada), avisa a equipe pra corrigir o cadastro - além do bloqueio
+    da própria conversa (ver ConversaWhatsapp.bloqueada, tratado em
+    app.whatsapp_conversa.processar_mensagem, que é quem chama esta
+    função). Como a identificação normal do paciente é só por CPF/data de
+    nascimento (nunca pelo número de WhatsApp em si - ver docstring de
+    app.whatsapp_conversa), quando isso acontece ANTES de identificar
+    ninguém não há garantia de qual clínica é esse número: `grupo_id`/
+    `criado_por_id` aqui vêm de uma busca por APROXIMAÇÃO do telefone
+    cadastrado de algum Paciente (ver
+    app.whatsapp_conversa._paciente_por_telefone_aproximado) - o chamador
+    só invoca esta função quando essa busca encontra alguém; sem
+    encontrar, não tem pra quem avisar (o bloqueio da conversa acontece
+    do mesmo jeito)."""
+    usuarios_ids = _usuarios_do_grupo_ou_dono(grupo_id, criado_por_id)
+    if not usuarios_ids:
+        return
+
+    if _vapid_configurado():
+        subscriptions = PushSubscription.query.filter(
+            PushSubscription.usuario_id.in_(usuarios_ids)
+        ).all()
+        payload = {
+            "title": "WhatsApp: número errado",
+            "body": (
+                f'{telefone} avisou que é número errado (o telefone '
+                f'cadastrado de {nome_paciente} pode estar desatualizado).'
+            ),
+            "url": "/equipe/portal",
+        }
+        for subscription in subscriptions:
+            _enviar_para_subscription(subscription, payload)
+
+    medicos = Usuario.query.filter(
+        Usuario.id.in_(usuarios_ids),
+        Usuario.telefone.isnot(None),
+    ).all()
+    for medico in medicos:
+        enviar_mensagem_whatsapp(
+            medico.telefone,
+            texto=(
+                f'O número {telefone} avisou que é "número errado" ao ser '
+                f'contatado (o telefone cadastrado de {nome_paciente} pode '
+                f'estar desatualizado). As mensagens automáticas para esse '
+                f'número foram pausadas - confira em {_link_perguntas()}.'
+            ),
+        )
+
+
+def notificar_equipe_reagendamento(grupo_id, criado_por_id, paciente, agendamento, telefone):
+    """Documento "Clara" (item 9, 2026-09-14): quando o paciente manifesta,
+    pelo WhatsApp, intenção de remarcar/cancelar (ver
+    app.whatsapp_conversa._eh_pedido_reagendamento), avisa a equipe pra
+    entrar em contato e combinar uma nova data - o sistema NUNCA confirma
+    uma remarcação por conta própria, só avisa (decisão do Silvan: item
+    "nenhuma delas desfaz nada que já existe" da autorização de
+    2026-09-14). `grupo_id`/`criado_por_id` vêm já resolvidos pelo
+    chamador (ver app.routes_paciente._resolver_ancora, com o agendamento
+    em foco da conversa como âncora)."""
+    usuarios_ids = _usuarios_do_grupo_ou_dono(grupo_id, criado_por_id)
+    if not usuarios_ids:
+        return
+
+    texto_exame = (
+        f' ({agendamento.exame.nome} — {agendamento.data_hora.strftime("%d/%m/%Y")})'
+        if agendamento else ""
+    )
+
+    if _vapid_configurado():
+        subscriptions = PushSubscription.query.filter(
+            PushSubscription.usuario_id.in_(usuarios_ids)
+        ).all()
+        payload = {
+            "title": "Pedido de remarcação/cancelamento",
+            "body": f'{paciente.nome} pediu para remarcar/cancelar{texto_exame}.',
+            "url": "/equipe/portal",
+        }
+        for subscription in subscriptions:
+            _enviar_para_subscription(subscription, payload)
+
+    medicos = Usuario.query.filter(
+        Usuario.id.in_(usuarios_ids),
+        Usuario.telefone.isnot(None),
+    ).all()
+    for medico in medicos:
+        enviar_mensagem_whatsapp(
+            medico.telefone,
+            texto=(
+                f'{paciente.nome} pediu para remarcar/cancelar{texto_exame} '
+                f'pelo WhatsApp ({telefone}). Entre em contato para combinar '
+                f'uma nova data - confira em {_link_perguntas()}.'
             ),
         )
