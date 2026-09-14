@@ -185,12 +185,11 @@ with app.app_context():
     telefone_conversa = "+5527900005555"
     processar_mensagem(telefone_conversa, "000.111.222-33")
     resposta_identificacao = processar_mensagem(telefone_conversa, "15/06/1990")
-    checar("WhatsApp: paciente novo, com um único exame ativo, foca direto (sem lista de escolha)", "Digite *1*" in resposta_identificacao)
+    checar("WhatsApp: paciente novo, com um único exame ativo, foca direto (sem lista de escolha)", "Pode escrever sua pergunta" in resposta_identificacao)
 
     pergunta_zap_1 = "[teste-conversa-zap] Esta pergunta não bate com nenhuma FAQ/alimento/medicamento cadastrado, parte 1"
     pergunta_zap_2 = "[teste-conversa-zap] E aqui a parte 2 desta mesma dúvida, também sem correspondência cadastrada?"
 
-    processar_mensagem(telefone_conversa, "1")
     esperado_antes_zap_1 = _historico_recente_chat(paciente_zap.id, exame_id)
     with patch("app.whatsapp_conversa.responder_com_ia", return_value=None) as ia_mock_zap:
         processar_mensagem(telefone_conversa, pergunta_zap_1)
@@ -212,7 +211,6 @@ with app.app_context():
     pendente_1.status = "respondida"
     db.session.commit()
 
-    processar_mensagem(telefone_conversa, "1")
     esperado_antes_zap_2 = _historico_recente_chat(paciente_zap.id, exame_id)
     with patch("app.whatsapp_conversa.responder_com_ia", return_value=None) as ia_mock_zap2:
         processar_mensagem(telefone_conversa, pergunta_zap_2)

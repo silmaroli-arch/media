@@ -10,13 +10,17 @@ conversa por inatividade — direto na camada de lógica (sem passar pelo
 webhook/Twilio, que já tem seu próprio teste de assinatura (Meta Cloud
 API) em test_whatsapp_webhook_assinatura.py). Nesse mesmo dia, mais
 tarde, o Silvan pediu de volta uma barreira antes de aceitar uma
-pergunta livre: o paciente precisa digitar "1" antes - sem isso,
-qualquer mensagem solta (uma saudação, por exemplo) era tratada como
-pergunta nova e encaminhada pra equipe (ver app.whatsapp_conversa,
-`conversa.aguardando_pergunta`). O fluxo completo da pergunta livre já
-gatilhada pelo "1" (IA/FAQ/alimento/medicamento/encaminhamento) tem seu
-próprio teste em test_whatsapp_pergunta.py - aqui só confirma o convite
-e o próprio gatilho do "1"."""
+pergunta livre (digitar "1" antes) para evitar que uma mensagem solta
+virasse pergunta nova encaminhada pra equipe - e depois, em 2026-09-14
+("Vamos tirar o digite 1 para fazer uma pergunta"), pediu pra tirar essa
+barreira de novo: qualquer texto (que não seja "trocar", nem reconhecido
+como intenção de remarcação/número errado) já é tratado direto como a
+pergunta em si. Isso reabre deliberadamente o problema original (decisão
+explícita do Silvan - ver docstring de app.whatsapp_conversa). O campo
+`ConversaWhatsapp.aguardando_pergunta` continua no banco só por
+compatibilidade, sem uso. O fluxo completo da pergunta livre
+(IA/FAQ/alimento/medicamento/encaminhamento) tem seu próprio teste em
+test_whatsapp_pergunta.py - aqui só confirma o convite direto."""
 from datetime import datetime, timedelta
 
 from app import create_app, db
@@ -85,7 +89,7 @@ with app.app_context():
     resposta = processar_mensagem(telefone_joao, "12/04/1985")
     checar("CPF/data corretos identificam o paciente (nome no cumprimento)", "João" in resposta)
     checar("Já mostra o exame em foco (um só ativo)", "Colonoscopia" in resposta)
-    checar("Convida a digitar \"1\" para perguntar (barreira contra mensagem solta)", "Digite *1*" in resposta)
+    checar("Já convida a escrever a pergunta direto (sem gatilho \"1\")", "Pode escrever sua pergunta" in resposta)
     checar("Com um só exame ativo, não menciona o comando \"trocar\"", "trocar" not in resposta.lower())
 
     conversa = ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first()
@@ -99,25 +103,25 @@ with app.app_context():
     resposta = processar_mensagem(telefone_joao, "")
     checar("Mensagem vazia avisa que não recebeu nenhum texto", "Não recebi nenhum texto" in resposta)
 
-    # 4a) Correção pedida pelo Silvan (2026-09-11, com print de uma
-    # conversa real): sem nenhuma barreira, uma mensagem solta (uma
-    # saudação, por exemplo) era tratada como pergunta nova e encaminhada
-    # pra equipe - mesmo sem o paciente ter pedido pra perguntar nada. A
-    # correção reintroduz o gatilho "1" (reaproveitando o campo
-    # `aguardando_pergunta`, que já existia no banco desde o antigo menu
-    # numerado): uma saudação qualquer, sem ter digitado "1" antes, só
-    # repete o convite - nunca vira PerguntaPendente.
+    # 4a) Regressão deliberada (pedido do Silvan, 2026-09-14 - "Vamos tirar
+    # o digite 1 para fazer uma pergunta"): sem o gatilho "1" (removido de
+    # novo), uma saudação solta como "Oi" volta a ser tratada como uma
+    # pergunta nova e encaminhada pra equipe (mesmo comportamento que
+    # existia antes da correção de 2026-09-11 - ver docstring do módulo).
+    # Não é um bug: é o tradeoff explícito aceito pelo Silvan ao pedir a
+    # remoção da barreira.
+    pendentes_antes_saudacao = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
     resposta = processar_mensagem(telefone_joao, "Oi")
-    checar("Saudação solta (sem ter digitado \"1\" antes) NÃO é tratada como pergunta", "Digite *1*" in resposta)
-    conversa = ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first()
-    checar("Saudação solta não ativa o modo de aguardar pergunta", conversa.aguardando_pergunta is False)
+    checar("Saudação solta agora É tratada direto como pergunta (sem gatilho \"1\")", "encaminhada" in resposta.lower())
+    pendentes_depois_saudacao = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
+    checar("Saudação solta cria uma PerguntaPendente (tradeoff aceito pelo Silvan)", pendentes_depois_saudacao == pendentes_antes_saudacao + 1)
 
-    # 4b) Depois de digitar "1", a mensagem seguinte É tratada como a
-    # pergunta em si.
-    resposta = processar_mensagem(telefone_joao, "1")
-    checar("Digitar \"1\" confirma que a próxima mensagem será a pergunta", "Pode digitar sua pergunta" in resposta)
-    conversa = ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first()
-    checar("Depois de \"1\", aguardando_pergunta fica True", conversa.aguardando_pergunta is True)
+    # Libera essa pendência (simula o médico já tendo respondido) só para
+    # poder continuar testando os próximos cenários nesta mesma conversa,
+    # sem o aviso de "aguardando resposta" no meio.
+    pendente_saudacao = PerguntaPendente.query.filter_by(paciente_id=joao.id).order_by(PerguntaPendente.id.desc()).first()
+    pendente_saudacao.status = "respondida"
+    db.session.commit()
 
     # 4c) Correção do bug relatado pelo Silvan (2026-09-11, com print da
     # conversa e do painel do médico): um segundo exame passa a existir
@@ -154,7 +158,6 @@ with app.app_context():
         "agendamento_id continua o mesmo (exame antigo) até o paciente pedir para trocar",
         conversa.agendamento_id == agendamento_joao_original.id,
     )
-    checar("Depois de responder, aguardando_pergunta volta a False", conversa.aguardando_pergunta is False)
 
     # 5) Paciente com múltiplos exames ativos: dá um segundo agendamento
     # ativo ao João (mesmo exame, data diferente) e simula uma conversa nova.
@@ -181,12 +184,12 @@ with app.app_context():
     resposta = processar_mensagem(telefone_joao2, "9")
     checar("Escolha fora da lista: avisa e repete as opções", "Não entendi" in resposta and "1)" in resposta)
 
-    # 5b) Escolha válida: fixa o agendamento, confirma e convida a digitar
-    # "1" para perguntar, mencionando o comando "trocar" (só faz sentido -
-    # e só aparece - com mais de um exame ativo).
+    # 5b) Escolha válida: fixa o agendamento, confirma e já convida a
+    # escrever a pergunta direto, mencionando o comando "trocar" (só faz
+    # sentido - e só aparece - com mais de um exame ativo).
     resposta = processar_mensagem(telefone_joao2, "2")
     checar("Escolha válida: confirma o exame escolhido", "Colonoscopia" in resposta)
-    checar("Escolha válida: convida a digitar \"1\" para perguntar", "Digite *1*" in resposta)
+    checar("Escolha válida: já convida a escrever a pergunta direto", "Pode escrever sua pergunta" in resposta)
     checar("Com mais de um exame ativo, menciona o comando \"trocar\"", "trocar" in resposta.lower())
     conversa2 = ConversaWhatsapp.query.filter_by(telefone=telefone_joao2).first()
     agendamento_id_original = conversa2.agendamento_id

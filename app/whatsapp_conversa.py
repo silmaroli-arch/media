@@ -13,15 +13,22 @@
   encaminhada pra equipe (chegava até a avisar o médico por WhatsApp, ver
   app.push_notificacoes), poluindo a fila de perguntas pendentes sem
   necessidade. Correção (mesmo dia): reintroduzido um gatilho simples -
-  o paciente precisa digitar **1** antes de cada pergunta; só a mensagem
-  seguinte ao "1" é tratada como o texto da pergunta em si (ver
-  `conversa.aguardando_pergunta`, campo que já existia no banco, sobrando
-  do antigo menu numerado - reaproveitado aqui em vez de criar um campo
-  novo). Qualquer mensagem recebida FORA desse estado (sem ter digitado
-  "1" antes) só repete o convite - nunca cria PerguntaPendente nem avisa
-  a equipe. "Trocar de exame" continua existindo (só quando há mais de um
-  exame ativo), acionado pela palavra "trocar" em qualquer momento
-  (mesmo já tendo digitado "1").
+  o paciente precisava digitar **1** antes de cada pergunta; só a
+  mensagem seguinte ao "1" era tratada como o texto da pergunta em si.
+
+  **Gatilho "1" removido de novo (pedido do Silvan, 2026-09-14)**: "Vamos
+  tirar o digite 1 para fazer uma pergunta" - agora qualquer texto (que
+  não seja o comando "trocar", nem reconhecido como intenção de
+  remarcação/número errado, ver mais abaixo) já é tratado direto como a
+  pergunta em si, sem exigir digitar "1" antes. Isso reabre deliberadamente
+  o problema descrito no parágrafo acima (uma saudação solta como "oi"
+  volta a virar uma PerguntaPendente encaminhada à equipe, em vez de só
+  repetir o convite) - decisão explícita do Silvan, não um descuido. O
+  campo `ConversaWhatsapp.aguardando_pergunta` (usado pelo gatilho)
+  continua existindo no banco só por compatibilidade com dados antigos,
+  mas não é mais lido nem escrito por este módulo. "Trocar de exame"
+  continua existindo (só quando há mais de um exame ativo), acionado
+  pela palavra "trocar" em qualquer momento.
 - Passo 5 (este arquivo): a pergunta livre reaproveita a MESMA lógica de
   app.routes_paciente.chat() (base de conhecimento/alimento/medicamento
   primeiro - pedido do Silvan, 2026-09-11; só quando nada bate a IA é
@@ -181,28 +188,28 @@ def _texto_lista_exames(agendamentos, preambulo="Você tem mais de um exame em p
 def _texto_pedir_pergunta(paciente, agendamento, saudacao=True, outros_agendamentos=None):
     """Substitui o antigo menu numerado (ver docstring do módulo) - depois
     de identificado e com um exame em foco, a mensagem já convida a
-    perguntar, mas agora (pedido do Silvan, 2026-09-11 - ver docstring do
-    módulo) pede pra digitar **1** primeiro, em vez de já aceitar
-    qualquer texto como a pergunta em si - isso é o que impede uma
-    saudação solta ("oi", etc.) de ser tratada por engano como uma
-    pergunta nova. Quando há outro(s) exame(s) ativo(s) além do que está
-    em foco, NOMEIA cada um deles aqui (em vez de só mencionar
-    genericamente o comando "trocar") - correção pedida pelo Silvan
-    (2026-09-11): antes disso, quando um segundo exame passava a existir
-    DEPOIS que a conversa já tinha fixado o primeiro (ex.: paciente já
-    identificado, e um novo agendamento é criado enquanto a sessão de
-    WhatsApp ainda não expirou), o paciente ficava "logado" no exame
-    antigo sem nenhum aviso claro de que havia outro - só um lembrete
-    genérico de "trocar", fácil de não notar. Repetir aqui é seguro porque
-    `outros_agendamentos` é sempre recalculado na hora (ver
-    `processar_mensagem`), nunca guardado - qualquer novo agendamento
-    aparece automaticamente na próxima mensagem, sem precisar pedir CPF/
-    nascimento de novo."""
+    perguntar diretamente, sem precisar digitar nada antes (o gatilho
+    "digite *1*", pedido em 2026-09-11 pra impedir que uma saudação solta
+    como "oi" fosse tratada por engano como pergunta nova, foi removido a
+    pedido do Silvan em 2026-09-14 - ver docstring do módulo sobre esse
+    retrocesso deliberado e o que passa a acontecer com mensagens soltas
+    agora). Quando há outro(s) exame(s) ativo(s) além do que está em
+    foco, NOMEIA cada um deles aqui (em vez de só mencionar genericamente
+    o comando "trocar") - correção pedida pelo Silvan (2026-09-11): antes
+    disso, quando um segundo exame passava a existir DEPOIS que a
+    conversa já tinha fixado o primeiro (ex.: paciente já identificado, e
+    um novo agendamento é criado enquanto a sessão de WhatsApp ainda não
+    expirou), o paciente ficava "logado" no exame antigo sem nenhum
+    aviso claro de que havia outro - só um lembrete genérico de "trocar",
+    fácil de não notar. Repetir aqui é seguro porque `outros_agendamentos`
+    é sempre recalculado na hora (ver `processar_mensagem`), nunca
+    guardado - qualquer novo agendamento aparece automaticamente na
+    próxima mensagem, sem precisar pedir CPF/nascimento de novo."""
     cabecalho = f"Olá, {paciente.nome.split(' ')[0]}! " if saudacao else ""
     corpo = (
         f"{cabecalho}Exame em foco: *{agendamento.exame.nome}* — "
         f"{agendamento.data_hora.strftime('%d/%m/%Y')}.\n\n"
-        "Digite *1* para fazer uma pergunta sobre o preparo deste exame."
+        "Pode escrever sua pergunta sobre o preparo deste exame."
     )
     if outros_agendamentos:
         nomes = "; ".join(
@@ -269,10 +276,6 @@ MENSAGEM_SEM_EXAME_ATIVO = (
 )
 MENSAGEM_OPCAO_INVALIDA_EXAME = "Não entendi. Responda só com o número do exame na lista abaixo:"
 MENSAGEM_PERGUNTA_VAZIA = "Não recebi nenhum texto."
-# Mostrada depois que o paciente digita "1" (ver `conversa.aguardando_
-# pergunta` e docstring do módulo) - só a partir daqui a próxima mensagem
-# é tratada como o texto da pergunta em si.
-MENSAGEM_DIGITE_PERGUNTA = "Pode digitar sua pergunta sobre o preparo deste exame."
 MENSAGEM_PERGUNTA_ENCAMINHADA = (
     "Recebemos sua pergunta! Ela foi encaminhada para a equipe e você "
     "receberá a resposta assim que possível."
@@ -681,13 +684,11 @@ def processar_mensagem(telefone, corpo_mensagem):
         outros = [a for a in agendamentos if a.id != agendamento_escolhido.id]
         return _texto_pedir_pergunta(paciente, agendamento_escolhido, outros_agendamentos=outros)
 
-    # Identificado e com exame em foco: por segurança (pedido do Silvan,
-    # 2026-09-11 - ver docstring do módulo), o paciente precisa digitar
-    # **1** antes de cada pergunta; só a mensagem seguinte a esse "1" é
-    # tratada como o texto da pergunta em si (ver `conversa.
-    # aguardando_pergunta`). Quem tem mais de um exame ativo pode digitar
-    # "trocar" para escolher outro, em qualquer momento (mesmo já tendo
-    # digitado "1").
+    # Identificado e com exame em foco: qualquer texto já é tratado
+    # direto como a pergunta em si (pedido do Silvan, 2026-09-14 - ver
+    # docstring do módulo; o gatilho "digite *1* antes" que existia aqui
+    # foi removido). Quem tem mais de um exame ativo pode digitar
+    # "trocar" para escolher outro, em qualquer momento.
     paciente, agendamento = conversa.paciente, conversa.agendamento
     texto = (corpo_mensagem or "").strip()
 
@@ -721,7 +722,6 @@ def processar_mensagem(telefone, corpo_mensagem):
 
     if tem_mais_de_um_exame and texto.lower() == "trocar":
         resposta = _resolver_exame_em_foco(conversa, paciente, agendamentos_ativos)
-        conversa.aguardando_pergunta = False
         db.session.commit()
         return resposta
 
@@ -729,20 +729,9 @@ def processar_mensagem(telefone, corpo_mensagem):
         db.session.commit()
         return MENSAGEM_PERGUNTA_VAZIA
 
-    if not conversa.aguardando_pergunta:
-        if texto.rstrip(".") == "1":
-            conversa.aguardando_pergunta = True
-            db.session.commit()
-            return MENSAGEM_DIGITE_PERGUNTA
-        # Qualquer outra coisa (saudação tipo "oi", emoji, comentário
-        # solto) enquanto o paciente ainda não digitou "1" - só repete o
-        # convite, sem criar PerguntaPendente nem avisar a equipe (era
-        # exatamente isso que estava acontecendo antes desta correção).
-        db.session.commit()
-        return _texto_pedir_pergunta(paciente, agendamento, saudacao=False, outros_agendamentos=outros_agendamentos)
-
-    # Já digitou "1" na mensagem anterior: esta aqui é a pergunta em si.
-    conversa.aguardando_pergunta = False
+    # Qualquer outro texto (que não seja "trocar", nem uma intenção de
+    # remarcação já tratada acima) é a pergunta em si - direto, sem
+    # precisar digitar "1" antes (ver docstring do módulo).
     resposta_pergunta, pergunta_criada = _responder_pergunta(paciente, agendamento, texto, telefone)
     complemento = (
         MENSAGEM_AGUARDANDO_RESPOSTA
