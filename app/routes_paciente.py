@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import (
@@ -104,6 +104,57 @@ def aprovar_pergunta_automaticamente(pergunta_pendente, resposta):
         resposta=resposta,
         criado_por="Sistema (aprovação automática desativada)",
     ))
+
+
+# Pedido do Silvan (2026-09-14 - "conceito de conversa"): janela de
+# recência usada por `_historico_recente_chat` abaixo - só entra como
+# contexto de "conversa em aberto" uma pergunta recente o suficiente pra
+# ainda fazer sentido como continuação (ex.: "e frita?" minutos depois de
+# "posso comer batata?"); perguntas de dias atrás sobre o mesmo exame não
+# entram, pra não confundir a IA misturando dúvidas de ocasiões diferentes.
+JANELA_HISTORICO_CONVERSA_MINUTOS = 30
+# Quantas perguntas anteriores, no máximo, entram no histórico dado à IA -
+# poucas mensagens bastam pra resolver uma referência de continuação, e
+# manter baixo evita inflar o tamanho/custo de cada chamada à IA.
+LIMITE_HISTORICO_CONVERSA = 4
+
+
+def _historico_recente_chat(paciente_id, exame_id, limite=LIMITE_HISTORICO_CONVERSA):
+    """Últimas perguntas deste paciente sobre este mesmo exame, dentro de
+    uma janela recente de tempo (`JANELA_HISTORICO_CONVERSA_MINUTOS`), de
+    QUALQUER canal (web ou WhatsApp, ver `ChatMensagem.canal` - é a mesma
+    conversa do ponto de vista do paciente, independente de por onde ele
+    escreveu) - devolvidas em ordem CRONOLÓGICA (mais antiga primeiro),
+    prontas para app.ia_preparo.responder_com_ia usar como contexto da
+    "conversa em aberto" (pedido do Silvan, 2026-09-14): permite à IA
+    entender uma pergunta de acompanhamento curta (ex.: "e frita?") como
+    continuação da pergunta anterior (ex.: "posso comer batata?"), em vez
+    de uma pergunta solta sem contexto nenhum.
+
+    Inclui a pergunta mesmo quando `ChatMensagem.resposta` ainda é None
+    (pergunta anterior ainda pendente de aprovação do médico) - já BASTA
+    saber o que foi perguntado antes para entender a continuidade; não é
+    preciso ter uma resposta pronta pra isso (ver
+    app.ia_preparo._formatar_historico_conversa, que trata esse caso).
+
+    Sem `exame_id` (pergunta "geral", sem exame selecionado - não há como
+    ter feito uma pergunta "anterior" sobre um exame que não existe aqui),
+    devolve lista vazia."""
+    if not exame_id:
+        return []
+    limite_tempo = datetime.utcnow() - timedelta(minutes=JANELA_HISTORICO_CONVERSA_MINUTOS)
+    mensagens = (
+        ChatMensagem.query.filter(
+            ChatMensagem.paciente_id == paciente_id,
+            ChatMensagem.exame_id == exame_id,
+            ChatMensagem.criado_em >= limite_tempo,
+        )
+        .order_by(ChatMensagem.criado_em.desc())
+        .limit(limite)
+        .all()
+    )
+    mensagens.reverse()
+    return [(m.pergunta, m.resposta) for m in mensagens]
 
 
 def _meus_cadastros_ids():
@@ -363,7 +414,10 @@ def chat():
                 # (FaqItem), igual a uma resposta manual (e passa a valer
                 # pra próxima pergunta igual/parecida, pelo caminho acima).
                 resultado_ia = (
-                    responder_com_ia(pergunta_enviada, exame_selecionado, paciente_id=paciente.id)
+                    responder_com_ia(
+                        pergunta_enviada, exame_selecionado, paciente_id=paciente.id,
+                        historico=_historico_recente_chat(paciente.id, exame_selecionado.id),
+                    )
                     if exame_selecionado else None
                 )
                 if resultado_ia and resultado_ia["final"]:

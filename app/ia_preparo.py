@@ -74,7 +74,8 @@ Regras importantes:
 - NUNCA faça o raciocínio de identidade acima sobre uma CARACTERÍSTICA do produto que os dados não informam (ex.: qual é a cor de um sabor específico de bebida, se um alimento tem ou não determinado ingrediente). Isso é inventar informação, mesmo que pareça um "senso comum" — cores de sabores variam por marca/país e você pode errar. Nesses casos, explique a regra cadastrada (ex.: "só é permitido líquido de cor clara") e oriente o paciente a verificar essa característica específica por conta própria (observando a embalagem) ou perguntar à secretaria — nunca afirme se aquele sabor/produto específico atende ou não à regra quando isso não estiver explícito nos dados.
 - Quando o item tiver um prazo/data calculado nos dados fornecidos, cite esse prazo/data na resposta.
 - Reserve o texto NAO_SEI_ENCAMINHAR só para perguntas que genuinamente não têm nenhuma informação útil a dar (ex.: assunto totalmente fora do preparo, ou um item que você não consegue identificar de jeito nenhum) — nesse caso, responda EXATAMENTE com esse texto, nada mais, nenhuma outra palavra, nenhuma pontuação extra.
-- Nunca responda sobre assuntos fora do preparo deste exame específico (ex.: diagnósticos, tratamentos, outros exames)."""
+- Nunca responda sobre assuntos fora do preparo deste exame específico (ex.: diagnósticos, tratamentos, outros exames).
+- Quando houver um "Histórico recente desta conversa" listado antes da pergunta atual, use-o para entender o CONTEXTO da conversa em aberto com este paciente — principalmente perguntas de acompanhamento curtas que só fazem sentido em conjunto com a pergunta anterior (ex.: depois de "posso comer batata?", a pergunta seguinte "e frita?" deve ser entendida como "posso comer batata frita?", não como uma pergunta solta e incompleta). Sem esse histórico, trate a pergunta como isolada, do jeito de sempre."""
 
 
 def _cliente_anthropic():
@@ -231,7 +232,40 @@ def _formatar_contexto_preparo(exame):
     return "\n".join(partes)
 
 
-def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None):
+def _formatar_historico_conversa(historico):
+    """Pedido do Silvan (2026-09-14) - "conceito de conversa": a IA deve
+    entender que existe uma conversa em aberto com o paciente (ex.: depois
+    de "posso comer batata?", a pergunta seguinte "e frita?" só faz
+    sentido em conjunto com a anterior). `historico` é uma lista de
+    tuplas `(pergunta, resposta)` em ordem CRONOLÓGICA (mais antiga
+    primeiro) - ver app.routes_paciente._historico_recente_chat, quem
+    monta essa lista a partir de `ChatMensagem` (mesmo paciente + mesmo
+    exame, dentro de uma janela recente de tempo). Formata como um bloco
+    de texto simples (não como múltiplos turnos de mensagem "de verdade"
+    na API de cada provedor - Claude/OpenAI/Gemini têm formatos de
+    histórico multi-turno ligeiramente diferentes entre si, e cada
+    chamada aqui já é stateless/reconstruída do zero a cada pergunta; um
+    bloco de texto simples, incluído dentro do mesmo "content" de sempre,
+    é suficiente para a IA entender a continuidade e funciona igual nos
+    3 provedores). Sem histórico (lista vazia/None - pergunta isolada, ou
+    nenhuma pergunta anterior recente sobre este mesmo exame), devolve
+    string vazia - quem chama simplesmente não inclui o bloco, mantendo o
+    texto exatamente igual ao de antes desta funcionalidade existir.
+    `resposta` pode ser None (pergunta anterior ainda pendente de
+    aprovação do médico, ver ChatMensagem.resposta) - nesse caso mostra só
+    a pergunta, sem inventar uma resposta que ainda não existe; mesmo
+    assim vale como contexto para entender uma pergunta de continuação."""
+    if not historico:
+        return ""
+    linhas = ["Histórico recente desta conversa com o paciente sobre este mesmo exame (mais antiga primeiro):"]
+    for pergunta_anterior, resposta_anterior in historico:
+        linhas.append(f'- Paciente perguntou antes: "{pergunta_anterior}"')
+        if resposta_anterior:
+            linhas.append(f'  Resposta que foi dada: "{resposta_anterior}"')
+    return "\n".join(linhas) + "\n\n"
+
+
+def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
     """Devolve uma tupla `(texto_ou_None, chamada_ou_None)` - `chamada` é
     o `ChamadaIA` já registrado (ver app.custo_ia.registrar_chamada_ia),
     para quem chamou poder marcar depois `.resposta_final_usada` assim
@@ -245,7 +279,11 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None):
             system=PROMPT_SISTEMA,
             messages=[{
                 "role": "user",
-                "content": f"Dados do preparo:\n{contexto}\n\nPergunta do paciente: {pergunta_usuario}",
+                "content": (
+                    f"Dados do preparo:\n{contexto}\n\n"
+                    f"{_formatar_historico_conversa(historico)}"
+                    f"Pergunta do paciente: {pergunta_usuario}"
+                ),
             }],
         )
     except Exception:
@@ -271,7 +309,7 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None):
     return texto, chamada
 
 
-def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None):
+def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
     """Ver docstring de `_perguntar_claude` acima - mesmo contrato de
     retorno `(texto_ou_None, chamada_ou_None)`."""
     try:
@@ -282,7 +320,11 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None):
                 {"role": "system", "content": PROMPT_SISTEMA},
                 {
                     "role": "user",
-                    "content": f"Dados do preparo:\n{contexto}\n\nPergunta do paciente: {pergunta_usuario}",
+                    "content": (
+                        f"Dados do preparo:\n{contexto}\n\n"
+                        f"{_formatar_historico_conversa(historico)}"
+                        f"Pergunta do paciente: {pergunta_usuario}"
+                    ),
                 },
             ],
         )
@@ -301,7 +343,7 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None):
     return texto, chamada
 
 
-def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None):
+def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
     """Ver docstring de `_perguntar_claude` acima - mesmo contrato de
     retorno `(texto_ou_None, chamada_ou_None)`. Mesma lib/cliente do
     import de PDF (ver app.ia_pdf_preparo), mas aqui a chamada é bem mais
@@ -313,7 +355,11 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None):
         from google.genai import types as genai_types
         resposta = cliente.models.generate_content(
             model=MODELO_GEMINI_PADRAO,
-            contents=f"Dados do preparo:\n{contexto}\n\nPergunta do paciente: {pergunta_usuario}",
+            contents=(
+                f"Dados do preparo:\n{contexto}\n\n"
+                f"{_formatar_historico_conversa(historico)}"
+                f"Pergunta do paciente: {pergunta_usuario}"
+            ),
             config=genai_types.GenerateContentConfig(
                 system_instruction=PROMPT_SISTEMA,
                 max_output_tokens=300,
@@ -449,7 +495,7 @@ _PROVEDORES_CHAT = {
 CAMPO_RESPOSTA_BRUTA = {"Claude": "claude", "ChatGPT": "chatgpt", "Gemini": "gemini"}
 
 
-def _tentar_provedor(nome_provedor, pergunta_usuario, contexto, paciente_id=None):
+def _tentar_provedor(nome_provedor, pergunta_usuario, contexto, paciente_id=None, historico=None):
     """Cria o cliente do provedor indicado (se a API key dele estiver
     configurada) e tenta obter uma resposta. Retorna
     `(texto_ou_None, chamada_ou_None, tentou_bool)` - `tentou_bool`
@@ -461,11 +507,11 @@ def _tentar_provedor(nome_provedor, pergunta_usuario, contexto, paciente_id=None
     cliente = cliente_factory()
     if not cliente:
         return None, None, False
-    texto, chamada = perguntar(cliente, pergunta_usuario, contexto, paciente_id)
+    texto, chamada = perguntar(cliente, pergunta_usuario, contexto, paciente_id, historico)
     return texto, chamada, True
 
 
-def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
+def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     """Tenta responder a pergunta do paciente usando IA, com o preparo do
     exame como contexto. As duas IAs que respondem são escolhidas pelo
     dono da plataforma entre Gemini/ChatGPT/Claude (ver
@@ -493,6 +539,18 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
     usado pelo painel de custo na área do dono) - não afeta a resposta
     de forma nenhuma, e pode ser omitido sem quebrar nada (só deixa de
     saber a quem atribuir aquele custo no painel).
+
+    `historico` (opcional, pedido do Silvan, 2026-09-14 - "conceito de
+    conversa"): lista de tuplas `(pergunta, resposta)` em ordem
+    cronológica (mais antiga primeiro) das últimas perguntas deste mesmo
+    paciente sobre este mesmo exame - ver
+    app.routes_paciente._historico_recente_chat, quem monta essa lista.
+    Passada a cada uma das IAs consultadas (ver
+    _formatar_historico_conversa) para que uma pergunta de acompanhamento
+    curta ("e frita?") seja entendida em conjunto com a pergunta anterior
+    ("posso comer batata?"), em vez de tratada como uma pergunta solta e
+    incompreensível sozinha. Omitido (None/lista vazia), o comportamento é
+    idêntico a antes desta funcionalidade existir.
 
     Retorna um dicionário {"final": ..., "por_provedor": {"Claude": ...,
     "ChatGPT": ..., "Gemini": ...}, "falhas": [...]} — "por_provedor" tem a resposta crua
@@ -544,8 +602,8 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
     respostas_por_provedor = {"Claude": None, "ChatGPT": None, "Gemini": None}
     contexto = _formatar_contexto_preparo(exame)
 
-    resposta_a, chamada_a, tentou_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id)
-    resposta_b, chamada_b, tentou_b = _tentar_provedor(provedor_b, pergunta_usuario, contexto, paciente_id)
+    resposta_a, chamada_a, tentou_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id, historico)
+    resposta_b, chamada_b, tentou_b = _tentar_provedor(provedor_b, pergunta_usuario, contexto, paciente_id, historico)
 
     if not tentou_a and not tentou_b:
         # Nenhuma das duas escolhidas tem API key configurada - não é
@@ -580,7 +638,7 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None):
             "IA configurada (%s) falhou ao responder pergunta do paciente - tentando %s (não escolhida) como reserva",
             provedor_a if falhou_a else provedor_b, provedor_c,
         )
-        resposta_c, chamada_c, tentou_c = _tentar_provedor(provedor_c, pergunta_usuario, contexto, paciente_id)
+        resposta_c, chamada_c, tentou_c = _tentar_provedor(provedor_c, pergunta_usuario, contexto, paciente_id, historico)
         reserva_respondeu = tentou_c and (resposta_c is not None or chamada_c is not None)
         if tentou_c and not reserva_respondeu:
             # A reserva também falhou de verdade - registra pra aparecer

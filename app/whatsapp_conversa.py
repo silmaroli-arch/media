@@ -88,7 +88,12 @@ from app.push_notificacoes import (
     notificar_equipe_numero_errado,
     notificar_equipe_reagendamento,
 )
-from app.routes_paciente import _resolver_ancora, aprovar_pergunta_automaticamente, exige_aprovacao_pergunta
+from app.routes_paciente import (
+    _historico_recente_chat,
+    _resolver_ancora,
+    aprovar_pergunta_automaticamente,
+    exige_aprovacao_pergunta,
+)
 
 
 def normalizar_telefone_whatsapp(remetente_bruto):
@@ -328,7 +333,15 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     a pergunta cai na base de FAQ e as próximas iguais/parecidas já
     respondem direto (via `faq_item` acima). Só quando nada disso bate é
     que a IA (quando configurada) é consultada - a resposta dela também
-    NUNCA vai direto pro paciente, mesmo fluxo de aprovação. Sempre grava
+    NUNCA vai direto pro paciente, mesmo fluxo de aprovação. A IA recebe
+    também o histórico recente da conversa deste paciente sobre este
+    mesmo exame (`_historico_recente_chat`, pedido do Silvan, 2026-09-14 -
+    "conceito de conversa") - permite entender uma pergunta de
+    acompanhamento curta (ex.: "e frita?" depois de "posso comer
+    batata?") em conjunto com a pergunta anterior, em vez de isolada
+    (busca por FAQ/alimento/medicamento acima continua sendo feita só com
+    o texto desta mensagem, sem esse histórico - só a IA recebe o
+    contexto da conversa). Sempre grava
     um ChatMensagem (canal="whatsapp") no mesmo histórico que a equipe já
     vê hoje (ver medico.atendimento). Toda PerguntaPendente criada aqui
     guarda `telefone` (o remetente desta conversa) - é o que permite ao
@@ -405,7 +418,13 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             origem = "alimento" if resposta_alimento else "medicamento"
             pergunta_pendente_criada = None
     else:
-        resultado_ia = responder_com_ia(pergunta_texto, exame, paciente_id=paciente.id) if exame else None
+        resultado_ia = (
+            responder_com_ia(
+                pergunta_texto, exame, paciente_id=paciente.id,
+                historico=_historico_recente_chat(paciente.id, exame.id),
+            )
+            if exame else None
+        )
         if resultado_ia and resultado_ia["final"]:
             origem = "ia_aguardando"
             pergunta_pendente_criada = PerguntaPendente(
