@@ -2620,18 +2620,8 @@ def perguntas_pendentes():
     pendentes = pendentes_q.order_by(PerguntaPendente.criado_em.desc()).all()
     aguardando = aguardando_q.order_by(PerguntaPendente.criado_em.desc()).all()
 
-    # Pedido do Silvan (2026-09-13): mostra o estado atual do parâmetro de
-    # aprovação nesta mesma tela (ver medico.perguntas_configuracao abaixo)
-    # - por Grupo quando há um, senão pela própria conta (conta solo).
-    grupo_atual = empresa_atual()
-    aprovacao_ativa = (
-        grupo_atual.aprovacao_perguntas_paciente if grupo_atual
-        else current_user.aprovacao_perguntas_paciente
-    )
-
     return render_template(
         "medico/perguntas.html", pendentes=pendentes, aguardando=aguardando,
-        aprovacao_ativa=aprovacao_ativa,
     )
 
 
@@ -2648,7 +2638,13 @@ def perguntas_configuracao():
     WhatsApp). Vale para todo o Grupo (equipe) quando há um; numa conta
     solo (sem Grupo), vale só para a própria conta. A base de FAQ (pergunta
     já respondida e aprovada antes) nunca passa por essa checagem - sempre
-    responde direto, com ou sem este parâmetro."""
+    responde direto, com ou sem este parâmetro.
+
+    O controle mora só no portal de atendimento rápido (pedido do Silvan,
+    2026-09-14: "não deveria ficar no portal?" - é onde ele de fato usa no
+    dia a dia) - mesmo padrão de "origem" já usado em
+    medico.perguntas_responder para voltar pra tela certa depois."""
+    destino = "medico.portal_atendimento" if request.form.get("origem") == "portal" else "medico.perguntas_pendentes"
     # Checkbox desmarcado não é enviado pelo navegador (padrão HTML) - a
     # ausência do campo já significa "desativar".
     ativar = request.form.get("aprovacao_ativa") == "1"
@@ -2664,7 +2660,7 @@ def perguntas_configuracao():
         "Aprovação do médico desativada: novas respostas de alimento/medicamento/IA vão direto para o paciente, sem esperar sua revisão.",
         "success",
     )
-    return redirect(url_for("medico.perguntas_pendentes"))
+    return redirect(url_for(destino))
 
 
 @medico_bp.route("/perguntas/respondidas")
@@ -2724,10 +2720,21 @@ def portal_atendimento():
                 .all()
             )
 
+    # Pedido do Silvan (2026-09-13/14): o parâmetro de aprovação (ver
+    # medico.perguntas_configuracao) mora só aqui no portal, que é onde ele
+    # de fato usa no dia a dia - por Grupo quando há um, senão pela própria
+    # conta (conta solo).
+    grupo_atual = empresa_atual()
+    aprovacao_ativa = (
+        grupo_atual.aprovacao_perguntas_paciente if grupo_atual
+        else current_user.aprovacao_perguntas_paciente
+    )
+
     return render_template(
         "portal/atendimento.html",
         pendentes=pendentes, aguardando=aguardando,
         historico_por_paciente=historico_por_paciente,
+        aprovacao_ativa=aprovacao_ativa,
     )
 
 

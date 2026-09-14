@@ -1062,6 +1062,18 @@ Como esse script roda automaticamente em todo deploy (`.platform/hooks/predeploy
 
 - **Pendência**: confirmar no painel do Render (Logs do serviço `media-dev`) que o deploy seguinte a este commit terminou com sucesso e que `dev.media.med.br` volta a carregar normalmente depois do login. Se, por algum motivo, o auto-deploy não disparar sozinho, um "Manual Deploy" no Render resolve. **Lição para próximas mudanças de schema**: sempre que um campo novo for adicionado a `app/models.py`, adicionar o `ALTER TABLE` correspondente em `migrar_banco.py` NA MESMA hora/commit - nunca depois.
 
+### Ajuste (mesma rodada): o switch de aprovação foi movido pro portal de atendimento
+
+Silvan perguntou "Não deveria ficar no portal?" depois de eu ter colocado o switch da seção anterior na tela "Perguntas pendentes" (painel completo) - confirmado que é pra MOVER (não duplicar): ele usa o portal de atendimento rápido (`/equipe/portal`, `medico.portal_atendimento`) no dia a dia, não o painel completo.
+
+- **`app/templates/medico/perguntas.html`**: removido o card do switch (volta a ficar exatamente como estava antes desta rodada).
+- **`app/routes_medico.py`**: `perguntas_pendentes()` não calcula mais `aprovacao_ativa` nem passa pro template. `portal_atendimento()` passou a calcular (mesma lógica: Grupo quando há um, senão a própria conta) e passar `aprovacao_ativa` pro `portal/atendimento.html`. `perguntas_configuracao()` (a rota que liga/desliga) ganhou o mesmo padrão de "origem" já usado em `perguntas_responder` - com `<input type="hidden" name="origem" value="portal">` no formulário do portal, o redirect depois de salvar volta pro portal (`medico.portal_atendimento`) em vez da tela de perguntas pendentes.
+- **`app/templates/portal/atendimento.html`**: novo card do switch, no mesmo lugar/estilo da versão anterior (card com aviso curto + switch que salva ao clicar, `onchange="this.form.submit()"`), logo depois do botão "Atualizar perguntas".
+
+Nenhuma mudança na tabela do banco nem na lógica de decisão (`exige_aprovacao_pergunta`/`aprovar_pergunta_automaticamente`, em `app/routes_paciente.py`) - só mudou ONDE o médico liga/desliga o parâmetro.
+
+- **Pendência**: mesma de sempre - `device_bash` indisponível, só `ast.parse`. Testar visualmente no portal (`/equipe/portal`): o switch aparece, salva ao clicar, e volta pro próprio portal (não pra tela de perguntas pendentes) depois de salvar.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
