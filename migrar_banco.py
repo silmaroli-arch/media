@@ -387,6 +387,14 @@ ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS valor_licenca_anual_padra
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ciclo_licenca VARCHAR(10) NOT NULL DEFAULT 'mensal';
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS valor_licenca_anual NUMERIC(10, 2);
 ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS origem_anual BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Parâmetro configurável de aprovação (pedido do Silvan, 2026-09-13, ver
+-- Grupo.aprovacao_perguntas_paciente / Usuario.aprovacao_perguntas_paciente
+-- em models.py, e app.routes_paciente.exige_aprovacao_pergunta) - default
+-- TRUE preserva o comportamento de sempre (aprovação exigida) para todo
+-- Grupo/conta já existente.
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS aprovacao_perguntas_paciente BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprovacao_perguntas_paciente BOOLEAN NOT NULL DEFAULT TRUE;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

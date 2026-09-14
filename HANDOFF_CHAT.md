@@ -1049,6 +1049,19 @@ Pedido do Silvan: "Cria um parâmetro no sistema onde o médico pode escolher ou
 
 - **Pendência**: mesma de sempre - `device_bash` indisponível durante toda esta implementação, nada foi executado de fato, só `ast.parse` no ambiente de nuvem. Rodar `python test_aprovacao_configuravel.py` **e também `test_whatsapp_pergunta.py`/`test_whatsapp_identificacao.py`** (pra garantir que o campo novo, com seu default `True`, não mudou nada no comportamento coberto por esses testes já existentes) antes de subir pra produção. Testar visualmente: desativar o parâmetro em "Perguntas pendentes", perguntar algo sobre um alimento/medicamento cadastrado pelo chat web e pelo WhatsApp, e confirmar que a resposta chega direto, sem passar pela fila do médico - depois reativar e confirmar que volta a ficar pendente como antes.
 
+### Correção (mesma rodada): "Internal Server Error" em produção logo após o login, por esquecimento na migração de banco
+
+**Bug introduzido por mim**: ao adicionar as colunas novas `Grupo.aprovacao_perguntas_paciente` e `Usuario.aprovacao_perguntas_paciente` (seção anterior), esqueci de atualizar o `migrar_banco.py` - e este projeto NÃO usa Flask-Migrate (ver topo deste documento), então `db.create_all()` nunca adiciona coluna nova a uma tabela que já existe. Resultado: assim que essa mudança foi publicada (o processo de auto-commit deste computador sincroniza qualquer gravação em `C:\app\media\src` direto pro GitHub, e o Render redeploya a branch `dev` automaticamente), toda consulta a `usuarios` ou `grupos` em produção passou a falhar (essas duas tabelas são tocadas em praticamente toda página, incluindo o próprio login) - o Silvan reportou "Internal Server Error" em `dev.media.med.br` logo depois de logar.
+
+**Correção**: adicionadas ao final do bloco `SQL` de `migrar_banco.py` as duas linhas que faltavam:
+```sql
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS aprovacao_perguntas_paciente BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprovacao_perguntas_paciente BOOLEAN NOT NULL DEFAULT TRUE;
+```
+Como esse script roda automaticamente em todo deploy (`.platform/hooks/predeploy/01_migrar_banco.sh`), bastou comitar o arquivo corrigido - o próprio auto-commit/redeploy do Render já aplica o `ALTER TABLE` faltante no próximo deploy, sem precisar de nenhuma ação manual no banco.
+
+- **Pendência**: confirmar no painel do Render (Logs do serviço `media-dev`) que o deploy seguinte a este commit terminou com sucesso e que `dev.media.med.br` volta a carregar normalmente depois do login. Se, por algum motivo, o auto-deploy não disparar sozinho, um "Manual Deploy" no Render resolve. **Lição para próximas mudanças de schema**: sempre que um campo novo for adicionado a `app/models.py`, adicionar o `ALTER TABLE` correspondente em `migrar_banco.py` NA MESMA hora/commit - nunca depois.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
