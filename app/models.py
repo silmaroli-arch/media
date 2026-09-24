@@ -35,6 +35,27 @@ class PlataformaConfig(db.Model):
     ia_chat_provedor_1 = db.Column(db.String(20), nullable=False, default="Claude")
     ia_chat_provedor_2 = db.Column(db.String(20), nullable=False, default="ChatGPT")
 
+    # Validador de pergunta (pedido do Silvan, 2026-09-24): qual das 3 IAs
+    # (Gemini/ChatGPT/Claude) faz a checagem dedicada de "isso faz sentido
+    # e é sobre este exame?" ANTES de qualquer chamada de resposta de
+    # verdade (ver app.ia_preparo.validar_pergunta e
+    # app.whatsapp_conversa._responder_pergunta) - configurável pelo dono
+    # em /dono/configuracoes, INDEPENDENTE de ia_chat_provedor_1/2 acima
+    # (que respondem a pergunta em si, só depois de validada). Uma única
+    # IA (não duas com reforço mútuo, diferente do chat de respostas) -
+    # julgamento mais simples (classificar, não responder), não precisa
+    # da mesma cautela.
+    ia_validador_pergunta = db.Column(db.String(20), nullable=False, default="Claude")
+
+    # Limite diário de mensagens que um paciente pode mandar sobre um MESMO
+    # exame, por WhatsApp (pedido do Silvan, 2026-09-24) - configurável
+    # pelo dono aqui, valendo igual pra toda a plataforma (sem
+    # sobrescrever por Grupo/médico). None (padrão) = sem limite, mesmo
+    # comportamento de sempre. Ver app.models.ContagemPerguntasDia (o que
+    # conta como "uma mensagem" contra essa cota) e
+    # app.whatsapp_conversa.processar_mensagem (onde o limite é aplicado).
+    limite_perguntas_dia_exame = db.Column(db.Integer, nullable=True)
+
     # Restruturação da licença individual (pedido do Silvan, 2026-09-02): o
     # que antes era configurável por médico em /dono/usuarios vira global
     # aqui, e passa a valer pra equipe toda de uma vez. `trial_dias` (acima)
@@ -54,7 +75,10 @@ class PlataformaConfig(db.Model):
     def obter(cls):
         config = cls.query.first()
         if not config:
-            config = cls(trial_dias=14, ia_chat_provedor_1="Claude", ia_chat_provedor_2="ChatGPT", aviso_inadimplencia_meses=2)
+            config = cls(
+                trial_dias=14, ia_chat_provedor_1="Claude", ia_chat_provedor_2="ChatGPT",
+                ia_validador_pergunta="Claude", aviso_inadimplencia_meses=2,
+            )
             db.session.add(config)
             db.session.commit()
         return config
@@ -1515,6 +1539,40 @@ class ConversaWhatsapp(db.Model):
     # app.whatsapp_encerramento, removido a pedido do Silvan - ver
     # HANDOFF_CHAT.md). A única expiração que resta agora é a passiva de
     # MINUTOS_EXPIRACAO/expirada() acima.
+
+
+class ContagemPerguntasDia(db.Model):
+    """Contador de mensagens recebidas por WhatsApp de um paciente sobre um
+    exame específico, por dia (pedido do Silvan, 2026-09-24) - existe só
+    para aplicar o limite diário configurável pelo dono (ver
+    PlataformaConfig.limite_perguntas_dia_exame e
+    app.whatsapp_conversa.processar_mensagem, onde o limite é checado e
+    esta tabela é incrementada). Conta TODA mensagem que chega na etapa
+    de "paciente já identificado, com exame em foco, tratada como
+    pergunta" - inclusive mensagens sem sentido e de conversa social
+    (saudação/despedida/agradecimento), pedido explícito do Silvan; só NÃO
+    conta comandos como "trocar" ou pedidos de reagendamento, tratados
+    ANTES desse ponto, nem as próprias mensagens já bloqueadas por ter
+    atingido o limite (evita incrementar sem parar depois de bloqueado).
+
+    Sem limite configurado (`PlataformaConfig.limite_perguntas_dia_exame`
+    None, o padrão), esta tabela nunca é consultada nem gravada -
+    comportamento idêntico a antes dessa funcionalidade existir, e nenhuma
+    linha nova é criada à toa. Uma linha por (paciente, exame, dia) -
+    `quantidade` é reiniciada implicitamente todo dia, já que o dia
+    seguinte simplesmente não tem linha ainda (nada para "zerar" de
+    propósito)."""
+    __tablename__ = "contagem_perguntas_dia"
+    __table_args__ = (
+        db.UniqueConstraint("paciente_id", "exame_id", "data", name="uq_contagem_perguntas_dia"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
+    exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=False)
+    data = db.Column(db.Date, nullable=False)
+    quantidade = db.Column(db.Integer, nullable=False, default=0)
+
 
 class WhatsappMensagemProcessada(db.Model):
     """Registra o id de cada mensagem do WhatsApp (campo "id" de

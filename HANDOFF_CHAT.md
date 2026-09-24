@@ -1275,6 +1275,45 @@ Pedido do Silvan: "Perguntas em que a IA não acha uma resposta, deve sempre pas
 
 - **Pendência (mesmo padrão de sempre - `ast.parse`/revisão manual, sem `flask_sqlalchemy` disponível neste ambiente de desenvolvimento pra rodar o teste de ponta a ponta)**: como sempre, vale confirmar com uma pergunta real fora do preparo depois do próximo deploy, e olhar se aparece como `PerguntaPendente` na fila do médico (mesmo com a aprovação automática ativada) em vez de ir direto pro paciente. Vale lembrar que esse regex é uma rede de segurança "melhor esforço" contra um comportamento não-determinístico da IA (ela deveria usar o marcador `NAO_SEI_ENCAMINHAR`, mas às vezes escreve a recusa em texto livre) - cobre os padrões de frase já vistos na prática, mas não é uma garantia matemática contra QUALQUER jeito futuro da IA formular uma recusa disfarçada; se aparecer outro caso assim (resposta que claramente devia ter ido pro médico mas foi direto pro paciente), vale trazer o texto exato pra ampliar o regex de novo, do mesmo jeito que este.
 
+## 3 features novas: validador de pergunta dedicado (IA configurável), "é sobre exame?", limite diário de perguntas (2026-09-24)
+
+Pedido do Silvan, em 3 partes:
+
+1. "Incluir o número de perguntas que o paciente pode fazer por dia x exame na área do dono"
+2. "Poder configurar qual ia o validador de pergunta chama para validar se a pergunta faz sentido"
+3. "Verificar se a pergunta que o paciente está fazendo é uma pergunta voltada para um exame"
+
+Esclarecido com o Silvan antes de implementar (via pergunta de múltipla escolha): o limite (1) é um único valor GLOBAL na área do dono (sem override por Grupo/médico); ao atingir o limite, bloqueia com aviso e NÃO registra nada (mesmo tratamento de mensagem sem sentido); conta TODA mensagem recebida naquele dia sobre aquele exame, mesmo sem sentido/conversa social; e a checagem "é sobre exame?" (3) usa a MESMA chamada/validador único e configurável pedido no item (2), em vez de uma chamada de IA totalmente separada.
+
+### 1) Limite diário de perguntas por paciente x exame
+
+- `PlataformaConfig.limite_perguntas_dia_exame` (novo campo, `app/models.py`) - Integer, `None` = sem limite (padrão, nenhuma clínica é afetada até o dono configurar). Editável em `/dono/configuracoes/limite-perguntas` (nova rota em `app/routes_dono.py`, `configuracoes_limite_perguntas`) - campo em branco remove o limite.
+- `ContagemPerguntasDia` (novo model, `app/models.py`) - uma linha por `(paciente_id, exame_id, data)`, com `quantidade` incrementada a cada mensagem. Só é consultada/gravada quando o limite está configurado (evita gravar linha à toa na maioria das clínicas, que não vão usar isso).
+- `app/whatsapp_conversa.py`: `_excedeu_limite_perguntas_dia(paciente, exame)` e `_registrar_mensagem_do_dia(paciente, exame)` - chamadas em `processar_mensagem`, logo depois do `if not texto: return MENSAGEM_PERGUNTA_VAZIA` e ANTES de qualquer outra checagem de conteúdo (sem-sentido, dicionário, conversa social) - de propósito, porque o pedido foi "toda mensagem recebida conta", inclusive essas. Ao exceder, devolve `MENSAGEM_LIMITE_PERGUNTAS_DIA` (nova constante) sem incrementar mais nada.
+- Migração (`migrar_banco.py`): `ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS limite_perguntas_dia_exame INTEGER;` e `CREATE TABLE IF NOT EXISTS contagem_perguntas_dia (...)` (tabela nova - também seria criada pelo `db.create_all()` de qualquer forma, mas incluída aqui por consistência com o padrão já usado pra outras tabelas novas, ver `push_subscriptions`).
+- UI: novo card "Limite diário de mensagens por exame (WhatsApp)" em `app/templates/dono/dashboard.html`, ao lado dos outros cards de configuração.
+
+### 2) IA configurável do validador de pergunta
+
+- `PlataformaConfig.ia_validador_pergunta` (novo campo, `app/models.py`) - String, default `"Claude"`, uma das 3 (Gemini/ChatGPT/Claude). Editável em `/dono/configuracoes/ia-validador` (nova rota `configuracoes_ia_validador`). **Independente** de `ia_chat_provedor_1/2` (que continuam respondendo a pergunta em si, sem mudança nenhuma) - uma ÚNICA IA aqui, não duas com reforço mútuo, porque é só classificação, não resposta.
+- UI: novo card "Validador de pergunta (WhatsApp)" em `dono/dashboard.html`.
+
+### 3) Validador dedicado: "faz sentido?" + "é sobre exame?" numa única checagem
+
+- `app/ia_preparo.py`: nova função `validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None)` - usa a ÚNICA IA configurada em `ia_validador_pergunta` (item 2), numa chamada SEPARADA e mais barata que `responder_com_ia` (só classifica, não tenta responder, `max_tokens` bem menor). Roda ANTES de tudo em `_responder_pergunta` (nem chega na FAQ) - evita a chamada de resposta de verdade por completo quando já rejeita a pergunta.
+- Novo marcador `MARCADOR_FORA_DO_EXAME` (`"FORA_DO_EXAME_ENCAMINHAR"`) e novo prompt dedicado `PROMPT_SISTEMA_VALIDADOR` - só classifica em 3 categorias: `SEM_SENTIDO_ENCAMINHAR` (mesmo critério de antes), `FORA_DO_EXAME_ENCAMINHAR` (coerente, mas sem NENHUMA relação com exame médico - ex.: futebol, tempo, assunto pessoal) ou `VALIDA`. **Importante**: uma pergunta sobre OUTRO assunto da clínica (horário, endereço, valores) continua `VALIDA` - só é rejeitada quando não tem relação com exame/clínica NENHUMA; isso preserva perguntas legítimas de paciente que hoje já caem como "não sei" pra fila do médico.
+- `validar_pergunta` devolve `{"classificacao": "sem_sentido"|"fora_do_exame"|"valida"|None, "chamada": ...}` - `None` quando não há como validar (sem exame em foco, IA não configurada, chamada falhou, ou resposta que não bate com nenhum marcador) - tratado como "válida" na prática, sempre com a mesma filosofia conservadora do resto do módulo: na dúvida, NÃO bloqueia.
+- `app/whatsapp_conversa.py`, `_responder_pergunta`: chama `validar_pergunta` no topo da função. `classificacao == "sem_sentido"` devolve `MENSAGEM_MENSAGEM_SEM_SENTIDO` (reaproveitada); `classificacao == "fora_do_exame"` devolve a nova `MENSAGEM_PERGUNTA_FORA_DO_EXAME` - as duas com o mesmo tratamento de sempre (sem `PerguntaPendente`, sem `ChatMensagem`, reaproveitando o terceiro item da tripla `eh_sem_sentido` que a função já devolvia).
+- O sinal `"sem_sentido"` que `responder_com_ia` já emitia (ver rodada anterior, "Julgamento de 'isso faz sentido?'") continua existindo, como segunda camada de segurança sem custo extra (mesma chamada de resposta) - as duas checagens convivem, só que a nova roda primeiro.
+- Migração: `ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS ia_validador_pergunta VARCHAR(20) NOT NULL DEFAULT 'Claude';`
+
+### Testes
+
+- `test_ia_validador_pergunta.py` (novo) - testa `validar_pergunta` com o cliente da IA mockado via `patch.dict` em `app.ia_preparo._PROVEDORES_CHAT` (nota importante no próprio arquivo: `patch` direto em `_cliente_anthropic` NÃO funciona aqui, porque o dicionário já guarda a referência da função desde o carregamento do módulo - só `patch.dict` no dicionário em si tem efeito). Cobre os 3 marcadores, resposta inesperada (trata como válida), sem exame em foco, e sem API key configurada.
+- `test_whatsapp_limite_perguntas_dia.py` (novo) - testa `_excedeu_limite_perguntas_dia`/`_registrar_mensagem_do_dia` como funções puras (com e sem limite configurado) e depois de ponta a ponta via `processar_mensagem` (paciente João do seed.py): confirma que mensagem sem sentido e "oi" contam pra cota, e que a 3ª mensagem do dia (limite 2) é bloqueada mesmo sendo uma pergunta de verdade, sem criar `PerguntaPendente`/`ChatMensagem`.
+
+- **Pendência (mesmo padrão de sempre - `ast.parse`/revisão manual, `jinja2.Environment().parse()` no template, sem `flask_sqlalchemy` disponível neste ambiente de desenvolvimento pra rodar os testes de ponta a ponta de verdade)**: depois do próximo deploy, vale (a) configurar um limite baixo (ex.: 2) em `/dono/configuracoes` e confirmar pelo WhatsApp real que a mensagem certa aparece ao atingir o limite; (b) trocar a IA validadora e confirmar que o painel de custo do dono (`/dono/custo-ia`) mostra chamadas do tipo `validador_pergunta_paciente` pela IA escolhida; (c) mandar uma pergunta claramente fora de qualquer assunto de exame/clínica (ex.: "quem vai ganhar o jogo hoje?") e confirmar que recebe o aviso de "este chat é só para dúvidas sobre o preparo", sem virar `PerguntaPendente` - e, ao mesmo tempo, confirmar que uma pergunta sobre outro assunto da CLÍNICA (ex.: "qual o horário de atendimento?") continua indo pra fila do médico normalmente (não deveria ser rejeitada como "fora do exame").
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

@@ -189,8 +189,11 @@ from app.faq_engine import (
     buscar_resposta_alimento,
     buscar_resposta_medicamento,
 )
-from app.ia_preparo import responder_com_ia
-from app.models import Agendamento, ChatMensagem, ConversaWhatsapp, Paciente, PerguntaPendente, normalizar_telefone
+from app.ia_preparo import responder_com_ia, validar_pergunta
+from app.models import (
+    Agendamento, ChatMensagem, ContagemPerguntasDia, ConversaWhatsapp, Paciente,
+    PerguntaPendente, PlataformaConfig, normalizar_telefone,
+)
 from app.push_notificacoes import (
     notificar_equipe_nova_pergunta,
     notificar_equipe_numero_errado,
@@ -389,6 +392,23 @@ MENSAGEM_AGUARDANDO_RESPOSTA = (
     "Sua pergunta ainda está sendo respondida pela equipe. Assim que "
     "tivermos uma resposta, você a receberá por aqui."
 )
+# Pedido do Silvan (2026-09-24) - ver ContagemPerguntasDia/
+# PlataformaConfig.limite_perguntas_dia_exame e
+# _excedeu_limite_perguntas_dia abaixo.
+MENSAGEM_LIMITE_PERGUNTAS_DIA = (
+    "Você já atingiu o limite de mensagens de hoje sobre este exame. Pode "
+    "escrever novamente a partir de amanhã. Se for urgente, entre em "
+    "contato diretamente com a secretaria da clínica."
+)
+# Pedido do Silvan (2026-09-24) - ver app.ia_preparo.validar_pergunta
+# ("fora_do_exame") e docstring do módulo dela ("Validador de pergunta
+# dedicado"). Mesmo tratamento de MENSAGEM_MENSAGEM_SEM_SENTIDO (não cria
+# PerguntaPendente nem ChatMensagem), só com um texto que orienta melhor
+# quem escreveu sobre outro assunto sem relação com exame nenhum.
+MENSAGEM_PERGUNTA_FORA_DO_EXAME = (
+    "Este chat é só para dúvidas sobre o preparo do seu exame. Pode "
+    "escrever sua pergunta sobre o preparo?"
+)
 
 
 def _tem_pergunta_pendente(paciente):
@@ -476,6 +496,18 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     da checagem por regras fixas), e quem chamou não deve colar o
     convite de "pode escrever sua próxima pergunta" na resposta.
 
+    Validador de pergunta dedicado (pedido do Silvan, 2026-09-24 - ver
+    app.ia_preparo.validar_pergunta): roda logo no INÍCIO desta função,
+    antes até da FAQ. Reaproveita o mesmo terceiro item da tripla (True)
+    tanto para "sem sentido" quanto para "sem relação com exame nenhum" -
+    as duas encerram aqui, sem consultar nada mais, com a mensagem certa
+    para cada caso (ver MENSAGEM_MENSAGEM_SEM_SENTIDO/MENSAGEM_PERGUNTA_
+    FORA_DO_EXAME em app.whatsapp_conversa). Independente do sinal
+    "sem_sentido" que `responder_com_ia` ainda pode emitir mais abaixo
+    (segunda camada de segurança, sem custo extra - ver docstring dela) -
+    as duas checagens convivem, só que o validador dedicado roda primeiro
+    e evita a chamada de resposta por completo quando já rejeita.
+
     Pedido do Silvan (2026-09-13): cada Grupo (ou médico/dono, numa conta
     solo sem Grupo) pode desativar a exigência de aprovação humana para
     essas respostas de alimento/medicamento/IA (ver
@@ -490,6 +522,26 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     exame = agendamento.exame if agendamento else None
     grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame, agendamento)
     exige_aprovacao = exige_aprovacao_pergunta(grupo_id_ancora, criado_por_id_ancora)
+
+    # Validador de pergunta dedicado (pedido do Silvan, 2026-09-24 - ver
+    # app.ia_preparo.validar_pergunta e docstring do módulo dela): roda
+    # ANTES de qualquer outra coisa (até antes da FAQ) - se a IA escolhida
+    # pelo dono (PlataformaConfig.ia_validador_pergunta) classificar a
+    # mensagem como sem sentido ou sem relação com exame nenhum, encerra
+    # aqui, sem consultar FAQ/alimento/medicamento/IA de resposta, e sem
+    # criar PerguntaPendente nem ChatMensagem (mesmo tratamento das outras
+    # checagens de "isso nem é uma pergunta de verdade" já existentes em
+    # app.whatsapp_conversa.processar_mensagem). Sem exame em foco, ou
+    # sem IA validadora disponível, `classificacao` vem None e o fluxo
+    # segue normalmente, sem nenhuma mudança de comportamento.
+    resultado_validacao = validar_pergunta(
+        pergunta_texto, exame, paciente_id=paciente.id,
+        historico=_historico_recente_chat(paciente.id, exame.id) if exame else None,
+    )
+    if resultado_validacao["classificacao"] == "sem_sentido":
+        return MENSAGEM_MENSAGEM_SEM_SENTIDO, None, True
+    if resultado_validacao["classificacao"] == "fora_do_exame":
+        return MENSAGEM_PERGUNTA_FORA_DO_EXAME, None, True
 
     resposta_final = None
     origem = None
@@ -891,6 +943,43 @@ def _eh_mensagem_com_muitas_palavras_desconhecidas(texto_original):
     return len(desconhecidas) >= _MINIMO_PALAVRAS_DESCONHECIDAS_SEM_SENTIDO
 
 
+def _excedeu_limite_perguntas_dia(paciente, exame):
+    """True quando o paciente já atingiu, HOJE, o limite diário de
+    mensagens configurado pelo dono para este exame específico (pedido
+    do Silvan, 2026-09-24 - ver PlataformaConfig.limite_perguntas_dia_
+    exame e ContagemPerguntasDia em app.models). Sem limite configurado
+    (None ou <= 0, o padrão) ou sem exame em foco, sempre False -
+    comportamento idêntico a antes dessa funcionalidade existir, sem
+    consultar a tabela à toa."""
+    limite = PlataformaConfig.obter().limite_perguntas_dia_exame
+    if not limite or not exame:
+        return False
+    contagem = ContagemPerguntasDia.query.filter_by(
+        paciente_id=paciente.id, exame_id=exame.id, data=date.today(),
+    ).first()
+    return bool(contagem and contagem.quantidade >= limite)
+
+
+def _registrar_mensagem_do_dia(paciente, exame):
+    """Incrementa o contador do dia usado por `_excedeu_limite_perguntas_
+    dia` (ver docstring dela) - só deve ser chamada DEPOIS de confirmar
+    que o limite ainda não foi atingido (ver processar_mensagem), pra não
+    incrementar sem parar depois que a conversa já está bloqueada pelo
+    limite. Sem limite configurado, não faz nada - evita criar uma linha
+    à toa quando essa funcionalidade nem está em uso."""
+    limite = PlataformaConfig.obter().limite_perguntas_dia_exame
+    if not limite or not exame:
+        return
+    hoje = date.today()
+    contagem = ContagemPerguntasDia.query.filter_by(
+        paciente_id=paciente.id, exame_id=exame.id, data=hoje,
+    ).first()
+    if not contagem:
+        contagem = ContagemPerguntasDia(paciente_id=paciente.id, exame_id=exame.id, data=hoje, quantidade=0)
+        db.session.add(contagem)
+    contagem.quantidade += 1
+
+
 def _paciente_por_telefone_aproximado(telefone_whatsapp):
     """Documento "Clara", item 6 (2026-09-14): acha, por aproximação,
     qual Paciente cadastrado tem esse número de WhatsApp como telefone de
@@ -1064,6 +1153,19 @@ def processar_mensagem(telefone, corpo_mensagem):
     if not texto:
         db.session.commit()
         return MENSAGEM_PERGUNTA_VAZIA
+
+    # Limite diário de mensagens por paciente x exame (pedido do Silvan,
+    # 2026-09-24 - ver PlataformaConfig.limite_perguntas_dia_exame,
+    # ContagemPerguntasDia e _excedeu_limite_perguntas_dia acima).
+    # Checado ANTES de qualquer outra validação de conteúdo - conta TODA
+    # mensagem que chega até aqui, mesmo sem sentido ou conversa social
+    # (pedido explícito do Silvan), por isso incrementa incondicionalmente
+    # depois de confirmar que ainda não excedeu. Sem limite configurado
+    # (padrão), esta checagem não tem efeito nenhum.
+    if _excedeu_limite_perguntas_dia(paciente, agendamento.exame if agendamento else None):
+        db.session.commit()
+        return MENSAGEM_LIMITE_PERGUNTAS_DIA
+    _registrar_mensagem_do_dia(paciente, agendamento.exame if agendamento else None)
 
     # Validação mínima de "isso parece um texto de verdade" (pedido do
     # Silvan, 2026-09-24 - ver _eh_mensagem_sem_sentido_minimo acima):

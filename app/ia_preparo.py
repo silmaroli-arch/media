@@ -73,7 +73,34 @@ existe quando pelo menos uma das IAs de chat está configurada; sem
 nenhuma, o sistema continua dependendo só da checagem por regras fixas,
 como sempre. Ver `responder_com_ia` (chave "sem_sentido" do retorno) e
 app.whatsapp_conversa._responder_pergunta, quem decide o que fazer com
-esse sinal."""
+esse sinal.
+
+Validador de pergunta dedicado (pedido do Silvan, 2026-09-24): o
+julgamento de "isso faz sentido?" acima ficava embutido na MESMA chamada
+que tenta responder a pergunta, usando as 2 IAs configuradas para
+responder (`ia_chat_provedor_1/2`) - sem custo extra, mas sem
+configuração própria. `validar_pergunta` (abaixo) é uma checagem NOVA e
+SEPARADA (uma chamada de API dedicada, mais simples e mais barata: só
+classifica, não responde), usando uma ÚNICA IA escolhida pelo dono
+(`PlataformaConfig.ia_validador_pergunta`, independente de qual(is) IA(s)
+respondem de verdade) - chamada ANTES de `responder_com_ia`, decidindo se
+a pergunta segue para o fluxo normal (FAQ/alimento/medicamento/IA) ou é
+rejeitada de cara. Além de "faz sentido?" (mesmo `MARCADOR_SEM_SENTIDO` de
+antes), agora também julga "é sobre ESTE exame?" (`MARCADOR_FORA_DO_EXAME`,
+abaixo) - pedido novo do Silvan: uma pergunta coerente mas claramente sem
+nenhuma relação com exame médico nenhum (ex.: futebol, previsão do tempo,
+assunto pessoal) não deveria nem chegar na fila do médico, do mesmo jeito
+que uma mensagem sem sentido não chega. Uma pergunta sobre OUTRO assunto
+da clínica (ex.: horário de atendimento, endereço) continua indo pro fluxo
+normal (a IA de resposta pode não saber e sinalizar `MARCADOR_NAO_SEI`,
+mas isso ainda é uma dúvida legítima de paciente de clínica, que o médico
+deve ver) - `MARCADOR_FORA_DO_EXAME` é reservado para assunto que não tem
+NADA a ver com exame médico. O sinal de `responder_com_ia` ("sem_sentido"
+no retorno, ver docstring dela) continua existindo como segunda camada de
+segurança (mesma chamada de resposta, sem custo extra) - as duas
+checagens não são mutuamente exclusivas, só a nova (`validar_pergunta`)
+roda PRIMEIRO e evita a chamada de resposta por completo quando já
+rejeita a pergunta."""
 import os
 import re
 import unicodedata
@@ -88,6 +115,11 @@ MARCADOR_NAO_SEI = "NAO_SEI_ENCAMINHAR"
 # uma pergunta/comentário coerente sobre o preparo (não que falte
 # informação pra responder a uma pergunta coerente).
 MARCADOR_SEM_SENTIDO = "SEM_SENTIDO_ENCAMINHAR"
+# Ver docstring do módulo ("Validador de pergunta dedicado", 2026-09-24) -
+# usado só por `validar_pergunta`, não pelas IAs de resposta
+# (`_perguntar_claude`/`_perguntar_chatgpt`/`_perguntar_gemini`): pergunta
+# coerente, mas sem nenhuma relação com exame médico nenhum.
+MARCADOR_FORA_DO_EXAME = "FORA_DO_EXAME_ENCAMINHAR"
 
 # Ver docstring do módulo ("Rede de segurança contra recusa disfarçada").
 # Primeiro grupo: a IA declarando que não tem a informação. Segundo grupo:
@@ -853,3 +885,126 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
         sem_sentido = bool(respondentes_sem_sentido) and all(respondentes_sem_sentido)
 
     return {"final": final, "por_provedor": respostas_por_provedor, "falhas": falhas, "sem_sentido": sem_sentido}
+
+
+# Ver docstring do módulo ("Validador de pergunta dedicado", 2026-09-24).
+# Instruções BEM mais estreitas que PROMPT_SISTEMA acima - só classifica,
+# nunca responde a pergunta em si (evita qualquer tentação de a IA
+# "aproveitar" e já responder, o que quebraria o parsing do marcador).
+PROMPT_SISTEMA_VALIDADOR = """Você é um validador de mensagens recebidas de pacientes no chat de dúvidas sobre preparo de um exame médico. Sua ÚNICA tarefa é CLASSIFICAR a mensagem do paciente - nunca respondê-la.
+
+Classifique em exatamente uma das 3 categorias abaixo, e responda SOMENTE com o texto exato da categoria escolhida (nenhuma outra palavra, pontuação ou explicação):
+
+- SEM_SENTIDO_ENCAMINHAR: o texto não é uma pergunta ou comentário coerente (ex.: palavras reais em ordem sem nenhum sentido entre si, teclado travado, texto que nem chega a formar uma ideia compreensível) - mesmo que informal, curto ou com erros de digitação/ortografia, se dá para entender a intenção, NÃO é este caso.
+- FORA_DO_EXAME_ENCAMINHAR: o texto É coerente, mas não tem NENHUMA relação com exame médico nenhum (ex.: futebol, previsão do tempo, assunto pessoal, pedido sobre outro serviço qualquer sem nenhuma ligação com exames). Perguntas sobre outros assuntos da própria clínica (horário de atendimento, endereço, agendamento, valores) NÃO se encaixam aqui - são relacionadas à clínica/exame, mesmo que não sejam sobre o preparo específico deste exame.
+- VALIDA: qualquer pergunta ou comentário coerente relacionado a exame médico ou à clínica, incluindo dúvidas sobre o preparo deste exame específico, mesmo que a resposta não esteja disponível nos dados fornecidos - a checagem de "temos a informação?" é feita depois, por outra parte do sistema, não é sua tarefa aqui.
+
+Quando houver um "Histórico recente desta conversa" listado antes da mensagem atual, use-o para entender o CONTEXTO (ex.: uma mensagem de acompanhamento curta só faz sentido em conjunto com a anterior). Na dúvida entre duas categorias, prefira sempre VALIDA - é mais seguro deixar uma pergunta ambígua seguir o fluxo normal do que rejeitá-la por engano."""
+
+
+def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
+    """Checagem dedicada (pedido do Silvan, 2026-09-24 - ver docstring do
+    módulo, "Validador de pergunta dedicado") que roda ANTES de
+    `responder_com_ia`: usa uma ÚNICA IA (`PlataformaConfig.
+    ia_validador_pergunta`, escolhida pelo dono em /dono/configuracoes,
+    independente de `ia_chat_provedor_1/2`) para classificar a mensagem
+    do paciente em sem_sentido / fora_do_exame / válida, numa chamada
+    separada e mais barata (só classificação, sem tentar responder).
+
+    Retorna um dicionário {"classificacao": ..., "chamada": ...} -
+    "classificacao" é "sem_sentido", "fora_do_exame", "valida" ou None
+    (sem julgamento possível: `exame` ausente, a IA escolhida não está
+    configurada/disponível, a chamada falhou, ou a resposta não bateu com
+    nenhum marcador esperado - nesses casos trata como "valida" na
+    prática, já que quem chama só precisa agir sobre "sem_sentido"/
+    "fora_do_exame" e deixa tudo o mais seguir o fluxo normal de sempre,
+    mesmo espírito conservador do resto do módulo: na dúvida, não
+    bloqueia). "chamada" é o `ChamadaIA` já registrado (ou None), para
+    quem chamar decidir se quer fazer algo com ele (hoje, ninguém faz -
+    só existe para manter o mesmo padrão das outras funções deste
+    módulo, e para aparecer no painel de custo do dono como qualquer
+    outra chamada de IA)."""
+    from app.models import PlataformaConfig
+
+    if not exame:
+        return {"classificacao": None, "chamada": None}
+
+    config = PlataformaConfig.obter()
+    provedor = config.ia_validador_pergunta or "Claude"
+    fabrica_cliente, _ = _PROVEDORES_CHAT.get(provedor, (None, None))
+    cliente = fabrica_cliente() if fabrica_cliente else None
+    if not cliente:
+        # IA escolhida sem API key configurada - sem validador disponível,
+        # segue o fluxo de sempre (checagem por regras fixas continua
+        # valendo em app.whatsapp_conversa).
+        return {"classificacao": None, "chamada": None}
+
+    conteudo = (
+        f"Nome do exame em foco nesta conversa: {exame.nome}\n\n"
+        f"{_formatar_historico_conversa(historico)}"
+        f"Mensagem do paciente: {pergunta_usuario}"
+    )
+
+    try:
+        if provedor == "Claude":
+            resposta = cliente.messages.create(
+                model=MODELO_PADRAO, max_tokens=12, system=PROMPT_SISTEMA_VALIDADOR,
+                messages=[{"role": "user", "content": conteudo}],
+            )
+            uso = getattr(resposta, "usage", None)
+            chamada = registrar_chamada_ia(
+                "validador_pergunta_paciente", "Claude", getattr(resposta, "model", MODELO_PADRAO),
+                getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
+                sucesso=True, paciente_id=paciente_id,
+            )
+            texto = "".join(getattr(bloco, "text", "") for bloco in resposta.content).strip()
+        elif provedor == "ChatGPT":
+            resposta = cliente.chat.completions.create(
+                model=MODELO_OPENAI_PADRAO, max_tokens=12,
+                messages=[
+                    {"role": "system", "content": PROMPT_SISTEMA_VALIDADOR},
+                    {"role": "user", "content": conteudo},
+                ],
+            )
+            uso = getattr(resposta, "usage", None)
+            chamada = registrar_chamada_ia(
+                "validador_pergunta_paciente", "ChatGPT", getattr(resposta, "model", MODELO_OPENAI_PADRAO),
+                getattr(uso, "prompt_tokens", None), getattr(uso, "completion_tokens", None),
+                sucesso=True, paciente_id=paciente_id,
+            )
+            texto = (resposta.choices[0].message.content or "").strip()
+        else:  # Gemini
+            from google.genai import types as genai_types
+            resposta = cliente.models.generate_content(
+                model=MODELO_GEMINI_PADRAO, contents=conteudo,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=PROMPT_SISTEMA_VALIDADOR, max_output_tokens=12,
+                ),
+            )
+            uso = getattr(resposta, "usage_metadata", None)
+            chamada = registrar_chamada_ia(
+                "validador_pergunta_paciente", "Gemini", getattr(resposta, "model_version", None) or MODELO_GEMINI_PADRAO,
+                getattr(uso, "prompt_token_count", None), getattr(uso, "candidates_token_count", None),
+                sucesso=True, paciente_id=paciente_id,
+            )
+            texto = (getattr(resposta, "text", None) or "").strip()
+    except Exception:
+        current_app.logger.exception(
+            "Falha ao consultar %s para validar pergunta do paciente (ia_validador_pergunta)", provedor,
+        )
+        return {"classificacao": None, "chamada": None}
+
+    texto_normalizado = texto.upper()
+    if MARCADOR_SEM_SENTIDO in texto_normalizado:
+        classificacao = "sem_sentido"
+    elif MARCADOR_FORA_DO_EXAME in texto_normalizado:
+        classificacao = "fora_do_exame"
+    elif "VALIDA" in texto_normalizado:
+        classificacao = "valida"
+    else:
+        # Resposta que não bateu com nenhum marcador esperado (a IA não
+        # seguiu a instrução à risca) - mais seguro tratar como "valida" e
+        # deixar a pergunta seguir o fluxo normal do que arriscar bloquear
+        # uma pergunta legítima por um formato de resposta inesperado.
+        classificacao = "valida"
+    return {"classificacao": classificacao, "chamada": chamada}

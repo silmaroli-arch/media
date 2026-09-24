@@ -234,6 +234,60 @@ def configuracoes_ia_chat():
     return redirect(url_for("dono.dashboard"))
 
 
+@dono_bp.route("/configuracoes/ia-validador", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_ia_validador():
+    """Escolhe qual das 3 IAs (Gemini/ChatGPT/Claude) faz a checagem
+    dedicada de "isso faz sentido e é sobre este exame?" ANTES de
+    qualquer chamada de resposta de verdade (pedido do Silvan,
+    2026-09-24 - ver PlataformaConfig.ia_validador_pergunta e
+    app.ia_preparo.validar_pergunta). Uma ÚNICA IA (diferente do chat de
+    respostas, que usa 2 com reforço mútuo) - independente da escolha em
+    "IAs que respondem o chat de dúvidas" acima."""
+    config = PlataformaConfig.obter()
+    provedor = request.form.get("ia_validador_pergunta")
+
+    if provedor not in PROVEDORES_CHAT_VALIDOS:
+        flash("Selecione uma IA válida para o validador de pergunta.", "danger")
+        return redirect(url_for("dono.dashboard"))
+
+    config.ia_validador_pergunta = provedor
+    db.session.commit()
+    flash(f"Validador de pergunta agora usa {provedor}.", "success")
+    return redirect(url_for("dono.dashboard"))
+
+
+@dono_bp.route("/configuracoes/limite-perguntas", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_limite_perguntas():
+    """Limite diário de mensagens que um paciente pode mandar sobre um
+    MESMO exame, por WhatsApp (pedido do Silvan, 2026-09-24) - global
+    para toda a plataforma (ver PlataformaConfig.limite_perguntas_dia_
+    exame e app.whatsapp_conversa._excedeu_limite_perguntas_dia). Campo
+    em branco = sem limite (comportamento padrão, sem restrição
+    nenhuma)."""
+    config = PlataformaConfig.obter()
+    limite_str = request.form.get("limite_perguntas_dia_exame", "").strip()
+
+    if not limite_str:
+        config.limite_perguntas_dia_exame = None
+        db.session.commit()
+        flash("Limite diário de mensagens por exame removido - sem restrição.", "success")
+        return redirect(url_for("dono.dashboard"))
+
+    limite = request.form.get("limite_perguntas_dia_exame", type=int)
+    if not limite or limite < 1:
+        flash("Informe um limite diário válido (maior que zero), ou deixe em branco para não ter limite.", "danger")
+        return redirect(url_for("dono.dashboard"))
+
+    config.limite_perguntas_dia_exame = limite
+    db.session.commit()
+    flash(f"Limite diário de mensagens por exame atualizado para {limite}.", "success")
+    return redirect(url_for("dono.dashboard"))
+
+
 @dono_bp.route("/grupos/<int:grupo_id>")
 @login_required
 @dono_required

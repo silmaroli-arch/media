@@ -333,6 +333,47 @@
         <button type="submit" class="btn btn-primary">Salvar</button>
       </form>
     </div>
+
+    <div class="card p-3 mb-4">
+      <h5 class="mb-1">Validador de pergunta (WhatsApp)</h5>
+      <p class="text-muted small mb-3">
+        Antes de qualquer pergunta do paciente chegar na FAQ/alimento/medicamento/IA de resposta, uma
+        checagem dedicada classifica a mensagem: sem sentido, sem relação com exame nenhum, ou válida
+        (ver <code>app.ia_preparo.validar_pergunta</code>). Escolha aqui qual das 3 IAs faz essa checagem -
+        independente das duas escolhidas acima para responder de verdade. Uma pergunta sem sentido ou sem
+        relação com exame recebe um aviso direto ao paciente, sem passar pela fila do médico.
+      </p>
+      <form method="post" action="{{ url_for('dono.configuracoes_ia_validador') }}" class="d-flex align-items-end gap-2 flex-wrap">
+        <div>
+          <label class="form-label small mb-0">IA validadora</label>
+          <select name="ia_validador_pergunta" class="form-select" style="max-width: 160px">
+            {% for p in ["Gemini", "ChatGPT", "Claude"] %}
+            <option value="{{ p }}" {% if config.ia_validador_pergunta == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </form>
+    </div>
+
+    <div class="card p-3 mb-4">
+      <h5 class="mb-1">Limite diário de mensagens por exame (WhatsApp)</h5>
+      <p class="text-muted small mb-3">
+        Quantas mensagens um mesmo paciente pode mandar por dia sobre um mesmo exame, pelo chat de
+        WhatsApp. Conta TODA mensagem recebida (inclusive sem sentido e conversa social como "oi"/"tchau") -
+        ao atingir o limite, o paciente recebe um aviso e a mensagem não chega à equipe. Deixe em branco
+        para não ter limite nenhum (padrão).
+      </p>
+      <form method="post" action="{{ url_for('dono.configuracoes_limite_perguntas') }}" class="d-flex align-items-end gap-2">
+        <div>
+          <label class="form-label small mb-0">Limite por dia</label>
+          <input type="number" name="limite_perguntas_dia_exame" min="1" class="form-control" style="max-width: 120px"
+                 placeholder="Sem limite"
+                 value="{{ config.limite_perguntas_dia_exame if config.limite_perguntas_dia_exame is not none else '' }}">
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </form>
+    </div>
   </div>
 
   {# Zona de risco (pedido do Silvan, 2026-09-10): apaga TODOS os dados

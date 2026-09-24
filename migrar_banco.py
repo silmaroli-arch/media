@@ -405,6 +405,31 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprovacao_perguntas_paciente BOOLE
 ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS tentativas_identificacao INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS bloqueada BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS motivo_bloqueio VARCHAR(30);
+
+-- Validador de pergunta + limite diário de perguntas por paciente x exame
+-- (pedido do Silvan, 2026-09-24, ver PlataformaConfig em models.py e
+-- app.ia_preparo.validar_pergunta / app.whatsapp_conversa.
+-- processar_mensagem). ia_validador_pergunta nasce 'Claude' pra toda
+-- clínica já existente (mesmo padrão de sempre); limite_perguntas_dia_
+-- exame nasce NULL (sem limite) - nenhuma clínica passa a ter restrição
+-- nova sem o dono configurar isso explicitamente.
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS ia_validador_pergunta VARCHAR(20) NOT NULL DEFAULT 'Claude';
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS limite_perguntas_dia_exame INTEGER;
+
+-- Contador de mensagens do dia por paciente x exame, usado só para
+-- aplicar o limite acima (ver ContagemPerguntasDia em models.py) - já
+-- seria criada de qualquer jeito pelo db.create_all() na inicialização
+-- da aplicação (tabela nova), mas incluída aqui também por consistência
+-- com o padrão já usado para outras tabelas novas (ver
+-- push_subscriptions, mais acima).
+CREATE TABLE IF NOT EXISTS contagem_perguntas_dia (
+    id SERIAL PRIMARY KEY,
+    paciente_id INTEGER NOT NULL REFERENCES pacientes(id),
+    exame_id INTEGER NOT NULL REFERENCES exames(id),
+    data DATE NOT NULL,
+    quantidade INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (paciente_id, exame_id, data)
+);
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)
