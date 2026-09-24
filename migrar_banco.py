@@ -430,6 +430,12 @@ CREATE TABLE IF NOT EXISTS contagem_perguntas_dia (
     quantidade INTEGER NOT NULL DEFAULT 0,
     UNIQUE (paciente_id, exame_id, data)
 );
+
+-- Link público (por token) do preparo do exame, enviado pelo WhatsApp -
+-- abre sem login (ver Agendamento.token_preparo_publico/
+-- obter_token_preparo_publico em app/models.py e app.preparo_publico).
+ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS token_preparo_publico VARCHAR(43);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_agendamentos_token_preparo_publico ON agendamentos (token_preparo_publico);
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

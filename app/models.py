@@ -1407,9 +1407,29 @@ class Agendamento(db.Model):
         "ResultadoExame", back_populates="agendamento", uselist=False, cascade="all, delete-orphan"
     )
 
+    # Link público (sem login) para a tela de preparo deste agendamento,
+    # mandado no WhatsApp junto com o convite para perguntar (pedido do
+    # Silvan, 2026-09-24 - ver app.preparo_publico e
+    # app.routes_paciente.preparo_publico). Gerado sob demanda (ver
+    # `obter_token_preparo_publico` abaixo) - a maioria dos agendamentos
+    # nunca precisa de um, então fica None até a primeira vez que o link
+    # for montado.
+    token_preparo_publico = db.Column(db.String(43), unique=True, nullable=True)
+
     @property
     def encerrada(self):
         return self.encerrado_em is not None
+
+    def obter_token_preparo_publico(self):
+        """Gera (na primeira chamada) ou reaproveita o token público deste
+        agendamento - opaco (secrets.token_urlsafe, mesmo padrão já usado
+        em Usuario.codigo_mestre/GrupoConvite neste arquivo e em
+        routes_medico.py), sem nenhuma informação do agendamento
+        embutida. Quem chama precisa comitar a sessão se o token acabou de
+        ser criado agora (ver app.preparo_publico.montar_link_preparo)."""
+        if not self.token_preparo_publico:
+            self.token_preparo_publico = secrets.token_urlsafe(32)
+        return self.token_preparo_publico
 
 
 class ChatMensagem(db.Model):

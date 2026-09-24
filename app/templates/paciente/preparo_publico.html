@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Preparo - {{ exame.nome if exame else 'Exame' }}</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+  :root {
+    --azul: #0d6efd;
+    --cinza-claro: #f2f2f2;
+    --cinza-texto: #555;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #eef1f5;
+    color: #212529;
+    margin: 0;
+    padding: 24px 12px 60px;
+  }
+  .documento {
+    max-width: 720px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    padding: 28px 24px;
+  }
+  .cabecalho {
+    border-bottom: 3px solid var(--azul);
+    padding-bottom: 16px;
+    margin-bottom: 20px;
+  }
+  .cabecalho h1 {
+    font-size: 1.5rem;
+    margin: 0 0 8px;
+    color: #14213d;
+  }
+  .cabecalho .linha-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    font-size: 0.95rem;
+    color: var(--cinza-texto);
+  }
+  .cabecalho .linha-info strong { color: #212529; }
+  .botao-pdf {
+    display: inline-block;
+    margin-top: 14px;
+    background: var(--azul);
+    color: #fff;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .botao-pdf:hover { background: #0b5ed7; }
+  h2.secao-titulo {
+    font-size: 1.1rem;
+    margin: 28px 0 14px;
+    color: #14213d;
+  }
+  .aviso-gerado {
+    font-size: 0.8rem;
+    color: #888;
+    font-style: italic;
+    margin-top: 4px;
+  }
+
+  /* Linha do tempo */
+  .linha-do-tempo {
+    position: relative;
+    margin-left: 8px;
+    padding-left: 24px;
+    border-left: 3px solid var(--azul);
+  }
+  .item-tempo {
+    position: relative;
+    margin-bottom: 20px;
+  }
+  .item-tempo::before {
+    content: "";
+    position: absolute;
+    left: -32px;
+    top: 4px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--azul);
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 2px var(--azul);
+  }
+  .item-tempo.categoria-exame::before {
+    background: #198754;
+    box-shadow: 0 0 0 2px #198754;
+  }
+  .item-tempo .data-item {
+    font-weight: 700;
+    color: var(--azul);
+    font-size: 0.9rem;
+  }
+  .item-tempo.categoria-exame .data-item { color: #198754; }
+  .item-tempo .titulo-item {
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  .item-tempo .detalhe-item {
+    color: var(--cinza-texto);
+    font-size: 0.9rem;
+    margin-top: 2px;
+  }
+
+  /* Seções sem data */
+  .secao-sem-data ul {
+    margin: 0;
+    padding-left: 20px;
+  }
+  .secao-sem-data li {
+    margin-bottom: 6px;
+  }
+  .secao-sem-data li .obs {
+    color: var(--cinza-texto);
+    font-size: 0.9rem;
+  }
+
+  .texto-livre {
+    white-space: pre-line;
+    color: #333;
+    line-height: 1.5;
+  }
+
+  .sem-preparo {
+    color: var(--cinza-texto);
+    font-style: italic;
+  }
+
+  .rodape {
+    margin-top: 32px;
+    padding-top: 14px;
+    border-top: 1px solid #e2e2e2;
+    font-size: 0.8rem;
+    color: #999;
+    text-align: center;
+  }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .documento { box-shadow: none; border-radius: 0; max-width: 100%; }
+    .botao-pdf { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="documento">
+  <div class="cabecalho">
+    <h1>{{ exame.nome if exame else 'Preparo de exame' }}</h1>
+    <div class="linha-info">
+      <span>Data do exame: <strong>{{ agendamento.data_hora.strftime('%d/%m/%Y às %H:%M') }}</strong></span>
+      {% if agendamento.medico %}
+      <span>Médico: <strong>{{ agendamento.medico.nome }}</strong></span>
+      {% endif %}
+    </div>
+    <a class="botao-pdf" href="{{ url_for('paciente.preparo_publico_pdf', token=agendamento.token_preparo_publico) }}">
+      Baixar PDF
+    </a>
+    <p class="aviso-gerado">Documento informativo - em caso de dúvida sobre o preparo, fale com a clínica.</p>
+  </div>
+
+  {% if preparo %}
+    {% if linha_do_tempo %}
+    <h2 class="secao-titulo">Linha do tempo do preparo</h2>
+    <div class="linha-do-tempo">
+      {% for item in linha_do_tempo %}
+      <div class="item-tempo categoria-{{ item.categoria }}">
+        <div class="data-item">
+          {{ item.quando.strftime('%d/%m/%Y') }}
+          {% if item.quando.strftime('%H:%M') != '00:00' %}às {{ item.quando.strftime('%H:%M') }}{% endif %}
+        </div>
+        <div class="titulo-item">{{ item.titulo }}</div>
+        {% if item.detalhe %}
+        <div class="detalhe-item">{{ item.detalhe }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if sem_data.medicamentos_mantidos %}
+    <div class="secao-sem-data">
+      <h2 class="secao-titulo">Medicamentos que podem ser mantidos</h2>
+      <ul>
+        {% for mm in sem_data.medicamentos_mantidos %}
+        <li>{{ mm.nome }}{% if mm.observacao %} <span class="obs">— {{ mm.observacao }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if sem_data.alimentos_permitidos %}
+    <div class="secao-sem-data">
+      <h2 class="secao-titulo">Sugestão de consumo</h2>
+      <ul>
+        {% for a in sem_data.alimentos_permitidos %}
+        <li>{{ a.nome }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if sem_data.alimentos_proibidos_sem_prazo %}
+    <div class="secao-sem-data">
+      <h2 class="secao-titulo">Alimentos proibidos</h2>
+      <ul>
+        {% for a in sem_data.alimentos_proibidos_sem_prazo %}
+        <li>{{ a.nome }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if sem_data.exames_anteriores_sem_prazo %}
+    <div class="secao-sem-data">
+      <h2 class="secao-titulo">Não pode ter feito recentemente</h2>
+      <ul>
+        {% for e in sem_data.exames_anteriores_sem_prazo %}
+        <li>{{ e.nome }}</li>
+        {% endfor %}
+      </ul>
+      <p class="obs">Se você fez algum desses procedimentos recentemente, avise a secretaria antes do exame.</p>
+    </div>
+    {% endif %}
+
+    {% if sem_data.informacoes_sem_prazo %}
+    <div class="secao-sem-data">
+      <h2 class="secao-titulo">Outras orientações</h2>
+      <ul>
+        {% for info in sem_data.informacoes_sem_prazo %}
+        <li>{{ info.texto }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if observacoes_medicamentos %}
+    <p class="texto-livre">{{ observacoes_medicamentos }}</p>
+    {% endif %}
+
+    {% if instrucoes %}
+    <h2 class="secao-titulo">Instruções gerais</h2>
+    <p class="texto-livre">{{ instrucoes }}</p>
+    {% endif %}
+  {% else %}
+    <p class="sem-preparo">Este agendamento não tem instruções de preparo — não é necessário nenhum preparo prévio. Em caso de dúvida, entre em contato com a secretaria.</p>
+  {% endif %}
+
+  <div class="rodape">Gerado em {{ agora.strftime('%d/%m/%Y %H:%M') if agora else '' }}</div>
+</div>
+</body>
+</html>

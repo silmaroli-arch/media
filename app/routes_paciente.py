@@ -15,6 +15,7 @@ from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_res
 from app.ia_preparo import responder_com_ia
 from app.clinica_utils import verificar_vencimento_grupo
 from app.push_notificacoes import notificar_equipe_nova_pergunta
+from app.preparo_publico import montar_documento_preparo, gerar_pdf_preparo
 
 paciente_bp = Blueprint("paciente", __name__, url_prefix="/paciente")
 
@@ -277,6 +278,34 @@ def preparo_exame(agendamento_id):
         Agendamento.id == agendamento_id, Agendamento.paciente_id.in_(_meus_cadastros_ids())
     ).first_or_404()
     return render_template("paciente/preparo.html", agendamento=agendamento)
+
+
+# ---------- Preparo público (link do WhatsApp, sem login) ----------
+#
+# Pedido do Silvan (2026-09-24): a mensagem de WhatsApp que convida o
+# paciente a perguntar sobre o preparo passou a incluir um link para uma
+# tela com o preparo do exame em formato de "documento" (linha do tempo +
+# PDF para baixar) - o paciente do WhatsApp nunca fez login no site, então
+# esta tela NÃO exige login: o acesso é pelo token único do agendamento
+# (Agendamento.token_preparo_publico/obter_token_preparo_publico, ver
+# app/models.py e app.preparo_publico.montar_link_preparo). Modelo de
+# segurança combinado com o Silvan: quem tiver o link exato consegue ver -
+# igual ao link de resultado de exame por WhatsApp que já existia antes
+# neste sistema (app.push_notificacoes), sem exigir cadastro/senha do
+# paciente.
+
+@paciente_bp.route("/preparo/<token>")
+def preparo_publico(token):
+    agendamento = Agendamento.query.filter_by(token_preparo_publico=token).first_or_404()
+    documento = montar_documento_preparo(agendamento)
+    return render_template("paciente/preparo_publico.html", agora=datetime.utcnow(), **documento)
+
+
+@paciente_bp.route("/preparo/<token>/pdf")
+def preparo_publico_pdf(token):
+    agendamento = Agendamento.query.filter_by(token_preparo_publico=token).first_or_404()
+    documento = montar_documento_preparo(agendamento)
+    return gerar_pdf_preparo(documento)
 
 
 @paciente_bp.route("/chat", methods=["GET", "POST"])

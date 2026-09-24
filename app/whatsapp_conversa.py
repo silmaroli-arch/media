@@ -190,6 +190,7 @@ from app.faq_engine import (
     buscar_resposta_medicamento,
 )
 from app.ia_preparo import responder_com_ia, validar_pergunta
+from app.preparo_publico import montar_link_preparo
 from app.models import (
     Agendamento, ChatMensagem, ContagemPerguntasDia, ConversaWhatsapp, Paciente,
     PerguntaPendente, PlataformaConfig, normalizar_telefone,
@@ -308,11 +309,19 @@ def _texto_pedir_pergunta(paciente, agendamento, saudacao=True, outros_agendamen
     fácil de não notar. Repetir aqui é seguro porque `outros_agendamentos`
     é sempre recalculado na hora (ver `processar_mensagem`), nunca
     guardado - qualquer novo agendamento aparece automaticamente na
-    próxima mensagem, sem precisar pedir CPF/nascimento de novo."""
+    próxima mensagem, sem precisar pedir CPF/nascimento de novo.
+
+    Inclui, junto do convite para perguntar, o link público (sem login)
+    da tela com o preparo do exame em formato de documento/linha do tempo
+    (pedido do Silvan, 2026-09-24 - ver app.preparo_publico e
+    app.routes_paciente.preparo_publico) - decisão do Silvan de colocar o
+    link SÓ nesta mensagem (não em toda mensagem do fluxo)."""
     cabecalho = f"Olá, {paciente.nome.split(' ')[0]}! " if saudacao else ""
+    link_preparo = montar_link_preparo(agendamento)
     corpo = (
         f"{cabecalho}Exame em foco: *{agendamento.exame.nome}* — "
         f"{agendamento.data_hora.strftime('%d/%m/%Y')}.\n\n"
+        f"Veja o preparo completo aqui: {link_preparo}\n\n"
         "Pode escrever sua pergunta sobre o preparo deste exame."
     )
     if outros_agendamentos:
