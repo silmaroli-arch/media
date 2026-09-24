@@ -71,13 +71,16 @@ pelo Silvan ("Pode começar", nenhum deles desfaz nada que já existia):
   notificar_equipe_reagendamento) - o sistema NUNCA confirma uma nova
   data por conta própria, só avisa quem vai combinar com o paciente.
 
-Encerramento automático por inatividade (pedido do Silvan, 2026-09-12): a
-conversa (`ConversaWhatsapp`, em qualquer etapa - aguardando CPF, data de
-nascimento, ou já identificada) é encerrada PROATIVAMENTE - com um aviso
-mandado ao paciente - depois de 5 minutos sem nenhuma mensagem nova, por
-um job em segundo plano (ver app.whatsapp_encerramento, iniciado em
-create_app). Diferente disso, o `expirada()` usado abaixo é passivo: só
-reseta a identificação (sem avisar nada) na PRÓXIMA mensagem que chegar."""
+Encerramento automático por inatividade (pedido do Silvan, 2026-09-12) -
+REMOVIDO de novo a pedido dele em 2026-09-24 (ver HANDOFF_CHAT.md): existiu
+um job em segundo plano (app.whatsapp_encerramento, hoje excluído) que
+encerrava a conversa PROATIVAMENTE - com um aviso mandado ao paciente -
+depois de 5 minutos sem nenhuma mensagem nova, em qualquer etapa
+(aguardando CPF, data de nascimento, ou já identificada). Esse job não
+existe mais. O único comportamento que resta é o `expirada()` usado
+abaixo, que é passivo: só reseta a identificação (sem avisar nada, sem
+apagar o registro) na PRÓXIMA mensagem que chegar, depois de
+`ConversaWhatsapp.MINUTOS_EXPIRACAO` (4h) sem nenhuma mensagem nova."""
 import re
 import unicodedata
 from datetime import date, datetime

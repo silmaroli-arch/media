@@ -1143,6 +1143,23 @@ O Silvan reportou (com print de uma conversa real) que perguntou "Quanto tempo t
 
 - **Pendência**: mesma de sempre - `device_bash` indisponível a sessão toda, PyPI bloqueado no ambiente de nuvem (ver pendências anteriores) - validado só por `ast.parse` e, no caso da nova função, testando a lógica do regex isoladamente fora do Flask (sem API key de IA configurada neste ambiente, não dá pra testar a integração de ponta a ponta com uma IA de verdade). Rodar `python test_ia_recusa_disfarcada.py` antes de subir pra produção. Testar visualmente com uma API key de IA configurada: reproduzir a pergunta original ("quanto tempo de antecedência...", ou qualquer outra fora do que está cadastrado) e confirmar que agora vira uma `PerguntaPendente` encaminhada pro médico, em vez de responder direto ao paciente com uma recusa. Vale considerar também reforçar o próprio `PROMPT_SISTEMA` pra reduzir a frequência desse comportamento na origem (não é garantia, mas ajuda) - não fiz essa parte agora, só a rede de segurança no código, que é determinística.
 
+### Encerramento automático do chat por inatividade removido (pedido do Silvan, 2026-09-24)
+
+Pedido: "Vamos retirar o encerramento automático do chat no WhatsApp". Esse job (ver seção "Encerramento automático por inatividade" acima, 2026-09-12) rodava em segundo plano e, depois de 5 minutos sem nenhuma mensagem nova em qualquer etapa da conversa (aguardando CPF, data de nascimento, ou já identificada), mandava um aviso ao paciente e APAGAVA o registro de `ConversaWhatsapp`. O Silvan pediu pra tirar isso - removido por completo, não só desativado.
+
+**Removido**:
+- `app/whatsapp_encerramento.py` - arquivo excluído (era só esse job: a thread em segundo plano, `_encerrar_conversas_vencidas`, `MENSAGEM_CONVERSA_ENCERRADA`, `iniciar_encerramento_automatico`).
+- `app/__init__.py` (`create_app`) - removida a chamada `iniciar_encerramento_automatico(app)` (e o import correspondente) que iniciava a thread a cada processo novo.
+- `app/models.py` (`ConversaWhatsapp`) - removidos `MINUTOS_INATIVIDADE_ENCERRAR` e `pronta_para_encerrar()` (só existiam para esse job).
+- `test_whatsapp_encerramento_automatico.py` - arquivo excluído (testava só esse job, que não existe mais).
+- Docstrings de `app/whatsapp_conversa.py` e do trecho correspondente em `app/models.py` atualizadas explicando a remoção.
+
+**O que continua**: a expiração PASSIVA de sempre (`ConversaWhatsapp.expirada()`/`MINUTOS_EXPIRACAO`, 4h) - se o paciente ficar mais de 4h sem mandar mensagem, a identificação (CPF/data de nascimento/exame em foco) é resetada em silêncio na PRÓXIMA mensagem que chegar, sem avisar nada e sem apagar o registro antes disso. Nenhum aviso proativo é mais mandado, e a conversa não é mais apagada por inatividade - ela só fica "parada" no banco indefinidamente até uma nova mensagem chegar (ou até uma limpeza manual, se algum dia for necessária).
+
+**Não precisou de migração de banco** - a mudança só remove código/constante, não toca em nenhuma coluna (`atualizado_em`, usado por `expirada()`, já existia e continua sendo usado do mesmo jeito).
+
+- **Pendência**: mesma de sempre - não executado de verdade (`device_bash` indisponível, PyPI bloqueado no ambiente de nuvem) - validado só por `ast.parse` e revisão manual. Rodar a suíte de testes (principalmente `test_whatsapp_identificacao.py`, que usa `MINUTOS_EXPIRACAO` pra testar a expiração passiva, e confirmar que continua passando sem depender de nada do encerramento automático) antes de subir pra produção. Vale considerar, no futuro, alguma rotina de limpeza manual/periódica de conversas muito antigas no banco (`ConversaWhatsapp`), já que agora nada mais apaga essas linhas automaticamente - não pedido agora, só um ponto de atenção.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
