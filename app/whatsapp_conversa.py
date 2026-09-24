@@ -97,6 +97,23 @@
   e da equipe, é indistinguível de ter sido pego pela checagem por regras
   fixas, só que pega casos mais sutis.
 
+  **Conversa social não é mais tratada como pergunta (pedido do Silvan,
+  2026-09-24)**: até aqui, uma saudação de verdade como "oi" TINHA "cara
+  de texto" o suficiente pra passar pela checagem de sem sentido acima -
+  esse era exatamente o tradeoff aceito quando o gatilho "1" foi removido
+  (ver parágrafo "Gatilho '1' removido de novo", mais acima: "uma
+  saudação de verdade como 'oi' continua virando pergunta encaminhada à
+  equipe"). Agora não mais: `_eh_apenas_conversa_social` reconhece quando
+  a mensagem inteira é só saudação ("oi"/"olá"/"bom dia"/"boa tarde"/"boa
+  noite"), despedida ("tchau") ou agradecimento ("obrigado"/"obrigada") -
+  nesse caso responde com uma mensagem simpática de volta (variando por
+  categoria, ver `_resposta_conversa_social`), sem criar
+  `PerguntaPendente`/`ChatMensagem` nem notificar a equipe, do mesmo jeito
+  que as checagens de sem sentido acima. Deliberadamente conservador: só
+  entra em ação quando a mensagem é SÓ isso - "Oi, posso comer batata?"
+  continua sendo tratada como pergunta normalmente, a saudação no início
+  não desvia o fluxo.
+
 Este módulo é só a LÓGICA de conversa (recebe telefone + texto da
 mensagem, devolve o texto da resposta) — não sabe nada sobre Twilio nem
 sobre HTTP, para poder ser testado sem precisar simular um webhook (ver
@@ -704,6 +721,68 @@ def _eh_mensagem_sem_sentido_minimo(texto_normalizado):
     return False
 
 
+# Palavras/expressões de conversa social (pedido do Silvan, 2026-09-24:
+# "obrigado, oi, tchau, bom dia, boa tarde, boa noite, olá devem ser
+# apenas consideradas como conversa e não pergunta") - o problema que isso
+# resolve é diferente do de `_eh_mensagem_sem_sentido_minimo` acima: uma
+# saudação como "oi" TEM cara de texto de verdade (palavra real, letras
+# variadas) e por isso passa direto pela checagem acima - o tradeoff
+# aceito em 2026-09-14 (ver docstring do módulo) era justamente que "oi"
+# continuava virando pergunta encaminhada pra equipe. Esta checagem nova
+# resolve esse tradeoff especificamente pras palavras/expressões sociais
+# mais comuns, sem reabrir o problema original (símbolo solto etc. -
+# esse continua sendo pego pela checagem de sem sentido, que roda antes).
+# Cada item é comparado à mensagem NORMALIZADA (ver `_normalizar_texto`)
+# inteira (ignorando pontuação/espaços nas pontas) - de propósito
+# conservador: só entra em ação quando a mensagem é SÓ a saudação/
+# despedida/agradecimento (com ou sem combinações entre elas, ex.: "Oi,
+# bom dia!" ou "Obrigado, tchau!"), nunca quando vem junto de uma
+# pergunta de verdade (ex.: "Oi, posso comer batata?" continua indo
+# direto pra `_responder_pergunta`, como uma pergunta - a saudação no
+# início não desvia o fluxo).
+_PALAVRAS_CONVERSA_SOCIAL = {
+    "oi", "ola",
+    "tchau",
+    "obrigado", "obrigada",
+    "bom", "boa", "dia", "tarde", "noite",
+}
+_RE_PALAVRA_CONVERSA_SOCIAL = re.compile(r"[a-z]+")
+
+MENSAGEM_SAUDACAO_SOCIAL = "Oi! Se tiver alguma dúvida sobre o preparo deste exame, pode escrever aqui."
+MENSAGEM_DESPEDIDA_SOCIAL = (
+    "Tchau! Se surgir alguma dúvida sobre o preparo deste exame, pode "
+    "voltar a escrever por aqui a qualquer momento."
+)
+MENSAGEM_AGRADECIMENTO_SOCIAL = "Por nada! Se tiver mais alguma dúvida sobre o preparo deste exame, pode escrever aqui."
+
+
+def _eh_apenas_conversa_social(texto_normalizado):
+    """True quando a mensagem inteira é composta só de saudação/despedida/
+    agradecimento (ver `_PALAVRAS_CONVERSA_SOCIAL` acima) - nenhuma outra
+    palavra sobrando. `texto_normalizado` já deve vir de `_normalizar_texto`
+    (minúsculas, sem acento) - por isso "olá" é comparado como "ola"."""
+    palavras = _RE_PALAVRA_CONVERSA_SOCIAL.findall(texto_normalizado)
+    if not palavras:
+        return False
+    return all(palavra in _PALAVRAS_CONVERSA_SOCIAL for palavra in palavras)
+
+
+def _resposta_conversa_social(texto_normalizado):
+    """Escolhe a resposta certa dentre saudação/despedida/agradecimento -
+    só chamar depois de confirmar `_eh_apenas_conversa_social`. Quando a
+    mensagem combina mais de uma categoria (ex.: "Obrigado, tchau!"),
+    despedida tem prioridade sobre agradecimento, que tem prioridade sobre
+    saudação - a última coisa dita costuma ser a mais relevante pra
+    resposta, e "tchau"/"obrigado" são despedidas mais definitivas do que
+    uma saudação solta."""
+    palavras = set(_RE_PALAVRA_CONVERSA_SOCIAL.findall(texto_normalizado))
+    if "tchau" in palavras:
+        return MENSAGEM_DESPEDIDA_SOCIAL
+    if "obrigado" in palavras or "obrigada" in palavras:
+        return MENSAGEM_AGRADECIMENTO_SOCIAL
+    return MENSAGEM_SAUDACAO_SOCIAL
+
+
 def _paciente_por_telefone_aproximado(telefone_whatsapp):
     """Documento "Clara", item 6 (2026-09-14): acha, por aproximação,
     qual Paciente cadastrado tem esse número de WhatsApp como telefone de
@@ -884,14 +963,25 @@ def processar_mensagem(telefone, corpo_mensagem):
     # chega a virar PerguntaPendente - só pede pra reescrever. Erro de
     # digitação/ortografia normal dentro de palavras de verdade não é
     # afetado por isso.
-    if _eh_mensagem_sem_sentido_minimo(_normalizar_texto(texto)):
+    texto_normalizado = _normalizar_texto(texto)
+    if _eh_mensagem_sem_sentido_minimo(texto_normalizado):
         db.session.commit()
         return MENSAGEM_MENSAGEM_SEM_SENTIDO
 
+    # Conversa social (saudação/despedida/agradecimento - pedido do
+    # Silvan, 2026-09-24: ver `_eh_apenas_conversa_social` acima) - só
+    # entra em ação quando a mensagem é SÓ isso, sem nenhuma pergunta de
+    # verdade junto. Mesmo tratamento das outras checagens acima: não
+    # cria PerguntaPendente nem ChatMensagem, não notifica a equipe - só
+    # responde com uma mensagem simpática e convida a perguntar.
+    if _eh_apenas_conversa_social(texto_normalizado):
+        db.session.commit()
+        return _resposta_conversa_social(texto_normalizado)
+
     # Qualquer outro texto (que não seja "trocar", nem uma intenção de
-    # remarcação já tratada acima, nem sem sentido nenhum) é a pergunta em
-    # si - direto, sem precisar digitar "1" antes (ver docstring do
-    # módulo).
+    # remarcação já tratada acima, nem sem sentido nenhum, nem conversa
+    # social) é a pergunta em si - direto, sem precisar digitar "1" antes
+    # (ver docstring do módulo).
     resposta_pergunta, pergunta_criada, eh_sem_sentido = _responder_pergunta(paciente, agendamento, texto, telefone)
     if eh_sem_sentido:
         # Julgamento pela IA (pedido do Silvan, 2026-09-24 - ver docstring
