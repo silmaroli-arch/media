@@ -114,6 +114,24 @@
   continua sendo tratada como pergunta normalmente, a saudação no início
   não desvia o fluxo.
 
+  **Duas ou mais palavras desconhecidas pelo dicionário (pedido do
+  Silvan, 2026-09-24)**: "se pelo menos duas palavras não existirem na
+  frase, dê erro". `_eh_mensagem_sem_sentido_minimo` (acima) só olha
+  proporção/repetição de caracteres, nunca se a palavra existe de
+  verdade em português - uma mensagem como "asdkjf qwerty lorem" tem
+  letras variadas o suficiente pra passar por ela. `_eh_mensagem_com_
+  muitas_palavras_desconhecidas` usa o pacote `pyspellchecker` (ver
+  requirements.txt) - que já vem com o dicionário de português embutido
+  no próprio pacote, sem precisar instalar nada no sistema (inviável
+  neste projeto - nem o ambiente de desenvolvimento nem a máquina do
+  Silvan conseguem instalar `hunspell`/`enchant` via rede) - pra marcar
+  como sem sentido quando 2+ palavras (de 3+ letras) não são reconhecidas
+  pelo dicionário. Escrito pra nunca travar o chat enquanto o pacote não
+  estiver instalado de verdade (só entra em vigor depois do próximo
+  deploy no Render, que instala normalmente via `pip`): sem o pacote
+  disponível, a checagem é um no-op silencioso, e a mensagem segue pro
+  resto do fluxo de sempre.
+
 Este módulo é só a LÓGICA de conversa (recebe telefone + texto da
 mensagem, devolve o texto da resposta) — não sabe nada sobre Twilio nem
 sobre HTTP, para poder ser testado sem precisar simular um webhook (ver
@@ -162,6 +180,8 @@ import re
 import unicodedata
 from collections import Counter
 from datetime import date, datetime
+
+from flask import current_app
 
 from app.extensions import db
 from app.faq_engine import (
@@ -783,6 +803,94 @@ def _resposta_conversa_social(texto_normalizado):
     return MENSAGEM_SAUDACAO_SOCIAL
 
 
+# Checagem por dicionário de português (pedido do Silvan, 2026-09-24: "se
+# pelo menos duas palavras não existirem na frase, dê erro") - diferente
+# de `_eh_mensagem_sem_sentido_minimo` acima (que só olha proporção/
+# repetição de caracteres, nunca se a palavra existe de verdade), esta
+# usa o pacote `pyspellchecker` (ver requirements.txt) - que já vem com o
+# dicionário de português embutido nos próprios dados do pacote, sem
+# precisar instalar nada no sistema (hunspell/enchant) - inviável neste
+# projeto porque tanto o ambiente de nuvem usado nas sessões de
+# desenvolvimento quanto a máquina do Silvan bloqueiam instalação via
+# `apt-get`/`pip` fora do deploy normal do Render (ver HANDOFF_CHAT.md).
+#
+# Como esse pacote é uma dependência NOVA que só entra de verdade depois
+# do próximo deploy no Render (`pip install -r requirements.txt` roda lá
+# com internet normal), a função abaixo é escrita pra nunca quebrar o
+# chat enquanto isso: se o import falhar (pacote ainda não instalado,
+# ou qualquer outro erro ao carregar o dicionário), simplesmente não
+# entra em ação - mesmo espírito de "nunca trava o chat do paciente" já
+# usado pra IA (ver app/ia_preparo.py). `_verificador_ortografico_pt` é
+# construído uma única vez por processo (é um dicionário carregado na
+# memória, não uma chamada de rede) e reaproveitado nas próximas
+# mensagens.
+_verificador_ortografico_pt = None
+_verificador_ortografico_indisponivel = False
+
+# Só entra em ação com pelo menos duas palavras "checáveis" na mensagem
+# (pedido literal do Silvan: "pelo menos duas") - uma mensagem com uma só
+# palavra desconhecida (ex.: um nome próprio, uma marca de medicamento
+# que a IA já sabe reconhecer, ver app.ia_preparo) não é motivo suficiente
+# pra marcar como sem sentido.
+_MINIMO_PALAVRAS_DESCONHECIDAS_SEM_SENTIDO = 2
+# Palavras curtas (1-2 letras) são ignoradas nesta checagem específica -
+# abreviações comuns de paciente (ex.: "vc", "pq", "tb", "oi", "ok") não
+# costumam estar num dicionário formal e não devem ser penalizadas aqui;
+# a checagem por regras fixas (`_eh_mensagem_sem_sentido_minimo`) e a
+# conversa social (acima) já cobrem a maior parte do que interessa nesse
+# tamanho.
+_TAMANHO_MINIMO_PALAVRA_DICIONARIO = 3
+_RE_PALAVRA_DICIONARIO = re.compile(r"[a-zà-ÿ]+", re.IGNORECASE)
+
+
+def _obter_verificador_ortografico():
+    """Constrói (uma única vez por processo) e devolve o SpellChecker de
+    português, ou None se o pacote `pyspellchecker` não estiver
+    disponível/instalado ainda, ou se algo der errado ao carregar o
+    dicionário - nesse caso a checagem que usa esta função vira um no-op
+    silencioso (ver docstring acima)."""
+    global _verificador_ortografico_pt, _verificador_ortografico_indisponivel
+    if _verificador_ortografico_indisponivel:
+        return None
+    if _verificador_ortografico_pt is not None:
+        return _verificador_ortografico_pt
+    try:
+        from spellchecker import SpellChecker
+        _verificador_ortografico_pt = SpellChecker(language="pt")
+    except Exception:
+        _verificador_ortografico_indisponivel = True
+        current_app.logger.warning(
+            "pyspellchecker indisponível (pacote não instalado ou erro ao carregar o "
+            "dicionário de português) - a checagem de 'duas ou mais palavras "
+            "desconhecidas' fica desligada até o próximo deploy que já inclua a "
+            "dependência (ver requirements.txt)."
+        )
+        return None
+    return _verificador_ortografico_pt
+
+
+def _eh_mensagem_com_muitas_palavras_desconhecidas(texto_original):
+    """True quando pelo menos `_MINIMO_PALAVRAS_DESCONHECIDAS_SEM_SENTIDO`
+    palavras (de 3+ letras) da mensagem não são reconhecidas pelo
+    dicionário de português (ver `_obter_verificador_ortografico`) -
+    devolve False sem nenhum efeito quando o dicionário não está
+    disponível (ver acima). Recebe o texto ORIGINAL da mensagem (não o
+    `_normalizar_texto`, que tira os acentos) - o dicionário reconhece
+    palavras acentuadas normalmente ("não", "é", "está"), e removê-los
+    faria muita palavra de verdade parecer desconhecida por engano."""
+    verificador = _obter_verificador_ortografico()
+    if not verificador:
+        return False
+    palavras = [
+        palavra for palavra in _RE_PALAVRA_DICIONARIO.findall((texto_original or "").lower())
+        if len(palavra) >= _TAMANHO_MINIMO_PALAVRA_DICIONARIO
+    ]
+    if len(palavras) < _MINIMO_PALAVRAS_DESCONHECIDAS_SEM_SENTIDO:
+        return False
+    desconhecidas = verificador.unknown(palavras)
+    return len(desconhecidas) >= _MINIMO_PALAVRAS_DESCONHECIDAS_SEM_SENTIDO
+
+
 def _paciente_por_telefone_aproximado(telefone_whatsapp):
     """Documento "Clara", item 6 (2026-09-14): acha, por aproximação,
     qual Paciente cadastrado tem esse número de WhatsApp como telefone de
@@ -965,6 +1073,19 @@ def processar_mensagem(telefone, corpo_mensagem):
     # afetado por isso.
     texto_normalizado = _normalizar_texto(texto)
     if _eh_mensagem_sem_sentido_minimo(texto_normalizado):
+        db.session.commit()
+        return MENSAGEM_MENSAGEM_SEM_SENTIDO
+
+    # Duas ou mais palavras desconhecidas pelo dicionário de português
+    # (pedido do Silvan, 2026-09-24 - ver `_eh_mensagem_com_muitas_
+    # palavras_desconhecidas` acima) - pega o caso que a checagem por
+    # regras fixas acima NÃO pega: palavras inventadas/digitação
+    # aleatória que ainda têm "cara de texto" (letras variadas, sem
+    # repetição excessiva). Vira um no-op silencioso enquanto o pacote
+    # `pyspellchecker` não estiver instalado (ver requirements.txt e
+    # HANDOFF_CHAT.md - só passa a valer depois do próximo deploy).
+    # Usa o texto ORIGINAL (com acento), não o normalizado.
+    if _eh_mensagem_com_muitas_palavras_desconhecidas(texto):
         db.session.commit()
         return MENSAGEM_MENSAGEM_SEM_SENTIDO
 
