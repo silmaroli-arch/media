@@ -77,6 +77,26 @@
   pendente, como efeito colateral direto de remover esse bloqueio (eram
   checados depois dele).
 
+  **Julgamento de "isso faz sentido?" pela própria IA (pedido do Silvan,
+  2026-09-24)**: `_eh_mensagem_sem_sentido_minimo` (checagem por regras
+  fixas, acima) só pega os casos óbvios - símbolo/emoji solto, teclado
+  travado etc. - e não pega, por exemplo, palavras reais numa ordem sem
+  sentido nenhum. Perguntado se dava pra usar de fato uma IA pra julgar
+  isso em vez de só regras fixas, o Silvan escolheu a opção híbrida: a
+  checagem por regras fixas continua sendo a primeira barreira (grátis,
+  instantânea); quando o texto passa por ela mas ainda vai pra IA (porque
+  não bateu com FAQ/alimento/medicamento, ver `_responder_pergunta`), a
+  MESMA chamada que já ia ser feita pra tentar responder também serve pra
+  julgar sentido - ver `app.ia_preparo.responder_com_ia` (chave
+  "sem_sentido" do retorno) e `MARCADOR_SEM_SENTIDO` lá. Sem custo extra
+  de chamada, mas só cobre esse julgamento quando pelo menos uma IA de
+  chat está configurada (sem nenhuma, continua dependendo só da checagem
+  por regras fixas). Quando a IA sinaliza sem sentido, `_responder_pergunta`
+  devolve o MESMO aviso `MENSAGEM_MENSAGEM_SEM_SENTIDO` de sempre, sem
+  criar `PerguntaPendente`/`ChatMensagem` - do ponto de vista do paciente
+  e da equipe, é indistinguível de ter sido pego pela checagem por regras
+  fixas, só que pega casos mais sutis.
+
 Este módulo é só a LÓGICA de conversa (recebe telefone + texto da
 mensagem, devolve o texto da resposta) — não sabe nada sobre Twilio nem
 sobre HTTP, para poder ser testado sem precisar simular um webhook (ver
@@ -404,13 +424,20 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     guarda `telefone` (o remetente desta conversa) - é o que permite ao
     sistema mandar a resposta de volta pelo WhatsApp automaticamente
     assim que o médico/equipe responder (ver
-    app.routes_medico.perguntas_responder). Devolve uma tupla (texto de
+    app.routes_medico.perguntas_responder). Devolve uma TRIPLA (texto de
     resposta a mandar de volta pro paciente agora, a PerguntaPendente
     criada - ou None se já foi respondida na hora, seja pela FAQ ou pela
-    aprovação automática abaixo) - o chamador usa o segundo item para
-    avisar a equipe por notificação (push e/ou WhatsApp, ver
-    app.push_notificacoes.notificar_equipe_nova_pergunta), só depois de
-    commitar de verdade.
+    aprovação automática abaixo -, eh_sem_sentido) - o chamador usa o
+    segundo item para avisar a equipe por notificação (push e/ou
+    WhatsApp, ver app.push_notificacoes.notificar_equipe_nova_pergunta),
+    só depois de commitar de verdade. O terceiro item (pedido do Silvan,
+    2026-09-24, ver app.ia_preparo.responder_com_ia) é True quando a IA -
+    não a checagem por regras fixas, feita antes desta função ser
+    chamada, ver `_eh_mensagem_sem_sentido_minimo` - julgou que o texto
+    do paciente nem chega a ser uma pergunta/comentário coerente; nesse
+    caso NÃO cria PerguntaPendente nem ChatMensagem (mesmo comportamento
+    da checagem por regras fixas), e quem chamou não deve colar o
+    convite de "pode escrever sua próxima pergunta" na resposta.
 
     Pedido do Silvan (2026-09-13): cada Grupo (ou médico/dono, numa conta
     solo sem Grupo) pode desativar a exigência de aprovação humana para
@@ -482,6 +509,16 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             )
             if exame else None
         )
+        if resultado_ia and resultado_ia.get("sem_sentido"):
+            # Ver docstring desta função e de app.ia_preparo.
+            # responder_com_ia ("sem_sentido") - a IA julgou que o texto
+            # nem chega a ser uma pergunta/comentário coerente. Mesmo
+            # tratamento da checagem por regras fixas em
+            # `_eh_mensagem_sem_sentido_minimo`: devolve o mesmo aviso
+            # pedindo pra reescrever, sem criar PerguntaPendente nem
+            # ChatMensagem - não faz sentido registrar isso no histórico
+            # nem na fila da equipe.
+            return MENSAGEM_MENSAGEM_SEM_SENTIDO, None, True
         if resultado_ia and resultado_ia["final"]:
             origem = "ia_aguardando"
             pergunta_pendente_criada = PerguntaPendente(
@@ -541,7 +578,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     ))
 
     texto_resposta = resposta_final if resposta_final else MENSAGEM_PERGUNTA_ENCAMINHADA
-    return texto_resposta, pergunta_pendente_criada
+    return texto_resposta, pergunta_pendente_criada, False
 
 
 def _normalizar_texto(texto):
@@ -855,7 +892,16 @@ def processar_mensagem(telefone, corpo_mensagem):
     # remarcação já tratada acima, nem sem sentido nenhum) é a pergunta em
     # si - direto, sem precisar digitar "1" antes (ver docstring do
     # módulo).
-    resposta_pergunta, pergunta_criada = _responder_pergunta(paciente, agendamento, texto, telefone)
+    resposta_pergunta, pergunta_criada, eh_sem_sentido = _responder_pergunta(paciente, agendamento, texto, telefone)
+    if eh_sem_sentido:
+        # Julgamento pela IA (pedido do Silvan, 2026-09-24 - ver docstring
+        # do módulo e de `_responder_pergunta`): mesmo tratamento da
+        # checagem por regras fixas, alguns parágrafos acima - devolve só
+        # o aviso, sem colar o convite de "pode escrever sua próxima
+        # pergunta" (não faz sentido convidar a reescrever E já convidar
+        # a perguntar de novo na mesma resposta).
+        db.session.commit()
+        return resposta_pergunta
     complemento = (
         MENSAGEM_AGUARDANDO_RESPOSTA
         if _tem_pergunta_pendente(paciente)

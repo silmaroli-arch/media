@@ -54,7 +54,26 @@ secretaria/clínica/equipe) e trata como se fosse o marcador - encaminha
 pro médico do mesmo jeito. Deliberadamente conservadora (as duas partes
 do padrão precisam bater) pra não descartar por engano uma resposta de
 verdade que só cita a secretaria de passagem (ex.: uma orientação válida
-que termina com "qualquer dúvida, fale com a secretaria")."""
+que termina com "qualquer dúvida, fale com a secretaria").
+
+Julgamento de "isso faz sentido?" pela própria IA (pedido do Silvan,
+2026-09-24): além da checagem por regras fixas em
+app.whatsapp_conversa._eh_mensagem_sem_sentido_minimo (grátis, instantânea,
+pega os casos óbvios - só símbolo, teclado travado etc.), a pergunta do
+paciente que PASSA por aquela checagem também é enviada normalmente pra
+IA aqui, junto com o preparo - se o texto não for uma pergunta/comentário
+coerente sobre o preparo (ex.: palavras reais em ordem sem sentido, ou um
+texto sobre outro assunto qualquer que nem chega a ser uma pergunta), a IA
+sinaliza isso respondendo EXATAMENTE com `MARCADOR_SEM_SENTIDO` (ver
+PROMPT_SISTEMA abaixo) - diferente de `MARCADOR_NAO_SEI`, que é reservado
+pra uma pergunta COERENTE que só não tem informação disponível pra
+responder. Essa segunda camada não faz nenhuma chamada de API extra (é a
+MESMA chamada que já ia ser feita pra tentar responder a pergunta) - só
+existe quando pelo menos uma das IAs de chat está configurada; sem
+nenhuma, o sistema continua dependendo só da checagem por regras fixas,
+como sempre. Ver `responder_com_ia` (chave "sem_sentido" do retorno) e
+app.whatsapp_conversa._responder_pergunta, quem decide o que fazer com
+esse sinal."""
 import os
 import re
 import unicodedata
@@ -64,6 +83,11 @@ from flask import current_app
 from app.custo_ia import registrar_chamada_ia
 
 MARCADOR_NAO_SEI = "NAO_SEI_ENCAMINHAR"
+# Ver docstring do módulo ("Julgamento de 'isso faz sentido?' pela própria
+# IA") - diferente de MARCADOR_NAO_SEI: este marca uma mensagem que nem é
+# uma pergunta/comentário coerente sobre o preparo (não que falte
+# informação pra responder a uma pergunta coerente).
+MARCADOR_SEM_SENTIDO = "SEM_SENTIDO_ENCAMINHAR"
 
 # Ver docstring do módulo ("Rede de segurança contra recusa disfarçada").
 # Primeiro grupo: a IA declarando que não tem a informação. Segundo grupo:
@@ -132,6 +156,7 @@ Regras importantes:
 - NUNCA faça o raciocínio de identidade acima sobre uma CARACTERÍSTICA do produto que os dados não informam (ex.: qual é a cor de um sabor específico de bebida, se um alimento tem ou não determinado ingrediente). Isso é inventar informação, mesmo que pareça um "senso comum" — cores de sabores variam por marca/país e você pode errar. Nesses casos, explique a regra cadastrada (ex.: "só é permitido líquido de cor clara") e oriente o paciente a verificar essa característica específica por conta própria (observando a embalagem) ou perguntar à secretaria — nunca afirme se aquele sabor/produto específico atende ou não à regra quando isso não estiver explícito nos dados.
 - Quando o item tiver um prazo/data calculado nos dados fornecidos, cite esse prazo/data na resposta.
 - Reserve o texto NAO_SEI_ENCAMINHAR só para perguntas que genuinamente não têm nenhuma informação útil a dar (ex.: assunto totalmente fora do preparo, ou um item que você não consegue identificar de jeito nenhum) — nesse caso, responda EXATAMENTE com esse texto, nada mais, nenhuma outra palavra, nenhuma pontuação extra.
+- Antes de aplicar qualquer regra acima, avalie se o texto do paciente é sequer uma pergunta ou comentário coerente (mesmo que informal, curto ou com erros de digitação/ortografia). Se o texto for palavras reais mas sem nenhum sentido coerente entre si, ou for sobre um assunto qualquer que nem chega a formar uma pergunta/comentário compreensível, responda EXATAMENTE com o texto SEM_SENTIDO_ENCAMINHAR, nada mais. NÃO use SEM_SENTIDO_ENCAMINHAR para uma pergunta coerente que só está fora do preparo ou que você não consegue identificar (esses casos usam NAO_SEI_ENCAMINHAR, acima) — a diferença é: NAO_SEI_ENCAMINHAR é "entendi a pergunta, mas não tenho a informação"; SEM_SENTIDO_ENCAMINHAR é "isso nem é uma pergunta/comentário que eu consiga entender". Na dúvida entre os dois, ou na dúvida entre usar SEM_SENTIDO_ENCAMINHAR e simplesmente responder, prefira responder normalmente ou usar NAO_SEI_ENCAMINHAR — evite usar SEM_SENTIDO_ENCAMINHAR para um texto que dá pra entender, mesmo que mal escrito.
 - Nunca responda sobre assuntos fora do preparo deste exame específico (ex.: diagnósticos, tratamentos, outros exames).
 - Quando houver um "Histórico recente desta conversa" listado antes da pergunta atual, use-o para entender o CONTEXTO da conversa em aberto com este paciente — principalmente perguntas de acompanhamento curtas que só fazem sentido em conjunto com a pergunta anterior (ex.: depois de "posso comer batata?", a pergunta seguinte "e frita?" deve ser entendida como "posso comer batata frita?", não como uma pergunta solta e incompleta). Sem esse histórico, trate a pergunta como isolada, do jeito de sempre."""
 
@@ -324,12 +349,14 @@ def _formatar_historico_conversa(historico):
 
 
 def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
-    """Devolve uma tupla `(texto_ou_None, chamada_ou_None)` - `chamada` é
-    o `ChamadaIA` já registrado (ver app.custo_ia.registrar_chamada_ia),
-    para quem chamou poder marcar depois `.resposta_final_usada` assim
-    que souber se esta resposta específica "venceu" (só é sabido depois
-    que a(s) outra(s) IA(s) também já responderam - ver
-    responder_com_ia)."""
+    """Devolve uma tupla `(texto_ou_None, chamada_ou_None, sem_sentido_bool)`
+    - `chamada` é o `ChamadaIA` já registrado (ver
+    app.custo_ia.registrar_chamada_ia), para quem chamou poder marcar
+    depois `.resposta_final_usada` assim que souber se esta resposta
+    específica "venceu" (só é sabido depois que a(s) outra(s) IA(s)
+    também já responderam - ver responder_com_ia). `sem_sentido_bool` é
+    True quando esta IA respondeu com o marcador MARCADOR_SEM_SENTIDO -
+    ver docstring do módulo ("Julgamento de 'isso faz sentido?'")."""
     try:
         mensagem = cliente.messages.create(
             model=MODELO_PADRAO,
@@ -354,7 +381,7 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
         # comportamento (a pergunta continua caindo pros outros
         # caminhos de sempre).
         current_app.logger.exception("Falha ao consultar a Claude para responder pergunta do paciente")
-        return None, None
+        return None, None, False
     uso = getattr(mensagem, "usage", None)
     chamada = registrar_chamada_ia(
         "chat_duvida_paciente", "Claude", getattr(mensagem, "model", MODELO_PADRAO),
@@ -363,13 +390,15 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
     )
     texto = "".join(getattr(bloco, "text", "") for bloco in mensagem.content).strip()
     if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
-        return None, chamada
-    return texto, chamada
+        return None, chamada, False
+    if MARCADOR_SEM_SENTIDO in texto:
+        return None, chamada, True
+    return texto, chamada, False
 
 
 def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
     """Ver docstring de `_perguntar_claude` acima - mesmo contrato de
-    retorno `(texto_ou_None, chamada_ou_None)`."""
+    retorno `(texto_ou_None, chamada_ou_None, sem_sentido_bool)`."""
     try:
         resposta = cliente.chat.completions.create(
             model=MODELO_OPENAI_PADRAO,
@@ -388,7 +417,7 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
         )
     except Exception:
         current_app.logger.exception("Falha ao consultar o ChatGPT para responder pergunta do paciente")
-        return None, None
+        return None, None, False
     uso = getattr(resposta, "usage", None)
     chamada = registrar_chamada_ia(
         "chat_duvida_paciente", "ChatGPT", getattr(resposta, "model", MODELO_OPENAI_PADRAO),
@@ -397,13 +426,15 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
     )
     texto = (resposta.choices[0].message.content or "").strip()
     if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
-        return None, chamada
-    return texto, chamada
+        return None, chamada, False
+    if MARCADOR_SEM_SENTIDO in texto:
+        return None, chamada, True
+    return texto, chamada, False
 
 
 def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
     """Ver docstring de `_perguntar_claude` acima - mesmo contrato de
-    retorno `(texto_ou_None, chamada_ou_None)`. Mesma lib/cliente do
+    retorno `(texto_ou_None, chamada_ou_None, sem_sentido_bool)`. Mesma lib/cliente do
     import de PDF (ver app.ia_pdf_preparo), mas aqui a chamada é bem mais
     simples (só texto, sem PDF em anexo, sem retry de sobrecarga - o
     volume de perguntas do chat é baixo, e um erro passageiro aqui
@@ -425,7 +456,7 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
         )
     except Exception:
         current_app.logger.exception("Falha ao consultar o Gemini para responder pergunta do paciente")
-        return None, None
+        return None, None, False
     uso = getattr(resposta, "usage_metadata", None)
     chamada = registrar_chamada_ia(
         "chat_duvida_paciente", "Gemini", getattr(resposta, "model_version", None) or MODELO_GEMINI_PADRAO,
@@ -434,8 +465,10 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
     )
     texto = (getattr(resposta, "text", None) or "").strip()
     if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
-        return None, chamada
-    return texto, chamada
+        return None, chamada, False
+    if MARCADOR_SEM_SENTIDO in texto:
+        return None, chamada, True
+    return texto, chamada, False
 
 
 def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=None):
@@ -556,17 +589,19 @@ CAMPO_RESPOSTA_BRUTA = {"Claude": "claude", "ChatGPT": "chatgpt", "Gemini": "gem
 def _tentar_provedor(nome_provedor, pergunta_usuario, contexto, paciente_id=None, historico=None):
     """Cria o cliente do provedor indicado (se a API key dele estiver
     configurada) e tenta obter uma resposta. Retorna
-    `(texto_ou_None, chamada_ou_None, tentou_bool)` - `tentou_bool`
-    distingue "provedor sem API key configurada" (False - nem tentou) de
-    "tinha API key e a chamada foi feita" (True, mesmo que tenha
-    falhado) - usado por responder_com_ia para decidir quando vale a pena
-    acionar a reserva (ver logo abaixo)."""
+    `(texto_ou_None, chamada_ou_None, tentou_bool, sem_sentido_bool)` -
+    `tentou_bool` distingue "provedor sem API key configurada" (False -
+    nem tentou) de "tinha API key e a chamada foi feita" (True, mesmo que
+    tenha falhado) - usado por responder_com_ia para decidir quando vale a
+    pena acionar a reserva (ver logo abaixo). `sem_sentido_bool` (ver
+    docstring do módulo, "Julgamento de 'isso faz sentido?'") só pode ser
+    True quando `tentou_bool` também é True."""
     cliente_factory, perguntar = _PROVEDORES_CHAT[nome_provedor]
     cliente = cliente_factory()
     if not cliente:
-        return None, None, False
-    texto, chamada = perguntar(cliente, pergunta_usuario, contexto, paciente_id, historico)
-    return texto, chamada, True
+        return None, None, False, False
+    texto, chamada, sem_sentido = perguntar(cliente, pergunta_usuario, contexto, paciente_id, historico)
+    return texto, chamada, True, sem_sentido
 
 
 def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
@@ -611,7 +646,8 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     idêntico a antes desta funcionalidade existir.
 
     Retorna um dicionário {"final": ..., "por_provedor": {"Claude": ...,
-    "ChatGPT": ..., "Gemini": ...}, "falhas": [...]} — "por_provedor" tem a resposta crua
+    "ChatGPT": ..., "Gemini": ...}, "falhas": [...], "sem_sentido": ...} —
+    "por_provedor" tem a resposta crua
     de cada IA consultada (None para a que não foi escolhida, ou não
     respondeu a esta pergunta), usado por app.routes_paciente e
     app.whatsapp_conversa para preencher os 3 campos
@@ -654,7 +690,24 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     app.whatsapp_conversa) e mostrar ao médico na tela de aprovação (ver
     medico/perguntas.html) que uma IA configurada deu erro nesta pergunta
     específica — mesmo quando a reserva "tapou o buraco" e o rascunho
-    final saiu normal, sem nenhum outro sinal visível do problema."""
+    final saiu normal, sem nenhum outro sinal visível do problema.
+
+    "sem_sentido" (pedido do Silvan, 2026-09-24 - ver docstring do módulo,
+    "Julgamento de 'isso faz sentido?'") é True só quando "final" veio
+    None E TODAS as IAs que efetivamente responderam a esta pergunta (pelo
+    menos uma) sinalizaram com MARCADOR_SEM_SENTIDO - conservador de
+    propósito (mesmo espírito do "reforço mútuo" acima): se uma IA achou
+    sem sentido mas a outra respondeu normalmente, "final" já não é None
+    (usa a que respondeu) e "sem_sentido" fica False. Quando nenhuma IA
+    está configurada, ou nenhuma chegou a responder de verdade (só falha
+    de chamada), também é False - só a checagem por regras fixas
+    (app.whatsapp_conversa._eh_mensagem_sem_sentido_minimo) continua
+    valendo nesses casos. Quem chamou (app.whatsapp_conversa.
+    _responder_pergunta) usa esse sinal para devolver o mesmo aviso de
+    "não consegui entender essa mensagem" de sempre, SEM criar
+    PerguntaPendente nem ChatMensagem - mesmo comportamento da checagem
+    por regras fixas, só que pega casos mais sutis (palavras reais em
+    ordem sem sentido) que a checagem fixa não pega."""
     from app.models import PlataformaConfig
 
     config = PlataformaConfig.obter()
@@ -665,13 +718,13 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     respostas_por_provedor = {"Claude": None, "ChatGPT": None, "Gemini": None}
     contexto = _formatar_contexto_preparo(exame)
 
-    resposta_a, chamada_a, tentou_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id, historico)
-    resposta_b, chamada_b, tentou_b = _tentar_provedor(provedor_b, pergunta_usuario, contexto, paciente_id, historico)
+    resposta_a, chamada_a, tentou_a, sem_sentido_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id, historico)
+    resposta_b, chamada_b, tentou_b, sem_sentido_b = _tentar_provedor(provedor_b, pergunta_usuario, contexto, paciente_id, historico)
 
     if not tentou_a and not tentou_b:
         # Nenhuma das duas escolhidas tem API key configurada - não é
         # "falha", é "não configurada", não faz sentido acionar reserva.
-        return {"final": None, "por_provedor": respostas_por_provedor, "falhas": []}
+        return {"final": None, "por_provedor": respostas_por_provedor, "falhas": [], "sem_sentido": False}
 
     nome_efetivo_a, nome_efetivo_b = provedor_a, provedor_b
 
@@ -701,16 +754,16 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
             "IA configurada (%s) falhou ao responder pergunta do paciente - tentando %s (não escolhida) como reserva",
             provedor_a if falhou_a else provedor_b, provedor_c,
         )
-        resposta_c, chamada_c, tentou_c = _tentar_provedor(provedor_c, pergunta_usuario, contexto, paciente_id, historico)
+        resposta_c, chamada_c, tentou_c, sem_sentido_c = _tentar_provedor(provedor_c, pergunta_usuario, contexto, paciente_id, historico)
         reserva_respondeu = tentou_c and (resposta_c is not None or chamada_c is not None)
         if tentou_c and not reserva_respondeu:
             # A reserva também falhou de verdade - registra pra aparecer
             # na tela do médico igual às outras.
             falhas.append(provedor_c)
         if reserva_respondeu and falhou_a:
-            resposta_a, chamada_a, nome_efetivo_a = resposta_c, chamada_c, provedor_c
+            resposta_a, chamada_a, nome_efetivo_a, sem_sentido_a = resposta_c, chamada_c, provedor_c, sem_sentido_c
         elif reserva_respondeu and falhou_b:
-            resposta_b, chamada_b, nome_efetivo_b = resposta_c, chamada_c, provedor_c
+            resposta_b, chamada_b, nome_efetivo_b, sem_sentido_b = resposta_c, chamada_c, provedor_c, sem_sentido_c
 
     respostas_por_provedor[nome_efetivo_a] = resposta_a
     respostas_por_provedor[nome_efetivo_b] = resposta_b
@@ -776,4 +829,16 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
         if chamada_b:
             chamada_b.resposta_final_usada = bool(resposta_b)
 
-    return {"final": final, "por_provedor": respostas_por_provedor, "falhas": falhas}
+    # Ver docstring acima ("sem_sentido") - só quando não sobrou nenhum
+    # rascunho final E todas as IAs que de fato responderam (chamada
+    # registrada) concordaram que o texto não fazia sentido.
+    sem_sentido = False
+    if not final:
+        respondentes_sem_sentido = []
+        if chamada_a is not None:
+            respondentes_sem_sentido.append(sem_sentido_a)
+        if chamada_b is not None:
+            respondentes_sem_sentido.append(sem_sentido_b)
+        sem_sentido = bool(respondentes_sem_sentido) and all(respondentes_sem_sentido)
+
+    return {"final": final, "por_provedor": respostas_por_provedor, "falhas": falhas, "sem_sentido": sem_sentido}

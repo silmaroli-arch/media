@@ -139,4 +139,62 @@ with app.app_context():
         "água pura é permitida" in resposta,
     )
 
+# --- Parte 3: julgamento pela IA (camada híbrida, pedido do Silvan,
+# 2026-09-24) - a checagem por regras fixas (partes 1 e 2 acima) só pega
+# os casos óbvios; palavras reais em ordem sem sentido passam por ela e
+# só são pegas pela IA (ver app.ia_preparo.responder_com_ia, chave
+# "sem_sentido"). Testado aqui mockando `responder_com_ia` diretamente
+# (mesmo padrão já usado em test_whatsapp_pergunta.py para simular a IA
+# sem precisar de nenhuma API key configurada) - confirma que o mesmo
+# aviso é devolvido, sem PerguntaPendente/ChatMensagem, e sem colar o
+# convite de próxima pergunta (diferente de uma pergunta respondida de
+# verdade).
+from unittest.mock import patch
+
+with app.app_context():
+    perguntas_antes3 = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
+    mensagens_antes3 = ChatMensagem.query.filter_by(paciente_id=joao.id).count()
+
+    with patch(
+        "app.whatsapp_conversa.responder_com_ia",
+        return_value={"final": None, "por_provedor": {"Claude": None, "ChatGPT": None, "Gemini": None}, "falhas": [], "sem_sentido": True},
+    ) as ia_mock:
+        resposta = processar_mensagem(telefone, "mesa amanhã vidro comprimido depois")
+
+    checar("IA julgando sem sentido é consultada (passou pela checagem por regras fixas)", ia_mock.called)
+    checar(
+        "IA julgando sem sentido devolve o MESMO aviso da checagem por regras fixas",
+        resposta == MENSAGEM_MENSAGEM_SEM_SENTIDO,
+    )
+    checar(
+        "IA julgando sem sentido NÃO cria PerguntaPendente",
+        PerguntaPendente.query.filter_by(paciente_id=joao.id).count() == perguntas_antes3,
+    )
+    checar(
+        "IA julgando sem sentido NÃO cria ChatMensagem",
+        ChatMensagem.query.filter_by(paciente_id=joao.id).count() == mensagens_antes3,
+    )
+    checar(
+        "IA julgando sem sentido NÃO cola o convite de próxima pergunta (só o aviso puro)",
+        "\n\n" not in resposta,
+    )
+
+    # Regressão: quando a IA responde normalmente (sem_sentido=False, com
+    # "final" preenchido), o fluxo de pergunta de verdade continua igual -
+    # não é afetado por esta camada nova.
+    with patch(
+        "app.whatsapp_conversa.responder_com_ia",
+        return_value={
+            "final": "Resposta de teste da IA.",
+            "por_provedor": {"Claude": "Resposta de teste da IA.", "ChatGPT": None, "Gemini": None},
+            "falhas": [],
+            "sem_sentido": False,
+        },
+    ):
+        resposta_normal = processar_mensagem(telefone, "[teste-sem-sentido-ia] Posso comer manga antes do exame?")
+    checar(
+        "Resposta normal da IA (sem_sentido=False) continua sendo encaminhada normalmente",
+        "encaminhada" in resposta_normal.lower(),
+    )
+
 print("\nTodos os testes da validação mínima de 'isso parece um texto de verdade' passaram.")
