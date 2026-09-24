@@ -104,23 +104,42 @@ with app.app_context():
     checar("Pergunta encaminhada fica no histórico sem resposta ainda", ultima_mensagem.resposta is None)
     checar("Pergunta encaminhada fica no histórico com origem pendente", ultima_mensagem.origem == "pendente")
 
-    # --- Enquanto a pergunta acima está pendente, o convite a perguntar
-    # de novo fica escondido - só aparece o aviso de que a resposta está
-    # a caminho, e nenhuma mensagem nova cria PerguntaPendente/ChatMensagem.
+    # --- Perguntas independentes com uma já pendente (pedido do Silvan,
+    # 2026-09-24): uma pergunta nova, mesmo sem resposta ainda pra
+    # anterior, cria sua PRÓPRIA PerguntaPendente - não fica mais
+    # bloqueada esperando a anterior ser respondida (bloqueio removido -
+    # ver docstring de app.whatsapp_conversa, "Perguntas independentes
+    # com uma já pendente"). O complemento da resposta ainda avisa que
+    # ainda tem pendência (`MENSAGEM_AGUARDANDO_RESPOSTA`), já que a que
+    # acabou de ser criada também está sem resposta.
     resposta = processar_mensagem(telefone, "Posso comer batata?")
-    checar("Com pergunta pendente, nova mensagem só mostra o aviso de aguardando resposta", "ainda está sendo respondida" in resposta)
+    checar(
+        "Pergunta independente, mesmo com outra pendente, é encaminhada normalmente",
+        "encaminhada" in resposta.lower(),
+    )
+    checar(
+        "Depois de encaminhar, o complemento avisa que ainda tem pendência (a nova, ou a anterior)",
+        "ainda está sendo respondida" in resposta,
+    )
     pendentes_depois2 = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
-    checar("Mensagem durante pendência não cria PerguntaPendente nova", pendentes_depois2 == pendentes_depois)
+    checar(
+        "Pergunta independente com outra pendente CRIA uma PerguntaPendente nova",
+        pendentes_depois2 == pendentes_depois + 1,
+    )
 
     # --- Regressão do bug relatado pelo Silvan (2026-09-11): antes desta
     # correção, a IA era SEMPRE consultada primeiro - uma pergunta que já
     # batia com uma FAQ cadastrada (ex.: repetida) mesmo assim ia pra IA
     # de novo e ficava pendente de aprovação do médico, em vez de já
-    # devolver a resposta cadastrada direto pro paciente. Libera a
-    # pergunta pendente do caminho 3 acima (simula o médico já tendo
-    # respondido) só para poder seguir testando outros cenários nesta
-    # mesma conversa, sem o aviso de "aguardando resposta" no meio.
-    ultima_pendente.status = "respondida"
+    # devolver a resposta cadastrada direto pro paciente. Libera as duas
+    # pendências acima (a de "dirigir sozinho", do caminho 3, e a de
+    # "batata", independente, criada no bloco anterior - simula o médico
+    # já tendo respondido as duas) só para poder seguir testando outros
+    # cenários nesta mesma conversa, sem o aviso de "aguardando resposta"
+    # no meio.
+    PerguntaPendente.query.filter_by(paciente_id=joao.id).filter(
+        PerguntaPendente.status != "respondida"
+    ).update({"status": "respondida"}, synchronize_session=False)
     db.session.commit()
 
     with patch("app.whatsapp_conversa.responder_com_ia") as ia_mock:

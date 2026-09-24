@@ -158,16 +158,16 @@ with app.app_context():
     #     certo para responder_com_ia a cada nova pergunta.
     #
     # Usa um paciente NOVO (não o João) de propósito: João já acumulou,
-    # ao longo desta mesma suíte de testes, tanto mais de um agendamento
-    # ativo (test_whatsapp_identificacao.py, test_smoke.py) quanto
-    # perguntas pendentes nunca respondidas (test_whatsapp_pergunta.py) -
-    # essa segunda parte bloquearia toda mensagem nova por WhatsApp com
-    # "Sua pergunta ainda está sendo respondida" (ver
-    # app.whatsapp_conversa._tem_pergunta_pendente), o que impediria este
-    # teste de chegar a chamar a IA de verdade. Um paciente novo, com um
-    # único agendamento e nenhuma pergunta pendente, garante um cenário
-    # limpo e previsível, sem depender da ordem de execução dos outros
-    # arquivos de teste.
+    # ao longo desta mesma suíte de testes, mais de um agendamento ativo
+    # (test_whatsapp_identificacao.py, test_smoke.py) - isso tornaria o
+    # exame em foco ambíguo/dependente da ordem de execução dos outros
+    # arquivos de teste, o que quebraria a asserção de "histórico vazio -
+    # paciente novo" abaixo. Um paciente novo, com um único agendamento,
+    # garante um cenário limpo e previsível. (Perguntas pendentes nunca
+    # respondidas de outros arquivos de teste NÃO são mais um problema
+    # aqui - desde 2026-09-24 uma pergunta nova não fica mais bloqueada
+    # por uma pendência anterior, ver docstring de app.whatsapp_conversa
+    # - mas o paciente novo continua valendo pela razão do agendamento.)
     # -------------------------------------------------------------
     paciente_zap = Paciente(
         nome="Paciente Teste Conversa WhatsApp",
@@ -198,11 +198,10 @@ with app.app_context():
     checar("WhatsApp: histórico recebido na 1ª chamada é o que existia ANTES desta pergunta (vazio - paciente novo)", historico_zap_1 == esperado_antes_zap_1 == [])
 
     # Como a IA mockada devolveu None, a 1ª pergunta ficou como
-    # PerguntaPendente "pendente" (encaminhada) - sem resolver isso, a
-    # 2ª pergunta seria bloqueada por _tem_pergunta_pendente (mesmo
-    # motivo pelo qual este teste usa um paciente novo, e não o João -
-    # ver comentário acima). Simula o médico já tendo respondido, só
-    # para poder seguir testando a continuidade da conversa.
+    # PerguntaPendente "pendente" (encaminhada). Isso não bloqueia mais a
+    # 2ª pergunta (ver docstring de app.whatsapp_conversa, "Perguntas
+    # independentes com uma já pendente") - resolvida aqui só por
+    # organização, não por necessidade.
     pendente_1 = (
         PerguntaPendente.query.filter_by(paciente_id=paciente_zap.id)
         .order_by(PerguntaPendente.id.desc())

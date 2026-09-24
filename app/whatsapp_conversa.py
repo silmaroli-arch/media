@@ -58,6 +58,25 @@
   `_resolver_ancora` de lá em vez de duplicar a regra de roteamento pra
   Grupo/dono pessoal.
 
+  **Perguntas independentes com uma já pendente (pedido do Silvan,
+  2026-09-24)**: existia um bloqueio (`_tem_pergunta_pendente`, checado no
+  início de `processar_mensagem`) que impedia mandar QUALQUER mensagem
+  nova - inclusive uma pergunta totalmente diferente, sobre outro assunto
+  - enquanto uma pergunta anterior ainda não tinha resposta da equipe; a
+  única coisa que o paciente via era o aviso de "sua pergunta ainda está
+  sendo respondida", repetido pra cada mensagem nova. Removido: agora uma
+  pergunta nova, mesmo com outra ainda pendente, cria sua PRÓPRIA
+  `PerguntaPendente` independente (mesmo comportamento que o chat pela
+  área web, `app.routes_paciente.chat`, já tinha - nunca teve esse
+  bloqueio). `_tem_pergunta_pendente` continua existindo, mas só pra
+  decidir qual mensagem de complemento mostrar depois de responder
+  (`MENSAGEM_AGUARDANDO_RESPOSTA` em vez do convite de sempre, quando
+  ainda sobra alguma pendência) - não bloqueia mais nada. "Trocar de
+  exame" e o reconhecimento de intenção de remarcação/número errado
+  (documento "Clara") também deixam de ficar bloqueados por uma pergunta
+  pendente, como efeito colateral direto de remover esse bloqueio (eram
+  checados depois dele).
+
 Este módulo é só a LÓGICA de conversa (recebe telefone + texto da
 mensagem, devolve o texto da resposta) — não sabe nada sobre Twilio nem
 sobre HTTP, para poder ser testado sem precisar simular um webhook (ver
@@ -317,12 +336,18 @@ MENSAGEM_AGUARDANDO_RESPOSTA = (
 
 def _tem_pergunta_pendente(paciente):
     """True se o paciente tem alguma PerguntaPendente ainda sem resposta
-    (status "pendente" ou "aguardando_aprovacao") - enquanto isso for
-    verdade, o convite pra perguntar de novo fica escondido: a única
-    coisa que faz sentido o paciente ver é o aviso de que a resposta está
-    a caminho (ver pedido do Silvan - antes disso, dava a entender, por
-    engano, que dava pra mandar outra pergunta ou trocar de exame
-    livremente enquanto a anterior ainda não tinha resposta)."""
+    (status "pendente" ou "aguardando_aprovacao").
+
+    Usada só pra decidir a MENSAGEM de complemento depois de responder a
+    uma pergunta nova (ver `processar_mensagem`) - mostra
+    `MENSAGEM_AGUARDANDO_RESPOSTA` em vez do convite de sempre quando
+    ainda sobra alguma pendência (a que acabou de ser criada, ou uma
+    anterior). NÃO bloqueia mais mandar uma pergunta nova enquanto outra
+    ainda está pendente (removido a pedido do Silvan, 2026-09-24 - ver
+    docstring do módulo: "Perguntas independentes com uma já pendente").
+    Cada pergunta vira sua própria `PerguntaPendente`, resolvida
+    independentemente pelo médico - não há limite de quantas podem ficar
+    pendentes ao mesmo tempo."""
     return (
         PerguntaPendente.query.filter_by(paciente_id=paciente.id)
         .filter(PerguntaPendente.status != "respondida")
@@ -786,14 +811,6 @@ def processar_mensagem(telefone, corpo_mensagem):
     # "trocar" para escolher outro, em qualquer momento.
     paciente, agendamento = conversa.paciente, conversa.agendamento
     texto = (corpo_mensagem or "").strip()
-
-    # Enquanto houver uma pergunta pendente sem resposta da equipe, a
-    # única coisa que faz sentido o paciente ver é o aviso de que a
-    # resposta está a caminho - não dá a entender que dá pra perguntar de
-    # novo ou trocar de exame livremente enquanto isso.
-    if _tem_pergunta_pendente(paciente):
-        db.session.commit()
-        return MENSAGEM_AGUARDANDO_RESPOSTA
 
     agendamentos_ativos = _agendamentos_ativos(paciente)
     tem_mais_de_um_exame = len(agendamentos_ativos) > 1
