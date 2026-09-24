@@ -96,13 +96,24 @@ MARCADOR_SEM_SENTIDO = "SEM_SENTIDO_ENCAMINHAR"
 # uma isolada é comum demais em respostas de verdade pra servir de sinal
 # sozinha (ex.: uma resposta válida pode perfeitamente terminar com "fale
 # com a secretaria em caso de dúvida" sem estar se recusando a responder).
+#
+# Bug corrigido (pedido do Silvan, 2026-09-24): o segundo grupo exigia a
+# forma exata "entrar em contato" (infinitivo), mas a IA respondeu na
+# prática com "entre em contato" (imperativo) - não batia, e uma recusa
+# disfarçada real (pergunta sobre maconha, fora do preparo) passou como
+# se fosse resposta de verdade e foi enviada direto ao paciente sem
+# passar pelo médico (aprovação automática estava ativada para aquele
+# médico/grupo - ver `exige_aprovacao_pergunta` em app.routes_paciente).
+# Trocado "entrar em contato" por "entr\w* em contato" (cobre entrar/
+# entre/entrei/entrando etc.) e adicionado "procur\w*" (ex.: "procure a
+# secretaria") como mais uma forma comum de encaminhamento.
 _PADROES_SEM_INFORMACAO = re.compile(
     r"nao (?:ha|tenho|temos|possuo|encontrei|consta) "
     r"(?:nenhuma |essa |esta |informa)|"
     r"nao (?:esta|foi) (?:especificad|informad|cadastrad)"
 )
 _PADROES_ENCAMINHA_PARA_CLINICA = re.compile(
-    r"(?:confirm\w*|verifi\w*|entrar em contato|fal\w*|consult\w*).{0,30}"
+    r"(?:confirm\w*|verifi\w*|entr\w* em contato|fal\w*|consult\w*|procur\w*).{0,30}"
     r"(?:secretaria|clinica|equipe|recepcao)"
 )
 

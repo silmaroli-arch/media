@@ -49,6 +49,25 @@ checar(
     "Reconhece em caixa alta/mista",
     _eh_recusa_generica_disfarcada("NÃO ESTÁ ESPECIFICADO no preparo. Confirme com a SECRETARIA."),
 )
+checar(
+    "Caso real que motivou esta correção (bug 2026-09-24 - pergunta sobre "
+    "maconha, resposta no imperativo 'entre em contato', não 'entrar em "
+    "contato' - o regex antigo só reconhecia a forma infinitiva e deixou "
+    "passar direto pro paciente sem passar pelo médico)",
+    _eh_recusa_generica_disfarcada(
+        "Não há nenhuma informação sobre maconha nas orientações de preparo "
+        "deste exame. Para esclarecer essa dúvida específica, entre em "
+        "contato com a secretaria da clínica ou com o médico responsável."
+    ),
+)
+checar(
+    "Outras conjugações de 'entrar em contato' também são reconhecidas (entrei/entrando)",
+    _eh_recusa_generica_disfarcada("Não possuo essa informação cadastrada. Estou entrando em contato com a clínica por você não ser possível, verifique direto."),
+)
+checar(
+    "Variação com 'procure a secretaria' também é reconhecida",
+    _eh_recusa_generica_disfarcada("Não encontrei essa informação no preparo. Procure a secretaria para mais detalhes."),
+)
 
 # --- Casos que NÃO devem disparar (resposta de verdade, com dado cadastrado) ---
 
