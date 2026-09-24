@@ -6,13 +6,23 @@ equipe). `_eh_mensagem_sem_sentido_minimo` filtra esse tipo de mensagem
 (símbolo/emoji solto, número colado, pontuação repetida) ANTES de virar
 pergunta - ver docstring de app.whatsapp_conversa.
 
+No mesmo dia, o Silvan perguntou se um teclado travado/preso (ex.:
+"eeeeeeeeeeee") também seria pego - a resposta era não na primeira versão
+desta função (são só letras, sem símbolo nenhum), então ela ganhou mais
+uma condição: uma letra sozinha não pode responder por quase todas as
+letras da mensagem. Efeito colateral aceito dessa correção: uma sequência
+de uma letra só repetida em geral (ex.: "kkkk"/"aaaaa" isolados, sem mais
+nenhuma letra na mensagem) passou a ser tratada como sem sentido também -
+não só o teclado travado em si.
+
 Importante: NÃO é uma correção ortográfica nem um julgamento de "faz
-sentido de verdade em português" - só filtra o caso mais óbvio (texto sem
-quase nenhuma letra). Erro de digitação normal dentro de palavras de
-verdade continua passando direto, e uma saudação de verdade como "oi"
-continua virando pergunta encaminhada pra equipe (tradeoff aceito em
-2026-09-14, quando o gatilho "1" foi removido - esta mudança não resolve
-isso, só o caso mais extremo de mensagem sem nenhuma cara de texto).
+sentido de verdade em português" - só filtra os casos mais óbvios (texto
+sem quase nenhuma letra, ou só uma letra repetida). Erro de digitação
+normal dentro de palavras de verdade continua passando direto, e uma
+saudação de verdade como "oi" continua virando pergunta encaminhada pra
+equipe (tradeoff aceito em 2026-09-14, quando o gatilho "1" foi removido -
+esta mudança não resolve isso, só os casos mais extremos de mensagem sem
+nenhuma cara de texto).
 
 Duas partes: 1) `_eh_mensagem_sem_sentido_minimo` isolada (função pura de
 texto, sem banco); 2) via `processar_mensagem`, confirmando que uma
@@ -41,9 +51,23 @@ checar("Só pontuação repetida (\"...\") é sem sentido", sem_sentido("..."))
 checar("Emoji solto, sem nenhuma letra, é sem sentido", sem_sentido("😀👍"))
 checar("Número colado (ex.: telefone digitado por engano) é sem sentido", sem_sentido("27999998888"))
 checar("Uma letra só (\"k\") é sem sentido (não forma nem uma palavra mínima)", sem_sentido("k"))
+checar(
+    "Teclado travado/preso (\"eeeeeeeeeeee\") é sem sentido (pergunta do Silvan, 2026-09-24)",
+    sem_sentido("eeeeeeeeeeee"),
+)
+checar("Só uma letra repetida (\"aaaaaaa\") é sem sentido, mesmo sem nenhum símbolo", sem_sentido("aaaaaaa"))
+checar(
+    "Risada (\"kkkk\"), sem mais nenhuma letra na mensagem, também é sem sentido "
+    "(efeito colateral aceito da correção do teclado travado)",
+    sem_sentido("kkkk"),
+)
 
 checar("Saudação de verdade (\"oi\") NÃO é sem sentido (tradeoff já aceito em 2026-09-14)", not sem_sentido("oi"))
-checar("Risada (\"kkkk\") NÃO é sem sentido (é uma palavra, mesmo informal)", not sem_sentido("kkkk"))
+checar(
+    "Risada com duas letras alternadas (\"hahaha\") NÃO é sem sentido (tem variedade de letras)",
+    not sem_sentido("hahaha"),
+)
+checar("Palavra de verdade com letra repetida (\"carro\") NÃO é sem sentido", not sem_sentido("carro"))
 checar("Pergunta de verdade, sem erro nenhum, NÃO é sem sentido", not sem_sentido("Posso comer batata frita?"))
 checar(
     "Pergunta de verdade COM erro de digitação comum continua passando",
@@ -92,6 +116,19 @@ with app.app_context():
     checar(
         "Mensagem sem sentido NÃO cria ChatMensagem (nem fica registrada como pergunta)",
         ChatMensagem.query.filter_by(paciente_id=joao.id).count() == mensagens_antes,
+    )
+
+    # Teclado travado/preso via processar_mensagem de verdade (pergunta do
+    # Silvan que motivou a correção da variedade de letras) - mesmo
+    # comportamento: só o aviso, sem criar nada.
+    resposta = processar_mensagem(telefone, "eeeeeeeeeeee")
+    checar(
+        "Teclado travado (\"eeeeeeeeeeee\") também devolve o aviso pra reescrever",
+        resposta == MENSAGEM_MENSAGEM_SEM_SENTIDO,
+    )
+    checar(
+        "Teclado travado NÃO cria PerguntaPendente",
+        PerguntaPendente.query.filter_by(paciente_id=joao.id).count() == perguntas_antes,
     )
 
     # Depois do aviso, uma pergunta de verdade (mesmo com erro de

@@ -1175,6 +1175,18 @@ O Silvan reportou (com print de uma conversa real) que mandou ":(&;" por engano 
 
 - **Pendência**: mesma de sempre - `device_bash` voltou a funcionar nesta sessão (esteve indisponível a sessão toda até a mudança anterior), mas o `pip install` continua bloqueado tanto no ambiente de nuvem quanto na máquina do Silvan (mesma política de rede, `403 Forbidden`) - sem Flask instalado em nenhum dos dois lugares, não foi possível rodar a suíte de testes de ponta a ponta. Validado por `ast.parse` e, mais importante, executando a lógica de `_eh_mensagem_sem_sentido_minimo`/`_normalizar_texto` isoladamente (extraídas do próprio arquivo, fora do Flask) contra os mesmos casos do teste novo - todos bateram o esperado. Rodar `python test_whatsapp_mensagem_sem_sentido.py` (e a suíte completa) antes de subir pra produção. Testar visualmente pelo WhatsApp real: mandar algo tipo ":(&;" ou "???" depois de identificado e confirmar que recebe o pedido pra reescrever, sem gerar nenhuma pergunta pendente pra equipe.
 
+### Validação mínima ganhou mais uma checagem: teclado travado/preso (mesmo dia, 2026-09-24)
+
+Logo depois da correção acima, o Silvan perguntou: "E se o paciente digitar algo tipo eeeeeeeeeeee de um teclado preso, por exemplo. Ele vai aceitar?" - conferindo a lógica que tinha acabado de entrar, a resposta era SIM, aceitava: `_eh_mensagem_sem_sentido_minimo` só olhava pra proporção de letras vs. símbolos, e "eeeeeeeeeeee" é só letras (a mesma letra 12 vezes), então passava como se fosse um texto de verdade.
+
+**Correção**: `_eh_mensagem_sem_sentido_minimo` (`app/whatsapp_conversa.py`) ganhou mais uma condição - além da proporção de letras de antes, agora também checa se UMA letra sozinha responde por quase todas as letras da mensagem (`_PROPORCAO_MAXIMA_UMA_SO_LETRA = 0.6`, só a partir de `_MINIMO_LETRAS_PARA_CHECAR_REPETICAO = 4` letras, pra não pegar à toa uma palavra curta de verdade com letra repetida, tipo "certo"/"carro"). Usa `collections.Counter` pra contar quantas vezes cada letra aparece.
+
+**Efeito colateral aceito** (documentado na docstring e nos testes): isso também passou a cobrir qualquer sequência de UMA letra só repetida, não só o teclado travado em si - "kkkk"/"aaaaa" isolados (sem mais nenhuma outra letra na mensagem) agora também são tratados como sem sentido, mudando o que a versão anterior desta função aceitava (a primeira versão, de mais cedo neste mesmo dia, tratava "kkkk" como uma "palavra" válida). Uma risada com duas letras alternadas ("hahaha") continua passando normalmente, por ter variedade de letras.
+
+**Testes**: `test_whatsapp_mensagem_sem_sentido.py` atualizado - novos casos pro teclado travado (`"eeeeeeeeeeee"`, `"aaaaaaa"`, inclusive via `processar_mensagem` de verdade) e pra letra repetida em geral (`"kkkk"` mudou de "não é sem sentido" pra "é sem sentido"), e casos negativos novos confirmando que "hahaha" (duas letras) e "carro" (letra repetida mas com variedade) continuam passando normalmente.
+
+- **Pendência**: mesma de sempre - `pip install` continua bloqueado (ambiente de nuvem e máquina do Silvan) - validado por `ast.parse` e pela lógica extraída e testada isoladamente fora do Flask (mesmos casos do teste, todos bateram o esperado). Rodar `python test_whatsapp_mensagem_sem_sentido.py` (e a suíte completa) antes de subir pra produção.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

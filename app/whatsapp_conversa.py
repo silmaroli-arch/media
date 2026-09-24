@@ -37,11 +37,19 @@
   filtra esse tipo de mensagem (símbolo/emoji solto, número colado,
   pontuação repetida) ANTES de virar pergunta - devolve
   `MENSAGEM_MENSAGEM_SEM_SENTIDO` pedindo pra reescrever, sem criar
-  `PerguntaPendente`/`ChatMensagem` nem notificar ninguém. Importante: é
-  só uma barreira de "isso nem é texto" - NÃO resolve o tradeoff aceito no
+  `PerguntaPendente`/`ChatMensagem` nem notificar ninguém. No mesmo dia,
+  o Silvan perguntou se um teclado travado/preso (ex.: "eeeeeeeeeeee")
+  também seria pego - a resposta era não (são só letras, sem símbolo
+  nenhum), então a checagem ganhou mais uma condição: uma letra sozinha
+  não pode responder por quase todas as letras da mensagem (ver
+  `_PROPORCAO_MAXIMA_UMA_SO_LETRA`) - isso também passou a cobrir
+  sequências de uma letra só repetida em geral (ex.: "kkkk"/"aaaaa"
+  isolados, sem mais nenhuma letra na mensagem, também passam a ser
+  tratados como sem sentido, não só o teclado travado). Importante: é só
+  uma barreira de "isso nem é texto" - NÃO resolve o tradeoff aceito no
   parágrafo acima (uma saudação de verdade como "oi" tem "cara de texto"
-  o suficiente pra passar por essa checagem, e continua virando pergunta
-  encaminhada pra equipe, do mesmo jeito).
+  E variedade de letras suficiente pra passar por essa checagem, e
+  continua virando pergunta encaminhada pra equipe, do mesmo jeito).
 - Passo 5 (este arquivo): a pergunta livre reaproveita a MESMA lógica de
   app.routes_paciente.chat() (base de conhecimento/alimento/medicamento
   primeiro - pedido do Silvan, 2026-09-11; só quando nada bate a IA é
@@ -96,6 +104,7 @@ apagar o registro) na PRÓXIMA mensagem que chegar, depois de
 `ConversaWhatsapp.MINUTOS_EXPIRACAO` (4h) sem nenhuma mensagem nova."""
 import re
 import unicodedata
+from collections import Counter
 from datetime import date, datetime
 
 from app.extensions import db
@@ -573,11 +582,16 @@ def _eh_pedido_reagendamento(texto_normalizado):
 # remoção do gatilho "1" - isso virou uma PerguntaPendente encaminhada pra
 # equipe, sem fazer o menor sentido como pergunta). NÃO é uma correção
 # ortográfica nem um julgamento de "faz sentido de verdade em português" -
-# só filtra o caso mais óbvio, texto que não tem quase nenhuma letra
-# (símbolos, emoji solto, número colado, pontuação repetida). Erros de
-# digitação/ortografia dentro de palavras de verdade continuam passando
-# direto (ex.: "Posso comer batata frita?" com qualquer erro de digitação
-# comum não é afetado) - a barreira é só contra "isso nem é texto".
+# só filtra os casos mais óbvios: texto que não tem quase nenhuma letra
+# (símbolos, emoji solto, número colado, pontuação repetida) OU texto que
+# É só letras mas sem nenhuma variedade (uma tecla travada/presa, tipo
+# "eeeeeeeeeeee" - pergunta do Silvan, 2026-09-24, depois desta correção:
+# "e se o paciente digitar algo tipo eeeeeeeeeeee de um teclado preso?" -
+# a versão anterior desta função aceitava esse caso, porque são só
+# letras, sem nenhum símbolo). Erros de digitação/ortografia normais
+# dentro de palavras de verdade continuam passando direto (ex.: "Posso
+# comer batata frita?" com qualquer erro de digitação comum não é
+# afetado) - a barreira é só contra "isso nem é texto".
 _RE_LETRA = re.compile(r"[a-z]")
 _RE_PALAVRA_MINIMA = re.compile(r"[a-z]{2,}")
 
@@ -586,21 +600,46 @@ _RE_PALAVRA_MINIMA = re.compile(r"[a-z]{2,}")
 # com uma letra ou duas perdidas no meio.
 _PROPORCAO_MINIMA_LETRAS = 0.5
 
+# Teclado travado/preso: quando UMA letra sozinha responde por boa parte
+# das letras da mensagem (ex.: "eeeeeeeeeeee", ou até "eeeeeaa" - maioria
+# "e", só uma "sujeira" de outra tecla no meio) - só vale a partir de um
+# mínimo de letras (`_MINIMO_LETRAS_PARA_CHECAR_REPETICAO`) pra não pegar
+# à toa uma palavra curta de verdade com letra repetida (ex.: "certo",
+# "carro" têm letra repetida, mas nenhuma delas domina a palavra).
+_PROPORCAO_MAXIMA_UMA_SO_LETRA = 0.6
+_MINIMO_LETRAS_PARA_CHECAR_REPETICAO = 4
+
 
 def _eh_mensagem_sem_sentido_minimo(texto_normalizado):
     """True quando o texto não tem o mínimo de "cara de texto" pra ser
     tratado como uma pergunta de verdade (ver comentário acima) - exige
     pelo menos uma sequência de 2+ letras (uma "palavra", nem que seja
-    "oi"/"ok") E que letras sejam pelo menos a metade dos caracteres
-    (sem espaço) da mensagem. `texto_normalizado` já deve vir de
-    `_normalizar_texto` (minúsculas, sem acento)."""
+    "oi"/"ok"), que letras sejam pelo menos a metade dos caracteres (sem
+    espaço) da mensagem, E que essas letras não sejam quase todas a
+    MESMA letra repetida (teclado travado - ex.: "eeeeeeeeeeee"; isso
+    também passa a cobrir uma sequência de UMA letra só repetida, tipo
+    "kkkk"/"aaaaa" - sem outra letra na mensagem pra dar algum contexto,
+    trata do mesmo jeito, pedindo pra reescrever). `texto_normalizado` já
+    deve vir de `_normalizar_texto` (minúsculas, sem acento)."""
     sem_espaco = texto_normalizado.replace(" ", "")
     if not sem_espaco:
         return False  # mensagem vazia é tratada à parte (MENSAGEM_PERGUNTA_VAZIA)
     if not _RE_PALAVRA_MINIMA.search(texto_normalizado):
         return True
-    proporcao_letras = len(_RE_LETRA.findall(texto_normalizado)) / len(sem_espaco)
-    return proporcao_letras < _PROPORCAO_MINIMA_LETRAS
+    letras = _RE_LETRA.findall(texto_normalizado)
+    proporcao_letras = len(letras) / len(sem_espaco)
+    if proporcao_letras < _PROPORCAO_MINIMA_LETRAS:
+        return True
+    contagem_por_letra = Counter(letras)
+    if len(contagem_por_letra) < 2:
+        return True  # uma única letra em toda a mensagem (ex.: "eeee", "kkkk")
+    _letra_mais_comum, vezes_mais_comum = contagem_por_letra.most_common(1)[0]
+    if (
+        len(letras) >= _MINIMO_LETRAS_PARA_CHECAR_REPETICAO
+        and vezes_mais_comum / len(letras) >= _PROPORCAO_MAXIMA_UMA_SO_LETRA
+    ):
+        return True  # uma letra domina quase todas as outras (teclado travado)
+    return False
 
 
 def _paciente_por_telefone_aproximado(telefone_whatsapp):
