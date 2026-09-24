@@ -29,6 +29,19 @@
   mas não é mais lido nem escrito por este módulo. "Trocar de exame"
   continua existindo (só quando há mais de um exame ativo), acionado
   pela palavra "trocar" em qualquer momento.
+
+  **Mitigação parcial adicionada (pedido do Silvan, 2026-09-24)**: com
+  print de outro caso real - mandou ":(&;" por engano de digitação, e isso
+  virou uma PerguntaPendente encaminhada pra equipe, sem fazer o menor
+  sentido como pergunta. `_eh_mensagem_sem_sentido_minimo` (ver abaixo)
+  filtra esse tipo de mensagem (símbolo/emoji solto, número colado,
+  pontuação repetida) ANTES de virar pergunta - devolve
+  `MENSAGEM_MENSAGEM_SEM_SENTIDO` pedindo pra reescrever, sem criar
+  `PerguntaPendente`/`ChatMensagem` nem notificar ninguém. Importante: é
+  só uma barreira de "isso nem é texto" - NÃO resolve o tradeoff aceito no
+  parágrafo acima (uma saudação de verdade como "oi" tem "cara de texto"
+  o suficiente pra passar por essa checagem, e continua virando pergunta
+  encaminhada pra equipe, do mesmo jeito).
 - Passo 5 (este arquivo): a pergunta livre reaproveita a MESMA lógica de
   app.routes_paciente.chat() (base de conhecimento/alimento/medicamento
   primeiro - pedido do Silvan, 2026-09-11; só quando nada bate a IA é
@@ -279,6 +292,10 @@ MENSAGEM_SEM_EXAME_ATIVO = (
 )
 MENSAGEM_OPCAO_INVALIDA_EXAME = "Não entendi. Responda só com o número do exame na lista abaixo:"
 MENSAGEM_PERGUNTA_VAZIA = "Não recebi nenhum texto."
+MENSAGEM_MENSAGEM_SEM_SENTIDO = (
+    "Não consegui entender essa mensagem. Pode escrever sua pergunta sobre "
+    "o preparo deste exame?"
+)
 MENSAGEM_PERGUNTA_ENCAMINHADA = (
     "Recebemos sua pergunta! Ela foi encaminhada para a equipe e você "
     "receberá a resposta assim que possível."
@@ -550,6 +567,42 @@ def _eh_pedido_reagendamento(texto_normalizado):
     return any(frase in texto_normalizado for frase in _FRASES_REAGENDAMENTO)
 
 
+# Validação mínima de "isso parece um texto de verdade" (pedido do Silvan,
+# 2026-09-24, com print de um caso real: mandou ":(&;" por engano de
+# digitação - sem nenhuma barreira, ver docstring do módulo sobre a
+# remoção do gatilho "1" - isso virou uma PerguntaPendente encaminhada pra
+# equipe, sem fazer o menor sentido como pergunta). NÃO é uma correção
+# ortográfica nem um julgamento de "faz sentido de verdade em português" -
+# só filtra o caso mais óbvio, texto que não tem quase nenhuma letra
+# (símbolos, emoji solto, número colado, pontuação repetida). Erros de
+# digitação/ortografia dentro de palavras de verdade continuam passando
+# direto (ex.: "Posso comer batata frita?" com qualquer erro de digitação
+# comum não é afetado) - a barreira é só contra "isso nem é texto".
+_RE_LETRA = re.compile(r"[a-z]")
+_RE_PALAVRA_MINIMA = re.compile(r"[a-z]{2,}")
+
+# Proporção mínima de letras no texto (sem espaços) para considerar que
+# "parece" um texto de verdade, e não uma sequência de símbolos/números
+# com uma letra ou duas perdidas no meio.
+_PROPORCAO_MINIMA_LETRAS = 0.5
+
+
+def _eh_mensagem_sem_sentido_minimo(texto_normalizado):
+    """True quando o texto não tem o mínimo de "cara de texto" pra ser
+    tratado como uma pergunta de verdade (ver comentário acima) - exige
+    pelo menos uma sequência de 2+ letras (uma "palavra", nem que seja
+    "oi"/"ok") E que letras sejam pelo menos a metade dos caracteres
+    (sem espaço) da mensagem. `texto_normalizado` já deve vir de
+    `_normalizar_texto` (minúsculas, sem acento)."""
+    sem_espaco = texto_normalizado.replace(" ", "")
+    if not sem_espaco:
+        return False  # mensagem vazia é tratada à parte (MENSAGEM_PERGUNTA_VAZIA)
+    if not _RE_PALAVRA_MINIMA.search(texto_normalizado):
+        return True
+    proporcao_letras = len(_RE_LETRA.findall(texto_normalizado)) / len(sem_espaco)
+    return proporcao_letras < _PROPORCAO_MINIMA_LETRAS
+
+
 def _paciente_por_telefone_aproximado(telefone_whatsapp):
     """Documento "Clara", item 6 (2026-09-14): acha, por aproximação,
     qual Paciente cadastrado tem esse número de WhatsApp como telefone de
@@ -732,9 +785,20 @@ def processar_mensagem(telefone, corpo_mensagem):
         db.session.commit()
         return MENSAGEM_PERGUNTA_VAZIA
 
+    # Validação mínima de "isso parece um texto de verdade" (pedido do
+    # Silvan, 2026-09-24 - ver _eh_mensagem_sem_sentido_minimo acima):
+    # símbolo/emoji solto, número colado, pontuação repetida etc. não
+    # chega a virar PerguntaPendente - só pede pra reescrever. Erro de
+    # digitação/ortografia normal dentro de palavras de verdade não é
+    # afetado por isso.
+    if _eh_mensagem_sem_sentido_minimo(_normalizar_texto(texto)):
+        db.session.commit()
+        return MENSAGEM_MENSAGEM_SEM_SENTIDO
+
     # Qualquer outro texto (que não seja "trocar", nem uma intenção de
-    # remarcação já tratada acima) é a pergunta em si - direto, sem
-    # precisar digitar "1" antes (ver docstring do módulo).
+    # remarcação já tratada acima, nem sem sentido nenhum) é a pergunta em
+    # si - direto, sem precisar digitar "1" antes (ver docstring do
+    # módulo).
     resposta_pergunta, pergunta_criada = _responder_pergunta(paciente, agendamento, texto, telefone)
     complemento = (
         MENSAGEM_AGUARDANDO_RESPOSTA
