@@ -9,7 +9,7 @@ from functools import wraps
 
 from flask import (
     Blueprint, render_template, redirect, url_for, request, flash, session,
-    current_app, jsonify, Response, stream_with_context,
+    current_app, jsonify, Response, stream_with_context, abort,
 )
 from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
@@ -26,7 +26,9 @@ from app.models import (
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto,
 )
-from app.mercadopago_integration import criar_preferencia_pagamento_anual, MercadoPagoNaoConfigurado
+from app.mercadopago_integration import (
+    criar_preferencia_pagamento_anual, criar_cobranca_pix, MercadoPagoNaoConfigurado,
+)
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
     empresa_atual, empresas_do_usuario, selecionar_empresa,
@@ -2824,6 +2826,7 @@ def minha_licenca():
         pode_trocar_ciclo=current_user.pode_trocar_ciclo_licenca(),
         valor_anual_disponivel=valor_anual_disponivel,
         pagamento_mes_atual=pagamento_mes_atual,
+        agora=datetime.utcnow(),
     )
 
 
@@ -2932,6 +2935,57 @@ def licenca_escolher_ciclo():
     current_user.ciclo_licenca = "mensal"
     db.session.commit()
     flash("Ciclo de cobrança alterado para mensal.", "success")
+    return redirect(url_for("medico.minha_licenca"))
+
+
+@medico_bp.route("/minha-licenca/pagamentos/<int:pagamento_id>/pix", methods=["POST"])
+@login_required
+@staff_required
+def minha_licenca_gerar_pix(pagamento_id):
+    """Pedido do Silvan (2026-09-25): autoatendimento - o próprio médico
+    gera o QR code Pix pra um mês em aberto, direto em "Minha licença",
+    sem depender do dono clicar em nada (Pix é sempre ADICIONAL ao link
+    de Checkout Pro que o dono possa ter gerado - ver
+    app.mercadopago_integration.criar_cobranca_pix). Funciona tanto pra um
+    mês mensal comum quanto pro mês-âncora de um ciclo anual (o
+    `pagamento_id` já identifica exatamente qual registro).
+
+    Cada clique gera um Pix NOVO (expira em ~30min, então reabrir esta
+    rota depois de expirado é o caminho esperado pra "gerar de novo" - sem
+    verificação especial de expiração aqui, o botão no template já cobre
+    isso, ver minha_licenca.html)."""
+    if not eh_medico():
+        flash("Essa tela é só para contas de médico.", "warning")
+        return redirect(url_for("medico.dashboard"))
+
+    pagamento = LicencaPagamento.query.get_or_404(pagamento_id)
+    if pagamento.usuario_id != current_user.id:
+        abort(404)
+    if pagamento.pago:
+        flash("Este mês já está pago.", "warning")
+        return redirect(url_for("medico.minha_licenca"))
+
+    try:
+        criar_cobranca_pix(pagamento)
+    except MercadoPagoNaoConfigurado:
+        flash(
+            "O pagamento por Pix ainda não está disponível nesta instalação - fale com o "
+            "administrador da plataforma.",
+            "danger",
+        )
+        return redirect(url_for("medico.minha_licenca"))
+    except ValueError as erro:
+        flash(str(erro), "danger")
+        return redirect(url_for("medico.minha_licenca"))
+    except Exception:
+        current_app.logger.exception(
+            "Falha ao gerar Pix no Mercado Pago para o pagamento %s.", pagamento.id
+        )
+        flash("Não foi possível gerar o Pix agora - tente novamente em instantes.", "danger")
+        return redirect(url_for("medico.minha_licenca"))
+
+    db.session.commit()
+    flash(f"Pix gerado para o mês {pagamento.mes.strftime('%m/%Y')} - escaneie ou copie o código abaixo.", "success")
     return redirect(url_for("medico.minha_licenca"))
 
 

@@ -547,6 +547,19 @@ class LicencaPagamento(db.Model):
     mp_status = db.Column(db.String(30))
     mp_init_point = db.Column(db.Text)
 
+    # Pix nativo (Payments API, decisão do Silvan de 2026-09-25): opção
+    # ADICIONAL ao link do Checkout Pro acima, não substitui - o médico
+    # pode pagar tanto pelo link (mp_init_point) quanto escaneando/colando
+    # este QR code, ambos apontam pro MESMO external_reference, então o
+    # webhook em app/routes_pagamentos_webhook.py já confirma o pagamento
+    # sem precisar de nenhuma mudança lá. Pix expira em ~30min (padrão do
+    # Mercado Pago) - pix_expira_em guarda esse prazo pra tela mostrar
+    # contagem/permitir gerar um novo.
+    pix_qr_code = db.Column(db.Text)
+    pix_qr_code_base64 = db.Column(db.Text)
+    pix_payment_id = db.Column(db.String(80))
+    pix_expira_em = db.Column(db.DateTime)
+
     # Pedido do Silvan (2026-09-10, licença anual): True quando este mês foi
     # quitado como parte de um pagamento ANUAL único (ver
     # gerar_ciclo_anual_pago em app/models.py), não mês a mês - o valor

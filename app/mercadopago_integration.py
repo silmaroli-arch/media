@@ -32,6 +32,8 @@ app/routes_dono.py:usuario_licenca_pagamento_cobrar (a rota que chama
 import hashlib
 import hmac
 import os
+import uuid
+from datetime import datetime, timedelta
 
 import requests
 from flask import request, url_for
@@ -157,6 +159,79 @@ def criar_preferencia_pagamento_anual(pagamento, valor_anual):
     pagamento.mp_init_point = dados.get("init_point")
 
     return dados.get("init_point")
+
+
+def criar_cobranca_pix(pagamento):
+    """Pedido do Silvan (2026-09-25): gera um Pix nativo (Payments API, NÃO
+    Checkout Pro) pra um LicencaPagamento, como opção ADICIONAL ao link
+    tradicional (mp_init_point) - o médico pode usar qualquer um dos dois,
+    e o webhook em app/routes_pagamentos_webhook.py confirma o pagamento
+    de qualquer um deles sem precisar de nenhuma mudança lá, porque este
+    Pix usa o MESMO formato de external_reference
+    ("licenca_pagamento:<id>") já usado por `criar_preferencia_pagamento`.
+
+    Funciona tanto pra mês mensal comum quanto pra mês de origem_anual
+    (quem chama decide qual `pagamento`/valor passar - a função não
+    distingue os dois casos, só usa `pagamento.valor` já gravado ou o
+    valor mensal do usuário como fallback, igual `criar_preferencia_pagamento`).
+
+    Grava pix_qr_code (código copia-e-cola), pix_qr_code_base64 (imagem do
+    QR, pra exibir com <img src="data:image/png;base64,...">),
+    pix_payment_id e pix_expira_em (Pix expira em ~30min, padrão do
+    Mercado Pago) no próprio registro - quem chama decide quando dar
+    commit. Levanta MercadoPagoNaoConfigurado/ValueError nas mesmas
+    condições de `criar_preferencia_pagamento`."""
+    usuario = pagamento.usuario
+    valor = pagamento.valor if pagamento.valor is not None else usuario.valor_licenca_mensal
+    if not valor or float(valor) <= 0:
+        raise ValueError(
+            "Defina o valor mensal deste médico (em /dono/usuarios) antes de gerar a cobrança."
+        )
+
+    payload = {
+        "transaction_amount": float(valor),
+        "description": f"Licença MedIA - {usuario.nome} - {pagamento.mes.strftime('%m/%Y')}",
+        "payment_method_id": "pix",
+        "external_reference": f"licenca_pagamento:{pagamento.id}",
+        "notification_url": url_for("pagamentos_webhook.mercadopago_webhook", _external=True),
+        "payer": {
+            "email": usuario.email or "sememail@medIA.app",
+        },
+    }
+
+    resposta = requests.post(
+        f"{MP_API_BASE}/v1/payments",
+        json=payload,
+        headers={
+            "Authorization": f"Bearer {_access_token()}",
+            # Obrigatório na Payments API - evita cobrar duas vezes se a
+            # chamada for repetida por retry de rede (documentação oficial
+            # do Mercado Pago). Um valor novo por chamada é o esperado: cada
+            # clique em "gerar Pix" é uma cobrança nova (com prazo de
+            # expiração próprio), não um reenvio da mesma.
+            "X-Idempotency-Key": str(uuid.uuid4()),
+        },
+        timeout=15,
+    )
+    resposta.raise_for_status()
+    dados = resposta.json()
+
+    transacao = dados.get("point_of_interaction", {}).get("transaction_data", {}) or {}
+
+    pagamento.valor = valor
+    pagamento.pix_payment_id = dados.get("id")
+    pagamento.pix_qr_code = transacao.get("qr_code")
+    pagamento.pix_qr_code_base64 = transacao.get("qr_code_base64")
+    # date_of_expiration vem no formato ISO 8601 com timezone
+    # (ex.: "2026-09-25T14:30:00.000-03:00") - guardamos só uma estimativa
+    # local (agora + 30min) como fallback pra não depender de parsear esse
+    # formato, já que é só pra exibição/aviso na tela, não pra validação.
+    pagamento.pix_expira_em = datetime.utcnow() + timedelta(minutes=30)
+
+    return {
+        "qr_code": transacao.get("qr_code"),
+        "qr_code_base64": transacao.get("qr_code_base64"),
+    }
 
 
 def _assinatura_valida(data_id, request_id):

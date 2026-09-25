@@ -462,6 +462,15 @@ CREATE TABLE IF NOT EXISTS notificacoes (
     lida BOOLEAN NOT NULL DEFAULT FALSE,
     criado_em TIMESTAMP
 );
+
+-- Pix nativo (Payments API do Mercado Pago, pedido do Silvan, 2026-09-25) -
+-- opção adicional ao link do Checkout Pro (mp_init_point), mesma linha da
+-- tabela, mesmo external_reference - ver LicencaPagamento em
+-- app/models.py e app/mercadopago_integration.criar_cobranca_pix.
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_qr_code TEXT;
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_qr_code_base64 TEXT;
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_payment_id VARCHAR(80);
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_expira_em TIMESTAMP;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

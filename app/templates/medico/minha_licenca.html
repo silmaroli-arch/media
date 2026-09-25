@@ -1,6 +1,37 @@
 {% extends "base.html" %}
 {% block titulo %}Minha licença{% endblock %}
 {% block conteudo %}
+
+{# Pedido do Silvan (2026-09-25): Pix nativo, opção ADICIONAL ao link
+   "Pagar agora" (Checkout Pro) que já existia - o médico gera o próprio
+   QR code aqui mesmo, sem depender do dono (ver
+   medico.minha_licenca_gerar_pix). Pix expira em ~30min
+   (LicencaPagamento.pix_expira_em) - passado esse prazo, o botão volta a
+   oferecer "Gerar Pix" (um clique gera um código novo). Macro reusada nos
+   dois lugares onde "Pagar agora" aparece (pagamento anual pendente e
+   calendário mensal) pra não duplicar o HTML. #}
+{% macro pix_bloco(p) %}
+  {% if p.pix_qr_code_base64 and p.pix_expira_em and p.pix_expira_em > agora %}
+    <div class="mt-2 p-2 border rounded d-inline-block text-center">
+      <img src="data:image/png;base64,{{ p.pix_qr_code_base64 }}" alt="QR code Pix" style="width: 160px; height: 160px;">
+      <div class="input-group input-group-sm mt-1" style="max-width: 220px;">
+        <input type="text" class="form-control form-control-sm" value="{{ p.pix_qr_code }}" id="pix-codigo-{{ p.id }}" readonly>
+        <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('pix-codigo-{{ p.id }}').value)">Copiar</button>
+      </div>
+      <div class="text-muted small mt-1">Pix válido até {{ p.pix_expira_em.strftime('%H:%M') }} (expira em ~30min)</div>
+    </div>
+  {% else %}
+    {% if p.pix_qr_code_base64 %}
+      <div class="text-muted small mb-1">Pix anterior expirou.</div>
+    {% endif %}
+    <form method="post" action="{{ url_for('medico.minha_licenca_gerar_pix', pagamento_id=p.id) }}" class="d-inline">
+      <button type="submit" class="btn btn-sm btn-outline-success">
+        <i class="bi bi-qr-code"></i> Gerar Pix
+      </button>
+    </form>
+  {% endif %}
+{% endmacro %}
+
 <h3 class="mb-3">Minha licença</h3>
 
 <div class="card" style="max-width: 480px;">
@@ -94,16 +125,21 @@
 </div>
 
 {% if ciclo_licenca == "anual" and pagamento_mes_atual and not pagamento_mes_atual.pago %}
-  <div class="alert alert-warning d-flex justify-content-between align-items-center mt-3" style="max-width: 480px;">
-    <div>
-      Pagamento anual pendente
-      {% if current_user.valor_licenca_anual is not none %}
-        (R$ {{ "%.2f"|format(current_user.valor_licenca_anual) }})
-      {% endif %}.
+  <div class="alert alert-warning mt-3" style="max-width: 480px;">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        Pagamento anual pendente
+        {% if current_user.valor_licenca_anual is not none %}
+          (R$ {{ "%.2f"|format(current_user.valor_licenca_anual) }})
+        {% endif %}.
+      </div>
+      {% if pagamento_mes_atual.mp_init_point %}
+        <a href="{{ pagamento_mes_atual.mp_init_point }}" target="_blank" rel="noopener" class="btn btn-sm btn-primary ms-2">Pagar agora</a>
+      {% endif %}
     </div>
-    {% if pagamento_mes_atual.mp_init_point %}
-      <a href="{{ pagamento_mes_atual.mp_init_point }}" target="_blank" rel="noopener" class="btn btn-sm btn-primary ms-2">Pagar agora</a>
-    {% endif %}
+    <div class="mt-2">
+      {{ pix_bloco(pagamento_mes_atual) }}
+    </div>
   </div>
 {% endif %}
 
@@ -136,8 +172,11 @@
             {% endif %}
           </td>
           <td>
-            {% if not p.pago and p.mp_init_point %}
-              <a href="{{ p.mp_init_point }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Pagar agora</a>
+            {% if not p.pago %}
+              {% if p.mp_init_point %}
+                <a href="{{ p.mp_init_point }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary mb-1">Pagar agora</a>
+              {% endif %}
+              <div>{{ pix_bloco(p) }}</div>
             {% endif %}
           </td>
         </tr>

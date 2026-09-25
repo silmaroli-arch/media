@@ -9,7 +9,8 @@ from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, Cham
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 from app.mercadopago_integration import (
-    criar_preferencia_pagamento, criar_preferencia_pagamento_anual, MercadoPagoNaoConfigurado,
+    criar_preferencia_pagamento, criar_preferencia_pagamento_anual, criar_cobranca_pix,
+    MercadoPagoNaoConfigurado,
 )
 from app.exclusao_usuario import verificar_bloqueios_exclusao, excluir_usuario_e_dados
 from app.limpar_dados import apagar_todos_os_dados
@@ -704,7 +705,16 @@ def licencas_gerar_cobrancas_ano():
     Critérios (decididos com o Silvan): só os meses AINDA NÃO PAGOS, e só
     onde ainda NÃO existe cobrança gerada (não substitui/duplica um link
     já ativo) - meses já pagos na mão (Pix, acordo informal etc.) e meses
-    com cobrança já pendente ficam intocados."""
+    com cobrança já pendente ficam intocados.
+
+    Pedido do Silvan (2026-09-25, Pix nativo): além do link de Checkout
+    Pro de sempre, cada mês também recebe um QR code Pix (opção adicional,
+    ver app.mercadopago_integration.criar_cobranca_pix) - as duas geração
+    são independentes (um mês pode já ter link mas ainda não ter Pix, por
+    exemplo se essa função rodou antes de o Pix existir), cada uma só
+    pula o que JÁ tem, e uma falha na geração do Pix não desfaz o link já
+    gerado com sucesso (e vice-versa) - contadas e avisadas separadamente
+    no resumo final."""
     hoje = date.today()
     if hoje.month == 12:
         flash("Já estamos em dezembro - não há mais meses restantes neste ano civil pra gerar.", "warning")
@@ -718,6 +728,9 @@ def licencas_gerar_cobrancas_ano():
     ja_tinham = 0
     sem_valor = 0
     falhas = []
+    pix_geradas = 0
+    pix_ja_tinham = 0
+    pix_falhas = []
 
     for medico in medicos:
         garantir_meses_licenca(medico, fim=mes_fim)
@@ -733,26 +746,49 @@ def licencas_gerar_cobrancas_ano():
         for pagamento in pagamentos:
             if pagamento.mp_init_point:
                 ja_tinham += 1
+            else:
+                try:
+                    criar_preferencia_pagamento(pagamento)
+                    geradas += 1
+                except MercadoPagoNaoConfigurado:
+                    db.session.commit()
+                    flash(
+                        "Mercado Pago ainda não está configurado nesta instalação "
+                        "(defina MERCADOPAGO_ACCESS_TOKEN no .env) - nenhuma cobrança foi gerada.",
+                        "danger",
+                    )
+                    return redirect(url_for("dono.usuarios"))
+                except ValueError:
+                    sem_valor += 1
+                except Exception:
+                    current_app.logger.exception(
+                        "Falha ao gerar cobrança em massa para %s, mês %s.",
+                        medico.nome, pagamento.mes.strftime("%m/%Y"),
+                    )
+                    falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
+
+            if pagamento.pix_qr_code:
+                pix_ja_tinham += 1
                 continue
             try:
-                criar_preferencia_pagamento(pagamento)
-                geradas += 1
+                criar_cobranca_pix(pagamento)
+                pix_geradas += 1
             except MercadoPagoNaoConfigurado:
-                db.session.commit()
-                flash(
-                    "Mercado Pago ainda não está configurado nesta instalação "
-                    "(defina MERCADOPAGO_ACCESS_TOKEN no .env) - nenhuma cobrança foi gerada.",
-                    "danger",
-                )
-                return redirect(url_for("dono.usuarios"))
+                # Mesma configuração (MERCADOPAGO_ACCESS_TOKEN) do link -
+                # se faltou pro link acima, vai faltar pro Pix também, mas
+                # já foi avisado e interrompido lá em cima; chegar aqui
+                # sem token só é possível se o link já existia (bloco
+                # acima não chamou _access_token) e só o Pix falta - avisa
+                # e continua pro próximo mês, sem interromper tudo.
+                pix_falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
             except ValueError:
-                sem_valor += 1
+                pass  # mesmo "sem valor" já contado em sem_valor acima
             except Exception:
                 current_app.logger.exception(
-                    "Falha ao gerar cobrança em massa para %s, mês %s.",
+                    "Falha ao gerar Pix em massa para %s, mês %s.",
                     medico.nome, pagamento.mes.strftime("%m/%Y"),
                 )
-                falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
+                pix_falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
 
     db.session.commit()
 
@@ -764,7 +800,13 @@ def licencas_gerar_cobrancas_ano():
     if falhas:
         exibidas = ", ".join(falhas[:5])
         partes.append(f"{len(falhas)} falharam: {exibidas}{' ...' if len(falhas) > 5 else ''}")
-    flash(" · ".join(partes) + ".", "success" if not falhas else "warning")
+    partes.append(f"{pix_geradas} Pix gerado{'s' if pix_geradas != 1 else ''}")
+    if pix_ja_tinham:
+        partes.append(f"{pix_ja_tinham} já tinham Pix (não duplicados)")
+    if pix_falhas:
+        exibidas_pix = ", ".join(pix_falhas[:5])
+        partes.append(f"{len(pix_falhas)} Pix falharam: {exibidas_pix}{' ...' if len(pix_falhas) > 5 else ''}")
+    flash(" · ".join(partes) + ".", "success" if not falhas and not pix_falhas else "warning")
     return redirect(url_for("dono.usuarios"))
 
 
