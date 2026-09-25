@@ -1450,6 +1450,32 @@ Observações importantes sobre essa tabela:
 
 Fontes consultadas (comparação de VPS baratos): hetzner.com/cloud/regular-performance, bestusavps.com/reviews/hetzner, digitalocean.com/pricing/droplets, digitalocean.com/pricing/managed-databases, cybernews.com/best-web-hosting/contabo-review/pricing, comparevps.com/hosting/contabo, comparevps.com/hosting/hostinger, tradingvpshub.com/hostinger-vps-pricing.
 
+### Reformulação do "Meu painel" + sininho de notificações (2026-09-25)
+
+Pedido do Silvan (print de tela): remover a grid "Lista completa" do painel do médico, trazer pra lá a configuração de aprovação que hoje só fica no Portal de atendimento, e adicionar um gadget de notificações no cabeçalho - o dono pode mandar mensagens/anúncios/respostas de pergunta que caem como notificação pro médico. Decidido via pergunta ao Silvan: (1) o sininho cobre tanto respostas do "Fale com a gente" quanto anúncios livres do dono; (2) a configuração de aprovação sai do Portal de atendimento e passa a viver só no painel; (3) o sininho é um ícone no topo com lista suspensa (não um card fixo no corpo do painel).
+
+**`app/models.py`**: nova `Notificacao` - `usuario_id` (destinatário), `tipo` ("anuncio" ou "resposta_suporte"), `titulo`, `mensagem`, `link_endpoint` (nome da rota Flask pra onde o clique leva, ou vazio quando não há destino melhor que o painel), `lida`, `criado_em`.
+
+**`migrar_banco.py`**: `CREATE TABLE IF NOT EXISTS notificacoes (...)`.
+
+**`app/__init__.py`**: novo context processor `injetar_notificacoes` - disponível em TODO template pra quem é `is_staff` (médico/secretária, não o dono): as últimas 10 notificações (lidas ou não) e a contagem TOTAL de não lidas (separada da lista curta, pra o badge não mentir quando houver mais de 10 acumuladas).
+
+**`app/templates/base.html`**: sininho no cabeçalho (ícone `bi-bell` com badge vermelho de contagem), com dropdown Bootstrap mostrando as notificações recentes (não lidas em negrito) e um botão "Marcar todas como lidas". Cada item do dropdown leva pra `medico.notificacao_abrir`.
+
+**`app/routes_medico.py`**: `medico.notificacao_abrir/<id>` (marca como lida e redireciona pro `link_endpoint` guardado, ou pro painel quando não há) e `medico.notificacoes_marcar_todas_lidas` (POST, zera todas as não-lidas do usuário logado de uma vez).
+
+**Anúncios livres do dono**: `app/routes_dono.py` ganhou `dono.anuncios` (formulário: destinatário - "todos" ou um médico/secretária específico - + título + mensagem) e `dono.anuncio_enviar` (POST, cria uma `Notificacao` por destinatário - pra "todos", uma linha por pessoa da equipe, sem lógica de "grupo alvo": mais simples de consultar/marcar como lida individualmente). Template novo `app/templates/dono/anuncios.html`, com item de menu "Anúncios" ao lado de "Mensagens" em `dono/dashboard.html`.
+
+**Resposta do "Fale com a gente" também notifica**: `dono.mensagens_suporte_responder` (já existia) agora também cria uma `Notificacao` (tipo `resposta_suporte`, `link_endpoint="medico.fale_com_a_gente"`) pro médico/secretária que perguntou, além de continuar salvando a resposta na própria tela do "Fale com a gente" como já fazia.
+
+**Configuração de aprovação movida pro painel**: o toggle "Exigir minha aprovação antes de responder o paciente" saiu de `app/templates/portal/atendimento.html` (só ficou um comentário no lugar, explicando a mudança) e passou a viver em `app/templates/medico/dashboard.html`, logo abaixo dos cards de resumo. `medico.perguntas_configuracao` (rota que processa o toggle) ganhou um novo valor de `origem` ("painel", redirecionando pra `medico.dashboard") - o valor antigo ("portal") continua funcionando por compatibilidade, caso alguém tenha a tela antiga aberta em cache no navegador no momento do deploy.
+
+**"Lista completa" removida**: a tabela com TODOS os agendamentos (distinta de "Próximos agendamentos", que continua) saiu de `medico/dashboard.html`; a variável `agendamentos` (lista completa) parou de ser calculada/passada por `medico.dashboard` em `app/routes_medico.py` (a query `agendamentos_q` continua existindo, só que agora só alimenta `proximos`).
+
+**Testes**: `test_notificacoes.py` (novo) - cobre o ciclo completo: resposta do dono ao "Fale com a gente" gera notificação → sininho mostra o badge e o título → abrir a notificação marca como lida e redireciona pro destino certo → anúncio individual do dono chega só pro destinatário escolhido (e não pros outros) → anúncio "para todos" chega pra cada pessoa da equipe → "marcar todas como lidas" zera as não-lidas de uma pessoa de uma vez.
+
+- **Pendência (mesmo padrão de sempre - validado só por `ast.parse`/`jinja2.Environment().parse()`, sem `flask`/`flask_sqlalchemy` instalados neste ambiente de desenvolvimento pra rodar a suíte de ponta a ponta de verdade)**: depois do próximo deploy, confirmar na tela real: (a) o sininho aparece certo no cabeçalho, com o badge de contagem; (b) mandar um anúncio como dono e ver ele chegar no sininho do médico certo; (c) clicar numa notificação leva pro lugar certo e marca como lida; (d) o painel do médico não mostra mais "Lista completa", e o toggle de aprovação funciona dali (o Portal de atendimento não precisa mais dele).
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
