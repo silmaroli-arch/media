@@ -276,6 +276,30 @@ def create_app():
             }
         return {}
 
+    @app.context_processor
+    def injetar_notificacoes():
+        """Disponibiliza em todos os templates o sininho de notificações
+        de médico/secretária (pedido do Silvan, 2026-09-25 - ver
+        Notificacao em app/models.py): as mais recentes (lidas ou não,
+        pra não sumir da lista assim que abre) e a contagem TOTAL de
+        não-lidas (não só as que aparecem na lista curta, pra o número do
+        badge não mentir quando houver mais de 10 acumuladas)."""
+        from flask_login import current_user
+        if current_user.is_authenticated and current_user.is_staff:
+            from app.models import Notificacao
+            notificacoes = (
+                Notificacao.query.filter_by(usuario_id=current_user.id)
+                .order_by(Notificacao.criado_em.desc())
+                .limit(10)
+                .all()
+            )
+            total_nao_lidas = Notificacao.query.filter_by(usuario_id=current_user.id, lida=False).count()
+            return {
+                "notificacoes_navbar": notificacoes,
+                "notificacoes_nao_lidas_navbar": total_nao_lidas,
+            }
+        return {}
+
     @app.route("/")
     def index():
         from flask import redirect, url_for

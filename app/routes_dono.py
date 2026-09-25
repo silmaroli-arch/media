@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 from app.mercadopago_integration import (
@@ -815,6 +815,15 @@ def mensagens_suporte_responder(mensagem_id):
     mensagem.resposta = resposta
     mensagem.status = "respondida"
     mensagem.respondida_em = datetime.utcnow()
+    # Avisa quem perguntou pelo sininho de notificações (pedido do Silvan,
+    # 2026-09-25 - ver Notificacao em app/models.py).
+    db.session.add(Notificacao(
+        usuario_id=mensagem.usuario_id,
+        tipo="resposta_suporte",
+        titulo="Resposta do \"Fale com a gente\"",
+        mensagem=resposta,
+        link_endpoint="medico.fale_com_a_gente",
+    ))
     db.session.commit()
     flash("Resposta enviada.", "success")
     return redirect(url_for("dono.mensagens_suporte"))
@@ -829,3 +838,54 @@ def mensagens_suporte_marcar_lida(mensagem_id):
         mensagem.status = "lida"
         db.session.commit()
     return redirect(url_for("dono.mensagens_suporte"))
+
+
+# ---------- Anúncios (avisos manuais do dono, via sininho de notificações) ----------
+
+@dono_bp.route("/anuncios", methods=["GET"])
+@login_required
+@dono_required
+def anuncios():
+    """Formulário pra o dono escrever um aviso e mandar pra um médico/
+    secretária específico ou pra todo mundo (pedido do Silvan, 2026-09-25)
+    - vira uma Notificacao (ver app/models.py) pra cada destinatário,
+    mostrada no sininho do cabeçalho dele."""
+    equipe = (
+        Usuario.query.filter(Usuario.tipo.in_(["medico", "secretaria"]))
+        .order_by(Usuario.nome)
+        .all()
+    )
+    return render_template("dono/anuncios.html", equipe=equipe)
+
+
+@dono_bp.route("/anuncios/enviar", methods=["POST"])
+@login_required
+@dono_required
+def anuncio_enviar():
+    destinatario = request.form.get("destinatario", "todos")
+    titulo = request.form.get("titulo", "").strip()
+    mensagem = request.form.get("mensagem", "").strip()
+    if not titulo or not mensagem:
+        flash("Preencha o título e a mensagem antes de enviar.", "danger")
+        return redirect(url_for("dono.anuncios"))
+
+    if destinatario == "todos":
+        destinatarios = Usuario.query.filter(Usuario.tipo.in_(["medico", "secretaria"])).all()
+    else:
+        destinatarios = Usuario.query.filter(
+            Usuario.id == destinatario, Usuario.tipo.in_(["medico", "secretaria"])
+        ).all()
+        if not destinatarios:
+            flash("Destinatário inválido.", "danger")
+            return redirect(url_for("dono.anuncios"))
+
+    for usuario in destinatarios:
+        db.session.add(Notificacao(
+            usuario_id=usuario.id, tipo="anuncio", titulo=titulo, mensagem=mensagem,
+        ))
+    db.session.commit()
+    flash(
+        f"Anúncio enviado para {len(destinatarios)} pessoa{'s' if len(destinatarios) != 1 else ''}.",
+        "success",
+    )
+    return redirect(url_for("dono.anuncios"))

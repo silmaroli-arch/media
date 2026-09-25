@@ -33,27 +33,9 @@
   <i class="bi bi-arrow-clockwise"></i> Atualizar perguntas
 </a>
 
-{# Pedido do Silvan (2026-09-13/14): liga/desliga a exigência de aprovação
-   antes de uma resposta de alimento/medicamento/IA ir pro paciente (ver
-   medico.perguntas_configuracao) - fica aqui no portal, que é onde ele usa
-   no dia a dia, em vez da tela "Perguntas pendentes" do painel completo. #}
-<div class="card mb-4">
-  <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-2 py-2">
-    <div class="small">
-      <strong>Exigir minha aprovação antes de responder o paciente</strong>
-      <div class="text-muted">Desativado, as respostas de alimento/medicamento/IA vão direto pro paciente. A FAQ já aprovada antes sempre responde direto, com ou sem isto.</div>
-    </div>
-    <form method="post" action="{{ url_for('medico.perguntas_configuracao') }}" class="form-check form-switch fs-4 mb-0">
-      <input type="hidden" name="origem" value="portal">
-      {# Checkbox desmarcado não é enviado pelo navegador (padrão HTML) -
-         a rota trata a AUSÊNCIA do campo como "desativar" - sem hidden
-         auxiliar pro próprio "aprovacao_ativa", pra não correr o risco de
-         dois valores do mesmo campo no POST. #}
-      <input class="form-check-input" type="checkbox" role="switch" id="aprovacao-ativa" name="aprovacao_ativa" value="1" {% if aprovacao_ativa %}checked{% endif %} onchange="this.form.submit()">
-      <label class="form-check-label fs-6" for="aprovacao-ativa">{{ "Ativada" if aprovacao_ativa else "Desativada" }}</label>
-    </form>
-  </div>
-</div>
+{# O controle de "exigir aprovação" que ficava aqui se mudou pro painel
+   principal ("Meu painel" / "Painel da secretaria") em 2026-09-25, pedido
+   do Silvan - ver medico/dashboard.html e medico.perguntas_configuracao. #}
 
 {% set total_pendente = (aguardando|length) + (pendentes|length) %}
 {% if total_pendente > 0 %}

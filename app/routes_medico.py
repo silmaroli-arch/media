@@ -22,7 +22,7 @@ from app.models import (
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, PushSubscription, LicencaPagamento, garantir_meses_licenca,
-    PlataformaConfig, MensagemSuporte,
+    PlataformaConfig, MensagemSuporte, Notificacao,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto,
 )
@@ -481,9 +481,16 @@ def dashboard():
         .all()
     )
     pendentes = pendentes_q.count() + aguardando_q.count()
-    # A agenda completa (lista) foi incorporada ao painel — não existe mais
-    # uma tela separada de "Agenda" no menu.
-    agendamentos = agendamentos_q.order_by(Agendamento.data_hora.asc()).all()
+
+    # Pedido do Silvan (2026-09-13/14, movido pro painel em 2026-09-25 -
+    # antes só ficava no Portal de atendimento rápido): liga/desliga a
+    # exigência de aprovação antes de uma resposta de alimento/
+    # medicamento/IA ir pro paciente (ver medico.perguntas_configuracao).
+    grupo_atual_aprovacao = empresa_atual()
+    aprovacao_ativa = (
+        grupo_atual_aprovacao.aprovacao_perguntas_paciente if grupo_atual_aprovacao
+        else current_user.aprovacao_perguntas_paciente
+    )
 
     # Restruturação de 2026-09-02 (pedido do Silvan): o painel do médico
     # passa a mostrar o status da própria licença (trial/Ativo/Bloqueado) -
@@ -510,7 +517,7 @@ def dashboard():
         proximos=proximos,
         pendentes=pendentes,
         convites_pendentes=convites_pendentes,
-        agendamentos=agendamentos,
+        aprovacao_ativa=aprovacao_ativa,
         licenca_label=licenca_label,
         licenca_cor=licenca_cor,
         licenca_vencimento=licenca_vencimento,
@@ -2665,11 +2672,21 @@ def perguntas_configuracao():
     já respondida e aprovada antes) nunca passa por essa checagem - sempre
     responde direto, com ou sem este parâmetro.
 
-    O controle mora só no portal de atendimento rápido (pedido do Silvan,
-    2026-09-14: "não deveria ficar no portal?" - é onde ele de fato usa no
-    dia a dia) - mesmo padrão de "origem" já usado em
+    O controle morava só no portal de atendimento rápido (pedido do
+    Silvan, 2026-09-14: "não deveria ficar no portal?"); movido pro painel
+    principal em 2026-09-25 (pedido do Silvan, mesmo padrão de reorganização
+    do painel daquele dia) - mesmo padrão de "origem" já usado em
     medico.perguntas_responder para voltar pra tela certa depois."""
-    destino = "medico.portal_atendimento" if request.form.get("origem") == "portal" else "medico.perguntas_pendentes"
+    origem = request.form.get("origem")
+    if origem == "painel":
+        destino = "medico.dashboard"
+    elif origem == "portal":
+        # Compatibilidade com algum formulário antigo ainda em cache no
+        # navegador de alguém - a tela não tem mais este controle, mas a
+        # rota continua entendendo o valor antigo.
+        destino = "medico.portal_atendimento"
+    else:
+        destino = "medico.perguntas_pendentes"
     # Checkbox desmarcado não é enviado pelo navegador (padrão HTML) - a
     # ausência do campo já significa "desativar".
     ativar = request.form.get("aprovacao_ativa") == "1"
@@ -2745,21 +2762,14 @@ def portal_atendimento():
                 .all()
             )
 
-    # Pedido do Silvan (2026-09-13/14): o parâmetro de aprovação (ver
-    # medico.perguntas_configuracao) mora só aqui no portal, que é onde ele
-    # de fato usa no dia a dia - por Grupo quando há um, senão pela própria
-    # conta (conta solo).
-    grupo_atual = empresa_atual()
-    aprovacao_ativa = (
-        grupo_atual.aprovacao_perguntas_paciente if grupo_atual
-        else current_user.aprovacao_perguntas_paciente
-    )
+    # O parâmetro de aprovação (ver medico.perguntas_configuracao) morava
+    # aqui no portal; movido pro painel principal em 2026-09-25 (pedido do
+    # Silvan) - não é mais calculado/exibido nesta tela.
 
     return render_template(
         "portal/atendimento.html",
         pendentes=pendentes, aguardando=aguardando,
         historico_por_paciente=historico_por_paciente,
-        aprovacao_ativa=aprovacao_ativa,
     )
 
 
@@ -3814,3 +3824,33 @@ def fale_com_a_gente():
         minhas_mensagens=minhas_mensagens,
         categorias=MensagemSuporte.CATEGORIAS,
     )
+
+
+
+# ---------- Sininho de notificações ----------
+
+@medico_bp.route("/notificacoes/<int:notificacao_id>/abrir")
+@login_required
+@staff_required
+def notificacao_abrir(notificacao_id):
+    """Marca a notificação como lida e leva pro destino dela (ex.: de
+    volta pro "Fale com a gente"), ou pro painel quando não há destino
+    melhor (ver Notificacao.link_endpoint em app/models.py)."""
+    notificacao = Notificacao.query.filter_by(id=notificacao_id, usuario_id=current_user.id).first_or_404()
+    if not notificacao.lida:
+        notificacao.lida = True
+        db.session.commit()
+    destino = notificacao.link_endpoint or "medico.dashboard"
+    try:
+        return redirect(url_for(destino))
+    except Exception:
+        return redirect(url_for("medico.dashboard"))
+
+
+@medico_bp.route("/notificacoes/marcar-todas-lidas", methods=["POST"])
+@login_required
+@staff_required
+def notificacoes_marcar_todas_lidas():
+    Notificacao.query.filter_by(usuario_id=current_user.id, lida=False).update({"lida": True})
+    db.session.commit()
+    return redirect(request.referrer or url_for("medico.dashboard"))

@@ -449,6 +449,19 @@ CREATE TABLE IF NOT EXISTS mensagens_suporte (
     respondida_em TIMESTAMP,
     criado_em TIMESTAMP
 );
+
+-- Sininho de notificações do médico/secretária (ver Notificacao em
+-- app/models.py) - resposta do "Fale com a gente" ou anúncio do dono.
+CREATE TABLE IF NOT EXISTS notificacoes (
+    id SERIAL PRIMARY KEY,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    tipo VARCHAR(20) NOT NULL DEFAULT 'anuncio',
+    titulo VARCHAR(120) NOT NULL,
+    mensagem TEXT NOT NULL,
+    link_endpoint VARCHAR(80),
+    lida BOOLEAN NOT NULL DEFAULT FALSE,
+    criado_em TIMESTAMP
+);
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

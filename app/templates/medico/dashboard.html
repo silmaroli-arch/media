@@ -43,6 +43,28 @@
   </div>
 </div>
 
+{# Pedido do Silvan (2026-09-13/14, movido pro painel em 2026-09-25 - antes
+   só ficava no Portal de atendimento rápido): liga/desliga a exigência de
+   aprovação antes de uma resposta de alimento/medicamento/IA ir pro
+   paciente (ver medico.perguntas_configuracao). #}
+<div class="card mb-4">
+  <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-2 py-2">
+    <div class="small">
+      <strong>Exigir minha aprovação antes de responder o paciente</strong>
+      <div class="text-muted">Desativado, as respostas de alimento/medicamento/IA vão direto pro paciente. A FAQ já aprovada antes sempre responde direto, com ou sem isto.</div>
+    </div>
+    <form method="post" action="{{ url_for('medico.perguntas_configuracao') }}" class="form-check form-switch fs-4 mb-0">
+      <input type="hidden" name="origem" value="painel">
+      {# Checkbox desmarcado não é enviado pelo navegador (padrão HTML) -
+         a rota trata a AUSÊNCIA do campo como "desativar" - sem hidden
+         auxiliar pro próprio "aprovacao_ativa", pra não correr o risco de
+         dois valores do mesmo campo no POST. #}
+      <input class="form-check-input" type="checkbox" role="switch" id="aprovacao-ativa" name="aprovacao_ativa" value="1" {% if aprovacao_ativa %}checked{% endif %} onchange="this.form.submit()">
+      <label class="form-check-label fs-6" for="aprovacao-ativa">{{ "Ativada" if aprovacao_ativa else "Desativada" }}</label>
+    </form>
+  </div>
+</div>
+
 {% if convites_pendentes %}
 {# Pedido do Silvan: destacar bem mais este aviso - antes era um card
    discreto, fácil de passar despercebido no meio do painel, mesmo sendo
@@ -102,27 +124,5 @@
     {% endif %}
   </div>
 
-  <div class="card p-3">
-    <h5>Lista completa</h5>
-    <table class="table table-hover">
-      <thead><tr><th>Data/Hora</th>{{ th_filial() }}<th>Paciente</th><th>Exame</th><th>Médico</th><th></th></tr></thead>
-      <tbody>
-        {% for a in agendamentos %}
-        <tr>
-          <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
-          {{ td_filial(a) }}
-          <td>{{ a.paciente.nome }}</td>
-          <td>{{ a.exame.nome }}</td>
-          <td>{{ a.medico.nome }}</td>
-          <td>
-            {% if a.encerrada %}<span class="badge bg-dark">encerrado</span>{% endif %}
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="{{ 6 if mostrar_filial else 5 }}" class="text-muted text-center">Nenhum agendamento cadastrado.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
 </div>
 {% endblock %}

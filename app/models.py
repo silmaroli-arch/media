@@ -1857,6 +1857,32 @@ class MensagemSuporte(db.Model):
         return self.CATEGORIAS.get(self.categoria, self.categoria)
 
 
+class Notificacao(db.Model):
+    """Notificações mostradas no sininho do cabeçalho, pra médico/
+    secretária (pedido do Silvan, 2026-09-25). Nascem de dois jeitos:
+    (1) automaticamente, quando o dono responde uma mensagem do "Fale com
+    a gente" (ver dono.mensagens_suporte_responder em app/routes_dono.py);
+    (2) por um anúncio que o próprio dono escreve à mão e manda pra um
+    médico/secretária específico ou pra todo mundo (ver dono.anuncios/
+    dono.anuncio_enviar) - nesse segundo caso, uma linha por destinatário
+    (sem lógica de "grupo alvo" - mais simples de consultar e de marcar
+    como lida individualmente)."""
+    __tablename__ = "notificacoes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    tipo = db.Column(db.String(20), nullable=False, default="anuncio")
+    titulo = db.Column(db.String(120), nullable=False)
+    mensagem = db.Column(db.Text, nullable=False)
+    # Pra onde o clique leva (ex.: de volta pro "Fale com a gente") - em
+    # branco quando não há destino melhor que o próprio painel.
+    link_endpoint = db.Column(db.String(80), nullable=True)
+    lida = db.Column(db.Boolean, nullable=False, default=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship("Usuario", foreign_keys=[usuario_id])
+
+
 def _preparo_pode_ser_editado_por(self, usuario):
     """Modelo com dono médico só é editado POR ELE (ver criado_por_id).
     Sem dono médico (legado/criado pela secretária), a equipe edita."""

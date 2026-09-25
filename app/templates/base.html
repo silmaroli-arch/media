@@ -370,6 +370,43 @@
             {% endif %}
           </span>
         {% endif %}
+        {# Sininho de notificações (pedido do Silvan, 2026-09-25) - só pra
+           médico/secretária (ver injetar_notificacoes em app/__init__.py);
+           o dono manda avisos, não recebe (já tem o badge de "Mensagens"
+           no próprio painel). #}
+        {% if current_user.is_staff %}
+        <div class="dropdown me-2">
+          <button class="btn btn-sm btn-outline-secondary position-relative" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Notificações">
+            <i class="bi bi-bell"></i>
+            {% if notificacoes_nao_lidas_navbar %}
+            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: .65rem;">
+              {{ notificacoes_nao_lidas_navbar }}
+            </span>
+            {% endif %}
+          </button>
+          <div class="dropdown-menu dropdown-menu-end p-0" style="width: 320px; max-height: 420px; overflow-y: auto;">
+            <div class="px-3 py-2 border-bottom d-flex justify-content-between align-items-center">
+              <strong class="small">Notificações</strong>
+              {% if notificacoes_nao_lidas_navbar %}
+              <form method="post" action="{{ url_for('medico.notificacoes_marcar_todas_lidas') }}" class="mb-0">
+                <button type="submit" class="btn btn-link btn-sm p-0 small">Marcar todas como lidas</button>
+              </form>
+              {% endif %}
+            </div>
+            {% if notificacoes_navbar %}
+              {% for n in notificacoes_navbar %}
+              <a href="{{ url_for('medico.notificacao_abrir', notificacao_id=n.id) }}" class="dropdown-item py-2 border-bottom {% if not n.lida %}fw-semibold{% endif %}">
+                <div class="small">{{ n.titulo }}</div>
+                <div class="text-muted small text-truncate" style="max-width: 280px;">{{ n.mensagem }}</div>
+                <div class="text-muted" style="font-size: .72rem;">{{ n.criado_em.strftime('%d/%m %H:%M') }}</div>
+              </a>
+              {% endfor %}
+            {% else %}
+              <div class="px-3 py-3 text-muted small">Nenhuma notificação ainda.</div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
         <span class="text-muted small me-3 {% if not current_user.is_staff and not current_user.is_dono %}d-none d-md-inline{% endif %}">{{ current_user.nome }}</span>
         {% if current_user.tem_senha %}
         <a href="{{ url_for('auth.trocar_senha') }}" class="small text-decoration-none me-3 {% if not current_user.is_staff and not current_user.is_dono %}d-none d-md-inline{% endif %}">Trocar senha</a>

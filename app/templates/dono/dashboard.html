@@ -69,6 +69,15 @@
       {% endif %}
     </a>
   </li>
+  {# Idem - link direto pra dono.anuncios (pedido do Silvan, 2026-09-25):
+     escrever um aviso e mandar pra um médico/secretária específico ou
+     pra todo mundo, mostrado no sininho de notificações da pessoa (ver
+     Notificacao em app/models.py). #}
+  <li class="nav-item" role="presentation">
+    <a class="nav-link" href="{{ url_for('dono.anuncios') }}">
+      <i class="bi bi-megaphone me-1"></i>Anúncios
+    </a>
+  </li>
   {# Também não é uma aba client-side - link direto pra auth.meus_dados
      (pedido do Silvan: o dono da plataforma poder editar o próprio
      cadastro - nome/CPF/e-mail/telefone/endereço - protegido por
