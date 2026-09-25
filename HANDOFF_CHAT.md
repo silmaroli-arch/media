@@ -1356,6 +1356,92 @@ Pedido do Silvan (print de tela): o link público do preparo (seção anterior) 
 
 - **Pendência (mesmo padrão de sempre)**: confirmar pelo WhatsApp real, depois do próximo deploy, que mandar "oi"/"tchau"/"obrigado" numa conversa já identificada devolve a mensagem simpática de sempre COM o link do preparo no final.
 
+### "Fale com a gente" (dúvidas/sugestões/problemas direto pro dono) (2026-09-25)
+
+Pedido do Silvan: um canal simples pra médico/secretária mandar dúvida sobre o sistema, sugestão de melhoria ou relatar problema, direto pra quem administra a plataforma - sem depender de WhatsApp/e-mail pessoal. Decidido via pergunta ao Silvan: painel dentro do próprio sistema (área do dono), campos categoria + mensagem, e só o dono responde (dentro do próprio painel, não por e-mail).
+
+**`app/models.py`**: nova `MensagemSuporte` - `usuario_id` (quem mandou), `categoria` (dúvida/sugestão/problema/outro, com `CATEGORIAS` e a property `categoria_label`), `mensagem`, `status` (nova/lida/respondida), `resposta`, `respondida_em`, `criado_em`.
+
+**`migrar_banco.py`**: `CREATE TABLE IF NOT EXISTS mensagens_suporte (...)`.
+
+**`app/routes_medico.py`**: `medico.fale_com_a_gente` (GET mostra o formulário + as próprias mensagens do usuário logado, ordenadas da mais nova pra mais antiga; POST valida a categoria contra `MensagemSuporte.CATEGORIAS` - caindo pra "duvida" se vier algo inesperado - e exige mensagem não vazia).
+
+**`app/routes_dono.py`**: `dono.mensagens_suporte` (lista TODAS as mensagens, de todas as clínicas, com as não-respondidas primeiro), `dono.mensagens_suporte_responder` (POST, preenche `resposta`/`status="respondida"`/`respondida_em`) e `dono.mensagens_suporte_marcar_lida` (POST, só muda status de "nova" pra "lida" - pra sinalizar "já vi, ainda não respondi" sem forçar uma resposta).
+
+**Templates**: `medico/fale_com_a_gente.html` (formulário + accordion com as próprias mensagens, badge de status) e `dono/mensagens_suporte.html` (accordion com todas as mensagens, campo de resposta e botão "marcar como lida" inline em cada uma).
+
+**Menu**: item "Fale com a gente" adicionado em `base.html`, logo depois de "Grupos de trabalho" (mesma visibilidade - `oculto_no_celular_do_medico`). No dashboard do dono (`dono/dashboard.html`), item "Mensagens" com badge mostrando quantas estão com status "nova" (contagem calculada em `dono.dashboard`, via `mensagens_suporte_novas`).
+
+**Testes**: `test_fale_com_a_gente.py` (novo) - cobre o ciclo completo: médico manda mensagem → aparece na própria lista dele → NÃO aparece na lista de outro médico (cada um só vê as próprias) → aparece na lista do dono (de qualquer clínica) → dono responde → status vira "respondida" e o contador de "novas" no dashboard cai → resposta aparece de volta pro médico.
+
+- **Pendência (mesmo padrão de sempre - validado só por `ast.parse`/`jinja2.Environment().parse()`, sem `flask`/`flask_sqlalchemy` instalados neste ambiente de desenvolvimento pra rodar a suíte de ponta a ponta de verdade)**: depois do próximo deploy, testar na tela real: mandar uma mensagem como médico, responder como dono, confirmar que o badge de "novas" no dashboard aparece/some corretamente, e que a mensagem de um médico não aparece pra outro médico da mesma clínica.
+
+### Botão "Encerrar" de um clique (2026-09-25)
+
+Pedido do Silvan (print da tela "Meus exames agendados"): um jeito de encerrar o atendimento sem precisar abrir a tela de Atendimento nem escrever nada.
+
+**`app/routes_medico.py`**: nova rota `medico.atendimento_encerrar_rapido` (POST) - mesmo filtro de escopo/médico da rota `atendimento` já existente, mas **propositalmente não toca em `notas_atendimento`** (só marca `encerrado_em`, se ainda não estiver encerrado). Isso é importante: reaproveitar a rota `atendimento` pra esse botão zeraria qualquer nota já existente, porque `request.form.get("notas_atendimento", "").strip() or None` dá `None` quando o campo não vem no POST - e um botão de um clique não manda esse campo.
+
+**`app/templates/medico/medico_agenda_pessoal.html`**: terceiro botão "Encerrar" (ao lado de "Atendimento"/"Resultado"), com confirmação via `confirm()` do navegador, e que só aparece quando o agendamento ainda não está encerrado (`{% if not a.encerrada %}`, usando a property `Agendamento.encerrada` já existente).
+
+**Testes**: `test_atendimento_encerrar_rapido.py` (novo) - confirma que o botão aparece pra um agendamento aberto e some depois de encerrado, que o POST marca `encerrado_em` sem tocar em `notas_atendimento`, que um segundo clique é seguro (idempotente), e que um médico de outro grupo recebe 404 ao tentar encerrar um agendamento fora do próprio escopo.
+
+- **Pendência (mesmo padrão de sempre)**: confirmar na tela real, depois do deploy, que o botão aparece/some no lugar certo e que o `confirm()` do navegador não incomoda no celular.
+
+### Correção do scroll do menu lateral em celular/tablet (2026-09-25)
+
+Pedido do Silvan (print de tela: menu cortado, sem conseguir rolar até os itens de baixo). Causa: `.app-sidebar` usava `height: 100vh`, que não considera a barra de endereço/navegação do navegador em celular (Android/iOS) - a altura "real" disponível fica menor que 100vh, cortando os itens do fim do menu.
+
+**`app/templates/base.html`**: `.app-sidebar` ganhou `height: 100dvh` (altura "dinâmica" da viewport, que já desconta a UI do navegador) por cima do `100vh` (mantido como fallback pra navegador sem suporte a `dvh`), mais `-webkit-overflow-scrolling: touch;` e `touch-action: pan-y;` pra garantir rolagem suave por toque.
+
+- **Pendência**: confirmar visualmente no celular do Silvan (o mesmo aparelho do print) que os itens de baixo do menu (a partir de "Grupos de trabalho"/"Fale com a gente") agora ficam alcançáveis rolando o menu.
+
+### Custo do ambiente de produção: Render vs. AWS (pesquisa feita em 2026-09-25)
+
+Pedido do Silvan, ao decidir a estrutura do `media-prod`: comparar o preço do Render com o equivalente na AWS (o projeto já usou AWS Elastic Beanstalk/RDS antes de migrar pro Render - ver topo deste documento). Pesquisa feita via WebSearch/WebFetch (Render pricing muda de tempos em tempos - ver aviso sobre repricing de agosto/2026 nas fontes abaixo), sem nenhuma cotação feita direto no painel de nenhum dos dois provedores.
+
+**Render (workspace Hobby, sem taxa fixa de conta):**
+- Serviço web Starter (0.5 CPU / 512 MB): US$ 7/mês.
+- Postgres pago mais barato (0.5 CPU / 1 GB, 100 conexões): US$ 19/mês - só nos planos pagos existe backup automático (retenção de 3 dias no Hobby, 7 dias a partir do Pro); o plano Free não tem backup nenhum e o banco é apagado a cada 30 dias.
+- Total: **≈ US$ 26/mês** (sem taxa de workspace, bandwidth dentro da cota incluída).
+
+**Equivalente na AWS (região sa-east-1/São Paulo, sob demanda, sem Reserved Instance/Savings Plan):**
+- EC2 `t4g.micro` (2 vCPU em rajada, 1 GB RAM) - equivalente aproximado ao Starter do Render: US$ 0,0134/h ≈ **US$ 9,78/mês** (fonte: aws-pricing.com, região sa-east-1 confirmada).
+- RDS `db.t4g.micro` PostgreSQL Single-AZ - equivalente ao Postgres pago do Render: **≈ US$ 21,90/mês em us-east-1** (fonte: economize.cloud) - **não encontrei cotação direta confiável pra sa-east-1**; usando a mesma proporção observada no EC2 entre us-east-1 e sa-east-1 (sa-east-1 sai ~60% mais caro), a estimativa é de **US$ 30-35/mês em São Paulo** - vale confirmar o valor exato na calculadora oficial da AWS (calculator.aws) antes de decidir de verdade.
+- Armazenamento (gp3): ~US$ 0,152/GB-mês, cobrado separado (no Render já vem embutido no preço do plano) - para uns 20GB, ~US$ 3/mês.
+- Total estimado: **≈ US$ 43-48/mês** - bem mais caro que o Render pro mesmo porte, e ainda sem contar o trabalho de configurar/manter Elastic Beanstalk + RDS + security groups na mão (que, pelo histórico deste documento, foi parte do motivo da migração pro Render).
+
+**Conclusão da comparação**: pro porte inicial do `media-prod` (uma clínica/poucos médicos), o Render continua sendo a opção mais barata E mais simples de operar - a AWS só passaria a compensar em custo com volume bem maior (onde Reserved Instances/Savings Plans de 1-3 anos entram em jogo) ou se precisar de recursos que o Render não oferece.
+
+- **Pendência**: os números de sa-east-1 pro RDS são uma ESTIMATIVA por proporção, não uma cotação direta - confirmar valor exato na calculadora oficial da AWS (https://calculator.aws) antes de qualquer decisão final baseada em preço.
+
+Fontes consultadas: render.com/pricing, render.com/docs/postgresql-backups, aws-pricing.com (t4g.micro e sa-east-1), economize.cloud (db.t4g.micro), aws.amazon.com/rds/postgresql/pricing, bex.co (repricing do Render de agosto/2026).
+
+**PaaS, VPN e CDN na AWS (complemento à comparação acima):**
+- **PaaS equivalente ao Render**: o mais próximo é o AWS App Runner (rodar direto um container/repo, sem gerenciar servidor) ou Elastic Beanstalk (mais controle, mais complexidade). App Runner cobra por vCPU/GB-hora provisionado + ativo; pra um serviço pequeno rodando o tempo todo isso fica em torno de US$ 25-50/mês só de compute, dependendo do dimensionamento - ou seja, o "PaaS" da AWS tende a custar entre o mesmo e o dobro do Starter+Postgres do Render.
+- **VPN**: não é necessário pra arquitetura atual do Media (Flask + Postgres do mesmo provedor, sem rede privada entre provedores diferentes) - nem o Render nem uma VPS simples exigem VPN pra esse caso. Se um dia precisar (ex: conectar um datacenter próprio de alguma clínica), o AWS Client VPN cobra por hora de conexão + por associação de subnet (soma facilmente US$ 70-100+/mês só de taxa fixa, fora o tráfego) - caro pra esse porte.
+- **CDN**: praticamente de graça nos dois lados hoje. AWS CloudFront tem 1TB/mês grátis perpetuamente (não é só trial). Fora da AWS, o plano Free da Cloudflare já cobre CDN + proteção básica sem custo. Pro Media hoje (sem muito tráfego de arquivos estáticos pesados), nenhum CDN dedicado é urgente.
+
+**Comparação com provedores de VPS "baratos" (pesquisa feita em 2026-09-25, valores mensais, região mais barata disponível):**
+
+| Provedor | Plano mínimo | Specs | Preço promo | Preço renovação | Postgres gerenciado com backup? |
+|---|---|---|---|---|---|
+| Render (referência) | Starter + Postgres pago | 0.5 CPU/512MB + Postgres 0.5CPU/1GB | - | ≈ US$ 26/mês | Sim, incluso |
+| Hetzner Cloud | CX23 (CX22 foi descontinuado) | 2 vCPU, 4GB RAM, 40GB NVMe | - | ≈ US$ 6,49/mês | Não (só VPS puro) |
+| Contabo | Cloud VPS 4 | 4 vCPU, 8GB RAM, 100GB SSD | - | ≈ US$ 5,28/mês (Contabo não reajusta na renovação) | Não (só VPS puro) |
+| DigitalOcean | Basic Droplet 1 vCPU/1GB | 1 vCPU, 1GB RAM, 25GB SSD | - | US$ 6/mês | Sim - DO Managed PostgreSQL a partir de US$ 15,15/mês (1 vCPU/1GB) |
+| Hostinger | KVM 1 | 1 vCPU, 4GB RAM, 50GB NVMe | US$ 6,49/mês (contrato 24 meses) | US$ 11,99/mês | Não (só VPS puro) |
+
+Observações importantes sobre essa tabela:
+- Hetzner e Contabo dão MUITO mais hardware pelo preço (4-8GB RAM vs. 512MB-1GB no Render/DO de entrada), mas nenhum dos dois oferece um Postgres gerenciado com backup automático - seria preciso instalar e manter o Postgres (e os backups) manualmente na própria VPS, o que é trabalho e risco operacional extra, especialmente relevante aqui por causa da LGPD (dados de pacientes/clínicas). Isso muda o "custo total" real: a economia no preço do servidor pode ser consumida pelo tempo de manutenção e pelo risco de um backup mal configurado.
+- Hostinger tem preço de renovação quase o dobro do promocional - o número que importa pra decisão de longo prazo é US$ 11,99/mês, não os US$ 6,49 anunciados.
+- DigitalOcean é o único desses "baratos" com um Managed PostgreSQL de verdade (backups automáticos inclusos) - Droplet (US$ 6) + banco gerenciado (US$ 15,15) dá **≈ US$ 21/mês**, ficando bem próximo do Render e ainda menor, mas sem o mesmo nível de integração/deploy automático que o Render já oferece hoje pro Media (o setup de rede/deploy precisaria ser feito na mão, como já foi no passado com Elastic Beanstalk).
+- Nenhum desses provedores tem um "workspace" com deploy automático a partir do GitHub e SSL gerenciado do jeito que o Render tem hoje - entraria trabalho de DevOps que hoje o Render faz de graça.
+
+**Conclusão atualizada**: em preço puro de servidor, Hetzner e Contabo ganham disparado (menos de US$ 7/mês por muito mais hardware). Mas considerando o pacote completo que o Media precisa - deploy automático, Postgres gerenciado com backup, LGPD/dados sensíveis de pacientes - o Render continua sendo a opção com melhor equilíbrio entre custo e operação pronta pra uso; DigitalOcean seria a alternativa mais próxima em nível de serviço (Managed Database) se algum dia o custo do Render deixar de compensar.
+
+Fontes consultadas (comparação de VPS baratos): hetzner.com/cloud/regular-performance, bestusavps.com/reviews/hetzner, digitalocean.com/pricing/droplets, digitalocean.com/pricing/managed-databases, cybernews.com/best-web-hosting/contabo-review/pricing, comparevps.com/hosting/contabo, comparevps.com/hosting/hostinger, tradingvpshub.com/hostinger-vps-pricing.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
