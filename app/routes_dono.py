@@ -688,6 +688,86 @@ def usuarios():
     return render_template("dono/usuarios.html", linhas=_usuarios_com_custo())
 
 
+@dono_bp.route("/usuarios/gerar-cobrancas-ano", methods=["POST"])
+@login_required
+@dono_required
+def licencas_gerar_cobrancas_ano():
+    """Gera, de uma vez só, a cobrança Mercado Pago dos meses que FALTAM
+    neste ano civil (do mês seguinte ao atual até dezembro, inclusive)
+    pra todo médico em ciclo MENSAL (pedido do Silvan, 2026-09-25 - antes
+    só dava pra gerar usuário por usuário/mês por mês, na tela de
+    pagamentos de cada um). Médico em ciclo ANUAL fica de fora - ele usa o
+    próprio fluxo de "cobrar anual" (ver usuario_licenca_pagamento_cobrar_
+    anual), que já cobre o ano inteiro num pagamento único; gerar cobrança
+    mensal pra ele aqui cobraria em duplicado.
+
+    Critérios (decididos com o Silvan): só os meses AINDA NÃO PAGOS, e só
+    onde ainda NÃO existe cobrança gerada (não substitui/duplica um link
+    já ativo) - meses já pagos na mão (Pix, acordo informal etc.) e meses
+    com cobrança já pendente ficam intocados."""
+    hoje = date.today()
+    if hoje.month == 12:
+        flash("Já estamos em dezembro - não há mais meses restantes neste ano civil pra gerar.", "warning")
+        return redirect(url_for("dono.usuarios"))
+    mes_inicio = date(hoje.year, hoje.month + 1, 1)
+    mes_fim = date(hoje.year, 12, 1)
+
+    medicos = Usuario.query.filter_by(tipo="medico", ciclo_licenca="mensal").all()
+
+    geradas = 0
+    ja_tinham = 0
+    sem_valor = 0
+    falhas = []
+
+    for medico in medicos:
+        garantir_meses_licenca(medico, fim=mes_fim)
+    db.session.flush()
+
+    for medico in medicos:
+        pagamentos = LicencaPagamento.query.filter(
+            LicencaPagamento.usuario_id == medico.id,
+            LicencaPagamento.mes >= mes_inicio,
+            LicencaPagamento.mes <= mes_fim,
+            LicencaPagamento.pago.is_(False),
+        ).all()
+        for pagamento in pagamentos:
+            if pagamento.mp_init_point:
+                ja_tinham += 1
+                continue
+            try:
+                criar_preferencia_pagamento(pagamento)
+                geradas += 1
+            except MercadoPagoNaoConfigurado:
+                db.session.commit()
+                flash(
+                    "Mercado Pago ainda não está configurado nesta instalação "
+                    "(defina MERCADOPAGO_ACCESS_TOKEN no .env) - nenhuma cobrança foi gerada.",
+                    "danger",
+                )
+                return redirect(url_for("dono.usuarios"))
+            except ValueError:
+                sem_valor += 1
+            except Exception:
+                current_app.logger.exception(
+                    "Falha ao gerar cobrança em massa para %s, mês %s.",
+                    medico.nome, pagamento.mes.strftime("%m/%Y"),
+                )
+                falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
+
+    db.session.commit()
+
+    partes = [f"{geradas} cobrança{'s' if geradas != 1 else ''} gerada{'s' if geradas != 1 else ''}"]
+    if ja_tinham:
+        partes.append(f"{ja_tinham} já tinham cobrança (não duplicadas)")
+    if sem_valor:
+        partes.append(f"{sem_valor} sem valor mensal definido (puladas)")
+    if falhas:
+        exibidas = ", ".join(falhas[:5])
+        partes.append(f"{len(falhas)} falharam: {exibidas}{' ...' if len(falhas) > 5 else ''}")
+    flash(" · ".join(partes) + ".", "success" if not falhas else "warning")
+    return redirect(url_for("dono.usuarios"))
+
+
 @dono_bp.route("/custo-ia")
 @login_required
 @dono_required

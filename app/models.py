@@ -571,11 +571,15 @@ def _mes_seguinte(d):
     return date(d.year, d.month + 1, 1)
 
 
-def garantir_meses_licenca(usuario):
+def garantir_meses_licenca(usuario, fim=None):
     """Garante que existe uma linha de LicencaPagamento (como "não pago")
-    pra cada mês desde o cadastro do médico até o mês atual, inclusive -
-    chamado sempre que a tela de licença (do médico ou do dono) é aberta,
-    pra ninguém precisar "gerar o mês" manualmente (decisão do Silvan).
+    pra cada mês desde o cadastro do médico até `fim` (inclusive) - por
+    padrão (fim=None) até o mês atual, chamado sempre que a tela de
+    licença (do médico ou do dono) é aberta, pra ninguém precisar "gerar o
+    mês" manualmente (decisão do Silvan). Passar um `fim` no futuro é o
+    que permite adiantar meses ainda não vencidos (ver
+    dono.licencas_gerar_cobrancas_ano, pedido do Silvan de 2026-09-25:
+    gerar a cobrança do ano inteiro pra todo mundo de uma vez).
     Só se aplica a médico (a licença é individual, por médico - secretária
     não tem). Não faz commit, quem chamar decide quando salvar. Retorna a
     lista de linhas novas (pode estar vazia)."""
@@ -583,7 +587,7 @@ def garantir_meses_licenca(usuario):
         return []
 
     inicio = _primeiro_dia_do_mes(usuario.criado_em.date() if usuario.criado_em else date.today())
-    fim = _primeiro_dia_do_mes(date.today())
+    fim = _primeiro_dia_do_mes(fim if fim else date.today())
 
     existentes = {p.mes for p in LicencaPagamento.query.filter_by(usuario_id=usuario.id).all()}
 

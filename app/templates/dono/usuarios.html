@@ -6,12 +6,28 @@
 
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h3 class="mb-0">Usuários cadastrados (equipe)</h3>
+  {# Pedido do Silvan (2026-09-25): gerar de uma vez a cobrança Mercado
+     Pago dos meses que faltam neste ano pra todo médico em ciclo mensal,
+     em vez de entrar usuário por usuário/mês por mês (ver
+     dono.licencas_gerar_cobrancas_ano em app/routes_dono.py). #}
+  <form method="post" action="{{ url_for('dono.licencas_gerar_cobrancas_ano') }}"
+        onsubmit="return confirm('Gerar a cobrança Mercado Pago dos meses restantes deste ano (a partir do mês seguinte ao atual) pra TODO médico em ciclo mensal? Meses já pagos ou que já têm cobrança gerada não são afetados.');">
+    <button type="submit" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-cash-stack me-1"></i>Gerar cobranças do ano para todos
+    </button>
+  </form>
 </div>
 
 <p class="text-muted small">
   Todas as contas de médico(a)/secretário(a) da plataforma, independente de terem um grupo de trabalho ou
   não — desde que uma conta nova deixou de criar um grupo automaticamente, ela pode existir "solo" (usa o
   sistema sozinha, sem trial/vencimento/bloqueio) e não aparece na lista de Grupos.
+</p>
+<p class="text-muted small">
+  <i class="bi bi-info-circle"></i> "Gerar cobranças do ano para todos" cria o link de pagamento (Mercado Pago)
+  dos meses que faltam neste ano civil, a partir do mês seguinte ao atual, só pra quem está no ciclo mensal -
+  quem já pagou aquele mês na mão, ou já tem cobrança gerada, não é afetado; médico em ciclo anual continua
+  usando o próprio botão de cobrança anual, na tela de pagamentos dele.
 </p>
 
 {% set em_alerta = linhas|selectattr("em_alerta_inadimplencia")|list %}
