@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 from app.mercadopago_integration import (
@@ -134,9 +134,15 @@ def dashboard():
     linhas_usuarios = _usuarios_com_custo()
     custo_total_usuarios = sum(l["custo"]["custo_total"] for l in linhas_usuarios if l["custo"])
 
+    # Contagem de mensagens novas do "Fale com a gente" (ver MensagemSuporte
+    # em app/models.py), pra mostrar um badge no menu sem precisar abrir a
+    # tela de mensagens.
+    mensagens_suporte_novas = MensagemSuporte.query.filter_by(status="nova").count()
+
     return render_template(
         "dono/dashboard.html", grupos=grupos, resumo=resumo, hoje=date.today(), config=config,
         linhas_usuarios=linhas_usuarios, custo_total_usuarios=custo_total_usuarios,
+        mensagens_suporte_novas=mensagens_suporte_novas,
     )
 
 
@@ -776,3 +782,50 @@ def custo_ia_paciente(paciente_id):
     return render_template(
         "dono/custo_ia_detalhe.html", pessoa_nome=paciente.nome, chamadas=chamadas,
     )
+
+
+
+# ---------- "Fale com a gente" (mensagens de médico/secretária) ----------
+
+@dono_bp.route("/mensagens-suporte")
+@login_required
+@dono_required
+def mensagens_suporte():
+    """Lista todas as mensagens de todas as clínicas (ver MensagemSuporte
+    em app/models.py) - as mais novas primeiro, pra o dono sempre ver o
+    que ainda não foi respondido no topo."""
+    mensagens = (
+        MensagemSuporte.query.order_by(
+            MensagemSuporte.status == "respondida",
+            MensagemSuporte.criado_em.desc(),
+        ).all()
+    )
+    return render_template("dono/mensagens_suporte.html", mensagens=mensagens)
+
+
+@dono_bp.route("/mensagens-suporte/<int:mensagem_id>/responder", methods=["POST"])
+@login_required
+@dono_required
+def mensagens_suporte_responder(mensagem_id):
+    mensagem = MensagemSuporte.query.get_or_404(mensagem_id)
+    resposta = request.form.get("resposta", "").strip()
+    if not resposta:
+        flash("Escreva uma resposta antes de enviar.", "danger")
+        return redirect(url_for("dono.mensagens_suporte"))
+    mensagem.resposta = resposta
+    mensagem.status = "respondida"
+    mensagem.respondida_em = datetime.utcnow()
+    db.session.commit()
+    flash("Resposta enviada.", "success")
+    return redirect(url_for("dono.mensagens_suporte"))
+
+
+@dono_bp.route("/mensagens-suporte/<int:mensagem_id>/marcar-lida", methods=["POST"])
+@login_required
+@dono_required
+def mensagens_suporte_marcar_lida(mensagem_id):
+    mensagem = MensagemSuporte.query.get_or_404(mensagem_id)
+    if mensagem.status == "nova":
+        mensagem.status = "lida"
+        db.session.commit()
+    return redirect(url_for("dono.mensagens_suporte"))

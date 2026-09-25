@@ -22,7 +22,7 @@ from app.models import (
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, PushSubscription, LicencaPagamento, garantir_meses_licenca,
-    PlataformaConfig,
+    PlataformaConfig, MensagemSuporte,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto,
 )
@@ -2541,6 +2541,31 @@ def atendimento(agendamento_id):
     )
 
 
+@medico_bp.route("/agenda/<int:agendamento_id>/encerrar-rapido", methods=["POST"])
+@login_required
+@staff_required
+def atendimento_encerrar_rapido(agendamento_id):
+    """Encerra o agendamento com um único clique, sem abrir a tela de
+    atendimento nem exigir nenhuma observação (pedido do Silvan,
+    2026-09-25, pra quando não há nada a anotar). Propositalmente NÃO
+    toca em `notas_atendimento` - só a rota `atendimento` (acima) escreve
+    nesse campo, pra nunca zerar uma nota já existente."""
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
+    )
+    if eh_medico():
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
+
+    if not agendamento.encerrado_em:
+        agendamento.encerrado_em = datetime.utcnow()
+        db.session.commit()
+        flash("Atendimento encerrado.", "success")
+
+    return redirect(request.referrer or url_for("medico.medico_agenda_pessoal"))
+
+
 # ---------- Resultado de exame (upload de PDF) ----------
 
 def _pasta_resultados():
@@ -3750,3 +3775,42 @@ def push_unsubscribe():
         PushSubscription.query.filter_by(endpoint=endpoint).delete()
         db.session.commit()
     return jsonify({"ok": True})
+
+
+
+# ---------- "Fale com a gente" (dúvidas/sugestões/problemas p/ o dono) ----------
+
+@medico_bp.route("/fale-com-a-gente", methods=["GET", "POST"])
+@login_required
+@staff_required
+def fale_com_a_gente():
+    """Canal simples do médico/secretária pro dono da plataforma (pedido
+    do Silvan, 2026-09-25) - ver MensagemSuporte em app/models.py. Sem
+    e-mail/WhatsApp: fica tudo registrado aqui mesmo, e a resposta do
+    dono aparece nesta mesma tela quando ele responder (ver
+    dono.mensagens_suporte_responder em app/routes_dono.py)."""
+    if request.method == "POST":
+        categoria = request.form.get("categoria", "duvida")
+        if categoria not in MensagemSuporte.CATEGORIAS:
+            categoria = "duvida"
+        mensagem = request.form.get("mensagem", "").strip()
+        if not mensagem:
+            flash("Escreva sua mensagem antes de enviar.", "danger")
+            return redirect(url_for("medico.fale_com_a_gente"))
+        db.session.add(MensagemSuporte(
+            usuario_id=current_user.id, categoria=categoria, mensagem=mensagem,
+        ))
+        db.session.commit()
+        flash("Mensagem enviada! O dono da plataforma vai receber e responder por aqui mesmo.", "success")
+        return redirect(url_for("medico.fale_com_a_gente"))
+
+    minhas_mensagens = (
+        MensagemSuporte.query.filter_by(usuario_id=current_user.id)
+        .order_by(MensagemSuporte.criado_em.desc())
+        .all()
+    )
+    return render_template(
+        "medico/fale_com_a_gente.html",
+        minhas_mensagens=minhas_mensagens,
+        categorias=MensagemSuporte.CATEGORIAS,
+    )

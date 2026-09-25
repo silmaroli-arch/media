@@ -1826,6 +1826,37 @@ class HistoricoDeploy(db.Model):
     registrado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class MensagemSuporte(db.Model):
+    """"Fale com a gente": canal simples para médico/secretária mandarem
+    dúvidas sobre o sistema, sugestões de melhoria ou relatar problemas,
+    direto para o dono da plataforma (pedido do Silvan, 2026-09-25) -
+    sem depender de WhatsApp/e-mail pessoal. Resposta é dada SÓ pelo
+    dono, dentro do próprio painel."""
+    __tablename__ = "mensagens_suporte"
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    categoria = db.Column(db.String(20), nullable=False, default="duvida")
+    mensagem = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="nova")
+    resposta = db.Column(db.Text, nullable=True)
+    respondida_em = db.Column(db.DateTime, nullable=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship("Usuario")
+
+    CATEGORIAS = {
+        "duvida": "Dúvida sobre o sistema",
+        "sugestao": "Sugestão de melhoria",
+        "problema": "Problema/erro no sistema",
+        "outro": "Outro assunto",
+    }
+
+    @property
+    def categoria_label(self):
+        return self.CATEGORIAS.get(self.categoria, self.categoria)
+
+
 def _preparo_pode_ser_editado_por(self, usuario):
     """Modelo com dono médico só é editado POR ELE (ver criado_por_id).
     Sem dono médico (legado/criado pela secretária), a equipe edita."""

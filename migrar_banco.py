@@ -436,6 +436,19 @@ CREATE TABLE IF NOT EXISTS contagem_perguntas_dia (
 -- obter_token_preparo_publico em app/models.py e app.preparo_publico).
 ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS token_preparo_publico VARCHAR(43);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_agendamentos_token_preparo_publico ON agendamentos (token_preparo_publico);
+
+-- "Fale com a gente": mensagens de médico/secretária para o dono da
+-- plataforma (ver MensagemSuporte em app/models.py).
+CREATE TABLE IF NOT EXISTS mensagens_suporte (
+    id SERIAL PRIMARY KEY,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    categoria VARCHAR(20) NOT NULL DEFAULT 'duvida',
+    mensagem TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'nova',
+    resposta TEXT,
+    respondida_em TIMESTAMP,
+    criado_em TIMESTAMP
+);
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)
