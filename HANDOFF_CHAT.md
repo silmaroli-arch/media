@@ -1396,6 +1396,14 @@ Pedido do Silvan (print de tela: menu cortado, sem conseguir rolar até os itens
 
 - **Pendência**: confirmar visualmente no celular do Silvan (o mesmo aparelho do print) que os itens de baixo do menu (a partir de "Grupos de trabalho"/"Fale com a gente") agora ficam alcançáveis rolando o menu.
 
+### "Últimas respondidas" e "Fale com a gente" no menu reduzido do celular (2026-09-25, mesmo dia)
+
+Pedido do Silvan, depois de revisar quais itens ficavam de fora do menu reduzido do celular do médico: "Últimas respondidas" e "Fale com a gente" passaram a aparecer também nessa versão reduzida.
+
+**`app/templates/base.html`**: os dois `<li>` perderam a classe `oculto_no_celular_do_medico` (mesmo padrão de "Meus exames agendados"/"Portal de atendimento rápido"/"Minha licença", que já ficavam sempre visíveis, sem precisar de uma cópia mobile separada). Comentário no topo do bloco do menu atualizado pra refletir a lista atual do que aparece no celular do médico.
+
+- **Pendência**: confirmar visualmente no celular do Silvan que os dois itens aparecem no menu reduzido.
+
 ### Custo do ambiente de produção: Render vs. AWS (pesquisa feita em 2026-09-25)
 
 Pedido do Silvan, ao decidir a estrutura do `media-prod`: comparar o preço do Render com o equivalente na AWS (o projeto já usou AWS Elastic Beanstalk/RDS antes de migrar pro Render - ver topo deste documento). Pesquisa feita via WebSearch/WebFetch (Render pricing muda de tempos em tempos - ver aviso sobre repricing de agosto/2026 nas fontes abaixo), sem nenhuma cotação feita direto no painel de nenhum dos dois provedores.

@@ -105,10 +105,12 @@
       </a>
       <button type="button" class="btn-close btn-close-white no-print" aria-label="Fechar o menu" onclick="fecharMenuSidebar()"></button>
     </div>
-    {# No celular, o médico usa uma versão bem reduzida do app: só "Meus
-       exames agendados" e "Portal de atendimento" (pedido do Silvan - "no
-       celular vamos ter um app só", com essas duas telas apenas). Os
-       demais itens continuam existindo em tablet/desktop, e continuam
+    {# No celular, o médico usa uma versão reduzida do app: começou só com
+       "Meus exames agendados" e "Portal de atendimento" (pedido do
+       Silvan - "no celular vamos ter um app só"), e desde 2026-09-25
+       "Últimas respondidas" e "Fale com a gente" também ficam visíveis
+       nessa versão reduzida (pedido do Silvan, mesmo dia). Os demais
+       itens continuam existindo em tablet/desktop, e continuam
        TODOS visíveis pra secretária no celular também (só o médico tem
        o menu reduzido no celular) - por isso o `d-none d-md-block`
        abaixo só é aplicado quando `current_user.tipo == "medico"`, nunca
@@ -212,7 +214,10 @@
         </a>
       </li>
 
-      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+      {# Pedido do Silvan (2026-09-25): "Últimas respondidas" passou a
+         aparecer também no menu reduzido do celular do médico - por
+         isso perdeu a classe oculto_no_celular_do_medico. #}
+      <li class="nav-item mb-1">
         <a class="nav-link {% if request.endpoint == 'medico.perguntas_respondidas' %}active{% endif %}" href="{{ url_for('medico.perguntas_respondidas') }}">
           <i class="bi bi-clock-history me-2"></i>Últimas respondidas
         </a>
@@ -248,8 +253,10 @@
 
       {# "Fale com a gente" — dúvidas/sugestões/problemas direto pro dono
          da plataforma (pedido do Silvan, 2026-09-25 - ver
-         medico.fale_com_a_gente em app/routes_medico.py). #}
-      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+         medico.fale_com_a_gente em app/routes_medico.py). Também aparece
+         no menu reduzido do celular do médico (pedido do Silvan,
+         2026-09-25, mesmo dia - por isso sem oculto_no_celular_do_medico). #}
+      <li class="nav-item mb-1">
         <a class="nav-link {% if request.endpoint == 'medico.fale_com_a_gente' %}active{% endif %}" href="{{ url_for('medico.fale_com_a_gente') }}">
           <i class="bi bi-chat-dots me-2"></i>Fale com a gente
         </a>
