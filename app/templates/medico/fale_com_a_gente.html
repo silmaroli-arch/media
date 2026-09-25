@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block titulo %}Fale com a gente{% endblock %}
+{% block conteudo %}
+<h3 class="mb-1">Fale com a gente</h3>
+<p class="text-muted">Tem alguma dúvida sobre o sistema, quer sugerir uma melhoria ou encontrou algum problema? Escreva aqui — sua mensagem vai direto para quem administra a plataforma, e a resposta aparece nesta mesma tela.</p>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <form method="post" action="{{ url_for('medico.fale_com_a_gente') }}">
+      <div class="mb-3">
+        <label class="form-label">Sobre o que é?</label>
+        <select name="categoria" class="form-select" style="max-width: 320px;">
+          {% for chave, label in categorias.items() %}
+          <option value="{{ chave }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Sua mensagem</label>
+        <textarea name="mensagem" class="form-control" rows="4" placeholder="Escreva aqui..." required></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary"><i class="bi bi-send me-1"></i>Enviar</button>
+    </form>
+  </div>
+</div>
+
+<h5 class="mb-3">Suas mensagens</h5>
+{% if minhas_mensagens %}
+  <div class="accordion" id="accordionMinhasMensagens">
+    {% for m in minhas_mensagens %}
+    <div class="accordion-item">
+      <h2 class="accordion-header">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#mensagem-{{ m.id }}" aria-expanded="false" aria-controls="mensagem-{{ m.id }}">
+          <span class="badge me-2 {% if m.status == 'respondida' %}bg-success{% elif m.status == 'lida' %}bg-info text-dark{% else %}bg-secondary{% endif %}">
+            {% if m.status == 'respondida' %}Respondida{% elif m.status == 'lida' %}Lida{% else %}Enviada{% endif %}
+          </span>
+          <span class="badge bg-light text-dark border me-2">{{ categorias.get(m.categoria, m.categoria) }}</span>
+          <span class="text-truncate" style="max-width: 380px;">{{ m.mensagem }}</span>
+          <span class="text-muted small ms-2">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+        </button>
+      </h2>
+      <div id="mensagem-{{ m.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionMinhasMensagens">
+        <div class="accordion-body">
+          <p style="white-space: pre-line">{{ m.mensagem }}</p>
+          {% if m.resposta %}
+          <div class="border-start border-success border-3 ps-3 mt-3">
+            <div class="text-muted small mb-1">Resposta{% if m.respondida_em %} em {{ m.respondida_em.strftime('%d/%m/%Y %H:%M') }}{% endif %}:</div>
+            <p style="white-space: pre-line" class="mb-0">{{ m.resposta }}</p>
+          </div>
+          {% else %}
+          <p class="text-muted small mb-0">Ainda sem resposta.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="text-muted">Você ainda não enviou nenhuma mensagem.</p>
+{% endif %}
+{% endblock %}
