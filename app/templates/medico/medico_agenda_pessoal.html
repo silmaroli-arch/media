@@ -31,6 +31,15 @@
           <div class="d-flex gap-1 flex-wrap">
             <a href="{{ url_for('medico.atendimento', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Atendimento">Atendimento</a>
             <a href="{{ url_for('medico.resultado_upload', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Resultado">Resultado</a>
+            {# Encerra sem precisar abrir a tela de Atendimento nem escrever
+               nada (pedido do Silvan, 2026-09-25) - some quando já está
+               encerrado, pra não dar a impressão de que dá pra clicar de
+               novo (ver Agendamento.encerrada em app/models.py). #}
+            {% if not a.encerrada %}
+            <form method="post" action="{{ url_for('medico.atendimento_encerrar_rapido', agendamento_id=a.id) }}" class="d-inline" onsubmit="return confirm('Encerrar este atendimento?');">
+              <button type="submit" class="btn btn-sm btn-outline-success" title="Encerrar sem anotar nada">Encerrar</button>
+            </form>
+            {% endif %}
           </div>
         </td>
       </tr>

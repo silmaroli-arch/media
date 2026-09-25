@@ -42,10 +42,18 @@
       position: fixed;
       top: 0;
       left: 0;
+      /* 100vh não considera a barra de endereço/navegação do celular
+         (Android/iOS), o que cortava os itens de baixo do menu e
+         impedia rolar até eles - ver relato do Silvan, 2026-09-25.
+         100dvh (altura "dinâmica" real da viewport) resolve; o 100vh
+         fica como fallback pra navegadores mais antigos sem suporte. */
       height: 100vh;
+      height: 100dvh;
       width: 82vw;
       max-width: 300px;
       overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
       transform: translateX(-100%);
       transition: transform .25s ease-in-out;
       z-index: 1045;
@@ -235,6 +243,15 @@
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('grupo.') %}active{% endif %}" href="{{ url_for('grupo.meus_grupos') }}">
           <i class="bi bi-people me-2"></i>Grupos de trabalho
+        </a>
+      </li>
+
+      {# "Fale com a gente" — dúvidas/sugestões/problemas direto pro dono
+         da plataforma (pedido do Silvan, 2026-09-25 - ver
+         medico.fale_com_a_gente em app/routes_medico.py). #}
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint == 'medico.fale_com_a_gente' %}active{% endif %}" href="{{ url_for('medico.fale_com_a_gente') }}">
+          <i class="bi bi-chat-dots me-2"></i>Fale com a gente
         </a>
       </li>
 

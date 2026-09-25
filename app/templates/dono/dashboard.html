@@ -57,6 +57,18 @@
       <i class="bi bi-cash-coin me-1"></i>Licenças
     </a>
   </li>
+  {# Idem - link direto pra dono.mensagens_suporte ("Fale com a gente",
+     pedido do Silvan, 2026-09-25 - ver MensagemSuporte em
+     app/models.py). Badge mostra quantas mensagens ainda estão sem
+     resposta/sem leitura, pra chamar atenção sem precisar abrir a tela. #}
+  <li class="nav-item" role="presentation">
+    <a class="nav-link" href="{{ url_for('dono.mensagens_suporte') }}">
+      <i class="bi bi-chat-dots me-1"></i>Mensagens
+      {% if mensagens_suporte_novas %}
+      <span class="badge bg-danger rounded-pill ms-1">{{ mensagens_suporte_novas }}</span>
+      {% endif %}
+    </a>
+  </li>
   {# Também não é uma aba client-side - link direto pra auth.meus_dados
      (pedido do Silvan: o dono da plataforma poder editar o próprio
      cadastro - nome/CPF/e-mail/telefone/endereço - protegido por
