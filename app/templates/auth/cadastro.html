@@ -146,6 +146,38 @@
           "Meus Locais de Atendimento" — não precisa disso agora.
         </div>
 
+        {# Pedido do Silvan (2026-09-25): esse parâmetro já existia (tela
+           "Meu painel"/"Perguntas pendentes", ver
+           medico.perguntas_configuracao), mas só podia ser mudado DEPOIS
+           de já estar usando o sistema - agora a pessoa já decide isso no
+           próprio cadastro (equivalente a Usuario.aprovacao_perguntas_
+           paciente, usado enquanto a conta for solo - se um Grupo vier a
+           existir depois, o campo do Grupo passa a valer para todo mundo
+           da equipe, e pode ser mudado por lá). #}
+        <h6 class="mb-0 mt-3">Respostas para o paciente</h6>
+        <div class="card bg-light border-0 mt-2">
+          <div class="card-body py-3">
+            <div class="form-check form-switch fs-4">
+              <input class="form-check-input" type="checkbox" role="switch" id="aprovacao_perguntas_paciente"
+                     name="aprovacao_perguntas_paciente" value="1" checked onchange="atualizarLabelAprovacao()">
+              <label class="form-check-label fs-6" for="aprovacao_perguntas_paciente" id="label-aprovacao">
+                Exigir minha aprovação antes de responder o paciente
+              </label>
+            </div>
+            <div class="form-text mt-2">
+              Quando o paciente manda uma pergunta pelo WhatsApp sobre alimento, medicamento ou uma
+              dúvida qualquer (respondida pela IA), o MedIA pode: <strong>esperar sua aprovação</strong>
+              — a resposta fica pendente em "Perguntas pendentes" até você revisar e aprovar, e só
+              então vai para o paciente — ou <strong>responder direto</strong>, sem esperar por você,
+              logo que a resposta é gerada. Isso não muda o que já está na sua Base de Conhecimento
+              (FAQ): uma pergunta que já tem resposta cadastrada ali sempre responde direto, com ou sem
+              esta opção — ela só afeta respostas novas, geradas na hora. Recomendamos manter ativado
+              no começo, enquanto você ainda está conferindo como a IA responde; você pode mudar isso
+              quando quiser, depois, no seu painel.
+            </div>
+          </div>
+        </div>
+
         <button type="submit" class="btn btn-primary w-100 mt-4" id="btn-submit">Criar minha conta</button>
       </form>
       <div class="text-center mt-3">
@@ -166,6 +198,13 @@ function atualizarCampoCrm() {
   document.getElementById('data_nascimento').required = ehMedico;
 }
 atualizarCampoCrm();
+
+function atualizarLabelAprovacao() {
+  var ativado = document.getElementById('aprovacao_perguntas_paciente').checked;
+  document.getElementById('label-aprovacao').textContent = ativado
+    ? 'Exigir minha aprovação antes de responder o paciente'
+    : 'Não exigir aprovação — responder o paciente direto';
+}
 
 // ---------- Máscaras (mesma lógica usada no resto do app: só formata o
 // que foi digitado, sem preencher com "_" o que falta - isso é o que
