@@ -1346,6 +1346,16 @@ Pedido do Silvan, a partir de um print de tela real (paciente perguntou "Posso c
 
 **Nota sobre este handoff**: ao retomar esta tarefa nesta sessão, a cópia da nuvem usada para editar (`/mnt/user-data/uploads/src`) estava desatualizada num primeiro momento em relação ao dispositivo (não refletia a implementação das "3 features novas" - seção anterior - em `app/whatsapp_conversa.py`, `app/routes_dono.py`, `app/ia_preparo.py`, `migrar_banco.py` e `dashboard.html`, embora `app/models.py` já estivesse certo). Antes de editar/entregar qualquer coisa desta seção, os arquivos tocados (`app/models.py`, `migrar_banco.py`, `app/routes_paciente.py`, `app/whatsapp_conversa.py`, `HANDOFF_CHAT.md`) foram **rebaixados/atualizados a partir do dispositivo** (fonte da verdade, sincronizado pelo processo de auto-commit do Silvan) antes de aplicar as mudanças novas por cima - só pra registrar, caso ajude a entender o histórico se algo parecer estranho numa revisão futura. Nenhum código das "3 features novas" foi perdido.
 
+### Link do preparo também nas respostas de conversa social (mesmo dia, 2026-09-24)
+
+Pedido do Silvan (print de tela): o link público do preparo (seção anterior) também deve aparecer na mensagem de saudação social ("Oi! Se tiver alguma dúvida sobre o preparo deste exame, pode escrever aqui.") - não só na mensagem original de "Exame em foco: ...".
+
+**`app/whatsapp_conversa.py`**: `_resposta_conversa_social(texto_normalizado, agendamento=None)` ganhou o parâmetro `agendamento` - quando presente, acrescenta `"\n\nVeja o preparo completo aqui: {link}"` (mesmo texto/formato usado em `_texto_pedir_pergunta`) depois da mensagem de saudação/despedida/agradecimento escolhida. Chamada em `processar_mensagem` atualizada para passar o `agendamento` da conversa. Parâmetro é opcional (default `None`, sem link) para não quebrar a chamada em `resposta_social()` do teste (função pura, sem contexto de agendamento).
+
+**Testes**: `test_whatsapp_conversa_social.py` ajustado - o teste que conferia `resposta == MENSAGEM_SAUDACAO_SOCIAL` via `processar_mensagem` de ponta a ponta passou a usar `resposta.startswith(...)` (a resposta real agora vem com o link acrescentado) e ganhou uma checagem extra confirmando que `/paciente/preparo/` aparece na resposta.
+
+- **Pendência (mesmo padrão de sempre)**: confirmar pelo WhatsApp real, depois do próximo deploy, que mandar "oi"/"tchau"/"obrigado" numa conversa já identificada devolve a mensagem simpática de sempre COM o link do preparo no final.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

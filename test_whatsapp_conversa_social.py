@@ -116,7 +116,19 @@ with app.app_context():
     mensagens_antes = ChatMensagem.query.filter_by(paciente_id=joao.id).count()
 
     resposta = processar_mensagem(telefone, "Oi")
-    checar("Saudação via processar_mensagem devolve a resposta simpática, não o aviso de encaminhamento", resposta == MENSAGEM_SAUDACAO_SOCIAL)
+    # A partir de 2026-09-24 (link do preparo no WhatsApp, ver
+    # app.preparo_publico), esta resposta passou a incluir o link público
+    # do preparo depois da mensagem simpática de sempre - por isso
+    # `startswith` em vez de igualdade exata (ver
+    # `_resposta_conversa_social`/chamada em `processar_mensagem`).
+    checar(
+        "Saudação via processar_mensagem devolve a resposta simpática, não o aviso de encaminhamento",
+        resposta.startswith(MENSAGEM_SAUDACAO_SOCIAL),
+    )
+    checar(
+        "Saudação via processar_mensagem inclui o link público do preparo",
+        "/paciente/preparo/" in resposta,
+    )
     checar(
         "Saudação via processar_mensagem NÃO cria PerguntaPendente",
         PerguntaPendente.query.filter_by(paciente_id=joao.id).count() == perguntas_antes,

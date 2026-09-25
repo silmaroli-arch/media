@@ -848,20 +848,31 @@ def _eh_apenas_conversa_social(texto_normalizado):
     return all(palavra in _PALAVRAS_CONVERSA_SOCIAL for palavra in palavras)
 
 
-def _resposta_conversa_social(texto_normalizado):
+def _resposta_conversa_social(texto_normalizado, agendamento=None):
     """Escolhe a resposta certa dentre saudação/despedida/agradecimento -
     só chamar depois de confirmar `_eh_apenas_conversa_social`. Quando a
     mensagem combina mais de uma categoria (ex.: "Obrigado, tchau!"),
     despedida tem prioridade sobre agradecimento, que tem prioridade sobre
     saudação - a última coisa dita costuma ser a mais relevante pra
     resposta, e "tchau"/"obrigado" são despedidas mais definitivas do que
-    uma saudação solta."""
+    uma saudação solta.
+
+    Inclui também o link público do preparo (pedido do Silvan, 2026-09-24
+    - ver app.preparo_publico) quando há um `agendamento` em foco - esta é
+    outra mensagem que já convida o paciente a perguntar sobre o preparo,
+    então recebe o mesmo link. Sem agendamento (nunca deveria acontecer
+    neste ponto do fluxo, mas por segurança), devolve a mensagem sem
+    link, em vez de quebrar."""
     palavras = set(_RE_PALAVRA_CONVERSA_SOCIAL.findall(texto_normalizado))
     if "tchau" in palavras:
-        return MENSAGEM_DESPEDIDA_SOCIAL
-    if "obrigado" in palavras or "obrigada" in palavras:
-        return MENSAGEM_AGRADECIMENTO_SOCIAL
-    return MENSAGEM_SAUDACAO_SOCIAL
+        mensagem = MENSAGEM_DESPEDIDA_SOCIAL
+    elif "obrigado" in palavras or "obrigada" in palavras:
+        mensagem = MENSAGEM_AGRADECIMENTO_SOCIAL
+    else:
+        mensagem = MENSAGEM_SAUDACAO_SOCIAL
+    if agendamento is not None:
+        mensagem += f"\n\nVeja o preparo completo aqui: {montar_link_preparo(agendamento)}"
+    return mensagem
 
 
 # Checagem por dicionário de português (pedido do Silvan, 2026-09-24: "se
@@ -1208,7 +1219,7 @@ def processar_mensagem(telefone, corpo_mensagem):
     # responde com uma mensagem simpática e convida a perguntar.
     if _eh_apenas_conversa_social(texto_normalizado):
         db.session.commit()
-        return _resposta_conversa_social(texto_normalizado)
+        return _resposta_conversa_social(texto_normalizado, agendamento)
 
     # Qualquer outro texto (que não seja "trocar", nem uma intenção de
     # remarcação já tratada acima, nem sem sentido nenhum, nem conversa
