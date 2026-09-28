@@ -674,20 +674,29 @@ tem_dono = conn.execute("SELECT 1 FROM usuarios WHERE tipo = 'dono' LIMIT 1").fe
 if not tem_dono:
     from werkzeug.security import generate_password_hash as _gerar_hash_senha
 
-    # licenca_status precisa vir explícito aqui: é NOT NULL na tabela
-    # (ver Usuario.licenca_status em models.py), mas o default "trial" é
-    # só do lado do SQLAlchemy (Python) - um INSERT em SQL puro como este,
-    # que não passa pelo ORM, não recebe esse default sozinho. Sem isso, a
-    # recriação do dono falha com "null value ... violates not-null
-    # constraint" logo no primeiro deploy contra um banco novo/vazio
-    # (encontrado ao validar a migração do media-dev para o Render,
-    # 2026-09-04 - nesse caso db.create_all() já roda antes deste ponto e
-    # cria a tabela do zero, sem nenhum usuário ainda).
+    # licenca_status e aprovacao_perguntas_paciente precisam vir
+    # explícitos aqui: são NOT NULL na tabela (ver Usuario.licenca_status
+    # e Usuario.aprovacao_perguntas_paciente em models.py), mas o default
+    # ("trial" / True) é só do lado do SQLAlchemy (Python) - um INSERT em
+    # SQL puro como este, que não passa pelo ORM, não recebe esse default
+    # sozinho. Sem isso, a recriação do dono falha com "null value ...
+    # violates not-null constraint" logo no primeiro deploy contra um
+    # banco novo/vazio (licenca_status: encontrado ao validar a migração
+    # do media-dev para o Render, 2026-09-04; aprovacao_perguntas_paciente:
+    # encontrado do mesmo jeito ao criar o media-prod, 2026-09-28 - nesse
+    # caso db.create_all() já roda antes deste ponto e cria a tabela do
+    # zero, sem nenhum usuário ainda; ciclo_licenca: mesmo problema,
+    # encontrado revisando este INSERT na mesma ocasião de
+    # aprovacao_perguntas_paciente, 2026-09-28). Se alguma coluna NOT NULL
+    # nova for adicionada em Usuario com default só em Python, ela vai cair
+    # no mesmo problema aqui - precisa ser adicionada explicitamente neste
+    # INSERT também.
     conn.execute(
         "INSERT INTO usuarios (nome, email, senha_hash, tipo, ativo, "
-        "perm_pacientes, perm_equipe, perm_filiais, perm_dados_clinica, licenca_status) "
+        "perm_pacientes, perm_equipe, perm_filiais, perm_dados_clinica, licenca_status, "
+        "aprovacao_perguntas_paciente, ciclo_licenca) "
         "VALUES ('Dono da Plataforma', 'dono@plataforma.com', %s, 'dono', TRUE, "
-        "FALSE, FALSE, FALSE, FALSE, 'trial')",
+        "FALSE, FALSE, FALSE, FALSE, 'trial', TRUE, 'mensal')",
         (_gerar_hash_senha("123456"),),
     )
     print("Conta do dono recriada (dono@plataforma.com / 123456) - a base estava sem nenhum dono.")
