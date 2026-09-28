@@ -4,7 +4,8 @@
 # Este arquivo (branch "main") descreve SÓ os recursos de produção:
 # media-prod (web service) e media-prod-db (Postgres), ambos em planos
 # pagos (decisão do Silvan, 2026-09-28: Starter ~US$7/mês + Postgres
-# Starter ~US$19/mês, ≈US$26/mês, ver pesquisa de preço Render vs. AWS em
+# Basic-1gb ~US$19/mês (Render descontinuou o nome legado "starter" para
+# bancos novos em 2026-09; o valor em dólares é o mesmo), ≈US$26/mês, ver pesquisa de preço Render vs. AWS em
 # HANDOFF_CHAT.md).
 #
 # **Por que este arquivo NÃO lista media-dev/media-dev-db** (2026-09-28):
@@ -119,7 +120,7 @@ services:
 
 databases:
   - name: media-prod-db
-    plan: starter
+    plan: basic-1gb
     databaseName: media_prod
     user: media_prod
 
