@@ -1,76 +1,95 @@
-# Configuração do ambiente de DEV do MedIA no Render (render.com).
+# Configuração do ambiente de PRODUÇÃO (media-prod) do MedIA no Render
+# (render.com).
 #
-# Este arquivo descreve dois recursos: o web service (Flask via gunicorn) e
-# o banco PostgreSQL, ambos no plano FREE (decisão do Silvan: ambiente de
-# dev/teste, sem problema se o banco expirar/apagar).
+# Este arquivo (branch "main") descreve SÓ os recursos de produção:
+# media-prod (web service) e media-prod-db (Postgres), ambos em planos
+# pagos (decisão do Silvan, 2026-09-28: Starter ~US$7/mês + Postgres
+# Starter ~US$19/mês, ≈US$26/mês, ver pesquisa de preço Render vs. AWS em
+# HANDOFF_CHAT.md).
 #
-# Como usar:
-# 1. Crie uma conta no Render (render.com) e conecte este repositório
-#    GitHub (é pedido na primeira vez que você cria um "Blueprint").
-# 2. No painel do Render, escolha "New" > "Blueprint" e aponte para este
-#    repositório/branch (dev) - o Render lê este arquivo automaticamente e
-#    cria os dois recursos abaixo.
-# 3. Preencha manualmente, no painel, as variáveis marcadas com
+# **Por que este arquivo NÃO lista media-dev/media-dev-db** (2026-09-28):
+# na primeira tentativa de criar o Blueprint de produção, o branch "main"
+# ainda carregava, dentro deste mesmo arquivo, a definição antiga do
+# media-dev (herdada do momento em que "main" foi promovido a partir do
+# "dev", antes deste ajuste) - isso fez o Render, ao ler render.yaml pelo
+# branch "main", tentar CRIAR UM SEGUNDO media-dev/media-dev-db do nada
+# (a opção "Create all as new services" ficou "media-dev-s2kt", em vez de
+# criar o media-prod) - falhou por sorte (limite de 1 banco free por
+# conta), mas por pouco. A partir de agora, cada branch descreve só o
+# próprio ambiente: "dev" continua com seu próprio render.yaml
+# (media-dev/media-dev-db, plano free) e "main" só com este
+# (media-prod/media-prod-db, pagos) - NUNCA misturar os dois blocos no
+# mesmo arquivo de novo, mesmo que uma promoção futura (merge dev→main)
+# traga esse arquivo junto por engano; sempre confira, antes de dar
+# `git push origin main`, que este arquivo continua só com media-prod.
+#
+# **Separação de branch (decisão do Silvan, 2026-09-28)**: media-dev
+# continua observando o branch "dev" (onde cai tudo, inclusive o
+# auto-commit da sua máquina, o tempo todo) - com seu PRÓPRIO
+# render.yaml, mantido separadamente neste mesmo repositório. media-prod
+# observa um branch SEPARADO, "main" - produção só recebe uma mudança
+# nova quando alguém (você) decide promover, fazendo merge de código
+# (nunca deste arquivo de infraestrutura) de "dev" para "main" e enviando
+# (push) - nunca automaticamente a partir de "dev". Isso evita que uma
+# mudança ainda incompleta em "dev" vá direto pro ar pros clientes reais.
+#
+# Como promover uma mudança de código (app/, templates/, etc.) de dev
+# para produção, quando estiver pronta:
+#   git checkout main
+#   git merge dev -- app/ templates/ (ou os caminhos específicos, NUNCA
+#     render.yaml - ver aviso acima)
+#   git push origin main
+#   (o Render detecta o push em "main" e faz o deploy automático do
+#   media-prod, do mesmo jeito que já faz hoje com "dev" e o media-dev)
+#
+# Como usar (primeira vez, criação do Blueprint de produção):
+# 1. No painel do Render, escolha "New" > "Blueprint", aponte para este
+#    repositório, branch "main" - o Render lê este arquivo e propõe criar
+#    os 2 recursos abaixo. Como nenhum deles existe ainda com esses
+#    nomes, a tela NÃO deve perguntar "associate existing / create new" -
+#    se perguntar, e mencionar media-dev, PARE e não confirme (avise antes
+#    de continuar).
+# 2. Preencha manualmente, no painel, as variáveis marcadas com
 #    "sync: false" abaixo (nunca ficam neste arquivo, que é público no
-#    Git) - ver a lista de "Variáveis a preencher manualmente" no final
-#    deste comentário.
-# 4. A partir daí, todo push no branch "dev" faz deploy automático - sem
-#    precisar do workflow de GitHub Actions que hoje existe para o
-#    Elastic Beanstalk (o Render já observa o repositório diretamente).
-#
-# Observação sobre o plano free do Postgres: o Render apaga bancos free
-# depois de 30 dias de existência (não só de inatividade) - aceito de
-# propósito para o ambiente de dev (decisão do Silvan, 2026-09-04). Quando
-# isso acontecer, basta recriar o banco no painel e rodar
-# `python seed.py` de novo para popular dados de demonstração.
+#    Git) - são valores PRÓPRIOS de produção, não uma cópia dos de dev
+#    (ver observações no final deste comentário).
+# 3. A partir daí, todo push no branch "main" faz deploy automático do
+#    media-prod.
 
 services:
   - type: web
-    name: media-dev
+    name: media-prod
     runtime: python
-    plan: free
-    branch: dev
+    plan: starter
+    branch: main
     autoDeploy: true
     buildCommand: "pip install -r requirements.txt"
-    # gunicorn aponta para o mesmo objeto WSGI "application" que o Elastic
-    # Beanstalk já usa (ver application.py) - nenhuma mudança de código
-    # necessária. --timeout 120 acompanha o mesmo motivo do
-    # .platform/nginx/conf.d/timeout.conf (importação de PDF via IA pode
-    # demorar mais que o padrão de 30s do gunicorn).
+    # Mesmo startCommand usado no media-dev (branch "dev", ver render.yaml
+    # daquele branch) - a migração de schema (migrar_banco.py) é
+    # idempotente e roda a cada start, inclusive em produção.
     #
-    # preDeployCommand não é suportado no plano free dos web services do
-    # Render (erro "pre-deploy command is not supported for free tier
-    # services" ao criar o Blueprint) - por isso a migração de schema
-    # (equivalente ao hook .platform/hooks/predeploy/01_migrar_banco.sh do
-    # Elastic Beanstalk) roda encadeada aqui no startCommand, antes do
-    # gunicorn subir. Como migrar_banco.py é idempotente (ALTER TABLE ...
-    # ADD COLUMN IF NOT EXISTS), rodar a cada start do serviço (inclusive
-    # quando o free tier "acorda" depois de dormir por inatividade) é
-    # seguro.
-    #
-    # gerar_deploy_info_render.py (pedido do Silvan, 2026-09-10): gera o
-    # "deploy_info.json" que alimenta a versão e o "ver histórico" da tela
-    # de login (auth/login.html). Esse arquivo só era gerado pelo pipeline
-    # do GitHub Actions (.github/workflows/deploy.yml), que não roda mais
-    # para a branch "dev" desde que o media-dev passou a ser publicado
-    # direto pelo Render (2026-09-04) - sem esse passo aqui, o histórico
-    # de versões tinha sumido da tela de login neste ambiente. Com ";" (e
-    # não "&&") antes do migrar_banco.py de propósito: mesmo que geração
-    # da versão falhe por algum motivo, o deploy não deve travar por
-    # causa disso - é só uma informação de bastidor, não algo essencial.
+    # IMPORTANTE (decisão a confirmar com o Silvan antes de ir ao ar):
+    # migrar_banco.py recria automaticamente a conta padrão do dono
+    # (dono@plataforma.com / 123456) se não existir NENHUM usuário tipo
+    # "dono" no banco - isso é ótimo pra media-dev (ambiente de teste),
+    # mas em produção, no primeiro deploy (banco novo, vazio), essa conta
+    # padrão vai nascer com essa senha conhecida publicamente (está neste
+    # mesmo repositório). Trocar essa senha (ou o e-mail) IMEDIATAMENTE
+    # depois do primeiro login em produção é essencial - não é algo que o
+    # startCommand faz sozinho, tem que ser feito manualmente uma vez.
     startCommand: "python gerar_deploy_info_render.py; python migrar_banco.py && gunicorn application:application --timeout 120"
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: media-dev-db
+          name: media-prod-db
           property: connectionString
       - key: SECRET_KEY
         generateValue: true
-      # As variáveis abaixo são todas OPCIONAIS (ver .env.example) - o app
-      # sobe e funciona normalmente sem elas, só com os recursos
-      # correspondentes desligados (chat por IA mais simples, WhatsApp
-      # desligado, notificação push desligada, etc.). Preencha no painel
-      # do Render só as que você já usa hoje no media-dev.
+      # As mesmas variáveis opcionais do media-dev (ver render.yaml do
+      # branch "dev") - mas com valores PRÓPRIOS de produção, não uma
+      # cópia dos de dev. Ver observações no final deste arquivo sobre
+      # quais valem a pena reaproveitar e quais devem ser diferentes
+      # (WhatsApp/Mercado Pago sobretudo).
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: GEMINI_API_KEY
@@ -95,18 +114,47 @@ services:
         sync: false
       - key: VAPID_CLAIM_EMAIL
         sync: false
+      - key: APP_URL_PUBLICA
+        sync: false
 
 databases:
-  - name: media-dev-db
-    plan: free
-    databaseName: media_dev
-    user: media_dev
+  - name: media-prod-db
+    plan: starter
+    databaseName: media_prod
+    user: media_prod
 
 # Variáveis a preencher manualmente no painel do Render (Dashboard >
-# media-dev > Environment), depois que o Blueprint for criado:
-#   - Qualquer uma das chaves opcionais acima que você já usa hoje no
-#     media-dev (copie os valores do .env atual do Elastic Beanstalk).
-#   - SECRET_KEY é gerada automaticamente pelo Render (generateValue) -
-#     não precisa mexer, mas repare que ela será DIFERENTE da usada hoje
-#     no Elastic Beanstalk, o que invalida sessões/cookies antigos (sem
-#     problema, é só fazer login de novo).
+# media-prod > Environment) - NÃO é uma cópia direta do media-dev:
+#   - ANTHROPIC_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY: pode reaproveitar
+#     as MESMAS chaves do media-dev (são chaves de API por conta, não por
+#     ambiente) - ou criar chaves separadas se quiser isolar o custo/uso de
+#     IA entre dev e produção nos painéis da Anthropic/Google/OpenAI.
+#   - WHATSAPP_META_* (verify token, app secret, access token, phone
+#     number id): DECISÃO A TOMAR com o Silvan antes de configurar -
+#     produção deve usar um número de telefone/App do WhatsApp Business
+#     PRÓPRIO, diferente do número de teste do media-dev (pra não misturar
+#     conversas de teste com pacientes reais, e porque o número de
+#     telefone é vinculado a um único ambiente por vez na Meta).
+#   - MERCADOPAGO_ACCESS_TOKEN / MERCADOPAGO_WEBHOOK_SECRET: token de
+#     PRODUÇÃO de verdade da conta Mercado Pago (não o de teste/sandbox
+#     usado - sem sucesso até agora - no media-dev, ver "Setup do Mercado
+#     Pago" em HANDOFF_CHAT.md). Webhook precisa ser recadastrado com a
+#     URL de produção (https://media.med.br/webhooks/mercadopago ou o
+#     domínio final escolhido).
+#   - VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_CLAIM_EMAIL: gere um
+#     par NOVO só para produção com `python gerar_chaves_vapid.py` (não
+#     reaproveite o par do media-dev - são chaves por ambiente, e gerar de
+#     novo invalida qualquer inscrição já feita, o que não é problema
+#     aqui já que produção começa do zero).
+#   - APP_URL_PUBLICA: o domínio final de produção (ex.:
+#     https://media.med.br) - usado nos links que o sistema manda por
+#     WhatsApp (preparo público, resultado de exame, etc.).
+#
+# Depois do primeiro deploy de produção, ainda faltam (fora deste
+# arquivo, direto no painel/DNS):
+#   - Cadastrar o domínio customizado em media-prod > Settings > Custom
+#     Domains, e criar o registro DNS correspondente (CNAME/A, o próprio
+#     Render mostra qual) no provedor de DNS de media.med.br.
+#   - Trocar a senha (ou e-mail) da conta padrão do dono
+#     (dono@plataforma.com / 123456) logo depois do primeiro login - ver
+#     comentário no serviço media-prod acima.
