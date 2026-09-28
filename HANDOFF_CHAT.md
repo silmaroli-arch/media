@@ -1525,6 +1525,34 @@ Pedido do Silvan, depois de ver a tela "Meu painel" (o toggle "Exigir minha apro
 
 Nos dias 25 e 28/09, esta seção (e um aviso anterior, já removido, achando que 4 seções tinham desaparecido) foi escrita e reescrita várias vezes por uma falha de sincronização entre a cópia usada para editar e o arquivo de verdade no computador do Silvan (confirmado via `git log`/`git show` direto no repositório - nunca foi um revert de verdade, as 4 seções sempre estiveram no commit `f4bf172`). A partir de agora, qualquer escrita neste arquivo é seguida de uma leitura de confirmação direto do disco (`device_bash` + `git log`/`cat`), não só da resposta de sucesso da ferramenta de commit.
 
+## Criação do ambiente de produção (media-prod) (2026-09-28)
+
+Pedido do Silvan: criar o ambiente de produção. Antes de tocar em infraestrutura, resolvemos as pendências que estavam em aberto (ver seções anteriores) e decidimos dois pontos-chave por pergunta direta ao Silvan: (1) o Render continua sendo a opção escolhida (pesquisa de preço já feita, ver seção "Custo do ambiente de produção" acima); (2) **produção passa a observar um branch separado, `main`, nunca o `dev` direto** - hoje tudo cai em `dev` o tempo todo (inclusive pelo auto-commit da máquina do Silvan), e deixar produção auto-deployando a partir dali levaria qualquer mudança incompleta direto pros clientes reais.
+
+### Branch `main` promovido para o estado atual do `dev`
+
+`main` existia no repositório mas estava parado desde 2026-08-17 (bem atrás do `dev`, 170+ arquivos de diferença). Criei um commit de merge (`git commit-tree`, duas branches-pai: `origin/main` e `origin/dev`) trazendo `main` para o mesmo conteúdo do `dev` de hoje - **sem apagar histórico nenhum** (é um merge de verdade, não um reset/force-push). Esse commit foi criado localmente no repositório do computador do Silvan, mas **não pôde ser enviado ao GitHub por mim** - o ambiente de nuvem onde eu trabalho não tem acesso de rede a `github.com` (mesma restrição de proxy já vista antes ao tentar instalar pacotes Python). **Pendência do Silvan**: rodar, uma única vez, num terminal comum (PowerShell/cmd, fora deste ambiente de sincronização) dentro de `C:\app\media\src`:
+```
+git push origin main
+```
+A partir daí, `main` = ponto de partida da produção, e toda promoção futura é: `git checkout main` → `git merge dev` → `git push origin main` (documentado como comentário no próprio `render.yaml`).
+
+### `render.yaml` atualizado com os recursos de produção
+
+O arquivo (que já descrevia `media-dev`/`media-dev-db`) ganhou dois recursos novos, para serem criados de uma vez via "Blueprint" no painel do Render (mesmo fluxo já usado para criar o `media-dev`):
+- **`media-prod`** (web service) - branch `main`, plano **Starter** (pago, ~US$7/mês), `autoDeploy: true` (mas só dispara com push em `main`, que só acontece quando o Silvan promove de propósito). Mesmo `buildCommand`/`startCommand` do `media-dev`.
+- **`media-prod-db`** (Postgres) - plano **Starter** (pago, ~US$19/mês, com backup automático - diferente do plano free do `media-dev-db`, que não tem backup e apaga sozinho em 30 dias).
+
+Comentários extensos foram deixados no próprio `render.yaml` (não repetidos aqui) cobrindo: (a) o aviso sobre a conta padrão do dono (`dono@plataforma.com`/`123456`) nascer automaticamente no primeiro deploy de um banco vazio (`app.models`/`migrar_banco.py`) - **trocar a senha imediatamente** depois do primeiro login em produção; (b) quais variáveis de ambiente podem ser reaproveitadas do `media-dev` (chaves de IA) e quais devem ser **próprias de produção**, nunca copiadas (WhatsApp Meta - número de telefone separado do número de teste; Mercado Pago - token de produção de verdade, não o sandbox bloqueado; VAPID - par de chaves novo, gerado com `gerar_chaves_vapid.py`); (c) o que falta configurar fora deste arquivo (domínio customizado `media.med.br` + registro DNS, no painel do Render).
+
+### Pendências para o Silvan (nesta ordem)
+
+1. `git push origin main` (ver acima - obrigatório antes de qualquer coisa no Render, senão o Blueprint não encontra o branch).
+2. No painel do Render: "New" → "Blueprint", apontar pro repositório - o Render deve propor os 4 recursos (2 já existentes, 2 novos: `media-prod`/`media-prod-db`). Confirmar os planos propostos batem com Starter (~US$26/mês somando os dois) antes de criar.
+3. Preencher as variáveis `sync: false` de `media-prod` no painel (ver lista detalhada no fim do `render.yaml`) - decidir antes se o WhatsApp de produção usa um número de telefone Meta separado do `media-dev` (recomendado) ou o mesmo (não recomendado, mistura teste com paciente real).
+4. Depois do primeiro deploy: trocar a senha da conta padrão do dono; configurar o domínio `media.med.br` (Settings → Custom Domains no `media-prod`) e o registro DNS correspondente.
+5. Mercado Pago (Checkout Pro/Pix) em produção depende de resolver o bloqueio de CSP já registrado (ou usar direto um token de produção real, sem sandbox) - combinado que isso fica pra depois (ver seção "Setup do Mercado Pago").
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

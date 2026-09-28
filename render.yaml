@@ -1,22 +1,45 @@
-# Configuração do ambiente de DEV do MedIA no Render (render.com).
+# Configuração dos ambientes DEV e PROD do MedIA no Render (render.com).
 #
-# Este arquivo descreve dois recursos: o web service (Flask via gunicorn) e
-# o banco PostgreSQL, ambos no plano FREE (decisão do Silvan: ambiente de
-# dev/teste, sem problema se o banco expirar/apagar).
+# Este arquivo descreve QUATRO recursos: o web service e o banco Postgres
+# de dev (media-dev / media-dev-db, plano free), e o web service e o banco
+# Postgres de produção (media-prod / media-prod-db, planos pagos - decisão
+# do Silvan de 2026-09-28: Starter US$7/mês + Postgres pago US$19/mês,
+# ≈US$26/mês, ver pesquisa de preço Render vs. AWS em HANDOFF_CHAT.md).
 #
-# Como usar:
+# **Separação de branch (decisão do Silvan, 2026-09-28)**: media-dev
+# continua observando o branch "dev" (onde cai tudo, inclusive o
+# auto-commit da sua máquina, o tempo todo). media-prod observa um branch
+# SEPARADO, "main" - produção só recebe uma mudança nova quando alguém
+# (você) decide promover, fazendo merge de "dev" para "main" e enviando
+# (push) - nunca automaticamente a partir de "dev". Isso evita que uma
+# mudança ainda incompleta em "dev" vá direto pro ar pros clientes reais.
+#
+# Como promover uma mudança de dev para produção, quando estiver pronta:
+#   git checkout main
+#   git merge dev
+#   git push origin main
+#   (o Render detecta o push em "main" e faz o deploy automático do
+#   media-prod, do mesmo jeito que já faz hoje com "dev" e o media-dev)
+#
+# Como usar (primeira vez, criação do Blueprint):
 # 1. Crie uma conta no Render (render.com) e conecte este repositório
 #    GitHub (é pedido na primeira vez que você cria um "Blueprint").
 # 2. No painel do Render, escolha "New" > "Blueprint" e aponte para este
-#    repositório/branch (dev) - o Render lê este arquivo automaticamente e
-#    cria os dois recursos abaixo.
+#    repositório - o Render lê este arquivo automaticamente e propõe
+#    criar os 4 recursos abaixo (revise os planos propostos - os planos
+#    pagos de media-prod/media-prod-db mostrados aqui são o valor
+#    decidido, mas confirme os nomes exatos dos planos na tela do Render,
+#    que podem ter nomes um pouco diferentes do que está neste arquivo).
 # 3. Preencha manualmente, no painel, as variáveis marcadas com
 #    "sync: false" abaixo (nunca ficam neste arquivo, que é público no
 #    Git) - ver a lista de "Variáveis a preencher manualmente" no final
-#    deste comentário.
-# 4. A partir daí, todo push no branch "dev" faz deploy automático - sem
-#    precisar do workflow de GitHub Actions que hoje existe para o
-#    Elastic Beanstalk (o Render já observa o repositório diretamente).
+#    deste comentário. As de produção são valores PRÓPRIOS, não uma cópia
+#    automática dos valores de dev (ver observações no final).
+# 4. A partir daí, todo push no branch "dev" continua fazendo deploy
+#    automático do media-dev, e todo push no branch "main" faz deploy
+#    automático do media-prod - sem precisar do workflow de GitHub Actions
+#    que hoje existe para o Elastic Beanstalk (o Render já observa o
+#    repositório diretamente).
 #
 # Observação sobre o plano free do Postgres: o Render apaga bancos free
 # depois de 30 dias de existência (não só de inatividade) - aceito de
@@ -96,11 +119,76 @@ services:
       - key: VAPID_CLAIM_EMAIL
         sync: false
 
+  - type: web
+    name: media-prod
+    runtime: python
+    plan: starter
+    branch: main
+    autoDeploy: true
+    buildCommand: "pip install -r requirements.txt"
+    # Mesmo startCommand do media-dev (ver comentário acima) - a migração
+    # de schema (migrar_banco.py) é idempotente e roda a cada start,
+    # inclusive em produção.
+    #
+    # IMPORTANTE (decisão a confirmar com o Silvan antes de ir ao ar):
+    # migrar_banco.py recria automaticamente a conta padrão do dono
+    # (dono@plataforma.com / 123456) se não existir NENHUM usuário tipo
+    # "dono" no banco - isso é ótimo pra media-dev (ambiente de teste),
+    # mas em produção, no primeiro deploy (banco novo, vazio), essa conta
+    # padrão vai nascer com essa senha conhecida publicamente (está neste
+    # mesmo repositório). Trocar essa senha (ou o e-mail) IMEDIATAMENTE
+    # depois do primeiro login em produção é essencial - não é algo que o
+    # startCommand faz sozinho, tem que ser feito manualmente uma vez.
+    startCommand: "python gerar_deploy_info_render.py; python migrar_banco.py && gunicorn application:application --timeout 120"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: media-prod-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      # As mesmas variáveis opcionais do media-dev (ver comentário lá) -
+      # mas com valores PRÓPRIOS de produção, não uma cópia dos de dev.
+      # Ver observações no final deste arquivo sobre quais valem a pena
+      # reaproveitar e quais devem ser diferentes (WhatsApp/Mercado Pago
+      # sobretudo).
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: WHATSAPP_META_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_META_APP_SECRET
+        sync: false
+      - key: WHATSAPP_META_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_META_PHONE_NUMBER_ID
+        sync: false
+      - key: MERCADOPAGO_ACCESS_TOKEN
+        sync: false
+      - key: MERCADOPAGO_WEBHOOK_SECRET
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_CLAIM_EMAIL
+        sync: false
+      - key: APP_URL_PUBLICA
+        sync: false
+
 databases:
   - name: media-dev-db
     plan: free
     databaseName: media_dev
     user: media_dev
+
+  - name: media-prod-db
+    plan: starter
+    databaseName: media_prod
+    user: media_prod
 
 # Variáveis a preencher manualmente no painel do Render (Dashboard >
 # media-dev > Environment), depois que o Blueprint for criado:
@@ -110,3 +198,39 @@ databases:
 #     não precisa mexer, mas repare que ela será DIFERENTE da usada hoje
 #     no Elastic Beanstalk, o que invalida sessões/cookies antigos (sem
 #     problema, é só fazer login de novo).
+#
+# Variáveis a preencher manualmente no painel do Render (Dashboard >
+# media-prod > Environment) - NÃO é uma cópia direta do media-dev:
+#   - ANTHROPIC_API_KEY / GEMINI_API_KEY / OPENAI_API_KEY: pode reaproveitar
+#     as MESMAS chaves do media-dev (são chaves de API por conta, não por
+#     ambiente) - ou criar chaves separadas se quiser isolar o custo/uso de
+#     IA entre dev e produção nos painéis da Anthropic/Google/OpenAI.
+#   - WHATSAPP_META_* (verify token, app secret, access token, phone
+#     number id): DECISÃO A TOMAR com o Silvan antes de configurar -
+#     produção deve usar um número de telefone/App do WhatsApp Business
+#     PRÓPRIO, diferente do número de teste do media-dev (pra não misturar
+#     conversas de teste com pacientes reais, e porque o número de
+#     telefone é vinculado a um único ambiente por vez na Meta).
+#   - MERCADOPAGO_ACCESS_TOKEN / MERCADOPAGO_WEBHOOK_SECRET: token de
+#     PRODUÇÃO de verdade da conta Mercado Pago (não o de teste/sandbox
+#     usado - sem sucesso até agora - no media-dev, ver "Setup do Mercado
+#     Pago" em HANDOFF_CHAT.md). Webhook precisa ser recadastrado com a
+#     URL de produção (https://media.med.br/webhooks/mercadopago ou o
+#     domínio final escolhido).
+#   - VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_CLAIM_EMAIL: gere um
+#     par NOVO só para produção com `python gerar_chaves_vapid.py` (não
+#     reaproveite o par do media-dev - são chaves por ambiente, e gerar de
+#     novo invalida qualquer inscrição já feita, o que não é problema
+#     aqui já que produção começa do zero).
+#   - APP_URL_PUBLICA: o domínio final de produção (ex.:
+#     https://media.med.br) - usado nos links que o sistema manda por
+#     WhatsApp (preparo público, resultado de exame, etc.).
+#
+# Depois do primeiro deploy de produção, ainda faltam (fora deste
+# arquivo, direto no painel/DNS):
+#   - Cadastrar o domínio customizado em media-prod > Settings > Custom
+#     Domains, e criar o registro DNS correspondente (CNAME/A, o próprio
+#     Render mostra qual) no provedor de DNS de media.med.br.
+#   - Trocar a senha (ou e-mail) da conta padrão do dono
+#     (dono@plataforma.com / 123456) logo depois do primeiro login - ver
+#     comentário no serviço media-prod acima.

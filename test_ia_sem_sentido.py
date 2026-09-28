@@ -118,8 +118,8 @@ with app.app_context():
     # Caso 1: as duas IAs escolhidas concordam que não faz sentido.
     def side_effect_ambas_sem_sentido(nome_provedor, *args, **kwargs):
         if nome_provedor in ("Claude", "ChatGPT"):
-            return (None, "chamada-fake", True, True)
-        return (None, None, False, False)
+            return (None, "chamada-fake", True, True, False)
+        return (None, None, False, False, False)
 
     with patch("app.ia_preparo._tentar_provedor", side_effect=side_effect_ambas_sem_sentido):
         resultado = responder_com_ia("asdkj qwe mesa vidro", exame_fake)
@@ -131,10 +131,10 @@ with app.app_context():
     # de verdade por causa da outra IA ter discordado).
     def side_effect_uma_discorda(nome_provedor, *args, **kwargs):
         if nome_provedor == "Claude":
-            return (None, "chamada-fake", True, True)
+            return (None, "chamada-fake", True, True, False)
         if nome_provedor == "ChatGPT":
-            return ("Água pura é permitida durante o jejum.", "chamada-fake", True, False)
-        return (None, None, False, False)
+            return ("Água pura é permitida durante o jejum.", "chamada-fake", True, False, False)
+        return (None, None, False, False, False)
 
     with patch("app.ia_preparo._tentar_provedor", side_effect=side_effect_uma_discorda):
         resultado2 = responder_com_ia("Posso beber água?", exame_fake)
@@ -145,7 +145,7 @@ with app.app_context():
     # checagem por regras fixas continua valendo, ver
     # app.whatsapp_conversa._eh_mensagem_sem_sentido_minimo).
     def side_effect_nenhuma_configurada(nome_provedor, *args, **kwargs):
-        return (None, None, False, False)
+        return (None, None, False, False, False)
 
     with patch("app.ia_preparo._tentar_provedor", side_effect=side_effect_nenhuma_configurada):
         resultado3 = responder_com_ia("qualquer pergunta", exame_fake)
@@ -158,10 +158,10 @@ with app.app_context():
     # inclusive esse sinal).
     def side_effect_reserva_sem_sentido(nome_provedor, *args, **kwargs):
         if nome_provedor in ("Claude", "ChatGPT"):
-            return (None, None, True, False)  # tentou, mas falhou de verdade (chamada=None)
+            return (None, None, True, False, False)  # tentou, mas falhou de verdade (chamada=None)
         if nome_provedor == "Gemini":
-            return (None, "chamada-fake", True, True)
-        return (None, None, False, False)
+            return (None, "chamada-fake", True, True, False)
+        return (None, None, False, False, False)
 
     with patch("app.ia_preparo._tentar_provedor", side_effect=side_effect_reserva_sem_sentido):
         resultado4 = responder_com_ia("asdkj qwe mesa vidro", exame_fake)
