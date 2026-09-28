@@ -207,6 +207,7 @@ r = client.post("/cadastro", data={
     "nome": "Dr. Ricardo Alves",
     "cpf": "111.444.777-35",
     "crm_numero": "88899", "crm_uf": "ES",
+    "data_nascimento": "10/05/1980",
     "email": "ricardo@clinicasolo.com",
     "senha": "senha123",
     "papel": "medico",
@@ -775,8 +776,10 @@ import app.routes_paciente as routes_paciente_mod
 login_paciente("123.456.789-00", "1985-04-12")
 with patch.object(routes_paciente_mod, "responder_com_ia", return_value={
     "final": "Sim! Gatorade de cor clara está entre os alimentos permitidos deste preparo.",
-    "claude": "Sim! Gatorade de cor clara está entre os alimentos permitidos deste preparo.",
-    "chatgpt": None,
+    "por_provedor": {
+        "Claude": "Sim! Gatorade de cor clara está entre os alimentos permitidos deste preparo.",
+        "ChatGPT": None, "Gemini": None,
+    },
 }):
     r = client.post(
         "/paciente/chat",
@@ -846,8 +849,10 @@ client.get("/logout")
 login_paciente("123.456.789-00", "1985-04-12")
 with patch.object(routes_paciente_mod, "responder_com_ia", return_value={
     "final": "Atualização: esse gatorade específico teve a fórmula alterada e não é mais recomendado.",
-    "claude": "Atualização: esse gatorade específico teve a fórmula alterada e não é mais recomendado.",
-    "chatgpt": None,
+    "por_provedor": {
+        "Claude": "Atualização: esse gatorade específico teve a fórmula alterada e não é mais recomendado.",
+        "ChatGPT": None, "Gemini": None,
+    },
 }):
     client.post(
         "/paciente/chat",

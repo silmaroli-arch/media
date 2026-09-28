@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block titulo %}Fale com a gente - mensagens recebidas{% endblock %}
+{% block conteudo %}
+<a href="{{ url_for('dono.dashboard') }}" class="small d-inline-block mb-2">&larr; Voltar ao painel</a>
+<h3 class="mb-1">Fale com a gente</h3>
+<p class="text-muted">Dúvidas, sugestões de melhoria e problemas relatados por médicos e secretárias de todas as clínicas.</p>
+
+{% if mensagens %}
+  <div class="accordion" id="accordionMensagensSuporte">
+    {% for m in mensagens %}
+    <div class="accordion-item {% if m.status == 'nova' %}border-primary{% endif %}">
+      <h2 class="accordion-header">
+        <button class="accordion-button collapsed {% if m.status == 'nova' %}fw-semibold{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#suporte-{{ m.id }}" aria-expanded="false" aria-controls="suporte-{{ m.id }}">
+          <span class="badge me-2 {% if m.status == 'respondida' %}bg-success{% elif m.status == 'lida' %}bg-info text-dark{% else %}bg-primary{% endif %}">
+            {% if m.status == 'respondida' %}Respondida{% elif m.status == 'lida' %}Lida{% else %}Nova{% endif %}
+          </span>
+          <span class="badge bg-light text-dark border me-2">{{ m.categoria_label }}</span>
+          <strong class="me-2">{{ m.usuario.nome }}</strong>
+          <span class="text-muted small">({{ "Médico" if m.usuario.tipo == "medico" else "Secretaria" if m.usuario.tipo == "secretaria" else m.usuario.tipo }})</span>
+          <span class="text-truncate ms-2" style="max-width: 320px;">— {{ m.mensagem }}</span>
+          <span class="text-muted small ms-2">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+        </button>
+      </h2>
+      <div id="suporte-{{ m.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionMensagensSuporte">
+        <div class="accordion-body">
+          <p style="white-space: pre-line">{{ m.mensagem }}</p>
+
+          {% if m.resposta %}
+          <div class="border-start border-success border-3 ps-3 mb-3">
+            <div class="text-muted small mb-1">Sua resposta{% if m.respondida_em %} em {{ m.respondida_em.strftime('%d/%m/%Y %H:%M') }}{% endif %}:</div>
+            <p style="white-space: pre-line" class="mb-0">{{ m.resposta }}</p>
+          </div>
+          {% endif %}
+
+          <form method="post" action="{{ url_for('dono.mensagens_suporte_responder', mensagem_id=m.id) }}" class="mb-2">
+            <div class="mb-2">
+              <textarea name="resposta" class="form-control" rows="3" placeholder="Escreva a resposta para {{ m.usuario.nome }}...">{{ m.resposta or "" }}</textarea>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">{{ "Atualizar resposta" if m.resposta else "Responder" }}</button>
+          </form>
+
+          {% if m.status == 'nova' %}
+          <form method="post" action="{{ url_for('dono.mensagens_suporte_marcar_lida', mensagem_id=m.id) }}">
+            <button type="submit" class="btn btn-outline-secondary btn-sm">Marcar como lida (sem responder ainda)</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="text-muted">Nenhuma mensagem recebida ainda.</p>
+{% endif %}
+{% endblock %}

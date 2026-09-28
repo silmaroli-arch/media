@@ -25,6 +25,7 @@ from app.models import (
     Exame, PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento,
     Agendamento, FaqItem, normalizar_telefone,
+    LicencaPagamento, garantir_meses_licenca, PlataformaConfig,
 )
 
 app = create_app()
@@ -107,12 +108,21 @@ with app.app_context():
     medico_compartilhado = Usuario(nome="Dr. Carlos Andrade", email="medico@clinicavitoria.com", tipo="medico")
     medico_compartilhado.set_senha("123456")
     medico_compartilhado.definir_permissoes_padrao()
+    # Fatia 8 (licença individual): licença ativa, vencimento confortável no
+    # futuro - cenário "tudo em dia".
+    medico_compartilhado.licenca_status = "ativa"
+    medico_compartilhado.licenca_vencimento = date.today() + timedelta(days=180)
+    medico_compartilhado.valor_licenca_mensal = 180.00
 
     # Uma segunda médica, só no Grupo Vitória — demonstra que cada médico
     # só cadastra/acompanha os seus próprios exames e pacientes.
     medica_vitoria2 = Usuario(nome="Dra. Fernanda Lima", email="medica2@clinicavitoria.com", tipo="medico")
     medica_vitoria2.set_senha("123456")
     medica_vitoria2.definir_permissoes_padrao()
+    # Fatia 8: ainda em trial, vencendo em breve - cenário "atenção".
+    medica_vitoria2.licenca_status = "trial"
+    medica_vitoria2.licenca_vencimento = date.today() + timedelta(days=5)
+    # Ainda em trial - valor nem foi negociado ainda (fica em branco).
 
     # Equipe do Grupo Saúde Total: uma secretária que administra os dois
     # grupos, e um médico que atende nos dois — pela regra de cobrança
@@ -124,11 +134,51 @@ with app.app_context():
     medico_grupo = Usuario(nome="Dr. Eduardo Nunes", email="medico@gruposaude.com", tipo="medico")
     medico_grupo.set_senha("123456")
     medico_grupo.definir_permissoes_padrao()
+    # Fatia 8: trial já vencido, ainda não regularizado - cenário
+    # "pendente de pagamento" (só informativo, não bloqueia o acesso).
+    medico_grupo.licenca_status = "inadimplente"
+    medico_grupo.licenca_vencimento = date.today() - timedelta(days=3)
+    medico_grupo.valor_licenca_mensal = 150.00
+    # Restruturação de 2026-09-02: o limite de meses pra aviso de
+    # inadimplência deixou de ser por médico e virou global
+    # (PlataformaConfig.aviso_inadimplencia_meses, ajustado abaixo pra 1 em
+    # vez do padrão de 2) - junto com o histórico de meses seguidos sem
+    # pagar montado abaixo, medico_grupo já nasce em alerta na tela do dono
+    # (/dono/usuarios).
+    PlataformaConfig.obter().aviso_inadimplencia_meses = 1
 
     db.session.add_all([
         secretaria_vitoria, secretaria_sp, medico_compartilhado, medica_vitoria2,
         secretaria_grupo, medico_grupo,
     ])
+    db.session.commit()
+
+    # --- Calendário de pagamento (Fatia 8) ---
+    # Gera os meses desde o cadastro de cada médico (todos "hoje" no seed,
+    # então normalmente só o mês atual) e marca alguns como pagos, pra
+    # demonstrar os dois estados na tela "Minha licença"/no painel do dono.
+    for medico in (medico_compartilhado, medica_vitoria2, medico_grupo):
+        garantir_meses_licenca(medico)
+    db.session.commit()
+
+    mes_atual = date.today().replace(day=1)
+    LicencaPagamento.query.filter_by(usuario_id=medico_compartilhado.id, mes=mes_atual).update(
+        {"pago": True, "pago_em": datetime.utcnow()}
+    )
+    # medica_vitoria2 (trial) e medico_grupo (inadimplente) ficam com o mês
+    # atual em aberto, coerente com o status de cada um.
+    db.session.commit()
+
+    # Fatia 8 (aviso de inadimplência): medico_grupo já nasce com 2 meses
+    # seguidos sem pagar (mês atual + o anterior), pra demonstrar o destaque
+    # de alerta em /dono/usuarios logo de cara (o seed normalmente só cria
+    # todo mundo "hoje", então sem isso nunca haveria mais de um mês de
+    # histórico pra nenhum médico).
+    mes_anterior = (mes_atual.replace(day=1) - timedelta(days=1)).replace(day=1)
+    db.session.add(LicencaPagamento(
+        usuario_id=medico_grupo.id, mes=mes_anterior, pago=False,
+        valor=medico_grupo.valor_licenca_mensal,
+    ))
     db.session.commit()
 
     # --- Vínculos (GrupoMembro) ---

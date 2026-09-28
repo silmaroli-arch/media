@@ -86,11 +86,24 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS contato_emergencia_telefone VARCH
 -- PerguntaPendente.resposta_sugerida_ia em app/models.py).
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_sugerida_ia TEXT;
 
--- Guarda a resposta "crua" de cada IA (Claude e ChatGPT) separada do
--- rascunho final, pra tela de aprovação mostrar as duas lado a lado além
--- da junção (ver app.ia_preparo.responder_com_ia e medico/perguntas.html).
+-- Guarda a resposta "crua" de cada IA (Claude, ChatGPT e, desde que o
+-- dono passou a poder escolher quais 2 das 3 respondem, também Gemini)
+-- separada do rascunho final, pra tela de aprovação mostrar as duas lado
+-- a lado além da junção (ver app.ia_preparo.responder_com_ia e
+-- medico/perguntas.html).
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_claude TEXT;
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_chatgpt TEXT;
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_gemini TEXT;
+
+-- Quais 2 das 3 IAs respondem o chat de dúvidas do paciente, escolhidas
+-- pelo dono (ver app.models.PlataformaConfig, app.ia_preparo).
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS ia_chat_provedor_1 VARCHAR(20) NOT NULL DEFAULT 'Claude';
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS ia_chat_provedor_2 VARCHAR(20) NOT NULL DEFAULT 'ChatGPT';
+
+-- Marca, por chamada de IA do chat de dúvidas, se o texto dela acabou
+-- (total ou parcialmente) na resposta mostrada ao médico - ver
+-- app.models.ChamadaIA.resposta_final_usada.
+ALTER TABLE chamadas_ia ADD COLUMN IF NOT EXISTS resposta_final_usada BOOLEAN;
 
 -- Vinculo entre pergunta do chat e o agendamento/consulta especifico
 -- (ver ChatMensagem.agendamento_id em app/models.py) - permite ao medico
@@ -257,6 +270,207 @@ ALTER TABLE chat_mensagens ADD COLUMN IF NOT EXISTS canal VARCHAR(20) NOT NULL D
 -- segurança, também recebe ALTER TABLE (mesmo padrão de coluna nova em
 -- tabela já existente usado no resto deste arquivo).
 ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS aguardando_pergunta BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Fatia 7 (ajuste): identificação em duas mensagens separadas (CPF, depois
+-- data de nascimento) - guarda o CPF já recebido enquanto aguarda a data.
+ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS cpf_pendente VARCHAR(11);
+
+-- Fatia 7 (ajuste): telefone da conversa que originou a pergunta, usado
+-- para mandar a resposta de volta pelo WhatsApp automaticamente quando o
+-- médico/equipe responder (ver app.whatsapp_envio).
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS telefone_whatsapp VARCHAR(30);
+
+-- PWA da equipe com notificação push: inscrição de um navegador/aparelho
+-- para receber aviso quando chega pergunta nova de paciente (ver
+-- app.push_notificacoes e app.models.PushSubscription).
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id SERIAL PRIMARY KEY,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh VARCHAR(255) NOT NULL,
+    auth VARCHAR(255) NOT NULL,
+    criado_em TIMESTAMP
+);
+
+-- Reserva automática entre IAs (2026-08-25, ver app.ia_preparo.
+-- responder_com_ia): nomes das IAs que deram erro de chamada de verdade
+-- ao responder cada pergunta, separados por vírgula - mostrado como
+-- aviso na tela de aprovação do médico (ver medico/perguntas.html).
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS ias_com_erro VARCHAR(60);
+
+-- Fatia 8 (licença individual): a cobrança passa a ser POR MÉDICO, não só
+-- por Grupo (Grupo.valor_por_medico continua sendo só uma estimativa) -
+-- vale desde o cadastro, independente de o médico estar ou não num Grupo
+-- de trabalho (decisão do Silvan). Mesmo vocabulário de Grupo.status.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS licenca_status VARCHAR(20) NOT NULL DEFAULT 'trial';
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS licenca_vencimento DATE;
+
+-- Fatia 8 (valor de cobrança por médico): valor mensal negociado com CADA
+-- médico individualmente (mesmo padrão de Grupo.valor_por_medico, mas de
+-- verdade por médico) - opcional, fica NULL até o dono preencher. Só
+-- editável em /dono/usuarios por enquanto.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS valor_licenca_mensal NUMERIC(10, 2);
+
+-- Fatia 8 (aviso de inadimplência): depois de quantos meses SEGUIDOS sem
+-- pagar o dono vê um destaque de atenção pra este médico em
+-- /dono/usuarios (ver app.models.meses_consecutivos_sem_pagar) -
+-- configurável por médico (decisão do Silvan), padrão 2 meses.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aviso_inadimplencia_meses INTEGER NOT NULL DEFAULT 2;
+
+-- Fatia 8 (valor por mes no calendario + gateway Mercado Pago): valor
+-- cobrado naquele mes especifico (fotografia de valor_licenca_mensal, nao
+-- muda retroativamente) e os campos de rastreio da cobranca real via
+-- Mercado Pago (ver app/mercadopago_integration.py) - tudo opcional/NULL
+-- ate o dono gerar uma cobranca de verdade.
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS valor NUMERIC(10, 2);
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS mp_preference_id VARCHAR(80);
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS mp_payment_id VARCHAR(80);
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS mp_status VARCHAR(30);
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS mp_init_point TEXT;
+
+-- Backfill: a partir deste deploy, todo médico NOVO já nasce com
+-- licenca_vencimento explícito (ver routes_auth.py:cadastro() e
+-- routes_grupo.py:convidar()) - então qualquer médico já existente que
+-- ainda estiver com licenca_vencimento NULL é necessariamente uma conta
+-- de ANTES desta fatia, e é seguro considerá-la já "ativa" (sem trial a
+-- vencer) em vez de mostrar um vencimento de 14 dias a partir de hoje que
+-- não corresponde à realidade dela.
+UPDATE usuarios SET licenca_status = 'ativa' WHERE tipo = 'medico' AND licenca_vencimento IS NULL;
+
+-- Fatia 8 (calendário de pagamento): tabela "licenca_pagamentos" (um
+-- registro por mês por médico, controle manual do dono - ver
+-- app.models.LicencaPagamento) não precisa de ALTER TABLE nenhum aqui -
+-- é criada automaticamente pelo db.create_all() no topo deste script, por
+-- não existir ainda em nenhum ambiente (mesmo caso de "push_subscriptions"
+-- acima).
+
+-- Restruturação da licença individual (2026-09-02, pedido do Silvan):
+-- valor mensal padrão e limite de meses pra aviso de inadimplência
+-- deixaram de ser configuráveis por médico e viraram parâmetros globais
+-- (ver app.routes_dono.configuracoes_licenca_medico). A coluna antiga
+-- "usuarios.aviso_inadimplencia_meses" fica órfã (sem DROP, mesmo
+-- tratamento dado às demais colunas/tabelas órfãs deste projeto, que não
+-- usa Flask-Migrate) - só não é mais lida em nenhum lugar da aplicação.
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS valor_licenca_padrao NUMERIC(10, 2);
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS aviso_inadimplencia_meses INTEGER NOT NULL DEFAULT 2;
+
+-- Backfill: usa a maior configuração de aviso já existente entre os
+-- médicos cadastrados (se houver) como valor inicial do novo parâmetro
+-- global, em vez de resetar todo mundo pro padrão de 2 meses - preserva o
+-- comportamento mais parecido possível com o que já estava configurado
+-- pontualmente por médico antes desta migração.
+UPDATE plataforma_config SET aviso_inadimplencia_meses = (
+    SELECT MAX(aviso_inadimplencia_meses) FROM usuarios WHERE tipo = 'medico'
+) WHERE EXISTS (SELECT 1 FROM usuarios WHERE tipo = 'medico');
+
+-- Tela de teste de IA para o médico (pedido do Silvan, 2026-09-05, ver
+-- routes_medico.testar_ia): marca o cadastro de Paciente sintético criado
+-- sob demanda para servir de âncora das perguntas de teste - nunca deve
+-- aparecer nas listas/contagens normais de pacientes (ver
+-- _filtro_pacientes_da_empresa em routes_medico.py).
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS eh_teste BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Data de nascimento do médico (pedido do Silvan, 2026-09-10, ver
+-- Usuario.data_nascimento em models.py) - usada para o "paciente de
+-- teste" (routes_medico._paciente_teste_do_medico) poder ser encontrado
+-- pela identificação de CPF + data de nascimento do WhatsApp
+-- (app.whatsapp_conversa._localizar_paciente), permitindo testar o fluxo
+-- completo mandando mensagem de verdade, não só pela tela "Testar IA".
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS data_nascimento DATE;
+
+-- Licença anual (pedido do Silvan, 2026-09-10) - alternativa à licença
+-- mensal já existente, valor INDEPENDENTE (não é desconto calculado a
+-- partir do mensal). Ver PlataformaConfig.valor_licenca_anual_padrao,
+-- Usuario.ciclo_licenca/valor_licenca_anual e
+-- LicencaPagamento.origem_anual em models.py.
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS valor_licenca_anual_padrao NUMERIC(10, 2);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ciclo_licenca VARCHAR(10) NOT NULL DEFAULT 'mensal';
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS valor_licenca_anual NUMERIC(10, 2);
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS origem_anual BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Parâmetro configurável de aprovação (pedido do Silvan, 2026-09-13, ver
+-- Grupo.aprovacao_perguntas_paciente / Usuario.aprovacao_perguntas_paciente
+-- em models.py, e app.routes_paciente.exige_aprovacao_pergunta) - default
+-- TRUE preserva o comportamento de sempre (aprovação exigida) para todo
+-- Grupo/conta já existente.
+ALTER TABLE grupos ADD COLUMN IF NOT EXISTS aprovacao_perguntas_paciente BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprovacao_perguntas_paciente BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- Documento "Clara" (itens 6 e 7, 2026-09-14, ver ConversaWhatsapp em
+-- models.py e app.whatsapp_conversa.processar_mensagem): limite de
+-- tentativas de identificação e bloqueio formal da conversa ("número
+-- errado" ou tentativas esgotadas). Default 0/FALSE preserva o
+-- comportamento de sempre pra toda conversa já existente (nenhuma fica
+-- bloqueada nem com tentativa contada por essa migração).
+ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS tentativas_identificacao INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS bloqueada BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS motivo_bloqueio VARCHAR(30);
+
+-- Validador de pergunta + limite diário de perguntas por paciente x exame
+-- (pedido do Silvan, 2026-09-24, ver PlataformaConfig em models.py e
+-- app.ia_preparo.validar_pergunta / app.whatsapp_conversa.
+-- processar_mensagem). ia_validador_pergunta nasce 'Claude' pra toda
+-- clínica já existente (mesmo padrão de sempre); limite_perguntas_dia_
+-- exame nasce NULL (sem limite) - nenhuma clínica passa a ter restrição
+-- nova sem o dono configurar isso explicitamente.
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS ia_validador_pergunta VARCHAR(20) NOT NULL DEFAULT 'Claude';
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS limite_perguntas_dia_exame INTEGER;
+
+-- Contador de mensagens do dia por paciente x exame, usado só para
+-- aplicar o limite acima (ver ContagemPerguntasDia em models.py) - já
+-- seria criada de qualquer jeito pelo db.create_all() na inicialização
+-- da aplicação (tabela nova), mas incluída aqui também por consistência
+-- com o padrão já usado para outras tabelas novas (ver
+-- push_subscriptions, mais acima).
+CREATE TABLE IF NOT EXISTS contagem_perguntas_dia (
+    id SERIAL PRIMARY KEY,
+    paciente_id INTEGER NOT NULL REFERENCES pacientes(id),
+    exame_id INTEGER NOT NULL REFERENCES exames(id),
+    data DATE NOT NULL,
+    quantidade INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (paciente_id, exame_id, data)
+);
+
+-- Link público (por token) do preparo do exame, enviado pelo WhatsApp -
+-- abre sem login (ver Agendamento.token_preparo_publico/
+-- obter_token_preparo_publico em app/models.py e app.preparo_publico).
+ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS token_preparo_publico VARCHAR(43);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_agendamentos_token_preparo_publico ON agendamentos (token_preparo_publico);
+
+-- "Fale com a gente": mensagens de médico/secretária para o dono da
+-- plataforma (ver MensagemSuporte em app/models.py).
+CREATE TABLE IF NOT EXISTS mensagens_suporte (
+    id SERIAL PRIMARY KEY,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    categoria VARCHAR(20) NOT NULL DEFAULT 'duvida',
+    mensagem TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'nova',
+    resposta TEXT,
+    respondida_em TIMESTAMP,
+    criado_em TIMESTAMP
+);
+
+-- Sininho de notificações do médico/secretária (ver Notificacao em
+-- app/models.py) - resposta do "Fale com a gente" ou anúncio do dono.
+CREATE TABLE IF NOT EXISTS notificacoes (
+    id SERIAL PRIMARY KEY,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    tipo VARCHAR(20) NOT NULL DEFAULT 'anuncio',
+    titulo VARCHAR(120) NOT NULL,
+    mensagem TEXT NOT NULL,
+    link_endpoint VARCHAR(80),
+    lida BOOLEAN NOT NULL DEFAULT FALSE,
+    criado_em TIMESTAMP
+);
+
+-- Pix nativo (Payments API do Mercado Pago, pedido do Silvan, 2026-09-25) -
+-- opção adicional ao link do Checkout Pro (mp_init_point), mesma linha da
+-- tabela, mesmo external_reference - ver LicencaPagamento em
+-- app/models.py e app/mercadopago_integration.criar_cobranca_pix.
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_qr_code TEXT;
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_qr_code_base64 TEXT;
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_payment_id VARCHAR(80);
+ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_expira_em TIMESTAMP;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)
@@ -460,11 +674,20 @@ tem_dono = conn.execute("SELECT 1 FROM usuarios WHERE tipo = 'dono' LIMIT 1").fe
 if not tem_dono:
     from werkzeug.security import generate_password_hash as _gerar_hash_senha
 
+    # licenca_status precisa vir explícito aqui: é NOT NULL na tabela
+    # (ver Usuario.licenca_status em models.py), mas o default "trial" é
+    # só do lado do SQLAlchemy (Python) - um INSERT em SQL puro como este,
+    # que não passa pelo ORM, não recebe esse default sozinho. Sem isso, a
+    # recriação do dono falha com "null value ... violates not-null
+    # constraint" logo no primeiro deploy contra um banco novo/vazio
+    # (encontrado ao validar a migração do media-dev para o Render,
+    # 2026-09-04 - nesse caso db.create_all() já roda antes deste ponto e
+    # cria a tabela do zero, sem nenhum usuário ainda).
     conn.execute(
         "INSERT INTO usuarios (nome, email, senha_hash, tipo, ativo, "
-        "perm_pacientes, perm_equipe, perm_filiais, perm_dados_clinica) "
+        "perm_pacientes, perm_equipe, perm_filiais, perm_dados_clinica, licenca_status) "
         "VALUES ('Dono da Plataforma', 'dono@plataforma.com', %s, 'dono', TRUE, "
-        "FALSE, FALSE, FALSE, FALSE)",
+        "FALSE, FALSE, FALSE, FALSE, 'trial')",
         (_gerar_hash_senha("123456"),),
     )
     print("Conta do dono recriada (dono@plataforma.com / 123456) - a base estava sem nenhum dono.")

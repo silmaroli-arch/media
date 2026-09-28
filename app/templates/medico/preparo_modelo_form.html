@@ -1,7 +1,28 @@
 {% extends "base.html" %}
 {% block titulo %}{% if modelo %}Editar modelo de preparo{% else %}Novo modelo de preparo{% endif %}{% endblock %}
 {% block conteudo %}
-<h3 class="mb-3">{% if modelo %}Editar modelo de preparo{% else %}Novo modelo de preparo{% endif %}</h3>
+{% if wizard %}
+<p class="text-muted small mb-1">Passo 2 de 2 — Primeiros passos</p>
+<div class="progress mb-3" style="height: 6px; max-width: 640px;">
+  <div class="progress-bar" role="progressbar" style="width: 100%;"></div>
+</div>
+{% endif %}
+<h3 class="mb-3">{% if modelo %}Editar modelo de preparo{% elif wizard %}Cadastre seu primeiro modelo de preparo{% else %}Novo modelo de preparo{% endif %}</h3>
+{% if wizard %}
+<p class="text-muted">
+  Ao salvar, um exame com o mesmo nome já é criado e associado a você automaticamente — não tem uma
+  etapa separada para isso.
+</p>
+{% endif %}
+
+{% if varios_exames_vinculados %}
+<div class="alert alert-info">
+  Este modelo é usado por {{ modelo.exames|length }} exames ao mesmo tempo (cadastro antigo, ex.:
+  variações do mesmo teste que usam o mesmo preparo). Por isso os campos de exame (duração, médico
+  responsável etc.) não aparecem aqui — editar em massa por engano poderia mexer nos exames errados.
+  Só o texto do preparo em si é editado nesta tela.
+</div>
+{% endif %}
 
 {% if sugestao %}
 <div class="alert alert-warning">
@@ -20,13 +41,16 @@
 {% if not modelo %}
 <div class="mb-3">
   {# Importar preenche este formulário - por isso o botão mora aqui, não
-     na lista. Abre um popup pra escolher o arquivo (Excel ou PDF). PDF é
-     lido diretamente pela IA (ver app.ia_pdf_preparo), com fallback
-     automático pra extração por regex se a IA não estiver disponível -
-     não existe mais uma etapa intermediária de gerar Excel a partir do
-     PDF. #}
+     na lista. Abre um popup pra escolher o arquivo. PDF é lido
+     diretamente pela IA (ver app.ia_pdf_preparo), com fallback automático
+     pra extração por regex se a IA não estiver disponível - não existe
+     mais uma etapa intermediária de gerar Excel a partir do PDF.
+     Importação por planilha (.xlsx) continua existindo no backend (ver
+     medico.preparo_modelos_importar_xlsx), mas deixou de aparecer aqui
+     nesta tela (pedido do Silvan, 2026-09-11) - só a opção de PDF é
+     mostrada, pra não confundir quem está cadastrando. #}
   <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx">
-    <i class="bi bi-file-earmark-arrow-up"></i> Importar de um Excel ou PDF
+    <i class="bi bi-file-earmark-arrow-up"></i> Importar de um PDF
   </button>
   <span class="form-text d-block mt-1">A importação lê o arquivo e preenche os campos abaixo pra você revisar — nada é salvo antes do Salvar.</span>
 </div>
@@ -34,17 +58,56 @@
 
 <div class="card p-4">
   <form method="post" id="form-preparo">
+    {% if wizard %}<input type="hidden" name="wizard" value="1">{% endif %}
     {# Modelo de preparo é genérico - vale para qualquer local de atendimento
        da empresa, por isso não pede (nem mostra) filial aqui. #}
 
     {# O NOME fica acima das abas - é a identidade do modelo, visível o
        tempo todo, independente da aba aberta. #}
     <div class="mb-3">
-      <label class="form-label">Nome do modelo</label>
+      <label class="form-label">Nome do modelo (também é o nome do exame)</label>
       <input type="text" name="nome" class="form-control" required
              value="{{ modelo.nome if modelo else ((sugestao.nome_sugerido if sugestao else '') or '') }}">
-      <div class="form-text">Ex.: "Colonoscopia com Picoprep e Manitol (Manhã)", "Teste de Hidrogênio Expirado".</div>
+      <div class="form-text">
+        Ex.: "Colonoscopia com Picoprep e Manitol (Manhã)", "Teste de Hidrogênio Expirado" — este nome
+        é usado tanto para o modelo de preparo quanto para o exame criado/atualizado junto.
+      </div>
     </div>
+
+    {% if not varios_exames_vinculados %}
+    {# Restruturação de 2026-09 (pedido do Silvan): os dados do exame
+       associado (antes numa tela separada) são preenchidos direto aqui -
+       ao salvar, o exame nasce/é atualizado automaticamente junto com o
+       modelo, com o mesmo nome. #}
+    <div class="row g-3 mb-3">
+      <div class="col-md-4">
+        <label class="form-label">Duração do exame (minutos, opcional)</label>
+        <input type="number" min="0" name="duracao_minutos" class="form-control"
+               value="{{ exame_vinculado.duracao_minutos if exame_vinculado and exame_vinculado.duracao_minutos is not none else '' }}">
+      </div>
+      <div class="col-md-4 d-flex align-items-end">
+        <div class="form-check">
+          <input type="checkbox" class="form-check-input" name="precisa_acompanhante" id="precisa_acompanhante"
+                 {% if exame_vinculado and exame_vinculado.precisa_acompanhante %}checked{% endif %}>
+          <label class="form-check-label" for="precisa_acompanhante">Precisa de acompanhante</label>
+        </div>
+      </div>
+      {% if not eh_medico_logado %}
+      <div class="col-md-4">
+        <label class="form-label">Médico responsável</label>
+        <select name="medico_id" class="form-select">
+          <option value="">A definir depois</option>
+          {% for m in medicos %}
+          <option value="{{ m.id }}" {% if exame_vinculado and exame_vinculado.medico_id == m.id %}selected{% endif %}>{{ m.nome }}</option>
+          {% endfor %}
+        </select>
+        {% if exame_vinculado and not exame_vinculado.medico_confirmado %}
+        <div class="form-text text-warning">Ainda não confirmado — escolha o médico responsável.</div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
 
     {# Abas: um tópico por aba, pra facilitar o preenchimento. Todas as
        abas ficam no MESMO <form> - trocar de aba não perde nada, e o
@@ -286,37 +349,20 @@
 
     <hr>
     <button type="submit" class="btn btn-primary">Salvar</button>
+    {% if wizard %}
+    <a href="{{ url_for('medico.primeiros_passos') }}" class="btn btn-link">Pular esta etapa</a>
+    {% else %}
     <a href="{{ url_for('medico.preparo_modelos_lista') }}" class="btn btn-link">Cancelar</a>
+    {% endif %}
   </form>
 </div>
 
 {% if not modelo %}
 {# ---------- Popup de importação (fora do <form> principal - formulário
-   aninhado não existe em HTML) ---------- #}
-<div class="modal fade" id="modal-importar-xlsx" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <form method="post" action="{{ url_for('medico.preparo_modelos_importar_xlsx') }}" enctype="multipart/form-data">
-        <div class="modal-header">
-          <h6 class="modal-title"><i class="bi bi-file-earmark-arrow-up"></i> Importar de um Excel ou PDF</h6>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <p class="text-muted small">
-            Envie a planilha (.xlsx) no formato com as colunas Tipo/Ação/Agrupador/Nome/Dias antes/
-            Horas antes/Hora exata, ou um PDF com o preparo (lido diretamente por IA). Os dados
-            extraídos preenchem o formulário pra você revisar — nada é salvo antes do Salvar.
-          </p>
-          <input type="file" name="arquivo_xlsx" class="form-control" accept=".xlsx,.pdf" required>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Extrair dados</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
+   aninhado não existe em HTML) - extraído para um partial reaproveitado
+   também no menu reduzido do celular (pedido do Silvan, 2026-09-11, ver
+   medico/_importar_preparo_pdf.html) ---------- #}
+{% include "medico/_importar_preparo_pdf.html" %}
 {% endif %}
 
 <script>

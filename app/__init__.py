@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import warnings
 from datetime import datetime
@@ -8,6 +9,22 @@ from flask import Flask
 from app.extensions import db, login_manager
 
 load_dotenv()  # lê variáveis do arquivo .env, se existir
+
+
+def _configurar_logging():
+    """Sem isso, o logger raiz do Python fica no nível padrão (WARNING) e
+    qualquer `logger.info(...)` da aplicação é descartado silenciosamente -
+    foi o que aconteceu com o log de diagnóstico de
+    `app.ia_pdf_preparo.extrair_sugestao_de_pdf_com_ia` (2026-08-19): mesmo
+    numa chamada bem-sucedida ao Gemini, a linha "Gemini devolveu: ..." não
+    aparecia no `web.stdout.log` do Elastic Beanstalk, dando a falsa
+    impressão de que a chamada nunca tinha sido concluída. Configurado no
+    nível INFO pro logger raiz (afeta todo `logging.getLogger(__name__)` da
+    aplicação que ainda não tiver handler próprio)."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
 
 def _formatar_data_br(dt_utc):
@@ -135,6 +152,8 @@ def _resolver_uri_banco(base_dir: str) -> str:
 
 
 def create_app():
+    _configurar_logging()
+
     app = Flask(__name__)
     base_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "chave-secreta-para-demonstracao-troque-em-producao")
@@ -143,6 +162,15 @@ def create_app():
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "pool_pre_ping": True,  # evita erros de conexão "caída" em bancos remotos
     }
+
+    # PWA da equipe / notificação push (ver app.push_notificacoes e
+    # gerar_chaves_vapid.py) - sem essas 3 variáveis configuradas, o
+    # recurso fica desligado sozinho (nenhuma rota quebra, o front-end só
+    # não tenta se inscrever - mesmo padrão de "falha aberta" usado no
+    # WhatsApp/whatsapp_envio.py quando as chaves da Meta não existem).
+    app.config["VAPID_PUBLIC_KEY"] = os.environ.get("VAPID_PUBLIC_KEY")
+    app.config["VAPID_PRIVATE_KEY"] = os.environ.get("VAPID_PRIVATE_KEY")
+    app.config["VAPID_CLAIM_EMAIL"] = os.environ.get("VAPID_CLAIM_EMAIL")
 
     info_deploy = _carregar_info_deploy(base_dir)
 
@@ -176,6 +204,7 @@ def create_app():
     from app.routes_relatorios import relatorios_bp
     from app.routes_grupo import grupo_bp
     from app.routes_whatsapp import whatsapp_bp
+    from app.routes_pagamentos_webhook import pagamentos_webhook_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(medico_bp)
@@ -184,6 +213,7 @@ def create_app():
     app.register_blueprint(relatorios_bp)
     app.register_blueprint(grupo_bp)
     app.register_blueprint(whatsapp_bp)
+    app.register_blueprint(pagamentos_webhook_bp)
 
     @app.template_filter("hora_hhmm")
     def hora_hhmm(valor):
@@ -196,6 +226,26 @@ def create_app():
         if hasattr(valor, "strftime"):
             return valor.strftime("%H:%M")
         return str(valor)
+
+    @app.template_filter("usd_para_brl")
+    def usd_para_brl(valor_usd):
+        """Converte um valor em dólares (custo estimado de IA, ver
+        app.custo_ia) pra reais, pela cotação fixa mantida em
+        app.custo_ia.COTACAO_USD_PARA_BRL — usado nos painéis do dono pra
+        mostrar o custo estimado nas duas moedas, já que ninguém no Brasil
+        pensa em dólar no dia a dia. `None` passa direto (custo
+        desconhecido continua desconhecido nas duas moedas)."""
+        from app.custo_ia import COTACAO_USD_PARA_BRL
+        if valor_usd is None:
+            return None
+        # `valor_usd` pode vir como `Decimal` quando lido direto de uma
+        # coluna `db.Numeric` (ex.: ChamadaIA.custo_estimado_usd em
+        # dono/custo_ia_detalhe.html) em vez de já ter passado por
+        # `float()` (como os totais somados em Python em routes_dono.py) -
+        # Decimal * float é um TypeError em Python (visto em produção,
+        # 2026-08-21: 500 ao abrir o detalhe de chamadas de um usuário com
+        # custo real registrado). `float()` aqui cobre os dois casos.
+        return float(valor_usd) * COTACAO_USD_PARA_BRL
 
     @app.context_processor
     def injetar_contexto_clinica():
@@ -226,6 +276,30 @@ def create_app():
             }
         return {}
 
+    @app.context_processor
+    def injetar_notificacoes():
+        """Disponibiliza em todos os templates o sininho de notificações
+        de médico/secretária (pedido do Silvan, 2026-09-25 - ver
+        Notificacao em app/models.py): as mais recentes (lidas ou não,
+        pra não sumir da lista assim que abre) e a contagem TOTAL de
+        não-lidas (não só as que aparecem na lista curta, pra o número do
+        badge não mentir quando houver mais de 10 acumuladas)."""
+        from flask_login import current_user
+        if current_user.is_authenticated and current_user.is_staff:
+            from app.models import Notificacao
+            notificacoes = (
+                Notificacao.query.filter_by(usuario_id=current_user.id)
+                .order_by(Notificacao.criado_em.desc())
+                .limit(10)
+                .all()
+            )
+            total_nao_lidas = Notificacao.query.filter_by(usuario_id=current_user.id, lida=False).count()
+            return {
+                "notificacoes_navbar": notificacoes,
+                "notificacoes_nao_lidas_navbar": total_nao_lidas,
+            }
+        return {}
+
     @app.route("/")
     def index():
         from flask import redirect, url_for
@@ -238,10 +312,36 @@ def create_app():
             return redirect(url_for("medico.dashboard"))
         return redirect(url_for("paciente.dashboard"))
 
+    @app.route("/sw.js")
+    def service_worker():
+        """Service worker do PWA da equipe (ver app/static/sw.js) - servido
+        na RAIZ do site (não em /static/sw.js) de propósito: o cabeçalho
+        Service-Worker-Allowed abaixo é o que permite ao navegador dar
+        escopo "/" a ele (senão o escopo ficaria limitado a "/static/", e
+        notificações/clique não funcionariam fora dessa pasta)."""
+        resposta = app.send_static_file("sw.js")
+        resposta.headers["Service-Worker-Allowed"] = "/"
+        resposta.headers["Cache-Control"] = "no-cache"
+        return resposta
+
+    @app.route("/manifest.json")
+    def manifest_pwa():
+        resposta = app.send_static_file("manifest.json")
+        resposta.headers["Content-Type"] = "application/manifest+json"
+        return resposta
+
     with app.app_context():
         db.create_all()
         _registrar_deploy_atual(info_deploy)
         historico_deploy_lista = _carregar_historico_deploy()
+
+    # Encerramento automático de conversas de WhatsApp por inatividade
+    # (introduzido a pedido do Silvan em 2026-09-12, removido a pedido dele
+    # em 2026-09-24 - ver HANDOFF_CHAT.md) - o módulo app.whatsapp_encerramento
+    # e a thread em segundo plano que ele iniciava aqui não existem mais; a
+    # conversa volta a só "expirar" em silêncio (ver
+    # app.models.ConversaWhatsapp.expirada), sem nenhum aviso proativo nem
+    # remoção do registro por inatividade.
 
     @app.context_processor
     def injetar_info_deploy():

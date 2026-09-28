@@ -25,12 +25,60 @@ class PlataformaConfig(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     # Quantos dias de trial uma clínica nova recebe ao se cadastrar.
     trial_dias = db.Column(db.Integer, nullable=False, default=14)
+    # Quais 2 das 3 IAs (Gemini/ChatGPT/Claude) respondem o chat de dúvidas
+    # do paciente (ver app.ia_preparo.responder_com_ia) - configurável pelo
+    # dono em /dono/configuracoes, junto com a tabela de preço por token em
+    # /dono/custo-ia para decidir com base em custo. A Claude continua
+    # SEMPRE fazendo o papel de árbitro/síntese quando as duas respostas
+    # divergem, mesmo quando não é uma das duas escolhidas aqui (decisão do
+    # dono, 2026-08-21) - ver comentário em responder_com_ia.
+    ia_chat_provedor_1 = db.Column(db.String(20), nullable=False, default="Claude")
+    ia_chat_provedor_2 = db.Column(db.String(20), nullable=False, default="ChatGPT")
+
+    # Validador de pergunta (pedido do Silvan, 2026-09-24): qual das 3 IAs
+    # (Gemini/ChatGPT/Claude) faz a checagem dedicada de "isso faz sentido
+    # e é sobre este exame?" ANTES de qualquer chamada de resposta de
+    # verdade (ver app.ia_preparo.validar_pergunta e
+    # app.whatsapp_conversa._responder_pergunta) - configurável pelo dono
+    # em /dono/configuracoes, INDEPENDENTE de ia_chat_provedor_1/2 acima
+    # (que respondem a pergunta em si, só depois de validada). Uma única
+    # IA (não duas com reforço mútuo, diferente do chat de respostas) -
+    # julgamento mais simples (classificar, não responder), não precisa
+    # da mesma cautela.
+    ia_validador_pergunta = db.Column(db.String(20), nullable=False, default="Claude")
+
+    # Limite diário de mensagens que um paciente pode mandar sobre um MESMO
+    # exame, por WhatsApp (pedido do Silvan, 2026-09-24) - configurável
+    # pelo dono aqui, valendo igual pra toda a plataforma (sem
+    # sobrescrever por Grupo/médico). None (padrão) = sem limite, mesmo
+    # comportamento de sempre. Ver app.models.ContagemPerguntasDia (o que
+    # conta como "uma mensagem" contra essa cota) e
+    # app.whatsapp_conversa.processar_mensagem (onde o limite é aplicado).
+    limite_perguntas_dia_exame = db.Column(db.Integer, nullable=True)
+
+    # Restruturação da licença individual (pedido do Silvan, 2026-09-02): o
+    # que antes era configurável por médico em /dono/usuarios vira global
+    # aqui, e passa a valer pra equipe toda de uma vez. `trial_dias` (acima)
+    # é reaproveitado tanto pro trial de Grupo quanto pro trial de médico
+    # (decisão do Silvan: um único número, mais simples de manter).
+    valor_licenca_padrao = db.Column(db.Numeric(10, 2))
+    aviso_inadimplencia_meses = db.Column(db.Integer, nullable=False, default=2)
+    # Pedido do Silvan (2026-09-10): licença anual, como alternativa à
+    # mensal - valor INDEPENDENTE (não é um desconto calculado a partir do
+    # mensal), digitado à parte pelo dono. Nasce em branco (nenhum médico
+    # pode escolher "anual" até o dono definir um valor aqui) - ver
+    # Usuario.valor_licenca_anual/ciclo_licenca e o toggle em "Minha
+    # licença" (medico.minha_licenca / medico.licenca_escolher_ciclo).
+    valor_licenca_anual_padrao = db.Column(db.Numeric(10, 2))
 
     @classmethod
     def obter(cls):
         config = cls.query.first()
         if not config:
-            config = cls(trial_dias=14)
+            config = cls(
+                trial_dias=14, ia_chat_provedor_1="Claude", ia_chat_provedor_2="ChatGPT",
+                ia_validador_pergunta="Claude", aviso_inadimplencia_meses=2,
+            )
             db.session.add(config)
             db.session.commit()
         return config
@@ -99,6 +147,15 @@ class Usuario(db.Model, UserMixin):
     perm_filiais = db.Column(db.Boolean, nullable=False, default=False)
     perm_dados_clinica = db.Column(db.Boolean, nullable=False, default=False)
 
+    # Pedido do Silvan (2026-09-13): equivalente pessoal de
+    # Grupo.aprovacao_perguntas_paciente (ver comentário lá) - usado quando
+    # esta conta NÃO tem Grupo (conta solo, ver Fatia 6): controla se as
+    # respostas de alimento/medicamento/IA para os PRÓPRIOS pacientes exigem
+    # aprovação antes de irem para o paciente (True, padrão) ou vão direto
+    # (False). Ignorado quando a conta pertence a um Grupo - nesse caso o
+    # campo do Grupo é que vale para todo mundo da equipe.
+    aprovacao_perguntas_paciente = db.Column(db.Boolean, nullable=False, default=True)
+
     # CPF e endereço PESSOAL de quem trabalha na plataforma (dono/médico/
     # secretária) - coletados no cadastro (auth.cadastro) e também no
     # cadastro/edição de membros da equipe (medico.equipe_novo/
@@ -113,12 +170,61 @@ class Usuario(db.Model, UserMixin):
     cidade = db.Column(db.String(100))
     uf = db.Column(db.String(2))
 
+    # Data de nascimento do MÉDICO (pedido do Silvan, 2026-09-10): sem ela,
+    # o "paciente de teste" que a tela medico.testar_ia usa como âncora
+    # (ver routes_medico._paciente_teste_do_medico) não tinha data de
+    # nascimento nenhuma, e por isso nunca era encontrado pela identificação
+    # do WhatsApp (CPF + data de nascimento, ver
+    # app.whatsapp_conversa._localizar_paciente) - com este campo
+    # preenchido, o paciente de teste passa a usar o CPF e a data de
+    # nascimento REAIS do médico, permitindo testar o fluxo completo (com
+    # identificação) mandando mensagem de verdade pelo WhatsApp. Obrigatório
+    # só para tipo == "medico" (mesma exigência condicional do CRM, ver
+    # auth.cadastro) - secretária/dono não precisam preencher.
+    data_nascimento = db.Column(db.Date)
+
     # CRM (registro no Conselho Regional de Medicina) - só faz sentido
     # para tipo == "medico". Dois campos porque o CRM é emitido por
     # estado (ex.: "12345" + "ES") - o número sozinho não identifica o
     # médico sem o estado de emissão.
     crm_numero = db.Column(db.String(20))
     crm_uf = db.Column(db.String(2))
+
+    # Fatia 8 (licença individual): a cobrança agora é POR MÉDICO, não só
+    # por Grupo (Grupo.valor_por_medico é uma estimativa de mercado; a
+    # licença de verdade é individual, vale a partir do cadastro,
+    # independente de o médico estar ou não num Grupo de trabalho -
+    # decisão do Silvan). Vocabulário igual ao de Grupo.status.
+    #
+    # Restruturação de 2026-09-02 (pedido do Silvan): todo médico nasce em
+    # "trial" e passa pra "ativa" AUTOMATICAMENTE quando `licenca_vencimento`
+    # (agora calculado sozinho a partir de PlataformaConfig.trial_dias, sem
+    # input manual do dono) passa - ver verificar_vencimento_licenca().
+    # "inadimplente" continua existindo como aviso automático (não bloqueia
+    # o acesso) quando o médico atrasa pagamento além do limite configurado
+    # (PlataformaConfig.aviso_inadimplencia_meses). "bloqueada" é sempre uma
+    # decisão manual do dono - é a ÚNICA transição que ele faz à mão agora.
+    licenca_status = db.Column(db.String(20), nullable=False, default="trial")
+    licenca_vencimento = db.Column(db.Date)
+    # Valor mensal cobrado deste médico. Nasce preenchido automaticamente a
+    # partir de PlataformaConfig.valor_licenca_padrao (no cadastro), mas o
+    # dono pode reajustar individualmente depois em /dono/usuarios -
+    # decisão do Silvan: o padrão é global, o valor em si continua podendo
+    # variar por médico.
+    valor_licenca_mensal = db.Column(db.Numeric(10, 2))
+    # Pedido do Silvan (2026-09-10): o médico pode optar por pagar a
+    # licença ANUALMENTE em vez de mês a mês - "mensal" continua sendo o
+    # padrão de todo mundo (default aqui). A troca é feita pelo próprio
+    # médico em "Minha licença" (ver medico.licenca_escolher_ciclo) e só é
+    # permitida quando não há pendência de meses ANTERIORES ao vigente -
+    # ver _pode_trocar_ciclo_licenca() logo abaixo.
+    ciclo_licenca = db.Column(db.String(10), nullable=False, default="mensal")
+    # Valor anual cobrado deste médico - mesmo padrão de valor_licenca_mensal
+    # (nasce a partir de PlataformaConfig.valor_licenca_anual_padrao, dono
+    # pode reajustar individualmente depois). Só é usado quando
+    # ciclo_licenca == "anual"; None enquanto o médico nunca optou por
+    # anual ou enquanto o dono não configurou um valor anual padrão.
+    valor_licenca_anual = db.Column(db.Numeric(10, 2))
 
     # CONTA ÚNICA do paciente: uma pessoa (um Usuario) pode ter VÁRIOS
     # cadastros de paciente - um por empresa que frequenta (ver
@@ -142,6 +248,64 @@ class Usuario(db.Model, UserMixin):
         if not self.senha_hash:
             return False
         return check_password_hash(self.senha_hash, senha)
+
+    def verificar_vencimento_licenca(self):
+        """Restruturação de 2026-09-02 (pedido do Silvan): roda a cada
+        acesso autenticado do médico (ver staff_required em
+        routes_medico.py), sem job agendado nenhum - mesmo padrão que já
+        existia, só passou a rodar num ponto comum em vez de só na tela
+        "Minha licença".
+
+        Regras (nunca mexe em "bloqueada" - essa é sempre manual, decisão
+        do dono):
+        - trial -> ativa: automático, quando `licenca_vencimento` (calculado
+          no cadastro a partir de PlataformaConfig.trial_dias) passa.
+        - ativa -> inadimplente: aviso automático (não bloqueia o acesso)
+          quando o médico acumula mais meses seguidos sem pagar do que
+          PlataformaConfig.aviso_inadimplencia_meses permite.
+        - inadimplente -> ativa: sai do aviso sozinho assim que o atraso é
+          resolvido (paga os meses em atraso).
+
+        Não faz commit, quem chamar decide quando salvar. Retorna True se
+        algo mudou."""
+        se_venceu_trial = (
+            self.licenca_status == "trial"
+            and self.licenca_vencimento
+            and self.licenca_vencimento < date.today()
+        )
+        if se_venceu_trial:
+            self.licenca_status = "ativa"
+
+        if self.licenca_status in ("ativa", "inadimplente"):
+            limite = PlataformaConfig.obter().aviso_inadimplencia_meses or 2
+            meses_atraso = meses_consecutivos_sem_pagar(self)
+            deveria_estar_inadimplente = meses_atraso >= limite
+            if deveria_estar_inadimplente and self.licenca_status != "inadimplente":
+                self.licenca_status = "inadimplente"
+                return True
+            if not deveria_estar_inadimplente and self.licenca_status == "inadimplente":
+                self.licenca_status = "ativa"
+                return True
+
+        return se_venceu_trial
+
+    def pode_trocar_ciclo_licenca(self):
+        """Pedido do Silvan (2026-09-10): o médico só pode alternar entre
+        cobrança mensal e anual quando não há pendência de meses ANTERIORES
+        ao vigente - o mês atual em aberto não impede a troca (ele
+        simplesmente deixa de existir/é substituído pelo novo ciclo ao
+        trocar, ver medico.licenca_escolher_ciclo), mas um atraso de mês(es)
+        passado(s) trava a troca, pra evitar ficar sem saber que dívida
+        pertence a qual ciclo. Só se aplica a médico."""
+        if self.tipo != "medico":
+            return False
+        mes_atual = _primeiro_dia_do_mes(date.today())
+        pendencias_anteriores = LicencaPagamento.query.filter(
+            LicencaPagamento.usuario_id == self.id,
+            LicencaPagamento.pago.is_(False),
+            LicencaPagamento.mes < mes_atual,
+        ).count()
+        return pendencias_anteriores == 0
 
     @property
     def paciente(self):
@@ -339,6 +503,191 @@ def gerar_codigo_mestre_medico():
     return "MED-" + secrets.token_hex(5).upper()
 
 
+class LicencaPagamento(db.Model):
+    """Fatia 8 (calendário de pagamento): um registro POR MÊS da licença
+    individual de um médico - convive com Usuario.licenca_status/
+    licenca_vencimento (que continuam controlando o trial/status geral),
+    sem substituí-los. Por enquanto é controle 100% manual do dono da
+    plataforma (não existe gateway de pagamento integrado) - o dono marca
+    cada mês como pago/não pago em /dono/usuarios, e o médico só
+    acompanha o histórico em "Minha licença" (decisão do Silvan)."""
+    __tablename__ = "licenca_pagamentos"
+    __table_args__ = (
+        db.UniqueConstraint("usuario_id", "mes", name="uq_licenca_pagamento_usuario_mes"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    # Sempre o dia 1 do mês (ex.: 2026-08-01) - normaliza a comparação e
+    # a unicidade por (usuario_id, mes), sem precisar guardar dia/hora.
+    mes = db.Column(db.Date, nullable=False)
+    pago = db.Column(db.Boolean, nullable=False, default=False)
+    pago_em = db.Column(db.DateTime)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    # Valor de cobrança por médico (item "valor por mês no calendário"):
+    # uma FOTOGRAFIA do Usuario.valor_licenca_mensal no momento em que o mês
+    # nasce (garantir_meses_licenca) ou em que a cobrança real é gerada
+    # (mercadopago_integration.criar_preferencia_pagamento) - não muda
+    # retroativamente se o valor do médico mudar depois, igual uma fatura já
+    # emitida. Pode ficar None se o médico ainda não tinha valor definido
+    # quando o mês nasceu.
+    valor = db.Column(db.Numeric(10, 2))
+    # Gateway de pagamento real (Mercado Pago, Checkout Pro) - camada
+    # ADITIVA ao controle manual: o dono continua podendo marcar
+    # pago/não pago na mão (usuario_licenca_pagamento_marcar, útil pra Pix
+    # fora do sistema, acordos informais etc - decisão do Silvan de manter
+    # os dois caminhos). mp_status vem direto da API do Mercado Pago
+    # (pending/approved/rejected/...); `pago`/`pago_em` continuam sendo a
+    # fonte da verdade pro resto do app (calendário, aviso de
+    # inadimplência) - o webhook só os atualiza quando mp_status vira
+    # "approved". Ver app/mercadopago_integration.py e
+    # app/routes_pagamentos_webhook.py.
+    mp_preference_id = db.Column(db.String(80))
+    mp_payment_id = db.Column(db.String(80))
+    mp_status = db.Column(db.String(30))
+    mp_init_point = db.Column(db.Text)
+
+    # Pix nativo (Payments API, decisão do Silvan de 2026-09-25): opção
+    # ADICIONAL ao link do Checkout Pro acima, não substitui - o médico
+    # pode pagar tanto pelo link (mp_init_point) quanto escaneando/colando
+    # este QR code, ambos apontam pro MESMO external_reference, então o
+    # webhook em app/routes_pagamentos_webhook.py já confirma o pagamento
+    # sem precisar de nenhuma mudança lá. Pix expira em ~30min (padrão do
+    # Mercado Pago) - pix_expira_em guarda esse prazo pra tela mostrar
+    # contagem/permitir gerar um novo.
+    pix_qr_code = db.Column(db.Text)
+    pix_qr_code_base64 = db.Column(db.Text)
+    pix_payment_id = db.Column(db.String(80))
+    pix_expira_em = db.Column(db.DateTime)
+
+    # Pedido do Silvan (2026-09-10, licença anual): True quando este mês foi
+    # quitado como parte de um pagamento ANUAL único (ver
+    # gerar_ciclo_anual_pago em app/models.py), não mês a mês - o valor
+    # gravado aqui já é o valor anual RATEADO (valor_licenca_anual / 12),
+    # só para exibição no calendário; o pagamento de verdade (link/registro
+    # no Mercado Pago) fica no PRIMEIRO mês do ciclo anual (mp_preference_id
+    # etc. só são preenchidos nele - os outros 11 meses do mesmo ciclo
+    # nascem "pago=True" direto, sem gateway próprio, ver
+    # routes_dono.usuario_licenca_pagamento_cobrar_anual).
+    origem_anual = db.Column(db.Boolean, nullable=False, default=False)
+
+    usuario = db.relationship("Usuario", foreign_keys=[usuario_id])
+
+
+def _primeiro_dia_do_mes(d):
+    return date(d.year, d.month, 1)
+
+
+def _mes_seguinte(d):
+    if d.month == 12:
+        return date(d.year + 1, 1, 1)
+    return date(d.year, d.month + 1, 1)
+
+
+def garantir_meses_licenca(usuario, fim=None):
+    """Garante que existe uma linha de LicencaPagamento (como "não pago")
+    pra cada mês desde o cadastro do médico até `fim` (inclusive) - por
+    padrão (fim=None) até o mês atual, chamado sempre que a tela de
+    licença (do médico ou do dono) é aberta, pra ninguém precisar "gerar o
+    mês" manualmente (decisão do Silvan). Passar um `fim` no futuro é o
+    que permite adiantar meses ainda não vencidos (ver
+    dono.licencas_gerar_cobrancas_ano, pedido do Silvan de 2026-09-25:
+    gerar a cobrança do ano inteiro pra todo mundo de uma vez).
+    Só se aplica a médico (a licença é individual, por médico - secretária
+    não tem). Não faz commit, quem chamar decide quando salvar. Retorna a
+    lista de linhas novas (pode estar vazia)."""
+    if usuario.tipo != "medico":
+        return []
+
+    inicio = _primeiro_dia_do_mes(usuario.criado_em.date() if usuario.criado_em else date.today())
+    fim = _primeiro_dia_do_mes(fim if fim else date.today())
+
+    existentes = {p.mes for p in LicencaPagamento.query.filter_by(usuario_id=usuario.id).all()}
+
+    novos = []
+    mes = inicio
+    while mes <= fim:
+        if mes not in existentes:
+            novos.append(LicencaPagamento(
+                usuario_id=usuario.id, mes=mes, pago=False,
+                valor=usuario.valor_licenca_mensal,
+            ))
+        mes = _mes_seguinte(mes)
+
+    if novos:
+        db.session.add_all(novos)
+    return novos
+
+
+def gerar_ciclo_anual_pago(usuario, mes_inicio, valor_anual):
+    """Pedido do Silvan (2026-09-10, licença anual): ao confirmar um
+    pagamento anual, cria/atualiza os 12 LicencaPagamento a partir de
+    `mes_inicio` (inclusive) já como "pago=True", com o valor anual
+    RATEADO em 12 (só para exibição no calendário mês a mês - ver
+    "Continua gerando 12 meses, mas todos já nascem pagos de uma vez",
+    decisão do Silvan) e origem_anual=True, para diferenciar de um mês
+    pago avulso na tela "Minha licença".
+
+    Não mexe no gateway de pagamento (mp_preference_id/mp_init_point/
+    mp_status) - quem chama (routes_dono.usuario_licenca_pagamento_
+    cobrar_anual) decide se/como preencher esses campos no PRIMEIRO mês
+    do ciclo, depois de chamar esta função. Não faz commit. Retorna a
+    lista dos 12 LicencaPagamento (novos ou já existentes, atualizados)."""
+    valor_rateado = (valor_anual / 12) if valor_anual else None
+    agora = datetime.utcnow()
+
+    existentes = {
+        p.mes: p
+        for p in LicencaPagamento.query.filter_by(usuario_id=usuario.id).all()
+    }
+
+    linhas = []
+    mes = _primeiro_dia_do_mes(mes_inicio)
+    for _ in range(12):
+        pagamento = existentes.get(mes)
+        if pagamento is None:
+            pagamento = LicencaPagamento(usuario_id=usuario.id, mes=mes)
+            db.session.add(pagamento)
+        pagamento.pago = True
+        pagamento.pago_em = agora
+        pagamento.valor = valor_rateado
+        pagamento.origem_anual = True
+        linhas.append(pagamento)
+        mes = _mes_seguinte(mes)
+
+    return linhas
+
+
+def _mes_anterior(d):
+    if d.month == 1:
+        return date(d.year - 1, 12, 1)
+    return date(d.year, d.month - 1, 1)
+
+
+def meses_consecutivos_sem_pagar(usuario):
+    """Quantos meses SEGUIDOS, contando do mês atual pra trás, o médico
+    está sem pagar - usado para decidir se ele já passou do limite de
+    atenção do dono (PlataformaConfig.aviso_inadimplencia_meses, global
+    desde a restruturação de 2026-09-02). Para de contar no primeiro mês
+    pago ou no primeiro mês sem registro nenhum (ex.: antes do cadastro
+    dele) - chame garantir_meses_licenca() antes se quiser garantir que o
+    mês atual já existe. Só se aplica a médico."""
+    if usuario.tipo != "medico":
+        return 0
+
+    pagos_por_mes = {
+        p.mes: p.pago
+        for p in LicencaPagamento.query.filter_by(usuario_id=usuario.id).all()
+    }
+
+    mes = _primeiro_dia_do_mes(date.today())
+    contagem = 0
+    while mes in pagos_por_mes and not pagos_por_mes[mes]:
+        contagem += 1
+        mes = _mes_anterior(mes)
+    return contagem
+
+
 class Grupo(db.Model):
     """Trabalho compartilhado (BBP MedIA, seção 4.2 / 5.1.4): um grupo de
     usuários — médicos e/ou administrativos — que trabalham juntos. Quem
@@ -398,6 +747,20 @@ class Grupo(db.Model):
     # (sem emissão automática de fatura), igual valia para Empresa.
     valor_por_medico = db.Column(db.Numeric(10, 2))
     codigo_cadastro_paciente = db.Column(db.String(20), unique=True, nullable=True)
+
+    # ---------- Chat do paciente (WhatsApp e web) ----------
+    # Pedido do Silvan (2026-09-13): por padrão (True, igual sempre foi),
+    # toda resposta de alimento/medicamento (calculada a partir do preparo
+    # cadastrado) ou gerada pela IA fica pendente de aprovação do médico
+    # antes de ir para o paciente (ver app.whatsapp_conversa._responder_
+    # pergunta e app.routes_paciente.chat()) — só a base de FAQ (pergunta já
+    # respondida e aprovada antes) responde direto, sempre, independente
+    # deste campo. Quando desativado (False), essas respostas passam a ir
+    # direto para o paciente, sem esperar revisão humana - decisão de cada
+    # Grupo (clínica com equipe); para uma conta solo (sem Grupo), o mesmo
+    # controle vive em Usuario.aprovacao_perguntas_paciente. Ver
+    # medico.perguntas_configuracao (tela "Perguntas pendentes").
+    aprovacao_perguntas_paciente = db.Column(db.Boolean, nullable=False, default=True)
 
     inscricao_estadual = db.Column(db.String(30))
     regime_tributario = db.Column(db.String(50))
@@ -613,6 +976,17 @@ class Paciente(db.Model):
     # 'pendente' (paciente se cadastrou sozinho pelo app e aguarda a
     # clínica aceitar) ou 'rejeitado'.
     status_cadastro = db.Column(db.String(20), nullable=False, default="aprovado")
+
+    # Pedido do Silvan: tela onde o médico testa a IA fazendo perguntas
+    # sobre o próprio preparo (ver routes_medico.testar_ia) - reaproveita
+    # o mesmo fluxo de app.ia_preparo.responder_com_ia usado pelo chat real
+    # do paciente (incluindo a fila de aprovação e o aprendizado de FAQ),
+    # então precisa de um Paciente "de verdade" (paciente_id de
+    # PerguntaPendente/ChatMensagem é obrigatório) para servir de âncora -
+    # este campo marca esse cadastro sintético (um por médico, criado sob
+    # demanda) para que ele NUNCA apareça nas listas/contagens normais de
+    # pacientes (ver _filtro_pacientes_da_empresa em routes_medico.py).
+    eh_teste = db.Column(db.Boolean, nullable=False, default=False)
 
     usuario = db.relationship("Usuario", back_populates="pacientes", foreign_keys=[usuario_id])
 
@@ -1050,9 +1424,29 @@ class Agendamento(db.Model):
         "ResultadoExame", back_populates="agendamento", uselist=False, cascade="all, delete-orphan"
     )
 
+    # Link público (sem login) para a tela de preparo deste agendamento,
+    # mandado no WhatsApp junto com o convite para perguntar (pedido do
+    # Silvan, 2026-09-24 - ver app.preparo_publico e
+    # app.routes_paciente.preparo_publico). Gerado sob demanda (ver
+    # `obter_token_preparo_publico` abaixo) - a maioria dos agendamentos
+    # nunca precisa de um, então fica None até a primeira vez que o link
+    # for montado.
+    token_preparo_publico = db.Column(db.String(43), unique=True, nullable=True)
+
     @property
     def encerrada(self):
         return self.encerrado_em is not None
+
+    def obter_token_preparo_publico(self):
+        """Gera (na primeira chamada) ou reaproveita o token público deste
+        agendamento - opaco (secrets.token_urlsafe, mesmo padrão já usado
+        em Usuario.codigo_mestre/GrupoConvite neste arquivo e em
+        routes_medico.py), sem nenhuma informação do agendamento
+        embutida. Quem chama precisa comitar a sessão se o token acabou de
+        ser criado agora (ver app.preparo_publico.montar_link_preparo)."""
+        if not self.token_preparo_publico:
+            self.token_preparo_publico = secrets.token_urlsafe(32)
+        return self.token_preparo_publico
 
 
 class ChatMensagem(db.Model):
@@ -1108,14 +1502,53 @@ class ConversaWhatsapp(db.Model):
     telefone = db.Column(db.String(30), nullable=False, unique=True)
     # Só preenchido depois que CPF + data de nascimento conferirem.
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=True)
+    # Fatia 7 (ajuste): identificação em duas mensagens separadas - CPF
+    # primeiro, depois data de nascimento. Guarda aqui só os dígitos do
+    # CPF já recebido (com formato validado), enquanto aguarda a próxima
+    # mensagem com a data de nascimento para então localizar o paciente.
+    # Volta a None assim que a identificação é concluída, com sucesso ou
+    # não (se os dados não baterem, exige recomeçar pedindo o CPF de novo).
+    cpf_pendente = db.Column(db.String(11), nullable=True)
     # Agendamento/exame em foco na conversa agora (quando o paciente tem
     # mais de um ativo e já escolheu um pela lista numerada).
     agendamento_id = db.Column(db.Integer, db.ForeignKey("agendamentos.id"), nullable=True)
-    # Fatia 7 passo 5: True logo depois que o paciente escolhe "2) Fazer
-    # uma pergunta" no menu - a PRÓXIMA mensagem recebida é tratada como o
-    # texto da pergunta em si (não como uma opção do menu). Volta a False
-    # assim que a pergunta é processada (ou cancelada com "0").
+    # Fatia 7 passo 5: True logo depois que o paciente digita "1" para
+    # avisar que vai fazer uma pergunta - a PRÓXIMA mensagem recebida é
+    # tratada como o texto da pergunta em si (ver app.whatsapp_conversa.
+    # processar_mensagem). Volta a False assim que a pergunta é
+    # processada (ou quando o paciente digita "trocar" antes de chegar a
+    # perguntar). Campo originalmente criado pro antigo menu numerado
+    # ("2) Fazer uma pergunta", removido em 2026-09-11) e reaproveitado no
+    # mesmo dia, mais tarde, quando o Silvan pediu essa mesma barreira de
+    # volta - sem ela, qualquer mensagem solta (ex.: "oi") era tratada
+    # como pergunta nova e encaminhada pra equipe.
     aguardando_pergunta = db.Column(db.Boolean, nullable=False, default=False)
+    # Documento "Clara" (itens 6 e 7, 2026-09-14): quantas vezes seguidas
+    # a identificação por CPF + data de nascimento falhou (par que não
+    # bateu com nenhum cadastro, ver app.whatsapp_conversa.
+    # _localizar_paciente) desde a última identificação bem-sucedida -
+    # NÃO reseta sozinho por inatividade/expiração (ver `expirada()`
+    # abaixo), de propósito: é uma proteção contra tentativa repetida de
+    # adivinhar CPF/data de nascimento de outra pessoa, não uma contagem
+    # por sessão. Zera de volta a 0 assim que uma identificação bate.
+    tentativas_identificacao = db.Column(db.Integer, nullable=False, default=0)
+    # Documento "Clara" (itens 6 e 7, 2026-09-14): True trava a conversa
+    # por completo - `processar_mensagem` passa a responder sempre a mesma
+    # mensagem fixa (ver MENSAGEM_CONVERSA_BLOQUEADA em
+    # app.whatsapp_conversa), sem processar mais nada, mesmo depois da
+    # conversa "expirar" por inatividade (`expirada()` só reseta a
+    # identificação, nunca desbloqueia - ver docstring dela). Acontece por
+    # dois motivos (ver `motivo_bloqueio`): o paciente avisou que é
+    # "número errado" (item 6), ou esgotou as tentativas de identificação
+    # (item 7, ver `tentativas_identificacao`/`LIMITE_TENTATIVAS_
+    # IDENTIFICACAO`). Não existe hoje uma tela pra desbloquear - por ora,
+    # só ajustando direto no banco (ver HANDOFF_CHAT.md para o registro
+    # dessa limitação e uma ideia de tela futura).
+    bloqueada = db.Column(db.Boolean, nullable=False, default=False)
+    # "numero_errado" ou "tentativas_excedidas" - só informativo (pra
+    # quem for investigar/desbloquear manualmente saber o motivo); veja
+    # `bloqueada` acima.
+    motivo_bloqueio = db.Column(db.String(30), nullable=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -1126,11 +1559,84 @@ class ConversaWhatsapp(db.Model):
     # identificação confirmada (volta a pedir CPF + data de nascimento).
     MINUTOS_EXPIRACAO = 240  # 4 horas
 
+    # Documento "Clara" (item 7, 2026-09-14): depois de quantas tentativas
+    # de identificação seguidas sem bater (ver `tentativas_identificacao`
+    # acima) a conversa é bloqueada.
+    LIMITE_TENTATIVAS_IDENTIFICACAO = 3
+
     def expirada(self):
         if not self.atualizado_em:
             return True
         minutos_parados = (datetime.utcnow() - self.atualizado_em).total_seconds() / 60
         return minutos_parados > self.MINUTOS_EXPIRACAO
+
+    # `MINUTOS_INATIVIDADE_ENCERRAR`/`pronta_para_encerrar()` existiram aqui
+    # entre 2026-09-12 e 2026-09-24 (encerramento automático proativo por
+    # inatividade, com aviso e remoção da conversa - ver
+    # app.whatsapp_encerramento, removido a pedido do Silvan - ver
+    # HANDOFF_CHAT.md). A única expiração que resta agora é a passiva de
+    # MINUTOS_EXPIRACAO/expirada() acima.
+
+
+class ContagemPerguntasDia(db.Model):
+    """Contador de mensagens recebidas por WhatsApp de um paciente sobre um
+    exame específico, por dia (pedido do Silvan, 2026-09-24) - existe só
+    para aplicar o limite diário configurável pelo dono (ver
+    PlataformaConfig.limite_perguntas_dia_exame e
+    app.whatsapp_conversa.processar_mensagem, onde o limite é checado e
+    esta tabela é incrementada). Conta TODA mensagem que chega na etapa
+    de "paciente já identificado, com exame em foco, tratada como
+    pergunta" - inclusive mensagens sem sentido e de conversa social
+    (saudação/despedida/agradecimento), pedido explícito do Silvan; só NÃO
+    conta comandos como "trocar" ou pedidos de reagendamento, tratados
+    ANTES desse ponto, nem as próprias mensagens já bloqueadas por ter
+    atingido o limite (evita incrementar sem parar depois de bloqueado).
+
+    Sem limite configurado (`PlataformaConfig.limite_perguntas_dia_exame`
+    None, o padrão), esta tabela nunca é consultada nem gravada -
+    comportamento idêntico a antes dessa funcionalidade existir, e nenhuma
+    linha nova é criada à toa. Uma linha por (paciente, exame, dia) -
+    `quantidade` é reiniciada implicitamente todo dia, já que o dia
+    seguinte simplesmente não tem linha ainda (nada para "zerar" de
+    propósito)."""
+    __tablename__ = "contagem_perguntas_dia"
+    __table_args__ = (
+        db.UniqueConstraint("paciente_id", "exame_id", "data", name="uq_contagem_perguntas_dia"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
+    exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=False)
+    data = db.Column(db.Date, nullable=False)
+    quantidade = db.Column(db.Integer, nullable=False, default=0)
+
+
+class WhatsappMensagemProcessada(db.Model):
+    """Registra o id de cada mensagem do WhatsApp (campo "id" de
+    value.messages[] no payload do webhook da Meta - único por mensagem,
+    garantido pela própria Meta) assim que o webhook começa a processá-la
+    - existe só para EVITAR PROCESSAR A MESMA MENSAGEM DUAS VEZES.
+
+    Motivo (bug relatado pelo Silvan, 2026-09-11, com prints de conversa
+    mostrando o mesmo aviso "Sua pergunta ainda está sendo respondida..."
+    chegando duas vezes ao paciente, minutos - ou só segundos - depois):
+    a Cloud API da Meta pode REENTREGAR o mesmo webhook mais de uma vez
+    (comportamento documentado dela, sobretudo se o processamento demorar
+    para devolver 200) - sem nenhuma proteção, `processar_mensagem`
+    rodava de novo do zero para a mesma mensagem já processada, e o texto
+    de "aguardando resposta" (calculado de novo, já encontrando a
+    PerguntaPendente criada na primeira rodada) chegava como um segundo
+    aviso duplicado. Ver `app.routes_whatsapp._mensagem_ja_processada`.
+
+    Tabela nova (sem ALTER TABLE necessário - `db.create_all()`, chamado
+    em `create_app`, cria sozinha qualquer tabela que ainda não existir em
+    nenhum ambiente, mesmo padrão já usado para `conversas_whatsapp` e
+    `push_subscriptions`, ver migrar_banco.py)."""
+    __tablename__ = "whatsapp_mensagens_processadas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    mensagem_id = db.Column(db.String(100), nullable=False, unique=True, index=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class ResultadoExame(db.Model):
@@ -1186,6 +1692,15 @@ class PerguntaPendente(db.Model):
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=True)
     pergunta = db.Column(db.Text, nullable=False)
+    # Fatia 7 (WhatsApp): quando a pergunta veio pelo WhatsApp, guarda o
+    # número de telefone exato da conversa que originou (o mesmo formato
+    # usado em ConversaWhatsapp.telefone, sem o prefixo "whatsapp:") - é
+    # o número usado para ENVIAR a resposta de volta automaticamente
+    # assim que o médico/equipe responder (ver
+    # app.routes_medico.perguntas_responder). None para perguntas feitas
+    # pela área web do paciente (não precisam de envio nenhum - a pessoa
+    # já vê a resposta ao acessar o chat).
+    telefone_whatsapp = db.Column(db.String(30), nullable=True)
     # status: pendente (sem nenhuma resposta ainda, aguardando a
     # secretaria/médico digitar uma do zero), aguardando_aprovacao (a IA já
     # rascunhou uma resposta em `resposta_sugerida_ia`, mas o médico ainda
@@ -1204,6 +1719,20 @@ class PerguntaPendente(db.Model):
     # respondeu a esta pergunta específica.
     resposta_bruta_claude = db.Column(db.Text)
     resposta_bruta_chatgpt = db.Column(db.Text)
+    # Terceira coluna (Gemini) desde que o dono passou a poder escolher
+    # quais 2 das 3 IAs respondem o chat (ver PlataformaConfig.ia_chat_*) -
+    # só uma das três fica em branco por pergunta (a que não foi
+    # escolhida), nunca as três com conteúdo.
+    resposta_bruta_gemini = db.Column(db.Text)
+    # Nomes das IAs que deram erro de chamada de verdade ao responder esta
+    # pergunta (ver app.ia_preparo.responder_com_ia, chave "falhas") -
+    # separados por vírgula (ex.: "Gemini" ou "Gemini,ChatGPT"), None
+    # quando nenhuma falhou ou quando a pergunta não passou pela IA (sem
+    # exame selecionado). Mostrado como aviso na tela de aprovação (ver
+    # medico/perguntas.html) mesmo quando uma reserva "tapou o buraco" e o
+    # rascunho final saiu normal - o médico continua tendo visibilidade de
+    # que uma IA configurada falhou nesta pergunta específica.
+    ias_com_erro = db.Column(db.String(60), nullable=True)
     resposta = db.Column(db.Text)
     respondida_por = db.Column(db.String(150))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
@@ -1212,6 +1741,84 @@ class PerguntaPendente(db.Model):
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     paciente = db.relationship("Paciente", back_populates="perguntas_pendentes")
     exame = db.relationship("Exame")
+
+
+class PushSubscription(db.Model):
+    """Uma inscrição de notificação push (Web Push) do navegador/PWA de um
+    membro da equipe - permite avisar o médico/secretária no celular
+    assim que uma pergunta nova de paciente chega, sem depender do
+    WhatsApp (ver app.push_notificacoes). Uma pessoa pode ter várias
+    (um por navegador/aparelho em que instalou o PWA e autorizou)."""
+    __tablename__ = "push_subscriptions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    # Identifica o navegador/aparelho de destino - único por natureza (a
+    # própria API do navegador garante isso), usado para não duplicar a
+    # mesma inscrição a cada vez que o service worker é registrado de novo.
+    endpoint = db.Column(db.Text, nullable=False, unique=True)
+    p256dh = db.Column(db.String(255), nullable=False)
+    auth = db.Column(db.String(255), nullable=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship("Usuario")
+
+
+class ChamadaIA(db.Model):
+    """Um registro por chamada feita a um provedor de IA (Gemini, ChatGPT
+    ou Claude) - alimenta o painel de custo estimado por usuário na área
+    do dono da plataforma (ver app.routes_dono). Cobre as duas
+    funcionalidades que chamam IA hoje: a importação de PDF de preparo
+    (app.ia_pdf_preparo, iniciada por um Usuario da equipe/médico - ver
+    `usuario_id`) e o chat de dúvidas do paciente (app.ia_preparo,
+    iniciado pelo próprio Paciente - ver `paciente_id`); cada linha tem
+    só um dos dois preenchidos.
+
+    Gravado mesmo quando a chamada FALHA (ex.: resposta que não veio em
+    JSON válido), desde que a API tenha de fato respondido (ou seja,
+    gerou custo real) - só chamadas que nunca chegaram a receber
+    resposta (erro de rede/autenticação antes disso) não geram registro,
+    porque não haveria como saber quantos tokens foram cobrados.
+
+    O custo é uma ESTIMATIVA calculada a partir da contagem de tokens
+    devolvida pela própria API e uma tabela de preços mantida à mão (ver
+    app.custo_ia.PRECOS_POR_MILHAO_TOKENS) - nenhum provedor devolve o
+    valor em dólares na resposta, só o valor real aparece no painel de
+    faturamento de cada um (Google AI Studio / OpenAI / Anthropic
+    Console). Quando o modelo que respondeu não está cadastrado na
+    tabela de preços (ex.: uma versão nova lançada pelo provedor),
+    `custo_estimado_usd` fica None e `preco_desconhecido` marca True, em
+    vez de arriscar mostrar um valor errado."""
+    __tablename__ = "chamadas_ia"
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
+    paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=True)
+    # "importacao_pdf_preparo" | "chat_duvida_paciente"
+    tipo_uso = db.Column(db.String(40), nullable=False)
+    # "Gemini" | "ChatGPT" | "Claude"
+    provedor = db.Column(db.String(20), nullable=False)
+    modelo = db.Column(db.String(80), nullable=True)
+    tokens_entrada = db.Column(db.Integer, nullable=True)
+    tokens_saida = db.Column(db.Integer, nullable=True)
+    custo_estimado_usd = db.Column(db.Numeric(12, 6), nullable=True)
+    preco_desconhecido = db.Column(db.Boolean, nullable=False, default=False)
+    sucesso = db.Column(db.Boolean, nullable=False, default=False)
+    # Só usado em tipo_uso == "chat_duvida_paciente", nas chamadas que são
+    # candidatas a resposta (Gemini/ChatGPT/Claude respondendo a pergunta
+    # em si — não as chamadas de arbitragem/síntese, que ficam None aqui
+    # por não se aplicar): True quando o texto desta chamada específica
+    # acabou (total ou parcialmente, via síntese/concatenação) na resposta
+    # que foi mostrada ao médico para aprovação; False quando foi
+    # consultada mas descartada (a outra IA venceu). None nas demais
+    # linhas (arbitragem/síntese, e todo o fluxo de importação de PDF, que
+    # já usa `sucesso` para esse mesmo propósito) - ver
+    # app.ia_preparo.responder_com_ia e dono/custo_ia_detalhe.html.
+    resposta_final_usada = db.Column(db.Boolean, nullable=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship("Usuario")
+    paciente = db.relationship("Paciente")
 
 
 class HistoricoDeploy(db.Model):
@@ -1234,6 +1841,63 @@ class HistoricoDeploy(db.Model):
     mensagem = db.Column(db.Text)
     deploy_em = db.Column(db.DateTime)
     registrado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class MensagemSuporte(db.Model):
+    """"Fale com a gente": canal simples para médico/secretária mandarem
+    dúvidas sobre o sistema, sugestões de melhoria ou relatar problemas,
+    direto para o dono da plataforma (pedido do Silvan, 2026-09-25) -
+    sem depender de WhatsApp/e-mail pessoal. Resposta é dada SÓ pelo
+    dono, dentro do próprio painel."""
+    __tablename__ = "mensagens_suporte"
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    categoria = db.Column(db.String(20), nullable=False, default="duvida")
+    mensagem = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="nova")
+    resposta = db.Column(db.Text, nullable=True)
+    respondida_em = db.Column(db.DateTime, nullable=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship("Usuario")
+
+    CATEGORIAS = {
+        "duvida": "Dúvida sobre o sistema",
+        "sugestao": "Sugestão de melhoria",
+        "problema": "Problema/erro no sistema",
+        "outro": "Outro assunto",
+    }
+
+    @property
+    def categoria_label(self):
+        return self.CATEGORIAS.get(self.categoria, self.categoria)
+
+
+class Notificacao(db.Model):
+    """Notificações mostradas no sininho do cabeçalho, pra médico/
+    secretária (pedido do Silvan, 2026-09-25). Nascem de dois jeitos:
+    (1) automaticamente, quando o dono responde uma mensagem do "Fale com
+    a gente" (ver dono.mensagens_suporte_responder em app/routes_dono.py);
+    (2) por um anúncio que o próprio dono escreve à mão e manda pra um
+    médico/secretária específico ou pra todo mundo (ver dono.anuncios/
+    dono.anuncio_enviar) - nesse segundo caso, uma linha por destinatário
+    (sem lógica de "grupo alvo" - mais simples de consultar e de marcar
+    como lida individualmente)."""
+    __tablename__ = "notificacoes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    tipo = db.Column(db.String(20), nullable=False, default="anuncio")
+    titulo = db.Column(db.String(120), nullable=False)
+    mensagem = db.Column(db.Text, nullable=False)
+    # Pra onde o clique leva (ex.: de volta pro "Fale com a gente") - em
+    # branco quando não há destino melhor que o próprio painel.
+    link_endpoint = db.Column(db.String(80), nullable=True)
+    lida = db.Column(db.Boolean, nullable=False, default=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    usuario = db.relationship("Usuario", foreign_keys=[usuario_id])
 
 
 def _preparo_pode_ser_editado_por(self, usuario):

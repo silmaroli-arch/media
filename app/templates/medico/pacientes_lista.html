@@ -14,6 +14,12 @@
        de filial aqui; a filial aparece em cada AGENDAMENTO do paciente. #}
     <thead><tr><th>Nome</th><th>CPF</th><th>Telefone (login)</th><th>Data de nascimento</th><th>Status</th><th></th></tr></thead>
     <tbody>
+      {# Pedido do Silvan (2026-09-10, revisão desta mesma data): o
+         paciente criado automaticamente no cadastro do médico (ver
+         routes_medico._paciente_teste_do_medico) deixou de ter
+         tratamento especial nesta tela - ele já vem incluído em
+         `pacientes` (é um Paciente real, como outro qualquer), com
+         Detalhes funcionando normalmente. #}
       {% for p in pacientes %}
       <tr>
         <td>{{ p.nome }}</td>

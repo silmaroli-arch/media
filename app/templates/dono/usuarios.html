@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block titulo %}Usuários cadastrados{% endblock %}
+{% block conteudo %}
+{% set aba_ativa = 'licencas' %}
+{% include "dono/_menu.html" %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0">Usuários cadastrados (equipe)</h3>
+  {# Pedido do Silvan (2026-09-25): gerar de uma vez a cobrança Mercado
+     Pago dos meses que faltam neste ano pra todo médico em ciclo mensal,
+     em vez de entrar usuário por usuário/mês por mês (ver
+     dono.licencas_gerar_cobrancas_ano em app/routes_dono.py). #}
+  <form method="post" action="{{ url_for('dono.licencas_gerar_cobrancas_ano') }}"
+        onsubmit="return confirm('Gerar a cobrança Mercado Pago dos meses restantes deste ano (a partir do mês seguinte ao atual) pra TODO médico em ciclo mensal? Meses já pagos ou que já têm cobrança gerada não são afetados.');">
+    <button type="submit" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-cash-stack me-1"></i>Gerar cobranças do ano para todos
+    </button>
+  </form>
+</div>
+
+<p class="text-muted small">
+  Todas as contas de médico(a)/secretário(a) da plataforma, independente de terem um grupo de trabalho ou
+  não — desde que uma conta nova deixou de criar um grupo automaticamente, ela pode existir "solo" (usa o
+  sistema sozinha, sem trial/vencimento/bloqueio) e não aparece na lista de Grupos.
+</p>
+<p class="text-muted small">
+  <i class="bi bi-info-circle"></i> "Gerar cobranças do ano para todos" cria o link de pagamento (Mercado Pago)
+  dos meses que faltam neste ano civil, a partir do mês seguinte ao atual, só pra quem está no ciclo mensal -
+  quem já pagou aquele mês na mão, ou já tem cobrança gerada, não é afetado; médico em ciclo anual continua
+  usando o próprio botão de cobrança anual, na tela de pagamentos dele.
+</p>
+
+{% set em_alerta = linhas|selectattr("em_alerta_inadimplencia")|list %}
+{% if em_alerta %}
+<div class="alert alert-danger">
+  <strong>{{ em_alerta|length }} médico{{ "s" if em_alerta|length != 1 else "" }} sem pagar há tempo demais:</strong>
+  {% for l in em_alerta %}
+    {{ l.usuario.nome }} ({{ l.meses_sem_pagar }} mes{{ "es" if l.meses_sem_pagar != 1 else "" }} seguido{{ "s" if l.meses_sem_pagar != 1 else "" }}){{ ", " if not loop.last else "" }}
+  {% endfor %}
+  — o limite de aviso de cada um pode ser ajustado no formulário da linha dele.
+</div>
+{% endif %}
+
+<div class="card p-3">
+  <div class="table-responsive">
+  <table class="table table-hover">
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Custo estimado de IA</th>
+        <th></th>
+        <th>E-mail</th>
+        <th>Tipo</th>
+        <th>Grupo(s) de trabalho</th>
+        <th>Licença</th>
+        <th>Cadastrado em</th>
+        <th>Excluir</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set licenca_cores = {'trial': 'info', 'ativa': 'success', 'inadimplente': 'warning', 'bloqueada': 'danger'} %}
+      {% for l in linhas %}
+      <tr class="{{ 'table-danger' if l.em_alerta_inadimplencia else '' }}">
+        <td>{{ l.usuario.nome }}</td>
+        <td>
+          {% if l.custo %}
+            US$ {{ "%.4f"|format(l.custo.custo_total) }}
+            <span class="text-muted small">(R$ {{ "%.4f"|format(l.custo.custo_total|usd_para_brl) }} · {{ l.custo.total_chamadas }} chamada{{ "s" if l.custo.total_chamadas != 1 else "" }})</span>
+            {% if l.custo.tem_custo_desconhecido %}
+              <span class="badge bg-warning text-dark ms-1" title="Uma ou mais chamadas com modelo sem preço cadastrado">parcial</span>
+            {% endif %}
+          {% else %}
+            <span class="text-muted small">sem chamadas</span>
+          {% endif %}
+        </td>
+        <td>
+          <a href="{{ url_for('dono.custo_ia_usuario', usuario_id=l.usuario.id) }}" class="btn btn-sm btn-outline-secondary text-nowrap">Ver chamadas</a>
+        </td>
+        <td>{{ l.usuario.email or "-" }}</td>
+        <td>{{ "Médico(a)" if l.usuario.tipo == "medico" else "Secretário(a)" }}</td>
+        <td>
+          {% if l.grupos %}
+            {{ l.grupos|join(", ") }}
+          {% else %}
+            <span class="badge bg-secondary">conta solo</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if l.usuario.tipo == "medico" %}
+            <span class="badge bg-{{ licenca_cores.get(l.usuario.licenca_status, 'secondary') }} mb-1">{{ l.usuario.licenca_status }}</span>
+            <span class="text-muted small d-block mb-1">
+              {% if l.usuario.licenca_status == "trial" %}
+                trial até {{ l.usuario.licenca_vencimento.strftime('%d/%m/%Y') if l.usuario.licenca_vencimento else "—" }}
+              {% else %}
+                {{ l.usuario.licenca_vencimento.strftime('%d/%m/%Y') if l.usuario.licenca_vencimento else "sem trial" }}
+              {% endif %}
+              ·
+              {% if l.usuario.valor_licenca_mensal is not none %}
+                R$ {{ "%.2f"|format(l.usuario.valor_licenca_mensal) }}/mês
+              {% else %}
+                valor não definido
+              {% endif %}
+              ·
+              <span class="badge bg-{{ 'info text-dark' if l.usuario.ciclo_licenca == 'anual' else 'light text-dark border' }}">
+                ciclo {{ l.usuario.ciclo_licenca }}
+              </span>
+            </span>
+            {# Restruturação de 2026-09-02: status deixou de ser editável à
+               mão (trial->ativa e ativa<->inadimplente são automáticos, ver
+               Usuario.verificar_vencimento_licenca) - só o valor mensal
+               (que nasce do padrão global, mas pode variar por médico) e o
+               bloqueio de acesso continuam sendo decisão do dono. Valor
+               anual (pedido do Silvan, 2026-09-10) segue o mesmo padrão,
+               editável no mesmo formulário - ver Usuario.valor_licenca_anual;
+               a ESCOLHA do ciclo em si (mensal/anual) é feita pelo próprio
+               médico em "Minha licença" (medico.licenca_escolher_ciclo),
+               não aqui. #}
+            <div class="d-flex gap-1 flex-wrap">
+              <form method="post" action="{{ url_for('dono.usuario_licenca_editar', usuario_id=l.usuario.id) }}" class="d-flex gap-1">
+                <input type="text" name="valor_licenca_mensal" class="form-control form-control-sm" style="width: 90px;" placeholder="R$/mês"
+                       value="{{ '%.2f'|format(l.usuario.valor_licenca_mensal) if l.usuario.valor_licenca_mensal is not none else '' }}">
+                <input type="text" name="valor_licenca_anual" class="form-control form-control-sm" style="width: 90px;" placeholder="R$/ano"
+                       value="{{ '%.2f'|format(l.usuario.valor_licenca_anual) if l.usuario.valor_licenca_anual is not none else '' }}">
+                <button type="submit" class="btn btn-sm btn-outline-primary">Salvar valor</button>
+              </form>
+              {% if l.usuario.licenca_status == "bloqueada" %}
+                <form method="post" action="{{ url_for('dono.usuario_licenca_desbloquear', usuario_id=l.usuario.id) }}" class="d-inline">
+                  <button type="submit" class="btn btn-sm btn-outline-success">Desbloquear acesso</button>
+                </form>
+              {% else %}
+                <form method="post" action="{{ url_for('dono.usuario_licenca_bloquear', usuario_id=l.usuario.id) }}" class="d-inline"
+                      onsubmit="return confirm('Bloquear o acesso de {{ l.usuario.nome }} à plataforma?');">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Bloquear acesso</button>
+                </form>
+              {% endif %}
+            </div>
+            <div class="mt-1">
+              {% if l.pago_mes_atual %}
+                <span class="badge bg-success">Mês atual pago</span>
+              {% else %}
+                <span class="badge bg-danger">Mês atual não pago</span>
+              {% endif %}
+              {% if l.meses_sem_pagar > 0 %}
+                <span class="badge {{ 'bg-danger' if l.em_alerta_inadimplencia else 'bg-secondary' }}">
+                  {{ l.meses_sem_pagar }} mês(es) seguido(s) sem pagar
+                </span>
+              {% endif %}
+              <a href="{{ url_for('dono.usuario_licenca_pagamentos', usuario_id=l.usuario.id) }}" class="small ms-1">ver calendário</a>
+            </div>
+          {% else %}
+            <span class="text-muted small">—</span>
+          {% endif %}
+        </td>
+        <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
+        <td>
+          {# Exclusão permanente (substitui a antiga "Limpar dados de teste"
+             do login, que apagava o banco inteiro sem senha nenhuma -
+             decisão do Silvan de trocar por algo escopado a uma pessoa e
+             protegido pela senha do próprio dono). O confirm() do navegador
+             é uma segunda trava, além da senha, contra clique acidental -
+             a validação de verdade é a senha, conferida no servidor em
+             dono.usuario_excluir. #}
+          <form method="post" action="{{ url_for('dono.usuario_excluir', usuario_id=l.usuario.id) }}"
+                class="d-flex gap-1"
+                onsubmit="return confirm('Excluir permanentemente {{ l.usuario.nome }} e todos os dados associados (exames, agendamentos, licença)? Essa ação não pode ser desfeita.');">
+            <input type="password" name="senha_confirmacao" class="form-control form-control-sm" style="width: 130px;"
+                   placeholder="sua senha" autocomplete="current-password" required>
+            <button type="submit" class="btn btn-sm btn-outline-danger text-nowrap">Excluir</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

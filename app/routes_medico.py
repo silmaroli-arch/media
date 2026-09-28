@@ -1,14 +1,15 @@
 import io
+import json
 import os
 import re
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import wraps
 
 from flask import (
     Blueprint, render_template, redirect, url_for, request, flash, session,
-    current_app,
+    current_app, jsonify, Response, stream_with_context, abort,
 )
 from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
@@ -20,18 +21,29 @@ from app.models import (
     PerguntaPendente, GrupoPaciente, Grupo, GrupoMembro, GrupoConvite,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
-    ChatMensagem, ResultadoExame,
+    ChatMensagem, ResultadoExame, PushSubscription, LicencaPagamento, garantir_meses_licenca,
+    PlataformaConfig, MensagemSuporte, Notificacao,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto,
+)
+from app.mercadopago_integration import (
+    criar_preferencia_pagamento_anual, criar_cobranca_pix, MercadoPagoNaoConfigurado,
 )
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
     empresa_atual, empresas_do_usuario, selecionar_empresa,
     filiais_atuais, filtro_escopo_atual,
-    tem_algum_vinculo_de_grupo,
+    tem_algum_vinculo_de_grupo, proximo_seguro,
 )
-from app.pdf_preparo import extrair_sugestao_de_pdf
-from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia
+from app.pdf_preparo import extrair_sugestao_de_pdf, extrair_sugestao_de_texto
+from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
+from app.ia_preparo import responder_com_ia
+from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
+from app.custo_ia import registrar_chamada_ia
+from app.whatsapp_envio import (
+    enviar_boas_vindas_whatsapp, enviar_preparo_cadastrado_whatsapp,
+    enviar_agendamento_criado_whatsapp,
+)
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -96,7 +108,17 @@ def _filtro_pacientes_da_empresa():
     Fatia 6: quando a conta é solo (sem Grupo nenhum ainda), não existe
     GrupoPaciente pra criar - o paciente fica associado diretamente ao
     dono pessoal (`Paciente.cadastrado_por_id`), mesmo padrão dos outros
-    modelos (ver clinica_utils.filtro_escopo_atual())."""
+    modelos (ver clinica_utils.filtro_escopo_atual()).
+
+    Pedido do Silvan (2026-09-10, revisão desta mesma data): o Paciente
+    criado automaticamente no cadastro do médico (ver
+    routes_medico._paciente_teste_do_medico) deixou de ser excluído daqui
+    - antes ("Paciente de teste", Paciente.eh_teste=True) ele nunca
+    aparecia em nenhuma lista/contagem/relatório; agora é um paciente REAL
+    como outro qualquer, incluído normalmente neste filtro, para que o
+    médico possa aprender o sistema (agenda, atendimento) na própria
+    pele. O campo Paciente.eh_teste continua existindo no banco só por
+    compatibilidade com o dado histórico - nada mais o define como True."""
     grupo_ids = _grupos_da_empresa_ids()
     if not grupo_ids:
         return Paciente.cadastrado_por_id == current_user.id
@@ -162,10 +184,27 @@ def staff_required(f):
             flash("Acesso restrito à equipe médica/secretaria.", "danger")
             return redirect(url_for("auth.login"))
 
+        # Restruturação de 2026-09-02: sem job agendado, a checagem de
+        # trial/inadimplência do médico roda aqui, a cada acesso autenticado
+        # de uma tela da equipe - não só na tela "Minha licença" (ver
+        # Usuario.verificar_vencimento_licenca).
+        if current_user.tipo == "medico":
+            novos_meses = garantir_meses_licenca(current_user)
+            mudou_status = current_user.verificar_vencimento_licenca()
+            if mudou_status or novos_meses:
+                db.session.commit()
+
         if empresa_atual() is None:
             if clinicas_do_usuario():
                 # Ambíguo: 2+ Grupos ativos e nenhum selecionado ainda.
-                return redirect(url_for("medico.escolher_clinica"))
+                # Propaga a URL que a pessoa estava tentando acessar (ex.:
+                # /equipe/portal, ver medico.portal_atendimento) - sem
+                # isso, quem tem vínculo em mais de um Grupo sempre caía
+                # no painel principal depois de escolher a empresa, mesmo
+                # tendo entrado por um atalho direto pra uma tela
+                # específica (ver medico.escolher_clinica, que lê esse
+                # parâmetro de volta).
+                return redirect(url_for("medico.escolher_clinica", next=request.path))
             if tem_algum_vinculo_de_grupo():
                 # Tem Grupo(s), mas todos bloqueados - continua barrado.
                 logout_user()
@@ -282,9 +321,17 @@ def escolher_clinica():
     registro. Esta tela só aparece no caso raro de a pessoa ter vínculo em
     mais de uma empresa (tenants diferentes); com uma só, é automático.
 
-    O nome da rota (e a URL) foi mantido para não quebrar links antigos."""
+    O nome da rota (e a URL) foi mantido para não quebrar links antigos.
+
+    Propaga "next" (ver app.clinica_utils.proximo_seguro e
+    routes_auth.py:login) - quem chegou aqui via staff_required por ter
+    vínculo em mais de um Grupo (ex.: tentando abrir um atalho direto pra
+    /equipe/portal) volta pro destino original depois de escolher a
+    empresa, em vez de sempre cair no painel principal."""
     if not current_user.is_staff:
         return redirect(url_for("index"))
+
+    destino = proximo_seguro(request.values.get("next"))
 
     clinicas = clinicas_do_usuario()
 
@@ -302,20 +349,61 @@ def escolher_clinica():
     if request.method == "POST":
         empresa_id = request.form.get("empresa_id", type=int)
         if empresa_id and selecionar_empresa(empresa_id):
-            return redirect(url_for("medico.dashboard"))
+            return redirect(destino or url_for("medico.dashboard"))
         # Compatibilidade com links/formulários antigos que mandavam uma
         # filial: passa a valer só como filial padrão de formulário (e
         # define a empresa dela) — não filtra mais nada.
         clinica_id = request.form.get("clinica_id", type=int)
         if clinica_id and selecionar_clinica(clinica_id):
-            return redirect(url_for("medico.dashboard"))
+            return redirect(destino or url_for("medico.dashboard"))
         flash("Empresa inválida.", "danger")
 
     if len(empresas) == 1:
         selecionar_empresa(empresas[0].id)
-        return redirect(url_for("medico.dashboard"))
+        return redirect(destino or url_for("medico.dashboard"))
 
-    return render_template("medico/escolher_clinica.html", empresas=empresas)
+    return render_template("medico/escolher_clinica.html", empresas=empresas, proximo=destino)
+
+
+@medico_bp.route("/primeiros-passos")
+@login_required
+@staff_required
+def primeiros_passos():
+    """"Primeiros passos" - checklist opcional, acessível a qualquer
+    momento pelo menu lateral (não é mais forçado logo após o cadastro,
+    ver auth.cadastro): atalho na tela de início (médico e secretária) e,
+    só para médico(a), modelo de preparo (que já cria o exame gêmeo junto -
+    ver preparo_modelos_novo) - cada item mostra se já foi feito (com base
+    no que a pessoa já tem cadastrado) e permite pular pra qualquer outro a
+    qualquer momento (ver medico.atalhos / preparo_modelos_novo, que aceita
+    o parâmetro "wizard=1")."""
+    # Restruturação de 2026-09 (pedido do Silvan): "modelo de preparo" e
+    # "exame" viraram uma coisa só (ver preparo_modelos_novo) - o checklist
+    # passa a ter um item só cobrindo os dois.
+    tem_preparo = False
+    if eh_medico():
+        tem_preparo = PreparoModelo.query.filter(
+            filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
+        ).first() is not None
+    return render_template("medico/primeiros_passos.html", tem_preparo=tem_preparo)
+
+
+@medico_bp.route("/primeiros-passos/atalhos", methods=["GET", "POST"])
+@login_required
+@staff_required
+def atalhos():
+    """Item "Atalho na tela de início" do checklist "Primeiros passos"
+    (ver primeiros_passos() acima): tela única mostrando como adicionar o
+    atalho (iOS: passo a passo manual; Android: botão real via
+    beforeinstallprompt), igual pra médico(a) ou secretário(a). Acessível
+    quantas vezes quiser pelo menu - sem gate de localStorage nem estado
+    de "já visto" (diferente do aviso "de sempre" em base.html)."""
+    if request.method == "POST":
+        if current_user.tipo == "medico":
+            return redirect(url_for("medico.preparo_modelos_novo", wizard=1))
+        return redirect(url_for("medico.primeiros_passos"))
+
+    return render_template("medico/atalhos.html")
 
 
 @medico_bp.route("/")
@@ -395,9 +483,33 @@ def dashboard():
         .all()
     )
     pendentes = pendentes_q.count() + aguardando_q.count()
-    # A agenda completa (lista) foi incorporada ao painel — não existe mais
-    # uma tela separada de "Agenda" no menu.
-    agendamentos = agendamentos_q.order_by(Agendamento.data_hora.asc()).all()
+
+    # Pedido do Silvan (2026-09-13/14, movido pro painel em 2026-09-25 -
+    # antes só ficava no Portal de atendimento rápido): liga/desliga a
+    # exigência de aprovação antes de uma resposta de alimento/
+    # medicamento/IA ir pro paciente (ver medico.perguntas_configuracao).
+    grupo_atual_aprovacao = empresa_atual()
+    aprovacao_ativa = (
+        grupo_atual_aprovacao.aprovacao_perguntas_paciente if grupo_atual_aprovacao
+        else current_user.aprovacao_perguntas_paciente
+    )
+
+    # Restruturação de 2026-09-02 (pedido do Silvan): o painel do médico
+    # passa a mostrar o status da própria licença (trial/Ativo/Bloqueado) -
+    # a checagem de vencimento já rodou em staff_required, então aqui é só
+    # exibição (ver _LICENCA_LABELS, reaproveitado de medico.minha_licenca).
+    licenca_label = licenca_cor = licenca_vencimento = None
+    if eh_medico():
+        licenca_label, licenca_cor = _LICENCA_LABELS.get(
+            current_user.licenca_status, (current_user.licenca_status, "secondary")
+        )
+        # Só faz sentido mostrar essa data no painel enquanto for o prazo do
+        # trial (ver dashboard.html) - depois que vira "ativa",
+        # licenca_vencimento fica sendo só a data (passada) em que o trial
+        # acabou, não uma próxima cobrança (isso é por mês, em
+        # LicencaPagamento) - mostrar ali confundiria, parecendo atraso.
+        licenca_vencimento = current_user.licenca_vencimento
+
     return render_template(
         "medico/dashboard.html",
         clinica=clinica_atual(),
@@ -407,7 +519,10 @@ def dashboard():
         proximos=proximos,
         pendentes=pendentes,
         convites_pendentes=convites_pendentes,
-        agendamentos=agendamentos,
+        aprovacao_ativa=aprovacao_ativa,
+        licenca_label=licenca_label,
+        licenca_cor=licenca_cor,
+        licenca_vencimento=licenca_vencimento,
     )
 
 
@@ -433,6 +548,13 @@ def pacientes_lista():
         )
     else:
         pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).order_by(Paciente.nome).all()
+
+    # Pedido do Silvan (2026-09-10, revisão desta mesma data): o paciente
+    # criado automaticamente no cadastro do médico (ver
+    # _paciente_teste_do_medico) deixou de ser um cadastro "de teste"
+    # escondido à parte - agora é um Paciente real, incluído normalmente
+    # em `pacientes` acima (via _filtro_pacientes_da_empresa), sem
+    # tratamento especial nesta tela.
     return render_template("medico/pacientes_lista.html", pacientes=pacientes)
 
 
@@ -665,6 +787,12 @@ def pacientes_novo():
         _associar_paciente_ao_escopo_atual(paciente, empresa)
         db.session.commit()
 
+        # Pedido do Silvan (2026-09-06): mandar boas-vindas por WhatsApp já
+        # no cadastro, pra ele salvar o número da clínica e saber que pode
+        # tirar dúvidas por lá - falha aberta (sem template Meta configurado,
+        # só é pulado, ver app.whatsapp_envio.enviar_boas_vindas_whatsapp).
+        enviar_boas_vindas_whatsapp(paciente)
+
         flash(
             "Paciente cadastrado. Ele(a) pode acessar o sistema informando o CPF e a data de "
             "nascimento — não é necessário criar senha.",
@@ -798,6 +926,11 @@ def exames_novo():
     if eh_medico():
         modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
 
+    # Último passo do checklist "Primeiros passos" (ver medico.atalhos
+    # e preparo_modelos_novo, acessado pelo menu, não mais forçado após o
+    # cadastro) - mesmo idioma de "wizard=1" via query/hidden.
+    wizard = request.values.get("wizard") == "1"
+
     if request.method == "POST":
         # O cadastro de exame é genérico - só define nome/descrição/duração/
         # preparo, sem escolher filial nem médico responsável. Quem atende
@@ -826,7 +959,7 @@ def exames_novo():
             medico_id = medicos[0].id
         else:
             flash("Cadastre um médico na equipe antes de criar exames.", "danger")
-            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos, wizard=wizard)
 
         # É obrigatório escolher uma opção no cadastro - mas a opção pode ser
         # "nenhum" (procedimento simples, sem instrução prévia, ex.: uma
@@ -840,20 +973,20 @@ def exames_novo():
             modelo = next((m for m in modelos if str(m.id) == preparo_modelo_raw), None)
             if not modelo:
                 flash("Escolha um modelo de preparo válido, ou \"Nenhum\".", "danger")
-                return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+                return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos, wizard=wizard)
         else:
             flash("Escolha uma opção de modelo de preparo (pode ser \"Nenhum\").", "danger")
-            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos, wizard=wizard)
 
         if not nome:
             flash("Nome do exame é obrigatório.", "danger")
-            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos, wizard=wizard)
 
         if Exame.query.filter(
             filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id), Exame.nome == nome
         ).first():
             flash("Já existe um exame com esse nome.", "danger")
-            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+            return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos, wizard=wizard)
 
         # Preço fica de fora do cadastro genérico - é definido depois, por
         # local de atendimento, em "Exames por filial" (mesmo esquema que já
@@ -883,6 +1016,15 @@ def exames_novo():
         db.session.add(exame)
         db.session.commit()
 
+        if wizard:
+            flash(
+                f"Tudo pronto, {current_user.nome}! O modelo de preparo e o exame já estão cadastrados. "
+                'Defina o médico responsável e o preço deste exame em "Exames por filial" quando '
+                "quiser começar a agendar.",
+                "success",
+            )
+            return redirect(url_for("medico.primeiros_passos"))
+
         flash(
             "Exame cadastrado com sucesso. Defina o médico responsável e o preço em "
             '"Exames por filial", antes de agendar.',
@@ -890,7 +1032,7 @@ def exames_novo():
         )
         return redirect(url_for("medico.exames_lista"))
 
-    return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos)
+    return render_template("medico/exames_form.html", exame=None, medicos=medicos, modelos=modelos, wizard=wizard)
 
 
 @medico_bp.route("/exames/<int:exame_id>/editar", methods=["GET", "POST"])
@@ -1288,6 +1430,61 @@ def exames_por_filial_excluir(exame_id):
 
 # ---------- Modelos de preparo (reaproveitáveis entre exames) ----------
 
+@medico_bp.route("/preparo-modelos/aviso-mobile", methods=["GET", "POST"])
+@login_required
+@staff_required
+def preparo_modelos_aviso_mobile():
+    """Pedido do Silvan (2026-09-10): "Exames & preparo" também precisava
+    aparecer no menu reduzido do celular (ver "Meus dados"/"Pacientes"/
+    "Agendar exame" adicionados ao mesmo menu na mesma rodada), mas o
+    CADASTRO MANUAL completo (todas as abas: cortes, medicamentos,
+    alimentos etc.) é uma configuração "mais delicada" - o Silvan prefere
+    que só seja feito pela versão web (computador), não pelo celular,
+    porque o médico testando pelo celular (ver medico.testar_ia) poderia
+    se perder tentando editar ali. Por isso, o item do menu no celular
+    NÃO leva direto para medico.preparo_modelos_lista - leva para esta
+    tela, que explica isso e oferece um botão de volta ao Painel. A tela
+    real continua acessível normalmente pelo computador (e por link
+    direto, se alguém precisar, já que não há bloqueio de verdade na
+    rota - é só orientação de uso).
+
+    Atualização (pedido do Silvan, 2026-09-11): IMPORTAR um PDF passou a
+    ser permitido direto por aqui, mesmo no celular - é o que a própria
+    mensagem de boas-vindas do WhatsApp orienta o médico a fazer (ver
+    app.routes_auth.cadastro), e ele normalmente lê essa mensagem no
+    celular, não no computador. Por isso esta tela ganhou o botão
+    "Importar de um PDF" (reaproveitando o mesmo popup/JS de
+    medico/preparo_modelo_form.html, extraído para o partial
+    medico/_importar_preparo_pdf.html). Depois de extrair os dados, o
+    médico é levado para a MESMA tela de revisão completa usada no
+    computador (medico.preparo_modelos_importar_xlsx →
+    _renderizar_revisao_de_preparo_importado) - não existe uma tela de
+    revisão separada só para quem importou pelo celular; a ressalva
+    acima (cadastro manual do zero é melhor no computador) continua
+    valendo, só o caminho de importação por PDF deixou de ser
+    bloqueado.
+
+    Correção (2026-09-12, bug relatado pelo Silvan com print de "Method
+    Not Allowed" no celular): o popup de importação (`_importar_preparo_
+    pdf.html`) troca a página inteira por `document.write(html)` depois
+    de extrair o PDF - isso substitui o CONTEÚDO da página pela tela de
+    revisão completa (`preparo_modelo_form.html`, com o `<form id=
+    "form-preparo">`), mas NÃO muda a URL na barra de endereço, que
+    continua sendo esta aqui (`/preparo-modelos/aviso-mobile`). E esse
+    `<form>` não tem `action` definido de propósito (funciona em
+    `/preparo-modelos/novo` e em `/preparo-modelos/<id>/editar` sem
+    precisar saber qual delas é, cada um submetendo pra si mesmo) - então,
+    ao clicar em "Salvar" depois de importar pelo celular, o navegador
+    envia o POST pra ESTA rota, que só aceitava GET. Correção: aceitar
+    POST aqui também e delegar pra mesma lógica de criação de
+    medico.preparo_modelos_novo (nunca existe `modelo` para editar nesse
+    caminho - a importação pelo celular só cria modelo NOVO, nunca edita
+    um existente)."""
+    if request.method == "POST":
+        return preparo_modelos_novo()
+    return render_template("medico/preparo_modelos_aviso_mobile.html")
+
+
 @medico_bp.route("/preparo-modelos")
 @login_required
 @staff_required
@@ -1478,9 +1675,30 @@ def preparo_modelos_novo():
     # o fundador sem vínculo perdia o formulário inteiro com um aviso de
     # "nenhum local cadastrado", mesmo com a empresa tendo locais).
     filiais = _filiais_da_empresa()
+    # Restruturação de 2026-09 (pedido do Silvan): "modelo de preparo",
+    # "exame" e "associar exame a médico" viraram uma coisa só nesta tela -
+    # ao salvar o modelo, um Exame com o MESMO nome nasce junto, já
+    # associado ao médico responsável (ver mais abaixo). As telas antigas
+    # de Exame/"Exames por filial" continuam existindo no código (rotas
+    # exames_*, mesmo padrão já usado para equipe_lista/filiais_lista - ver
+    # comentário em base.html), só não têm mais link no menu nem no wizard.
+    medicos = medicos_das_filiais(filiais)
     sugestao = None
     if request.method == "GET" and request.args.get("de_importacao"):
         sugestao = session.pop("preparo_sugestao_importada", None)
+
+    # Passo do checklist "Primeiros passos" (ver medico.atalhos) -
+    # viajado via query string no GET e hidden field no POST (mesmo idioma
+    # já usado pelo campo "origem" em perguntas_responder). Acessado pelo
+    # menu, a qualquer momento - não é mais forçado logo após o cadastro.
+    wizard = request.values.get("wizard") == "1"
+
+    def _rerender_novo():
+        return render_template(
+            "medico/preparo_modelo_form.html", modelo=None, sugestao=None,
+            medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
+            wizard=wizard, medicos=medicos, eh_medico_logado=eh_medico(),
+        )
 
     if request.method == "POST":
         # Modelo de preparo é genérico - não pertence a uma filial específica,
@@ -1496,16 +1714,56 @@ def preparo_modelos_novo():
         nome = request.form.get("nome", "").strip()
         instrucoes = request.form.get("instrucoes", "").strip()
         observacoes_medicamentos = request.form.get("observacoes_medicamentos", "").strip()
+        # Campos do Exame (ver models.py) preenchidos direto nesta tela -
+        # antes viviam só no cadastro de exame separado (exames_novo).
+        duracao_minutos = request.form.get("duracao_minutos", type=int)
+        precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
 
         if not nome or not instrucoes:
             flash("Nome do modelo e instruções são obrigatórios.", "danger")
-            return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+            return _rerender_novo()
 
         if PreparoModelo.query.filter(
             filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id), PreparoModelo.nome == nome
         ).first():
             flash("Já existe um modelo de preparo com esse nome.", "danger")
-            return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+            return _rerender_novo()
+
+        # O nome do modelo também vira o nome do Exame criado automaticamente
+        # logo abaixo - por isso precisa ser único também entre os exames,
+        # não só entre os modelos de preparo (decisão do Silvan: nesse caso
+        # é melhor barrar e pedir outro nome do que criar um exame
+        # duplicado/confuso).
+        if Exame.query.filter(
+            filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id), Exame.nome == nome
+        ).first():
+            flash(
+                "Já existe um exame com esse nome. Escolha um nome diferente para o modelo de preparo "
+                "(o mesmo nome é usado para criar o exame automaticamente).",
+                "danger",
+            )
+            return _rerender_novo()
+
+        # Médico responsável pelo exame criado junto: se quem cadastra é
+        # médico, é ele mesmo, sem perguntar nada (decisão do Silvan). Se é
+        # dono/secretária, o campo aparece pra escolher - mas não bloqueia o
+        # cadastro se ficar em branco (mesma tolerância que o cadastro
+        # genérico de exame já tinha): cai num médico provisório
+        # (medico_confirmado=False), corrigível depois ao editar o modelo.
+        medico_confirmado = True
+        if eh_medico():
+            medico_id = current_user.id
+        elif medicos:
+            medico_id_raw = request.form.get("medico_id", "").strip()
+            medico_escolhido = next((m for m in medicos if str(m.id) == medico_id_raw), None)
+            if medico_escolhido:
+                medico_id = medico_escolhido.id
+            else:
+                medico_id = medicos[0].id
+                medico_confirmado = False
+        else:
+            flash("Cadastre um médico na equipe antes de criar um modelo de preparo.", "danger")
+            return _rerender_novo()
 
         modelo = PreparoModelo(
             grupo_id=filial.id if filial else None,
@@ -1518,12 +1776,43 @@ def preparo_modelos_novo():
         db.session.add(modelo)
         db.session.flush()
         _salvar_cortes_e_medicamentos(modelo, request.form)
+
+        # Exame gêmeo do modelo: nasce já ASSOCIADO de verdade (não existe
+        # mais o estado "catálogo", que a tela antiga de cadastro genérico
+        # de exame criava) - só "medico_confirmado" pode ficar False, se
+        # ninguém escolheu o médico de propósito (ver comentário acima).
+        exame = Exame(
+            grupo_id=filial.id if filial else None,
+            medico_id=medico_id, nome=nome, descricao="",
+            preparo_modelo_id=modelo.id,
+            duracao_minutos=duracao_minutos,
+            precisa_acompanhante=precisa_acompanhante,
+            medico_confirmado=medico_confirmado,
+            associado=True,
+            criado_por_id=current_user.id,
+        )
+        db.session.add(exame)
         db.session.commit()
 
-        flash("Modelo de preparo cadastrado com sucesso.", "success")
+        # Pedido do Silvan (2026-09-10): avisa o médico, no próprio
+        # WhatsApp, que já pode testar - toda vez que cadastra um preparo
+        # (não só no primeiro), decisão do Silvan. Só quando quem cadastra
+        # é o PRÓPRIO médico (eh_medico()) - se foi o dono/secretária quem
+        # cadastrou em nome de um médico da equipe, não faz sentido mandar
+        # essa mensagem pro médico sem ele ter feito nada agora.
+        if eh_medico():
+            enviar_preparo_cadastrado_whatsapp(current_user)
+
+        flash("Modelo de preparo cadastrado com sucesso — o exame correspondente também foi criado.", "success")
+        if wizard:
+            return redirect(url_for("medico.primeiros_passos"))
         return redirect(url_for("medico.preparo_modelos_lista"))
 
-    return render_template("medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+    return render_template(
+        "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
+        medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
+        wizard=wizard, medicos=medicos, eh_medico_logado=eh_medico(),
+    )
 
 
 @medico_bp.route("/preparo-modelos/<int:modelo_id>/editar", methods=["GET", "POST"])
@@ -1542,22 +1831,108 @@ def preparo_modelos_editar(modelo_id):
         )
         return redirect(url_for("medico.preparo_modelos_lista"))
 
+    filiais = _filiais_da_empresa()
+    medicos = medicos_das_filiais(filiais)
+    # Restruturação de 2026-09: o exame "gêmeo" deste modelo (mesmo nome,
+    # ver preparo_modelos_novo) só é editado por aqui quando o vínculo é 1
+    # para 1. Modelos antigos compartilhados por vários exames ao mesmo
+    # tempo (ex.: os 3 substratos do Teste de Hidrogênio, ver seed.py)
+    # continuam existindo como estão - os campos de exame ficam
+    # ocultos/bloqueados nesse caso (decisão do Silvan: evitar editar em
+    # massa por engano; para separar, peça suporte). Modelo sem NENHUM
+    # exame vinculado (ex.: exame apagado à parte antes desta
+    # restruturação) ganha um exame novo ao salvar, auto-curando o caso.
+    varios_exames_vinculados = len(modelo.exames) > 1
+    exame_vinculado = modelo.exames[0] if len(modelo.exames) == 1 else None
+
+    def _rerender_editar():
+        return render_template(
+            "medico/preparo_modelo_form.html", modelo=modelo, sugestao=None,
+            medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
+            medicos=medicos, exame_vinculado=exame_vinculado,
+            varios_exames_vinculados=varios_exames_vinculados, eh_medico_logado=eh_medico(),
+        )
+
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
         if not nome:
             flash("Informe o nome do modelo.", "danger")
-            return render_template("medico/preparo_modelo_form.html", modelo=modelo, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+            return _rerender_editar()
+
+        duracao_minutos = request.form.get("duracao_minutos", type=int)
+        precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
+        medico_id = None
+        medico_confirmado = True
+
+        if not varios_exames_vinculados:
+            # Nome também é o nome do exame (gêmeo, existente ou a criar
+            # agora) - precisa continuar único entre exames, exceto contra
+            # ele mesmo.
+            colisao = Exame.query.filter(
+                filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id), Exame.nome == nome
+            )
+            if exame_vinculado:
+                colisao = colisao.filter(Exame.id != exame_vinculado.id)
+            if colisao.first():
+                flash(
+                    "Já existe um exame com esse nome. Escolha um nome diferente (o mesmo nome é "
+                    "usado pelo exame associado a este modelo).",
+                    "danger",
+                )
+                return _rerender_editar()
+
+            # Médico: se ninguém trocou a escolha no formulário, mantém o
+            # que já estava (não reatribui o exame a outro médico sem
+            # querer a cada edição). Só cai num provisório
+            # (medico_confirmado=False) se está criando o exame agora e
+            # ninguém escolheu nada ainda (ver preparo_modelos_novo).
+            if eh_medico():
+                medico_id = exame_vinculado.medico_id if exame_vinculado else current_user.id
+            elif medicos:
+                medico_id_raw = request.form.get("medico_id", "").strip()
+                medico_escolhido = next((m for m in medicos if str(m.id) == medico_id_raw), None)
+                if medico_escolhido:
+                    medico_id = medico_escolhido.id
+                elif exame_vinculado:
+                    medico_id = exame_vinculado.medico_id
+                    medico_confirmado = exame_vinculado.medico_confirmado
+                else:
+                    medico_id = medicos[0].id
+                    medico_confirmado = False
+            else:
+                flash("Cadastre um médico na equipe antes de continuar.", "danger")
+                return _rerender_editar()
 
         modelo.nome = nome
         modelo.instrucoes = request.form.get("instrucoes", "").strip()
         modelo.observacoes_medicamentos = request.form.get("observacoes_medicamentos", "").strip() or None
         _salvar_cortes_e_medicamentos(modelo, request.form)
+
+        if not varios_exames_vinculados:
+            if exame_vinculado:
+                exame_vinculado.nome = nome
+                exame_vinculado.duracao_minutos = duracao_minutos
+                exame_vinculado.precisa_acompanhante = precisa_acompanhante
+                exame_vinculado.medico_id = medico_id
+                exame_vinculado.medico_confirmado = medico_confirmado
+                exame_vinculado.associado = True
+            else:
+                db.session.add(Exame(
+                    grupo_id=modelo.grupo_id,
+                    medico_id=medico_id, nome=nome, descricao="",
+                    preparo_modelo_id=modelo.id,
+                    duracao_minutos=duracao_minutos,
+                    precisa_acompanhante=precisa_acompanhante,
+                    medico_confirmado=medico_confirmado, associado=True,
+                    criado_por_id=current_user.id,
+                ))
+
         db.session.commit()
 
         flash("Modelo de preparo atualizado.", "success")
         return redirect(url_for("medico.preparo_modelos_lista"))
 
-    return render_template("medico/preparo_modelo_form.html", modelo=modelo, sugestao=None, medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all())
+    return _rerender_editar()
 
 
 @medico_bp.route("/preparo-modelos/<int:modelo_id>/remover", methods=["POST"])
@@ -1587,18 +1962,165 @@ def preparo_modelos_remover(modelo_id):
     return redirect(url_for("medico.preparo_modelos_lista"))
 
 
+def _processar_stream_de_ia_pdf(pdf_bytes):
+    """Envolve `extrair_sugestao_de_pdf_com_ia_stream` persistindo um
+    `ChamadaIA` (ver app.custo_ia, e o painel de custo por usuário em
+    app.routes_dono) pra cada chamada que chegou a gerar custo real -
+    repassa pra quem chama só os eventos "tentando"/"resultado" (os
+    únicos que importam pra montar a tela de revisão), consumindo o
+    evento "uso" aqui dentro.
+
+    O sucesso/falha de cada chamada só é conhecido UM evento depois (ver
+    docstring de extrair_sugestao_de_pdf_com_ia_stream) - por isso o uso
+    fica "pendente" até o próximo "tentando" (senha de que o anterior
+    falhou) ou "resultado" (que já diz se aquele uso foi o vencedor).
+
+    Usado tanto pelo caminho síncrono (`_extrair_via_cadeia_de_ia`)
+    quanto pelo caminho com streaming de progresso
+    (`_importar_pdf_com_progresso`) - assim o registro de custo não fica
+    duplicado entre os dois."""
+    uso_pendente = None
+
+    def _persistir(sucesso):
+        registrar_chamada_ia(
+            "importacao_pdf_preparo", uso_pendente["provedor"], uso_pendente["modelo"],
+            uso_pendente["tokens_entrada"], uso_pendente["tokens_saida"],
+            sucesso=sucesso, usuario_id=current_user.id,
+        )
+        db.session.commit()
+
+    for evento, valor in extrair_sugestao_de_pdf_com_ia_stream(pdf_bytes):
+        if evento == "tentando":
+            if uso_pendente:
+                _persistir(sucesso=False)
+                uso_pendente = None
+            yield (evento, valor)
+        elif evento == "uso":
+            uso_pendente = valor
+        elif evento == "resultado":
+            if uso_pendente:
+                _persistir(sucesso=valor is not None)
+                uso_pendente = None
+            yield (evento, valor)
+
+
+def _extrair_via_cadeia_de_ia(pdf_bytes):
+    """Drena `_processar_stream_de_ia_pdf` até o fim, sem streaming de
+    progresso (usado no caminho síncrono de sempre, ex.: chamada direta
+    à rota sem JS/fetch, ou nos testes automatizados). Devolve
+    `(sugestao, provedor_usado)` - `provedor_usado` é o nome do provedor
+    que efetivamente teve sucesso (ex.: "Gemini"), ou None se nenhum
+    provedor devolveu dado (quem chama cai pra extração heurística por
+    regex nesse caso)."""
+    ultimo_provedor_tentado = None
+    sugestao = None
+    for evento, valor in _processar_stream_de_ia_pdf(pdf_bytes):
+        if evento == "tentando":
+            ultimo_provedor_tentado = valor
+        elif evento == "resultado":
+            sugestao = valor
+    provedor_usado = ultimo_provedor_tentado if sugestao is not None else None
+    return sugestao, provedor_usado
+
+
+def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None):
+    """Mensagem + tela de revisão comuns aos três caminhos de importação
+    de PDF (com IA via streaming de progresso, com IA sem streaming, e
+    sem IA/extração local no navegador). `provedor_usado` (ex.: "Gemini")
+    aparece no aviso pra quem importou saber qual IA realmente
+    respondeu, já que agora existem 3 provedores possíveis na cadeia
+    (ver app.ia_pdf_preparo)."""
+    if provedor_usado:
+        flash(
+            f"Dados extraídos do PDF via {provedor_usado}. Revise com cuidado antes de salvar — "
+            "a extração é automática e pode ter interpretado algo errado.",
+            "warning",
+        )
+    else:
+        flash(
+            "Dados extraídos do PDF. Revise com cuidado antes de salvar — a extração é "
+            "automática e pode ter interpretado algo errado.",
+            "warning",
+        )
+    # Renderiza a tela de revisão direto aqui (sem redirect) em vez de
+    # guardar a sugestão na sessão - o texto extraído de um PDF de preparo
+    # pode ser longo o bastante para estourar o limite de 4KB do cookie de
+    # sessão do Flask, o que já causou um 502 (nginx recusando "upstream
+    # sent too big header" por causa do cookie gigante) em produção com um
+    # PDF real. Mesma tela e mesmo contexto que o GET de
+    # /preparo-modelos/novo?de_importacao=1 usaria, só que sem depender do
+    # cookie para carregar o payload.
+    return render_template(
+        "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
+        medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
+        medicos=medicos_das_filiais(_filiais_da_empresa()), eh_medico_logado=eh_medico(),
+    )
+
+
+def _importar_pdf_com_progresso(pdf_bytes):
+    """Generator usado como corpo de uma resposta em streaming (ver a
+    rota `preparo_modelos_importar_xlsx`, campo `mostrar_progresso_ia`) -
+    emite um evento de progresso (formato "Server-Sent Events"
+    simplificado, texto puro) logo antes de cada tentativa de provedor
+    de IA, e por fim um evento "final" com a página de revisão já
+    renderizada (ou de volta pro formulário de importação, com um flash
+    de erro, se nem a IA nem a extração heurística conseguirem ler o
+    PDF).
+
+    O parseamento no navegador é feito manualmente via
+    `response.body.getReader()` (ver o JS em
+    medico/preparo_modelo_form.html) - não é EventSource de verdade (que
+    só suporta GET), é só o mesmo formato de texto reaproveitado sobre
+    uma resposta de POST comum, lido aos pedaços em vez de esperar o
+    corpo inteiro."""
+    ultimo_provedor_tentado = None
+    sugestao = None
+    for evento, valor in _processar_stream_de_ia_pdf(pdf_bytes):
+        if evento == "tentando":
+            ultimo_provedor_tentado = valor
+            yield f"data: {json.dumps({'provedor': valor})}\n\n"
+        elif evento == "resultado":
+            sugestao = valor
+
+    provedor_usado = ultimo_provedor_tentado if sugestao is not None else None
+
+    if sugestao is None:
+        try:
+            sugestao = extrair_sugestao_de_pdf(io.BytesIO(pdf_bytes))
+        except Exception:
+            flash(
+                "Não foi possível ler esse PDF. Ele pode estar corrompido, protegido por senha, ou ser "
+                "uma imagem escaneada sem texto selecionável — nesse caso, cadastre o modelo manualmente.",
+                "danger",
+            )
+            html = render_template("medico/preparo_modelo_importar_xlsx.html")
+            yield f"event: final\ndata: {json.dumps({'html': html})}\n\n"
+            return
+
+    html = _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado)
+    yield f"event: final\ndata: {json.dumps({'html': html})}\n\n"
+
+
 @medico_bp.route("/preparo-modelos/importar-xlsx", methods=["GET", "POST"])
 @login_required
 @staff_required
 def preparo_modelos_importar_xlsx():
     """Importa um modelo de preparo a partir de um arquivo Excel (.xlsx) ou
-    PDF - PDF é lido diretamente pela IA (ver app.ia_pdf_preparo), com
-    fallback automático e silencioso pra extração heurística por regex
-    (app.pdf_preparo) se a IA não estiver configurada ou a leitura falhar
-    por qualquer motivo. Substitui o antigo fluxo em duas etapas (gerar
-    Excel a partir do PDF, revisar/ajustar no Excel, reimportar aqui) -
-    agora o PDF vem direto pra tela de revisão, igual já acontecia com o
-    Excel."""
+    PDF - PDF é lido diretamente pela IA (ver app.ia_pdf_preparo) por
+    padrão, com fallback automático e silencioso pra extração heurística
+    por regex (app.pdf_preparo) se a IA não estiver configurada ou a
+    leitura falhar por qualquer motivo. Substitui o antigo fluxo em duas
+    etapas (gerar Excel a partir do PDF, revisar/ajustar no Excel,
+    reimportar aqui) - agora o PDF vem direto pra tela de revisão, igual já
+    acontecia com o Excel.
+
+    Quem sobe o arquivo pode desmarcar "Usar IA" na tela (ver
+    medico/preparo_modelo_form.html) para evitar o custo/instabilidade do
+    Gemini - nesse caso o texto do PDF é extraído no NAVEGADOR (pdfjs, sem
+    custo nenhum pro servidor) e mandado aqui pronto no campo
+    `texto_extraido_cliente`; o servidor nunca chega a processar o PDF em
+    si nesse caminho, só aplica a mesma extração heurística de
+    app.pdf_preparo no texto recebido."""
     if request.method == "POST":
         arquivo = request.files.get("arquivo_xlsx")
         if not arquivo or not arquivo.filename:
@@ -1608,8 +2130,33 @@ def preparo_modelos_importar_xlsx():
         nome_arquivo = arquivo.filename.lower()
 
         if nome_arquivo.endswith(".pdf"):
+            texto_extraido_cliente = (request.form.get("texto_extraido_cliente") or "").strip()
+
+            if texto_extraido_cliente:
+                # Caminho "sem IA": o texto já veio pronto do navegador
+                # (pdfjs) - nunca chama o Gemini nem sequer olha os bytes do
+                # PDF, só aplica a extração heurística por regex.
+                sugestao = extrair_sugestao_de_texto(texto_extraido_cliente)
+                return _renderizar_revisao_de_preparo_importado(sugestao)
+
             pdf_bytes = arquivo.stream.read()
-            sugestao = extrair_sugestao_de_pdf_com_ia(pdf_bytes)
+
+            # A tela de importação (ver medico/preparo_modelo_form.html)
+            # manda esse campo só quando o próprio JS está no controle da
+            # submissão (fetch, não navegação normal do form) - é o que
+            # permite mostrar em tempo real qual provedor de IA está sendo
+            # tentado (Gemini/ChatGPT/Claude), em vez de um spinner
+            # genérico parado por até ~120s. Sem esse campo (ex.: chamada
+            # direta à rota, como nos testes automatizados, ou navegador
+            # com JS desabilitado), cai no caminho de sempre, síncrono e
+            # sem streaming.
+            if request.form.get("mostrar_progresso_ia") == "1":
+                return Response(
+                    stream_with_context(_importar_pdf_com_progresso(pdf_bytes)),
+                    mimetype="text/event-stream",
+                )
+
+            sugestao, provedor_usado = _extrair_via_cadeia_de_ia(pdf_bytes)
             if sugestao is None:
                 try:
                     sugestao = extrair_sugestao_de_pdf(io.BytesIO(pdf_bytes))
@@ -1620,14 +2167,7 @@ def preparo_modelos_importar_xlsx():
                         "danger",
                     )
                     return render_template("medico/preparo_modelo_importar_xlsx.html")
-
-            session["preparo_sugestao_importada"] = sugestao
-            flash(
-                "Dados extraídos do PDF. Revise com cuidado antes de salvar — a extração é "
-                "automática e pode ter interpretado algo errado.",
-                "warning",
-            )
-            return redirect(url_for("medico.preparo_modelos_novo", de_importacao=1))
+            return _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado)
 
         try:
             sugestoes = extrair_sugestoes_de_xlsx(arquivo.stream)
@@ -1792,6 +2332,15 @@ def agenda_novo():
         )
         db.session.add(agendamento)
         db.session.commit()
+        # Pedido do Silvan (2026-09-10): avisar o paciente no WhatsApp que
+        # o agendamento foi criado (data/hora + lembrete de que aquele
+        # número é o canal para dúvidas sobre o preparo) - só na CRIAÇÃO
+        # inicial (não em edição/reagendamento), e só aqui, que é o único
+        # lugar do sistema onde um agendamento REAL é criado (ver
+        # enviar_agendamento_criado_whatsapp em app/whatsapp_envio.py;
+        # nunca chamada para o agendamento sintético de
+        # _garantir_agendamento_teste, usado só por "Testar IA").
+        enviar_agendamento_criado_whatsapp(agendamento)
         flash("Agendamento criado com sucesso.", "success")
         return redirect(url_for("medico.agenda"))
 
@@ -2001,6 +2550,31 @@ def atendimento(agendamento_id):
     )
 
 
+@medico_bp.route("/agenda/<int:agendamento_id>/encerrar-rapido", methods=["POST"])
+@login_required
+@staff_required
+def atendimento_encerrar_rapido(agendamento_id):
+    """Encerra o agendamento com um único clique, sem abrir a tela de
+    atendimento nem exigir nenhuma observação (pedido do Silvan,
+    2026-09-25, pra quando não há nada a anotar). Propositalmente NÃO
+    toca em `notas_atendimento` - só a rota `atendimento` (acima) escreve
+    nesse campo, pra nunca zerar uma nota já existente."""
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
+    )
+    if eh_medico():
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    agendamento = query.first_or_404()
+
+    if not agendamento.encerrado_em:
+        agendamento.encerrado_em = datetime.utcnow()
+        db.session.commit()
+        flash("Atendimento encerrado.", "success")
+
+    return redirect(request.referrer or url_for("medico.medico_agenda_pessoal"))
+
+
 # ---------- Resultado de exame (upload de PDF) ----------
 
 def _pasta_resultados():
@@ -2066,7 +2640,6 @@ def perguntas_pendentes():
     # Respostas que a IA já rascunhou e estão esperando o médico revisar,
     # editar se precisar, e aprovar antes de irem para o paciente.
     aguardando_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "aguardando_aprovacao")
-    respondidas_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "respondida")
 
     if eh_medico():
         # O médico só acompanha perguntas sobre exames de sua
@@ -2077,13 +2650,671 @@ def perguntas_pendentes():
         # OUTRO médico. Ver _restringir_perguntas_para_medico.
         pendentes_q = _restringir_perguntas_para_medico(pendentes_q)
         aguardando_q = _restringir_perguntas_para_medico(aguardando_q)
-        respondidas_q = _restringir_perguntas_para_medico(respondidas_q)
 
     pendentes = pendentes_q.order_by(PerguntaPendente.criado_em.desc()).all()
     aguardando = aguardando_q.order_by(PerguntaPendente.criado_em.desc()).all()
-    respondidas = respondidas_q.order_by(PerguntaPendente.respondida_em.desc()).limit(20).all()
+
     return render_template(
-        "medico/perguntas.html", pendentes=pendentes, aguardando=aguardando, respondidas=respondidas,
+        "medico/perguntas.html", pendentes=pendentes, aguardando=aguardando,
+    )
+
+
+@medico_bp.route("/perguntas/configuracao", methods=["POST"])
+@login_required
+@staff_required
+def perguntas_configuracao():
+    """Pedido do Silvan (2026-09-13): liga/desliga a exigência de aprovação
+    do médico antes de uma resposta de alimento/medicamento (calculada a
+    partir do preparo cadastrado) ou da IA ir para o paciente (ver
+    Grupo.aprovacao_perguntas_paciente / Usuario.
+    aprovacao_perguntas_paciente, e app.routes_paciente.
+    exige_aprovacao_pergunta, chamada tanto pelo chat web quanto pelo
+    WhatsApp). Vale para todo o Grupo (equipe) quando há um; numa conta
+    solo (sem Grupo), vale só para a própria conta. A base de FAQ (pergunta
+    já respondida e aprovada antes) nunca passa por essa checagem - sempre
+    responde direto, com ou sem este parâmetro.
+
+    O controle morava só no portal de atendimento rápido (pedido do
+    Silvan, 2026-09-14: "não deveria ficar no portal?"); movido pro painel
+    principal em 2026-09-25 (pedido do Silvan, mesmo padrão de reorganização
+    do painel daquele dia) - mesmo padrão de "origem" já usado em
+    medico.perguntas_responder para voltar pra tela certa depois."""
+    origem = request.form.get("origem")
+    if origem == "painel":
+        destino = "medico.dashboard"
+    elif origem == "portal":
+        # Compatibilidade com algum formulário antigo ainda em cache no
+        # navegador de alguém - a tela não tem mais este controle, mas a
+        # rota continua entendendo o valor antigo.
+        destino = "medico.portal_atendimento"
+    else:
+        destino = "medico.perguntas_pendentes"
+    # Checkbox desmarcado não é enviado pelo navegador (padrão HTML) - a
+    # ausência do campo já significa "desativar".
+    ativar = request.form.get("aprovacao_ativa") == "1"
+    grupo_atual = empresa_atual()
+    if grupo_atual:
+        grupo_atual.aprovacao_perguntas_paciente = ativar
+    else:
+        current_user.aprovacao_perguntas_paciente = ativar
+    db.session.commit()
+    flash(
+        "Aprovação do médico reativada: novas respostas de alimento/medicamento/IA voltam a esperar sua revisão."
+        if ativar else
+        "Aprovação do médico desativada: novas respostas de alimento/medicamento/IA vão direto para o paciente, sem esperar sua revisão.",
+        "success",
+    )
+    return redirect(url_for(destino))
+
+
+@medico_bp.route("/perguntas/respondidas")
+@login_required
+@staff_required
+def perguntas_respondidas():
+    # Tela separada da fila de pendentes (que fica só com o que exige ação)
+    # para não poluir a tela principal com histórico - ver pedido do Silvan
+    # de "despoluir" a tela de perguntas pendentes.
+    escopo = filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id)
+    respondidas_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "respondida")
+
+    if eh_medico():
+        respondidas_q = _restringir_perguntas_para_medico(respondidas_q)
+
+    respondidas = respondidas_q.order_by(PerguntaPendente.respondida_em.desc()).limit(20).all()
+    return render_template("medico/perguntas_respondidas.html", respondidas=respondidas)
+
+
+@medico_bp.route("/portal")
+@login_required
+@staff_required
+def portal_atendimento():
+    """Portal de atendimento rápido: versão enxuta da fila de perguntas
+    pendentes (mesmos dados de medico.perguntas_pendentes, mesmo login e
+    permissões), sem o menu/barra lateral do app completo — pensada para o
+    médico deixar como um atalho separado na tela de início do celular e
+    abrir só para responder rápido, sem navegar pelo resto do sistema. É um
+    acesso ADICIONAL: o painel completo continua funcionando normalmente,
+    nada muda para quem usa só o menu de sempre."""
+    escopo = filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id)
+    pendentes_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "pendente")
+    aguardando_q = PerguntaPendente.query.filter(escopo, PerguntaPendente.status == "aguardando_aprovacao")
+
+    if eh_medico():
+        pendentes_q = _restringir_perguntas_para_medico(pendentes_q)
+        aguardando_q = _restringir_perguntas_para_medico(aguardando_q)
+
+    pendentes = pendentes_q.order_by(PerguntaPendente.criado_em.desc()).all()
+    aguardando = aguardando_q.order_by(PerguntaPendente.criado_em.desc()).all()
+
+    # Histórico de conversas do paciente (mesma fonte usada em
+    # medico.atendimento, aqui sem filtrar por agendamento específico) - dá
+    # contexto pro médico antes de responder, sem precisar abrir o app
+    # completo. Limitação já existente (não introduzida aqui): para
+    # perguntas encaminhadas (origem "pendente"/"ia_aguardando"), o campo
+    # ChatMensagem.resposta fica em branco mesmo depois de respondidas — a
+    # resposta de verdade mora em PerguntaPendente.resposta, mostrada à
+    # parte no card da própria pergunta.
+    historico_por_paciente = {}
+    for p in pendentes + aguardando:
+        if p.paciente_id not in historico_por_paciente:
+            historico_por_paciente[p.paciente_id] = (
+                ChatMensagem.query.filter_by(paciente_id=p.paciente_id)
+                .order_by(ChatMensagem.criado_em.desc())
+                .limit(15)
+                .all()
+            )
+
+    # O parâmetro de aprovação (ver medico.perguntas_configuracao) morava
+    # aqui no portal; movido pro painel principal em 2026-09-25 (pedido do
+    # Silvan) - não é mais calculado/exibido nesta tela.
+
+    return render_template(
+        "portal/atendimento.html",
+        pendentes=pendentes, aguardando=aguardando,
+        historico_por_paciente=historico_por_paciente,
+    )
+
+
+_LICENCA_LABELS = {
+    "trial": ("Em teste", "info"),
+    "ativa": ("Ativa", "success"),
+    "inadimplente": ("Pendente de pagamento", "warning"),
+    "bloqueada": ("Bloqueada", "danger"),
+}
+
+
+@medico_bp.route("/minha-licenca")
+@login_required
+@staff_required
+def minha_licenca():
+    """Fatia 8 (licença individual): tela informativa pro médico ver quando
+    sua licença vence - a cobrança é por médico, não por Grupo, e vale desde
+    o cadastro (decisão do Silvan). Por enquanto é só informativo: vencer
+    não bloqueia o acesso (ver Usuario.verificar_vencimento_licenca)."""
+    if not eh_medico():
+        flash("Essa tela é só para contas de médico.", "warning")
+        return redirect(url_for("medico.dashboard"))
+
+    novos_meses = garantir_meses_licenca(current_user)
+    mudou_status = current_user.verificar_vencimento_licenca()
+    if mudou_status or novos_meses:
+        db.session.commit()
+
+    label, cor = _LICENCA_LABELS.get(current_user.licenca_status, (current_user.licenca_status, "secondary"))
+    pagamentos = (
+        LicencaPagamento.query.filter_by(usuario_id=current_user.id)
+        .order_by(LicencaPagamento.mes.desc())
+        .all()
+    )
+    # Pedido do Silvan (2026-09-10, licença anual): o mês vigente é o
+    # "âncora" do ciclo anual (ver medico.licenca_escolher_ciclo) - achar
+    # ele aqui pra saber se já existe um pagamento anual pendente
+    # (mp_init_point preenchido, ainda não pago) a oferecer no botão
+    # "Pagar agora (anual)".
+    mes_atual = _primeiro_dia_do_mes_licenca(date.today())
+    pagamento_mes_atual = next((p for p in pagamentos if p.mes == mes_atual), None)
+    valor_anual_disponivel = current_user.valor_licenca_anual or PlataformaConfig.obter().valor_licenca_anual_padrao
+
+    return render_template(
+        "medico/minha_licenca.html",
+        licenca_status=current_user.licenca_status,
+        licenca_label=label,
+        licenca_cor=cor,
+        licenca_vencimento=current_user.licenca_vencimento,
+        pagamentos=pagamentos,
+        ciclo_licenca=current_user.ciclo_licenca,
+        pode_trocar_ciclo=current_user.pode_trocar_ciclo_licenca(),
+        valor_anual_disponivel=valor_anual_disponivel,
+        pagamento_mes_atual=pagamento_mes_atual,
+        agora=datetime.utcnow(),
+    )
+
+
+def _primeiro_dia_do_mes_licenca(d):
+    """Mesma regra de app.models._primeiro_dia_do_mes (não exportada de
+    lá) - normaliza uma data pro dia 1 do mês, pra comparar com
+    LicencaPagamento.mes."""
+    return date(d.year, d.month, 1)
+
+
+@medico_bp.route("/minha-licenca/ciclo", methods=["POST"])
+@login_required
+@staff_required
+def licenca_escolher_ciclo():
+    """Pedido do Silvan (2026-09-10): o médico escolhe, sozinho, entre
+    cobrança MENSAL (padrão) e ANUAL (valor independente, configurado pelo
+    dono - ver PlataformaConfig.valor_licenca_anual_padrao/
+    Usuario.valor_licenca_anual). Só permite a troca quando não há
+    pendência de meses ANTERIORES ao vigente (ver
+    Usuario.pode_trocar_ciclo_licenca) - o mês atual em aberto não
+    atrapalha.
+
+    Ao trocar PARA "anual", já gera a cobrança real no Mercado Pago na
+    hora (autoatendimento - decisão do Silvan de não depender do dono
+    clicar em nada, diferente do fluxo mensal onde é sempre o dono quem
+    gera a cobrança) - se a geração falhar (Mercado Pago não configurado,
+    etc.), o ciclo ainda assim muda para "anual", só o link de pagamento
+    fica pendente (o dono pode gerar depois em /dono/usuarios, ou o
+    médico tenta de novo mais tarde reabrindo esta tela - ver o botão
+    "Gerar cobrança" condicional no template)."""
+    if not eh_medico():
+        flash("Essa tela é só para contas de médico.", "warning")
+        return redirect(url_for("medico.dashboard"))
+
+    novo_ciclo = request.form.get("ciclo")
+    if novo_ciclo not in ("mensal", "anual"):
+        flash("Escolha um ciclo de cobrança válido.", "danger")
+        return redirect(url_for("medico.minha_licenca"))
+
+    if novo_ciclo == current_user.ciclo_licenca:
+        return redirect(url_for("medico.minha_licenca"))
+
+    if not current_user.pode_trocar_ciclo_licenca():
+        flash(
+            "Você tem meses anteriores em aberto - regularize o pagamento pendente antes de "
+            "trocar o ciclo de cobrança.",
+            "danger",
+        )
+        return redirect(url_for("medico.minha_licenca"))
+
+    if novo_ciclo == "anual":
+        valor_anual = current_user.valor_licenca_anual or PlataformaConfig.obter().valor_licenca_anual_padrao
+        if not valor_anual:
+            flash(
+                "Ainda não há um valor de licença anual configurado - fale com o administrador da "
+                "plataforma antes de escolher essa opção.",
+                "danger",
+            )
+            return redirect(url_for("medico.minha_licenca"))
+
+        if current_user.valor_licenca_anual is None:
+            # Mesma lógica de "fotografia" já usada pra valor_licenca_mensal
+            # no cadastro: trava o valor individual do médico no valor
+            # padrão vigente, sem depender do padrão global mudar depois.
+            current_user.valor_licenca_anual = valor_anual
+
+        current_user.ciclo_licenca = "anual"
+        db.session.commit()
+
+        garantir_meses_licenca(current_user)
+        db.session.commit()
+        mes_atual = _primeiro_dia_do_mes_licenca(date.today())
+        pagamento_mes_atual = LicencaPagamento.query.filter_by(
+            usuario_id=current_user.id, mes=mes_atual
+        ).first()
+
+        try:
+            criar_preferencia_pagamento_anual(pagamento_mes_atual, valor_anual)
+            db.session.commit()
+            flash(
+                "Ciclo de cobrança alterado para anual. Use o botão \"Pagar agora\" abaixo para "
+                "concluir o pagamento no Mercado Pago.",
+                "success",
+            )
+        except MercadoPagoNaoConfigurado:
+            flash(
+                "Ciclo alterado para anual, mas o Mercado Pago ainda não está configurado nesta "
+                "instalação - fale com o administrador para gerar o link de pagamento.",
+                "warning",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Falha ao criar cobrança anual no Mercado Pago para o usuário %s.", current_user.id
+            )
+            flash(
+                "Ciclo alterado para anual, mas não foi possível gerar o link de pagamento agora - "
+                "tente novamente reabrindo esta tela.",
+                "warning",
+            )
+        return redirect(url_for("medico.minha_licenca"))
+
+    # novo_ciclo == "mensal": só muda a preferência - o calendário mensal
+    # já existente continua funcionando exatamente como antes (nenhum mês
+    # precisa ser desfeito; se algum mês futuro já tivesse sido marcado
+    # como pago por um ciclo anual anterior, ele continua pago).
+    current_user.ciclo_licenca = "mensal"
+    db.session.commit()
+    flash("Ciclo de cobrança alterado para mensal.", "success")
+    return redirect(url_for("medico.minha_licenca"))
+
+
+@medico_bp.route("/minha-licenca/pagamentos/<int:pagamento_id>/pix", methods=["POST"])
+@login_required
+@staff_required
+def minha_licenca_gerar_pix(pagamento_id):
+    """Pedido do Silvan (2026-09-25): autoatendimento - o próprio médico
+    gera o QR code Pix pra um mês em aberto, direto em "Minha licença",
+    sem depender do dono clicar em nada (Pix é sempre ADICIONAL ao link
+    de Checkout Pro que o dono possa ter gerado - ver
+    app.mercadopago_integration.criar_cobranca_pix). Funciona tanto pra um
+    mês mensal comum quanto pro mês-âncora de um ciclo anual (o
+    `pagamento_id` já identifica exatamente qual registro).
+
+    Cada clique gera um Pix NOVO (expira em ~30min, então reabrir esta
+    rota depois de expirado é o caminho esperado pra "gerar de novo" - sem
+    verificação especial de expiração aqui, o botão no template já cobre
+    isso, ver minha_licenca.html)."""
+    if not eh_medico():
+        flash("Essa tela é só para contas de médico.", "warning")
+        return redirect(url_for("medico.dashboard"))
+
+    pagamento = LicencaPagamento.query.get_or_404(pagamento_id)
+    if pagamento.usuario_id != current_user.id:
+        abort(404)
+    if pagamento.pago:
+        flash("Este mês já está pago.", "warning")
+        return redirect(url_for("medico.minha_licenca"))
+
+    try:
+        criar_cobranca_pix(pagamento)
+    except MercadoPagoNaoConfigurado:
+        flash(
+            "O pagamento por Pix ainda não está disponível nesta instalação - fale com o "
+            "administrador da plataforma.",
+            "danger",
+        )
+        return redirect(url_for("medico.minha_licenca"))
+    except ValueError as erro:
+        flash(str(erro), "danger")
+        return redirect(url_for("medico.minha_licenca"))
+    except Exception:
+        current_app.logger.exception(
+            "Falha ao gerar Pix no Mercado Pago para o pagamento %s.", pagamento.id
+        )
+        flash("Não foi possível gerar o Pix agora - tente novamente em instantes.", "danger")
+        return redirect(url_for("medico.minha_licenca"))
+
+    db.session.commit()
+    flash(f"Pix gerado para o mês {pagamento.mes.strftime('%m/%Y')} - escaneie ou copie o código abaixo.", "success")
+    return redirect(url_for("medico.minha_licenca"))
+
+
+class PacienteMedicoConflitanteError(Exception):
+    """Levantada por _paciente_teste_do_medico quando o CPF do médico já
+    pertence a um Paciente de OUTRA pessoa (cadastrado_por_id diferente) -
+    ver docstring da função para o motivo de não tentar resolver isso
+    sozinho."""
+
+
+def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
+    """Get-or-create do Paciente do próprio médico - um por médico, criado
+    sob demanda na primeira vez que ele testa a IA (ou já no cadastro
+    dele, ver abaixo).
+
+    Pedido do Silvan (2026-09-10, revisão desta mesma data): esse cadastro
+    DEIXOU de ser um Paciente "de teste" (o campo Paciente.eh_teste, que
+    o excluía de toda lista/contagem/relatório via
+    _filtro_pacientes_da_empresa, não é mais usado aqui) - agora é um
+    Paciente REAL como outro qualquer, criado desde o cadastro do médico,
+    para que ele possa aprender a usar o sistema (agenda, atendimento,
+    WhatsApp) na própria pele antes de usar com pacientes de verdade.
+    Decisão explícita do Silvan, ciente de que isso o faz aparecer na
+    agenda/relatórios/faturamento da própria clínica dele.
+
+    `enviar_boas_vindas=False` (pedido do Silvan, 2026-09-10): usado só
+    por auth.cadastro, que já manda a mensagem de boas-vindas ele mesmo
+    (com um aviso extra pedindo pra cadastrar um preparo antes de testar,
+    ver enviar_boas_vindas_whatsapp) - evita mandar a mensagem em
+    DOBRO (uma sem aviso, daqui de dentro, e outra com aviso, de lá).
+    Qualquer outro chamador (ex.: medico.testar_ia, pra médicos
+    cadastrados antes desta mudança que ainda não têm esse paciente)
+    continua com o comportamento de sempre.
+
+    Pedido do Silvan (2026-09-06): usa o TELEFONE do próprio médico
+    (Usuario.telefone, informado no cadastro dele) - assim, na primeira
+    vez que ele usa esta tela, recebe no próprio WhatsApp a mesma
+    mensagem de boas-vindas que um paciente de verdade recebe (ver
+    app.whatsapp_envio.enviar_boas_vindas_whatsapp), podendo testar o
+    fluxo completo (inclusive responder por lá) como se fosse paciente.
+
+    Usa também o CPF e a DATA DE NASCIMENTO reais do médico
+    (Usuario.cpf/Usuario.data_nascimento) - é isso que permite esse
+    cadastro ser ENCONTRADO pela identificação por CPF + data de
+    nascimento que o WhatsApp exige antes de aceitar perguntas (ver
+    app.whatsapp_conversa._localizar_paciente). Sem Usuario.data_nascimento
+    preenchida (médico cadastrado antes deste campo existir, ver
+    auth.meus_dados) a identificação pelo WhatsApp continua não
+    funcionando, mas a tela "Testar IA" funciona normalmente do mesmo
+    jeito - só o teste pelo canal do WhatsApp de verdade depende disso.
+
+    CPF já usado por OUTRA pessoa: localiza o Paciente do médico por
+    (cadastrado_por_id=medico.id) primeiro - se ele já existe, seu CPF é
+    só atualizado para acompanhar o do médico (ex.: corrigido depois em
+    "Meus dados"), sem checar conflito (é o mesmo registro, mudando o
+    próprio CPF). Só na CRIAÇÃO de um paciente novo para este médico, se o
+    CPF dele já pertencer a um Paciente com outro cadastrado_por_id (ex.:
+    o médico é paciente de verdade em outra clínica, ou dois médicos
+    diferentes compartilhando famnília/erro de digitação de CPF), a
+    criação é RECUSADA (levanta PacienteMedicoConflitanteError) em vez de
+    tentar resolver sozinha - diferente do mecanismo antigo (quando este
+    cadastro ainda era "de teste"), que sobrescrevia CPFs de órfãos
+    automaticamente porque sabia que eram descartáveis; agora que o
+    registro é um paciente real com histórico potencial de
+    agendamentos/mensagens, sobrescrever um CPF sozinho arriscaria misturar
+    ou perder dados de outra pessoa. Cabe a quem chamou decidir manualmente
+    (ex.: avisar o Silvan/dono para investigar o CPF duplicado).
+
+    Médico SEM CPF cadastrado: `Paciente.cpf` é NOT NULL no banco (embora
+    `Usuario.cpf` seja opcional, para não quebrar contas antigas de antes
+    de o CPF virar obrigatório no cadastro, ver auth.cadastro) - nesse
+    caso o paciente nasce com um CPF temporário sintético
+    (`SEM-CPF-<usuario.id>`, nunca reaproveitado de outro médico) só para
+    satisfazer a constraint; assim que o médico preencher o CPF de
+    verdade (em "Meus dados"), a próxima chamada aqui substitui o
+    sintético pelo real (mesmo caminho de "atualização" acima)."""
+    paciente = Paciente.query.filter_by(cadastrado_por_id=medico.id).first()
+    cpf_desejado = medico.cpf or f"SEM-CPF-{medico.id}"
+
+    if paciente:
+        # Mantém o cadastro em dia com os dados atuais do médico (ex.: ele
+        # preencheu a data de nascimento depois, em "Meus dados").
+        if cpf_desejado != paciente.cpf:
+            conflito = Paciente.query.filter(
+                Paciente.cpf == cpf_desejado, Paciente.id != paciente.id
+            ).first()
+            if conflito:
+                raise PacienteMedicoConflitanteError(
+                    f"O CPF {cpf_desejado} já pertence a outro paciente cadastrado "
+                    f"(id {conflito.id}, cadastrado por usuário {conflito.cadastrado_por_id}) - "
+                    "não é possível atualizar automaticamente."
+                )
+            paciente.cpf = cpf_desejado
+        paciente.nome = medico.nome
+        paciente.data_nascimento = medico.data_nascimento
+        paciente.telefone = medico.telefone
+        db.session.commit()
+        return paciente
+
+    conflito = Paciente.query.filter_by(cpf=cpf_desejado).first()
+    if conflito:
+        raise PacienteMedicoConflitanteError(
+            f"O CPF {cpf_desejado} já pertence a outro paciente cadastrado "
+            f"(id {conflito.id}, cadastrado por usuário {conflito.cadastrado_por_id}) - "
+            "não é possível criar o cadastro deste médico como paciente."
+        )
+
+    paciente = Paciente(
+        nome=medico.nome,
+        cpf=cpf_desejado,
+        data_nascimento=medico.data_nascimento,
+        telefone=medico.telefone,
+        cadastrado_por_id=medico.id,
+        status_cadastro="aprovado",
+    )
+    db.session.add(paciente)
+    db.session.commit()
+    # Só na criação (não em reaproveitamentos futuros do mesmo cadastro) -
+    # mesmo comportamento de "boas-vindas uma vez só" que vale para o
+    # cadastro de paciente de verdade. Ver docstring acima sobre
+    # `enviar_boas_vindas`.
+    if enviar_boas_vindas:
+        enviar_boas_vindas_whatsapp(paciente)
+    return paciente
+
+
+def _garantir_agendamento_teste(medico, paciente_teste, exame):
+    """Get-or-update do Agendamento sintético (sem 'data_hora' real, é só
+    uma âncora técnica) que representa "este exame está em preparo" para o
+    paciente de teste - sem ele, a identificação por WhatsApp funciona
+    (ver _paciente_teste_do_medico) mas a mensagem seguinte cai em
+    MENSAGEM_SEM_EXAME_ATIVO (ver app.whatsapp_conversa._agendamentos_ativos,
+    que só considera Agendamento com encerrado_em nulo) - a tela "Testar
+    IA" nunca cria agendamento nenhum, só chama a IA/FAQ direto para o
+    PreparoModelo escolhido.
+
+    Pedido do Silvan (2026-09-10, mesmo pedido da data de nascimento):
+    reaproveita um único agendamento de teste por médico (não um por
+    exame testado) e apenas TROCA o exame nele a cada teste - assim, ao
+    testar um exame diferente pela tela, o WhatsApp passa a mostrar esse
+    novo exame em foco, sem acumular um agendamento "fantasma" por exame
+    já testado alguma vez. Localizado por (paciente_id, encerrado_em nulo)
+    - se por algum motivo já existir mais de um (não deveria), usa o mais
+    recente e ignora os demais, sem apagá-los."""
+    agendamento = (
+        Agendamento.query.filter_by(paciente_id=paciente_teste.id, encerrado_em=None)
+        .order_by(Agendamento.id.desc())
+        .first()
+    )
+    agora = datetime.utcnow()
+    if agendamento:
+        agendamento.exame_id = exame.id
+        agendamento.medico_id = medico.id
+        agendamento.grupo_id = exame.grupo_id
+        agendamento.criado_por_id = exame.criado_por_id
+        agendamento.data_hora = agora
+        db.session.commit()
+        return agendamento
+
+    agendamento = Agendamento(
+        grupo_id=exame.grupo_id,
+        criado_por_id=exame.criado_por_id,
+        paciente_id=paciente_teste.id,
+        exame_id=exame.id,
+        medico_id=medico.id,
+        data_hora=agora,
+    )
+    db.session.add(agendamento)
+    db.session.commit()
+    return agendamento
+
+
+@medico_bp.route("/testar-ia", methods=["GET", "POST"])
+@login_required
+def testar_ia():
+    """Pedido do Silvan (2026-09-05): tela onde o médico faz perguntas de
+    teste à IA sobre os próprios preparos, para validar como o chat do
+    paciente responderia antes de confiar nele de verdade.
+
+    Decisão do Silvan: simular o FLUXO COMPLETO do paciente, não um atalho
+    à parte - por isso reaproveita exatamente o mesmo caminho de
+    app.routes_paciente.chat (responder_com_ia -> base de FAQ ->
+    alimento/medicamento -> fila de aprovação), inclusive a fila de
+    aprovação (medico.perguntas_pendentes) e o aprendizado de FAQ quando o
+    médico aprova uma resposta de teste (ver medico.perguntas_responder) -
+    o que também tem o efeito colateral desejável de já ir alimentando a
+    base de conhecimento com perguntas que o médico antecipa que pacientes
+    de verdade vão fazer. A chamada de IA conta no painel de custo do dono
+    normalmente (mesmo ChamadaIA de sempre, ver app.custo_ia) - decisão do
+    Silvan, já que usa a mesma API paga.
+
+    Único desvio proposital do fluxo real: não notifica a equipe por push
+    (ver app.push_notificacoes) quando a pergunta cai na fila de aprovação
+    - é o próprio médico quem acabou de gerar esta pergunta de teste, não
+    faz sentido alertá-lo de algo que ele mesmo já sabe que fez.
+
+    Só médico usa (é conteúdo clínico do próprio médico, mesma restrição de
+    quem pode editar um modelo de preparo - ver
+    PreparoModelo.pode_ser_editado_por)."""
+    if not eh_medico():
+        flash("Essa tela é só para contas de médico.", "warning")
+        return redirect(url_for("medico.dashboard"))
+
+    exames_do_medico = [
+        e for e in Exame.query.filter(filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id)).all()
+        if e.medico_pode_atender(current_user.id) and e.preparo is not None
+    ]
+
+    resposta_ia = None
+    pergunta_enviada = None
+    exame_id_selecionado = None
+    origem = None
+    encaminhada = False
+
+    if request.method == "POST":
+        exame_id_selecionado = request.form.get("exame_id", "").strip()
+        pergunta_enviada = request.form.get("pergunta", "").strip()
+        exame_selecionado = next((e for e in exames_do_medico if str(e.id) == exame_id_selecionado), None)
+
+        if not exame_selecionado:
+            flash("Escolha um dos seus exames/preparos para testar.", "danger")
+        elif not pergunta_enviada:
+            flash("Digite uma pergunta para testar.", "danger")
+        else:
+            try:
+                paciente_teste = _paciente_teste_do_medico(current_user)
+            except PacienteMedicoConflitanteError:
+                # Pedido do Silvan (2026-09-10): o CPF do médico já
+                # pertence a outro Paciente cadastrado (não é mais
+                # sobrescrito automaticamente, ver docstring de
+                # _paciente_teste_do_medico) - avisa e não deixa a tela
+                # quebrar com erro 500.
+                flash(
+                    "Não foi possível preparar seu cadastro de paciente para teste: "
+                    "seu CPF já está em uso por outro cadastro de paciente na plataforma. "
+                    "Fale com o suporte para revisar isso antes de usar o Testar IA.",
+                    "danger",
+                )
+                return render_template(
+                    "medico/testar_ia.html",
+                    exames=exames_do_medico,
+                    resposta_ia=None,
+                    pergunta_enviada=pergunta_enviada,
+                    exame_id_selecionado=exame_id_selecionado,
+                    origem=None,
+                    encaminhada=False,
+                )
+            # Pedido do Silvan (2026-09-10): garante que este paciente
+            # tenha ESTE exame como "em preparo" - sem isso, mesmo já
+            # identificado por CPF/data de nascimento, o WhatsApp
+            # respondia "Não encontramos nenhum exame em preparo" (ver
+            # _garantir_agendamento_teste e
+            # app.whatsapp_conversa._agendamentos_ativos).
+            _garantir_agendamento_teste(current_user, paciente_teste, exame_selecionado)
+            grupo_id_ancora = exame_selecionado.grupo_id
+            criado_por_id_ancora = exame_selecionado.criado_por_id
+
+            # A IA é sempre consultada primeiro, igual ao chat real do
+            # paciente (ver app.routes_paciente.chat) - a resposta dela só
+            # vira rascunho aguardando aprovação, nunca é mostrada direto.
+            resultado_ia = responder_com_ia(pergunta_enviada, exame_selecionado, paciente_id=paciente_teste.id)
+
+            if resultado_ia and resultado_ia["final"]:
+                origem = "ia_aguardando"
+                pendente = PerguntaPendente(
+                    grupo_id=grupo_id_ancora,
+                    criado_por_id=criado_por_id_ancora,
+                    paciente_id=paciente_teste.id,
+                    exame_id=exame_selecionado.id,
+                    pergunta=pergunta_enviada,
+                    status="aguardando_aprovacao",
+                    resposta_sugerida_ia=resultado_ia["final"],
+                    resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
+                    resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
+                    resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
+                    ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
+                )
+                db.session.add(pendente)
+                db.session.commit()
+                encaminhada = True
+            else:
+                faq_item, _score = buscar_resposta(
+                    pergunta_enviada,
+                    grupo_id=grupo_id_ancora,
+                    exame_id=exame_selecionado.id,
+                    criado_por_id=criado_por_id_ancora,
+                )
+                if faq_item:
+                    faq_item.vezes_utilizada += 1
+                    db.session.commit()
+                    resposta_ia = faq_item.resposta
+                    origem = "faq"
+                elif (resposta_alimento := buscar_resposta_alimento(pergunta_enviada, exame_selecionado, paciente_teste)):
+                    resposta_ia = resposta_alimento
+                    origem = "alimento"
+                elif (resposta_medicamento := buscar_resposta_medicamento(pergunta_enviada, exame_selecionado, paciente_teste)):
+                    resposta_ia = resposta_medicamento
+                    origem = "medicamento"
+                else:
+                    pendente = PerguntaPendente(
+                        grupo_id=grupo_id_ancora,
+                        criado_por_id=criado_por_id_ancora,
+                        paciente_id=paciente_teste.id,
+                        exame_id=exame_selecionado.id,
+                        pergunta=pergunta_enviada,
+                        ias_com_erro=(",".join(resultado_ia.get("falhas") or []) or None) if resultado_ia else None,
+                    )
+                    db.session.add(pendente)
+                    db.session.commit()
+                    encaminhada = True
+                    origem = "pendente"
+
+            db.session.add(ChatMensagem(
+                paciente_id=paciente_teste.id,
+                exame_id=exame_selecionado.id,
+                pergunta=pergunta_enviada,
+                resposta=resposta_ia,
+                origem=origem,
+            ))
+            db.session.commit()
+
+    return render_template(
+        "medico/testar_ia.html",
+        exames=exames_do_medico,
+        resposta_ia=resposta_ia,
+        pergunta_enviada=pergunta_enviada,
+        exame_id_selecionado=exame_id_selecionado,
+        origem=origem,
+        encaminhada=encaminhada,
     )
 
 
@@ -2091,6 +3322,12 @@ def perguntas_pendentes():
 @login_required
 @staff_required
 def perguntas_responder(pergunta_id):
+    # Formulário pode vir tanto da tela cheia (medico/perguntas.html) quanto
+    # do portal de atendimento rápido (portal/atendimento.html, ver
+    # medico.portal_atendimento) - o campo oculto "origem" no form decide
+    # para onde voltar depois, sem duplicar esta rota.
+    destino = "medico.portal_atendimento" if request.form.get("origem") == "portal" else "medico.perguntas_pendentes"
+
     pergunta = PerguntaPendente.query.filter(
         PerguntaPendente.id == pergunta_id,
         filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id),
@@ -2105,13 +3342,13 @@ def perguntas_responder(pergunta_id):
         geral_administravel = pergunta.exame is None and current_user.perm_pacientes
         if not exame_proprio and not geral_administravel:
             flash("Você só pode responder perguntas sobre os seus próprios exames.", "danger")
-            return redirect(url_for("medico.perguntas_pendentes"))
+            return redirect(url_for(destino))
 
     resposta = request.form.get("resposta", "").strip()
 
     if not resposta:
         flash("Digite uma resposta antes de salvar.", "danger")
-        return redirect(url_for("medico.perguntas_pendentes"))
+        return redirect(url_for(destino))
 
     pergunta.resposta = resposta
     pergunta.status = "respondida"
@@ -2133,8 +3370,30 @@ def perguntas_responder(pergunta_id):
     db.session.add(novo_faq)
     db.session.commit()
 
+    # Fatia 7 (ajuste): se a pergunta veio pelo WhatsApp, manda a resposta
+    # de volta automaticamente pelo mesmo canal - sem isso, o paciente só
+    # veria a resposta entrando na área web (ver whatsapp_envio.py sobre
+    # a configuração necessária; sem ela, só pula o envio silenciosamente).
+    if pergunta.telefone_whatsapp:
+        from app.whatsapp_envio import enviar_mensagem_whatsapp
+
+        # Nota: o texto de fato exibido ao paciente vem do template
+        # aprovado na Meta (ver WHATSAPP_META_TEMPLATE_RESPOSTA em
+        # app/whatsapp_envio.py) quando ele está configurado - hoje esse
+        # template só tem pergunta+resposta, sem o menu de opções (ver
+        # PLANO_WHATSAPP.md/decisão do Silvan: adicionar o menu exigiria
+        # um novo template e nova aprovação da Meta, por ora adiado). O
+        # paciente volta a ver o menu normalmente na próxima mensagem que
+        # mandar, já que a pergunta não está mais pendente (ver
+        # app.whatsapp_conversa._tem_pergunta_pendente).
+        enviar_mensagem_whatsapp(
+            pergunta.telefone_whatsapp,
+            f"Sobre sua pergunta \"{pergunta.pergunta}\":\n\n{resposta}",
+            content_variables=[pergunta.pergunta, resposta],
+        )
+
     flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
-    return redirect(url_for("medico.perguntas_pendentes"))
+    return redirect(url_for(destino))
 
 
 # ---------- Base de FAQ (consulta/gestão manual) ----------
@@ -2521,3 +3780,131 @@ def equipe_permissoes(usuario_id):
         return redirect(url_for("medico.equipe_lista"))
 
     return render_template("medico/equipe_permissoes.html", usuario_alvo=usuario_alvo)
+
+
+# ---------- PWA da equipe: notificação push (ver app.push_notificacoes) ----------
+
+@medico_bp.route("/push/vapid-public-key")
+@login_required
+@staff_required
+def push_vapid_public_key():
+    """Chave pública VAPID que o navegador precisa para o
+    PushManager.subscribe(applicationServerKey=...) - sem ela configurada
+    (ver gerar_chaves_vapid.py), o front-end simplesmente não tenta se
+    inscrever (ver app/templates/base.html)."""
+    return jsonify({"publicKey": current_app.config.get("VAPID_PUBLIC_KEY") or ""})
+
+
+@medico_bp.route("/push/subscribe", methods=["POST"])
+@login_required
+@staff_required
+def push_subscribe():
+    """Salva (ou atualiza) a inscrição de push deste navegador/aparelho
+    para o usuário logado - chamado pelo JS de base.html assim que o
+    service worker registra e o usuário autoriza notificações."""
+    dados = request.get_json(silent=True) or {}
+    endpoint = dados.get("endpoint")
+    chaves = dados.get("keys") or {}
+    if not endpoint or not chaves.get("p256dh") or not chaves.get("auth"):
+        return jsonify({"erro": "Dados de inscrição incompletos."}), 400
+
+    existente = PushSubscription.query.filter_by(endpoint=endpoint).first()
+    if existente:
+        # Mesmo endpoint podendo agora pertencer a outra pessoa (ex.:
+        # trocou de conta no mesmo navegador) - reatribui em vez de
+        # duplicar, já que o endpoint é único por natureza.
+        existente.usuario_id = current_user.id
+        existente.p256dh = chaves["p256dh"]
+        existente.auth = chaves["auth"]
+    else:
+        db.session.add(PushSubscription(
+            usuario_id=current_user.id,
+            endpoint=endpoint,
+            p256dh=chaves["p256dh"],
+            auth=chaves["auth"],
+        ))
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@medico_bp.route("/push/unsubscribe", methods=["POST"])
+@login_required
+@staff_required
+def push_unsubscribe():
+    """Remove a inscrição deste navegador (ex.: usuário desativou a
+    notificação nas configurações do PWA)."""
+    dados = request.get_json(silent=True) or {}
+    endpoint = dados.get("endpoint")
+    if endpoint:
+        PushSubscription.query.filter_by(endpoint=endpoint).delete()
+        db.session.commit()
+    return jsonify({"ok": True})
+
+
+
+# ---------- "Fale com a gente" (dúvidas/sugestões/problemas p/ o dono) ----------
+
+@medico_bp.route("/fale-com-a-gente", methods=["GET", "POST"])
+@login_required
+@staff_required
+def fale_com_a_gente():
+    """Canal simples do médico/secretária pro dono da plataforma (pedido
+    do Silvan, 2026-09-25) - ver MensagemSuporte em app/models.py. Sem
+    e-mail/WhatsApp: fica tudo registrado aqui mesmo, e a resposta do
+    dono aparece nesta mesma tela quando ele responder (ver
+    dono.mensagens_suporte_responder em app/routes_dono.py)."""
+    if request.method == "POST":
+        categoria = request.form.get("categoria", "duvida")
+        if categoria not in MensagemSuporte.CATEGORIAS:
+            categoria = "duvida"
+        mensagem = request.form.get("mensagem", "").strip()
+        if not mensagem:
+            flash("Escreva sua mensagem antes de enviar.", "danger")
+            return redirect(url_for("medico.fale_com_a_gente"))
+        db.session.add(MensagemSuporte(
+            usuario_id=current_user.id, categoria=categoria, mensagem=mensagem,
+        ))
+        db.session.commit()
+        flash("Mensagem enviada! O dono da plataforma vai receber e responder por aqui mesmo.", "success")
+        return redirect(url_for("medico.fale_com_a_gente"))
+
+    minhas_mensagens = (
+        MensagemSuporte.query.filter_by(usuario_id=current_user.id)
+        .order_by(MensagemSuporte.criado_em.desc())
+        .all()
+    )
+    return render_template(
+        "medico/fale_com_a_gente.html",
+        minhas_mensagens=minhas_mensagens,
+        categorias=MensagemSuporte.CATEGORIAS,
+    )
+
+
+
+# ---------- Sininho de notificações ----------
+
+@medico_bp.route("/notificacoes/<int:notificacao_id>/abrir")
+@login_required
+@staff_required
+def notificacao_abrir(notificacao_id):
+    """Marca a notificação como lida e leva pro destino dela (ex.: de
+    volta pro "Fale com a gente"), ou pro painel quando não há destino
+    melhor (ver Notificacao.link_endpoint em app/models.py)."""
+    notificacao = Notificacao.query.filter_by(id=notificacao_id, usuario_id=current_user.id).first_or_404()
+    if not notificacao.lida:
+        notificacao.lida = True
+        db.session.commit()
+    destino = notificacao.link_endpoint or "medico.dashboard"
+    try:
+        return redirect(url_for(destino))
+    except Exception:
+        return redirect(url_for("medico.dashboard"))
+
+
+@medico_bp.route("/notificacoes/marcar-todas-lidas", methods=["POST"])
+@login_required
+@staff_required
+def notificacoes_marcar_todas_lidas():
+    Notificacao.query.filter_by(usuario_id=current_user.id, lida=False).update({"lida": True})
+    db.session.commit()
+    return redirect(request.referrer or url_for("medico.dashboard"))

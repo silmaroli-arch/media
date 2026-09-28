@@ -6,11 +6,22 @@
   <title>{% block titulo %}Media{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/icone-quadrado.svg') }}">
   <link rel="alternate icon" href="{{ url_for('static', filename='img/favicon-32.png') }}">
+  {% if current_user.is_authenticated and current_user.tipo == "medico" %}
+  {# PWA só para o MÉDICO (decisão do Silvan: notificação é só pra ele,
+     não pra secretária/administrativo) - o paciente não instala nada,
+     continua só pelo navegador normal (ver app/static/manifest.json e
+     sw.js). #}
+  <link rel="manifest" href="{{ url_for('manifest_pwa') }}">
+  <meta name="theme-color" content="#1660B0">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/pwa/icon-192.png') }}">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MedIA">
+  {% endif %}
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
   <style>
-    .app-sidebar { width: 250px; min-height: 100vh; flex-shrink: 0; }
     .app-sidebar .nav-link { color: rgba(255,255,255,.85); }
     .app-sidebar .nav-link.active,
     .app-sidebar .nav-link:hover { color: #fff; background-color: rgba(255,255,255,.12); border-radius: .375rem; }
@@ -18,57 +29,133 @@
     .app-sidebar .nav-group-toggle .chevron-icon { transition: transform .2s; font-size: .75rem; }
     .app-sidebar .nav-group-toggle[aria-expanded="true"] .chevron-icon { transform: rotate(180deg); }
     .app-sidebar .nav-sub .nav-link { padding-left: 2.25rem; font-size: .92rem; }
-    /* Menu lateral escondível - por padrão fica fixo (afixado/"pinado"),
-       igual sempre foi; só some quando o usuário desafixa e clica em
-       esconder (ver botão .sidebar-toggle-btn e .sidebar-pin-btn abaixo). */
-    body.sidebar-hidden .app-sidebar { display: none; }
-    .sidebar-pin-btn { background: none; border: none; color: rgba(255,255,255,.75); padding: .25rem; line-height: 1; }
-    .sidebar-pin-btn:hover { color: #fff; }
-    .sidebar-pin-btn.pinned { color: #fff; }
-    .sidebar-toggle-btn[disabled] { opacity: .35; cursor: not-allowed; }
     @media print { .no-print { display: none !important; } }
+    /* Menu em GAVETA (off-canvas) em qualquer tamanho de tela - fica
+       escondido por padrão e abre por cima do conteúdo ao clicar no
+       hamburguer (#sidebarToggleBtn), fechando ao clicar de novo, no
+       fundo escurecido (.sidebar-backdrop) ou num link de navegação (ver
+       script no fim da página). Isto era só o comportamento do celular
+       (a pedido do Silvan) e passou a valer também em tablet/desktop, no
+       lugar do antigo menu fixo com botão de "pino" - o pedido foi
+       justamente unificar os dois. */
+    .app-sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      /* 100vh não considera a barra de endereço/navegação do celular
+         (Android/iOS), o que cortava os itens de baixo do menu e
+         impedia rolar até eles - ver relato do Silvan, 2026-09-25.
+         100dvh (altura "dinâmica" real da viewport) resolve; o 100vh
+         fica como fallback pra navegadores mais antigos sem suporte. */
+      height: 100vh;
+      height: 100dvh;
+      width: 82vw;
+      max-width: 300px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
+      transform: translateX(-100%);
+      transition: transform .25s ease-in-out;
+      z-index: 1045;
+      box-shadow: 2px 0 18px rgba(0,0,0,.35);
+    }
+    body.sidebar-open .app-sidebar { transform: translateX(0); }
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 1040;
+    }
+    body.sidebar-open .sidebar-backdrop { display: block; }
+    body.sidebar-open { overflow: hidden; }
+    /* Em telas maiores a gaveta pode ficar mais larga que os 82vw pensados
+       pro celular, já que sobra espaço - mas sempre fixa (max-width),
+       nunca ocupando a tela toda. */
+    @media (min-width: 576px) {
+      .app-sidebar { width: 300px; }
+    }
     /* Badge de status "não compareceu" - cor própria (laranja), distinta
        de cancelado (vermelho) e realizado (verde), usada em todas as telas
        que mostram o status de um agendamento. */
     .badge-nao-compareceu { background-color: #fd7e14; color: #fff; }
+    /* Faixa de instrução (iOS) e botão de instalar (Android) para o app
+       completo - mesmo padrão usado no Portal de atendimento (ver
+       portal/atendimento.html). Escondidos por padrão; o JS no fim da
+       página decide qual mostrar (nunca os dois juntos). */
+    #appAvisoInstalarIos, #appAvisoInstalarAndroid { display: none; }
+    #appAvisoInstalarIos.mostrar, #appAvisoInstalarAndroid.mostrar { display: flex; }
+    .aviso-instalar-icone { font-size: 1.4rem; line-height: 1; }
   </style>
 </head>
 <body>
 {% set eh_staff_logado = current_user.is_authenticated and current_user.is_staff %}
 <div class="d-flex">
   {% if eh_staff_logado %}
-  {% set grupo_ia = ['medico.perguntas_pendentes', 'medico.perguntas_responder',
-                      'medico.faq_lista', 'medico.faq_novo'] %}
-  {% set grupo_config_exames = ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar',
-                                 'medico.exames_por_filial',
-                                 'medico.preparo_modelos_lista', 'medico.preparo_modelos_novo',
-                                 'medico.preparo_modelos_editar'] %}
+  {# Restruturação de 2026-09 (pedido do Silvan): "Exames", "Exames &
+     Preparo" e "Associar exames entre filiais" viraram uma única tela
+     ("Modelos de preparo" - ver medico.preparo_modelos_novo). As rotas
+     antigas (medico.exames_*) continuam existindo no código, mesmo padrão
+     já usado para equipe_lista/filiais_lista (ver comentário mais abaixo),
+     só não têm mais link no menu. #}
   <nav class="app-sidebar bg-primary text-white p-3 no-print">
     <div class="d-flex align-items-center justify-content-between mb-4">
       <a class="d-block text-decoration-none" href="{{ url_for('medico.dashboard') }}">
         <img src="{{ url_for('static', filename='img/logo-horizontal-claro.svg') }}" alt="MedIA" style="height: 34px;">
       </a>
-      <button type="button" id="sidebarPinBtn" class="sidebar-pin-btn" title="Fixar o menu (impede esconder)">
-        <i class="bi bi-pin-angle-fill" id="sidebarPinIcon"></i>
-      </button>
+      <button type="button" class="btn-close btn-close-white no-print" aria-label="Fechar o menu" onclick="fecharMenuSidebar()"></button>
     </div>
+    {# No celular, o médico usa uma versão reduzida do app: começou só com
+       "Meus exames agendados" e "Portal de atendimento" (pedido do
+       Silvan - "no celular vamos ter um app só"), e desde 2026-09-25
+       "Últimas respondidas" e "Fale com a gente" também ficam visíveis
+       nessa versão reduzida (pedido do Silvan, mesmo dia). Os demais
+       itens continuam existindo em tablet/desktop, e continuam
+       TODOS visíveis pra secretária no celular também (só o médico tem
+       o menu reduzido no celular) - por isso o `d-none d-md-block`
+       abaixo só é aplicado quando `current_user.tipo == "medico"`, nunca
+       incondicionalmente. As rotas em si não mudam nem ficam bloqueadas
+       - dá pra chegar nelas por link direto se precisar, só não aparecem
+       no menu do celular do médico. #}
+    {% set oculto_no_celular_do_medico = "d-none d-md-block" if current_user.tipo == "medico" else "" %}
     <ul class="nav nav-pills flex-column">
-      <li class="nav-item mb-1">
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint == 'medico.dashboard' %}active{% endif %}" href="{{ url_for('medico.dashboard') }}">
           <i class="bi bi-speedometer2 me-2"></i>Painel
         </a>
       </li>
-      {# Trabalho compartilhado (grupo) — BBP MedIA. Camada nova, adicional
-         ao modelo de Empresa/Clínica/"locais de atendimento" abaixo (ver
-         app/routes_grupo.py); a migração completa do restante do sistema
-         para este conceito ainda está pendente. #}
-      <li class="nav-item mb-1">
-        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('grupo.') %}active{% endif %}" href="{{ url_for('grupo.meus_grupos') }}">
-          <i class="bi bi-people me-2"></i>Grupos de trabalho
+
+      {# Pedido do Silvan (2026-09-10): acesso rápido pra ver/editar os
+         próprios dados (telefone, endereço etc.) direto pela barra
+         lateral, sem precisar abrir o menu do canto superior direito -
+         reaproveita a tela/rota auth.meus_dados que já existe (mesma
+         usada antes só a partir do menu de usuário), disponível pra quem
+         tem senha (dono, médico, secretária - não paciente). #}
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint == 'auth.meus_dados' %}active{% endif %}" href="{{ url_for('auth.meus_dados') }}">
+          <i class="bi bi-person-circle me-2"></i>Meus dados
         </a>
       </li>
 
-      <li class="nav-item mb-1">
+      {# Pedido do Silvan (2026-09-10, revisado com a nova ordem de menu):
+         "Primeiros passos" saiu do menu lateral (o checklist/atalho em si
+         continua existindo em medico.primeiros_passos, só não tem mais
+         link fixo aqui). #}
+
+      {# Reorganização de menus (pedido do Silvan, 2026-09-10, ajustada em
+         2026-09-11): ordem fixa Painel / Meus dados / Exames & preparo /
+         Pacientes / Agendar exame / Meus exames agendados / Portal de
+         atendimento rápido / Últimas respondidas / Base de conhecimento /
+         Grupos de trabalho / Minha licença ("Médico + IA" foi removido -
+         ver comentário mais abaixo). #}
+
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">
+          <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
+        </a>
+      </li>
+
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">
           <i class="bi bi-journal-plus me-2"></i>Pacientes
         </a>
@@ -83,6 +170,16 @@
            link no menu. #}
       </li>
 
+      {# Pedido do Silvan (2026-09-10): atalho direto no menu para criar um
+         novo agendamento — antes só se chegava em medico.agenda_novo pelo
+         botão dentro do Painel ("agenda completa"); a rota em si não
+         mudou, só ganhou este link fixo logo abaixo de "Pacientes". #}
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint == 'medico.agenda_novo' %}active{% endif %}" href="{{ url_for('medico.agenda_novo') }}">
+          <i class="bi bi-calendar-plus me-2"></i>Agendar exame
+        </a>
+      </li>
+
       <li class="nav-item mb-1">
         <a class="nav-link {% if request.endpoint == 'medico.medico_agenda_pessoal' %}active{% endif %}" href="{{ url_for('medico.medico_agenda_pessoal') }}">
           <i class="bi bi-clipboard2-pulse me-2"></i>Meus exames agendados
@@ -92,53 +189,148 @@
            de existir - "Meus exames agendados" virou item direto, e
            "Minha agenda em todos os locais" saiu do menu (a rota
            medico.minha_agenda_completa continua existindo, só sem link
-           aqui). #}
+           aqui). Este item é um dos 2 que continuam no menu reduzido do
+           celular do médico - por isso NÃO leva a classe
+           oculto_no_celular_do_medico. #}
       </li>
+
+      {# Pedido do Silvan (2026-09-11): "Portal de atendimento rápido",
+         "Últimas respondidas" e "Base de conhecimento" saíram de dentro
+         do que era o submenu "Médico + IA" (removido por completo depois,
+         ainda em 2026-09-11 - ver comentário mais abaixo) e viraram
+         itens diretos do menu, logo abaixo de "Meus exames agendados",
+         nessa ordem.
+         "Portal de atendimento rápido" é um dos 2 itens que continuam no
+         menu reduzido do celular do médico (junto com "Meus exames
+         agendados" - ver comentário acima sobre
+         `oculto_no_celular_do_medico`), por isso NÃO leva essa classe -
+         substitui a antiga cópia "d-md-none" que existia só pra isso
+         (removida, ver mais abaixo). "Últimas respondidas" e "Base de
+         conhecimento" continuam só em tablet/desktop (levam a classe),
+         mesma visibilidade que já tinham antes dentro do submenu. #}
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if request.endpoint == 'medico.portal_atendimento' %}active{% endif %}" href="{{ url_for('medico.portal_atendimento') }}">
+          <i class="bi bi-box-arrow-up-right me-2"></i>Portal de atendimento rápido
+        </a>
+      </li>
+
+      {# Pedido do Silvan (2026-09-25): "Últimas respondidas" passou a
+         aparecer também no menu reduzido do celular do médico - por
+         isso perdeu a classe oculto_no_celular_do_medico. #}
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if request.endpoint == 'medico.perguntas_respondidas' %}active{% endif %}" href="{{ url_for('medico.perguntas_respondidas') }}">
+          <i class="bi bi-clock-history me-2"></i>Últimas respondidas
+        </a>
+      </li>
+
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">
+          <i class="bi bi-journal-text me-2"></i>Base de conhecimento
+        </a>
+      </li>
+
+      {# O menu "Médico + IA" (submenu colapsável com "Perguntas dos
+         pacientes" e "Testar IA nos meus preparos") foi removido a
+         pedido do Silvan, 2026-09-11 - as rotas medico.perguntas_
+         pendentes/perguntas_responder e medico.testar_ia continuam
+         existindo e acessíveis por link direto (mesmo padrão já usado em
+         outros itens removidos do menu, ver equipe_lista/filiais_lista
+         mais abaixo), só não têm mais nenhum link fixo no menu. Quem
+         precisa responder pergunta pendente no dia a dia usa "Portal de
+         atendimento rápido" (tela separada, já com a mesma lista e o
+         mesmo formulário de resposta) ou o link do próprio aviso de
+         WhatsApp/push (ver app.push_notificacoes). #}
+
+      {# Trabalho compartilhado (grupo) — BBP MedIA. Camada nova, adicional
+         ao modelo de Empresa/Clínica/"locais de atendimento" abaixo (ver
+         app/routes_grupo.py); a migração completa do restante do sistema
+         para este conceito ainda está pendente. #}
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('grupo.') %}active{% endif %}" href="{{ url_for('grupo.meus_grupos') }}">
+          <i class="bi bi-people me-2"></i>Grupos de trabalho
+        </a>
+      </li>
+
+      {# "Fale com a gente" — dúvidas/sugestões/problemas direto pro dono
+         da plataforma (pedido do Silvan, 2026-09-25 - ver
+         medico.fale_com_a_gente em app/routes_medico.py). Também aparece
+         no menu reduzido do celular do médico (pedido do Silvan,
+         2026-09-25, mesmo dia - por isso sem oculto_no_celular_do_medico). #}
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if request.endpoint == 'medico.fale_com_a_gente' %}active{% endif %}" href="{{ url_for('medico.fale_com_a_gente') }}">
+          <i class="bi bi-chat-dots me-2"></i>Fale com a gente
+        </a>
+      </li>
+
+      {% if current_user.tipo == "medico" %}
+      {# Versões mobile de "Meus dados", "Pacientes" e "Agendar exame"
+         (pedido do Silvan, 2026-09-10): esses 3 itens ficam ocultos no
+         menu reduzido do celular do médico (ver oculto_no_celular_do_medico
+         nos itens "completos" mais acima), então precisam desta cópia,
+         mesmo padrão já usado para "Portal de atendimento" e "Testar IA"
+         logo abaixo - só aparecem em telas pequenas (d-md-none). #}
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'auth.meus_dados' %}active{% endif %}" href="{{ url_for('auth.meus_dados') }}">
+          <i class="bi bi-person-circle me-2"></i>Meus dados
+        </a>
+      </li>
+
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">
+          <i class="bi bi-journal-plus me-2"></i>Pacientes
+        </a>
+      </li>
+
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'medico.agenda_novo' %}active{% endif %}" href="{{ url_for('medico.agenda_novo') }}">
+          <i class="bi bi-calendar-plus me-2"></i>Agendar exame
+        </a>
+      </li>
+
+      {# "Exames & preparo" no celular (pedido do Silvan, 2026-09-10): NÃO
+         leva direto para a tela de cadastro/edição (medico.preparo_
+         modelos_lista, usada em tablet/desktop dentro do item "completo"
+         mais acima) - leva para uma tela que explica que o cadastro
+         manual completo deve ser feito pela versão web (mais delicado,
+         o médico poderia se perder ali), mas que já permite importar um
+         PDF direto por ali (pedido do Silvan, 2026-09-11 - ver
+         medico.preparo_modelos_aviso_mobile). #}
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'medico.preparo_modelos_aviso_mobile' %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_aviso_mobile') }}">
+          <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
+        </a>
+      </li>
+
+      {# A versão mobile do link "Portal de atendimento rápido" que existia
+         aqui foi removida em 2026-09-11: o item agora é direto no menu
+         (logo abaixo de "Meus exames agendados", fora do submenu "Médico
+         + IA"), sem a classe oculto_no_celular_do_medico - já aparece
+         em qualquer tamanho de tela sozinho, sem precisar de cópia. #}
+
+      {# A versão mobile do link "Testar IA nos meus preparos" que existia
+         aqui foi removida em 2026-09-11, junto com o menu "Médico + IA"
+         (ver comentário mais acima) - a rota medico.testar_ia continua
+         existindo, só sem link em nenhum tamanho de tela agora. #}
+
+      {# Fatia 8 (licença individual): pedido explícito do Silvan de que o
+         médico tenha acesso a isso pelo app Mobile - por isso este item
+         NÃO leva oculto_no_celular_do_medico nem d-md-none, fica visível
+         tanto no menu reduzido do celular quanto no desktop. #}
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if request.endpoint == 'medico.minha_licenca' %}active{% endif %}" href="{{ url_for('medico.minha_licenca') }}">
+          <i class="bi bi-patch-check me-2"></i>Minha licença
+        </a>
+      </li>
+      {% endif %}
 
       {# Reorganização de menus: o menu "Relatórios" deixou de existir -
          as rotas (relatorios.index/agenda/pacientes/desempenho_medico)
          continuam existindo, só sem link no menu. #}
-
-      <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuConfigExames" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_config_exames else 'false' }}">
-          <span><i class="bi bi-sliders me-2"></i>Configuração de exames</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
-        </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_config_exames %}show{% endif %}" id="menuConfigExames">
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">Modelos de preparo</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint in ['medico.exames_lista', 'medico.exames_novo', 'medico.exames_editar'] %}active{% endif %}" href="{{ url_for('medico.exames_lista') }}">Exames &amp; Preparo</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint == 'medico.exames_por_filial' %}active{% endif %}" href="{{ url_for('medico.exames_por_filial') }}">Associar exames entre filiais</a>
-            </li>
-          </ul>
-        </div>
-      </li>
-
-      <li class="nav-item mb-1">
-        <a class="nav-link nav-group-toggle" data-bs-toggle="collapse" href="#menuIA" role="button"
-           aria-expanded="{{ 'true' if request.endpoint in grupo_ia else 'false' }}">
-          <span><i class="bi bi-robot me-2"></i>Médico + IA</span>
-          <i class="bi bi-chevron-down chevron-icon"></i>
-        </a>
-        <div class="collapse nav-sub {% if request.endpoint in grupo_ia %}show{% endif %}" id="menuIA">
-          <ul class="nav flex-column">
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.perguntas') %}active{% endif %}" href="{{ url_for('medico.perguntas_pendentes') }}">Perguntas dos pacientes</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">Base de conhecimento</a>
-            </li>
-          </ul>
-        </div>
-      </li>
     </ul>
   </nav>
+  {# Fundo escurecido atrás da gaveta do menu - toque nele fecha o menu
+     (ver CSS/JS: só aparece quando body tem a classe "sidebar-open"). #}
+  <div class="sidebar-backdrop no-print" onclick="fecharMenuSidebar()"></div>
   {% endif %}
 
   <div class="flex-grow-1 d-flex flex-column" style="min-height: 100vh;">
@@ -147,7 +339,7 @@
       <div class="d-flex align-items-center">
         {% if eh_staff_logado %}
         <button type="button" id="sidebarToggleBtn" class="btn btn-sm btn-outline-secondary sidebar-toggle-btn me-2"
-                title="Mostrar/esconder o menu lateral (fixe o menu para poder escondê-lo)">
+                title="Abrir/fechar o menu">
           <i class="bi bi-list"></i>
         </button>
         {% endif %}
@@ -177,6 +369,43 @@
               · <a href="{{ url_for('medico.escolher_clinica') }}" class="small">trocar</a>
             {% endif %}
           </span>
+        {% endif %}
+        {# Sininho de notificações (pedido do Silvan, 2026-09-25) - só pra
+           médico/secretária (ver injetar_notificacoes em app/__init__.py);
+           o dono manda avisos, não recebe (já tem o badge de "Mensagens"
+           no próprio painel). #}
+        {% if current_user.is_staff %}
+        <div class="dropdown me-2">
+          <button class="btn btn-sm btn-outline-secondary position-relative" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Notificações">
+            <i class="bi bi-bell"></i>
+            {% if notificacoes_nao_lidas_navbar %}
+            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: .65rem;">
+              {{ notificacoes_nao_lidas_navbar }}
+            </span>
+            {% endif %}
+          </button>
+          <div class="dropdown-menu dropdown-menu-end p-0" style="width: 320px; max-height: 420px; overflow-y: auto;">
+            <div class="px-3 py-2 border-bottom d-flex justify-content-between align-items-center">
+              <strong class="small">Notificações</strong>
+              {% if notificacoes_nao_lidas_navbar %}
+              <form method="post" action="{{ url_for('medico.notificacoes_marcar_todas_lidas') }}" class="mb-0">
+                <button type="submit" class="btn btn-link btn-sm p-0 small">Marcar todas como lidas</button>
+              </form>
+              {% endif %}
+            </div>
+            {% if notificacoes_navbar %}
+              {% for n in notificacoes_navbar %}
+              <a href="{{ url_for('medico.notificacao_abrir', notificacao_id=n.id) }}" class="dropdown-item py-2 border-bottom {% if not n.lida %}fw-semibold{% endif %}">
+                <div class="small">{{ n.titulo }}</div>
+                <div class="text-muted small text-truncate" style="max-width: 280px;">{{ n.mensagem }}</div>
+                <div class="text-muted" style="font-size: .72rem;">{{ n.criado_em.strftime('%d/%m %H:%M') }}</div>
+              </a>
+              {% endfor %}
+            {% else %}
+              <div class="px-3 py-3 text-muted small">Nenhuma notificação ainda.</div>
+            {% endif %}
+          </div>
+        </div>
         {% endif %}
         <span class="text-muted small me-3 {% if not current_user.is_staff and not current_user.is_dono %}d-none d-md-inline{% endif %}">{{ current_user.nome }}</span>
         {% if current_user.tem_senha %}
@@ -217,6 +446,43 @@
         {% endif %}
       {% endwith %}
 
+      {% if current_user.tipo == "medico" %}
+      {# iOS (Safari) não tem nenhuma forma de instalar sozinho - o máximo
+         possível é ensinar o passo a passo manual (ver script no fim da
+         página, que decide quando mostrar isto: só no Safari do
+         iPhone/iPad, e só se ainda não foi instalado nem dispensado
+         antes). Mesmo padrão já usado no Portal de atendimento rápido
+         (ver portal/atendimento.html). #}
+      <div id="appAvisoInstalarIos" class="alert alert-primary align-items-start mb-3 no-print">
+        <span class="aviso-instalar-icone me-2">📲</span>
+        <div class="flex-grow-1">
+          <strong>Deixe o MedIA como um atalho na tela de início</strong>
+          <div class="small mt-1">
+            Toque no ícone de compartilhar <strong>⎋</strong> na barra do Safari (embaixo, ou em cima em alguns modelos) e depois em <strong>"Adicionar à Tela de Início"</strong>. Assim você abre direto no app com um toque, sem passar pelo navegador.
+          </div>
+        </div>
+        <button type="button" class="btn-close ms-2" aria-label="Fechar" onclick="dispensarAppAvisoInstalarIos()"></button>
+      </div>
+
+      {# Android (Chrome) tem uma API de instalação de verdade - o botão só
+         aparece quando o navegador sinaliza (evento beforeinstallprompt)
+         que a instalação é possível (ver script no fim da página). #}
+      <div id="appAvisoInstalarAndroid" class="alert alert-primary align-items-center mb-3 no-print">
+        <span class="aviso-instalar-icone me-2">📲</span>
+        <div class="flex-grow-1 small">Instale o MedIA como um app, com um toque, para abrir direto da tela de início.</div>
+        <button type="button" class="btn btn-primary btn-sm ms-2" onclick="instalarAppAndroid()">Instalar app</button>
+        <button type="button" class="btn-close ms-2" aria-label="Fechar" onclick="dispensarAppAvisoInstalarAndroid()"></button>
+      </div>
+
+      <div id="pushAtivarBanner" class="alert alert-info d-none d-flex align-items-center justify-content-between no-print" role="alert">
+        <span><i class="bi bi-bell me-2"></i>Ative as notificações para ser avisado no celular quando chegar uma pergunta nova de paciente.</span>
+        <div>
+          <button type="button" id="pushAtivarBtn" class="btn btn-info btn-sm">Ativar notificações</button>
+          <button type="button" class="btn-close" id="pushAtivarFechar" aria-label="Fechar"></button>
+        </div>
+      </div>
+      {% endif %}
+
       {% block conteudo %}{% endblock %}
     </div>
   </div>
@@ -225,60 +491,189 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 {% if eh_staff_logado %}
 <script>
-  // Menu lateral: por padrão fica fixo ("pinado"), igual sempre foi - só
-  // pode ser escondido depois que o usuário desafixa. Preferência salva no
-  // navegador (localStorage), não é algo do servidor/conta.
+  // Menu lateral em gaveta (off-canvas), em qualquer tamanho de tela: fica
+  // escondido por padrão a cada carregamento de página e abre por cima do
+  // conteúdo ao clicar no hamburguer (#sidebarToggleBtn) - sem preferência
+  // salva no navegador (era assim no celular; unificado pro app inteiro a
+  // pedido do Silvan, no lugar do antigo menu fixo com botão de "pino").
   (function () {
-    var CHAVE_PINADO = "media.sidebarPinado";
-    var CHAVE_ESCONDIDO = "media.sidebarEscondido";
-
-    function estaPinado() { return localStorage.getItem(CHAVE_PINADO) !== "false"; }
-    function estaEscondido() { return localStorage.getItem(CHAVE_ESCONDIDO) === "true"; }
-
-    function aplicar() {
-      var pinado = estaPinado();
-      var escondido = !pinado && estaEscondido();
-      document.body.classList.toggle("sidebar-hidden", escondido);
-
-      var pinIcon = document.getElementById("sidebarPinIcon");
-      var pinBtn = document.getElementById("sidebarPinBtn");
-      if (pinIcon && pinBtn) {
-        pinIcon.className = pinado ? "bi bi-pin-angle-fill" : "bi bi-pin-angle";
-        pinBtn.classList.toggle("pinned", pinado);
-        pinBtn.title = pinado ? "Desafixar o menu (permite esconder)" : "Fixar o menu (impede esconder)";
-      }
-      var toggleBtn = document.getElementById("sidebarToggleBtn");
-      if (toggleBtn) {
-        toggleBtn.disabled = pinado;
-        toggleBtn.title = pinado
-          ? "Desafixe o menu (ícone de pin) para poder escondê-lo"
-          : "Mostrar/esconder o menu lateral";
-      }
-    }
+    function fecharMenuSidebar() { document.body.classList.remove("sidebar-open"); }
+    function abrirMenuSidebar() { document.body.classList.add("sidebar-open"); }
+    // Usado pelo onclick do fundo escurecido e do botão de fechar dentro
+    // do próprio menu (ver <div class="sidebar-backdrop"> e o botão de
+    // fechar no topo da <nav class="app-sidebar">).
+    window.fecharMenuSidebar = fecharMenuSidebar;
 
     document.addEventListener("DOMContentLoaded", function () {
-      aplicar();
-
-      var pinBtn = document.getElementById("sidebarPinBtn");
-      if (pinBtn) {
-        pinBtn.addEventListener("click", function () {
-          var novoPinado = !estaPinado();
-          localStorage.setItem(CHAVE_PINADO, novoPinado ? "true" : "false");
-          if (novoPinado) {
-            // Fixar sempre deixa o menu visível.
-            localStorage.setItem(CHAVE_ESCONDIDO, "false");
-          }
-          aplicar();
-        });
-      }
-
       var toggleBtn = document.getElementById("sidebarToggleBtn");
       if (toggleBtn) {
         toggleBtn.addEventListener("click", function () {
-          if (estaPinado()) return; // não esconde enquanto estiver fixo
-          localStorage.setItem(CHAVE_ESCONDIDO, estaEscondido() ? "false" : "true");
-          aplicar();
+          if (document.body.classList.contains("sidebar-open")) {
+            fecharMenuSidebar();
+          } else {
+            abrirMenuSidebar();
+          }
         });
+      }
+
+      // Fecha a gaveta ao navegar de verdade (não ao abrir/fechar um
+      // submenu como "Configuração de exames"/"Médico + IA", que usam
+      // data-bs-toggle="collapse" e têm a classe nav-group-toggle).
+      var linksDeNavegacao = document.querySelectorAll(".app-sidebar a.nav-link:not(.nav-group-toggle)");
+      for (var i = 0; i < linksDeNavegacao.length; i++) {
+        linksDeNavegacao[i].addEventListener("click", fecharMenuSidebar);
+      }
+    });
+  })();
+</script>
+{% endif %}
+{% if current_user.tipo == "medico" %}
+<script>
+  // Faixa de instalação do app completo (iOS: instrução manual; Android:
+  // botão real de instalação) - mesmo padrão/mesma lógica já usada no
+  // Portal de atendimento rápido (ver portal/atendimento.html). Chaves de
+  // localStorage própias (prefixo "app_"), independentes das do Portal -
+  // dispensar o aviso num não dispensa no outro, já que são atalhos
+  // diferentes que a pessoa pode querer criar em momentos diferentes.
+  (function () {
+    function jaInstalado() {
+      return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    }
+
+    if (jaInstalado()) return;
+
+    // --- iOS: sem API de instalação, só o aviso com o passo a passo. ---
+    var eIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (eIos) {
+      var dispensadoIos = false;
+      try { dispensadoIos = localStorage.getItem("app_aviso_instalar_ios_dispensado") === "1"; } catch (e) { /* navegação privada etc. - só não mostra a persistência, sem quebrar a página */ }
+      if (!dispensadoIos) {
+        var avisoIos = document.getElementById("appAvisoInstalarIos");
+        if (avisoIos) avisoIos.classList.add("mostrar");
+      }
+    }
+
+    // --- Android/Chrome: API real de instalação (beforeinstallprompt). ---
+    var eventoInstalacaoApp = null;
+    window.addEventListener("beforeinstallprompt", function (evento) {
+      evento.preventDefault();
+      eventoInstalacaoApp = evento;
+      var dispensadoAndroid = false;
+      try { dispensadoAndroid = localStorage.getItem("app_aviso_instalar_android_dispensado") === "1"; } catch (e) { /* idem acima */ }
+      if (!dispensadoAndroid) {
+        var avisoAndroid = document.getElementById("appAvisoInstalarAndroid");
+        if (avisoAndroid) avisoAndroid.classList.add("mostrar");
+      }
+    });
+
+    window.instalarAppAndroid = function () {
+      var avisoAndroid = document.getElementById("appAvisoInstalarAndroid");
+      if (avisoAndroid) avisoAndroid.classList.remove("mostrar");
+      if (!eventoInstalacaoApp) return;
+      eventoInstalacaoApp.prompt();
+      // A escolha (aceitar/recusar) fica só em eventoInstalacaoApp.userChoice -
+      // não precisamos agir sobre ela: se aceitar, o próprio Chrome cria o
+      // atalho; se recusar, o botão simplesmente não aparece de novo até a
+      // próxima vez que o Chrome decidir sinalizar o evento.
+      eventoInstalacaoApp = null;
+    };
+  })();
+
+  function dispensarAppAvisoInstalarIos() {
+    var aviso = document.getElementById("appAvisoInstalarIos");
+    if (aviso) aviso.classList.remove("mostrar");
+    try { localStorage.setItem("app_aviso_instalar_ios_dispensado", "1"); } catch (e) { /* navegação privada etc. */ }
+  }
+
+  function dispensarAppAvisoInstalarAndroid() {
+    var aviso = document.getElementById("appAvisoInstalarAndroid");
+    if (aviso) aviso.classList.remove("mostrar");
+    try { localStorage.setItem("app_aviso_instalar_android_dispensado", "1"); } catch (e) { /* navegação privada etc. */ }
+  }
+</script>
+<script>
+  // PWA só do MÉDICO: registra o service worker (ver app/static/sw.js) e, se
+  // notificação push estiver configurada no servidor (chaves VAPID - ver
+  // gerar_chaves_vapid.py) e o navegador ainda não perguntou/recusou,
+  // mostra o banner oferecendo para ativar. Sem chave pública (servidor
+  // não configurado ainda), o banner nunca aparece - fica tudo
+  // silenciosamente desligado, igual ao padrão do envio por WhatsApp.
+  (function () {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      return; // navegador não suporta (ex.: Safari bem antigo) - não faz nada
+    }
+
+    function base64UrlParaUint8Array(base64Url) {
+      var padding = "=".repeat((4 - (base64Url.length % 4)) % 4);
+      var base64 = (base64Url + padding).replace(/-/g, "+").replace(/_/g, "/");
+      var bruto = window.atob(base64);
+      var saida = new Uint8Array(bruto.length);
+      for (var i = 0; i < bruto.length; ++i) {
+        saida[i] = bruto.charCodeAt(i);
+      }
+      return saida;
+    }
+
+    function mostrarBanner() {
+      var banner = document.getElementById("pushAtivarBanner");
+      if (banner) banner.classList.remove("d-none");
+    }
+
+    function esconderBanner() {
+      var banner = document.getElementById("pushAtivarBanner");
+      if (banner) banner.classList.add("d-none");
+    }
+
+    async function inscrever(registration) {
+      var resp = await fetch("{{ url_for('medico.push_vapid_public_key') }}");
+      var dados = await resp.json();
+      if (!dados.publicKey) return; // servidor sem VAPID configurado ainda
+
+      var subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: base64UrlParaUint8Array(dados.publicKey),
+      });
+
+      await fetch("{{ url_for('medico.push_subscribe') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(subscription.toJSON()),
+      });
+    }
+
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).then(async function (registration) {
+      var jaInscrito = await registration.pushManager.getSubscription();
+      if (jaInscrito || Notification.permission === "denied") {
+        return; // já ativado antes, ou o usuário recusou - não insiste
+      }
+
+      var resp = await fetch("{{ url_for('medico.push_vapid_public_key') }}");
+      var dados = await resp.json();
+      if (!dados.publicKey) return; // sem VAPID no servidor, nada a oferecer
+
+      if (Notification.permission === "granted") {
+        // Permissão já concedida (ex.: em outra aba) mas ainda sem
+        // inscrição salva neste navegador - inscreve direto, sem banner.
+        inscrever(registration);
+        return;
+      }
+
+      mostrarBanner();
+
+      var btn = document.getElementById("pushAtivarBtn");
+      if (btn) {
+        btn.addEventListener("click", async function () {
+          var permissao = await Notification.requestPermission();
+          if (permissao === "granted") {
+            await inscrever(registration);
+          }
+          esconderBanner();
+        });
+      }
+
+      var fecharBtn = document.getElementById("pushAtivarFechar");
+      if (fecharBtn) {
+        fecharBtn.addEventListener("click", esconderBanner);
       }
     });
   })();

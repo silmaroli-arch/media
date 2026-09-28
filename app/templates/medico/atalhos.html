@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block titulo %}Adicionar atalho{% endblock %}
+{% block conteudo %}
+<div class="card p-4" style="max-width: 640px; margin: 0 auto;">
+  {% if current_user.tipo == "medico" %}
+  <p class="text-muted small mb-1">Passo 1 de 3 — Primeiros passos</p>
+  <div class="progress mb-4" style="height: 6px;">
+    <div class="progress-bar" role="progressbar" style="width: 33%;"></div>
+  </div>
+  {% endif %}
+
+  <h3 class="mb-3">Deixe o MedIA à mão</h3>
+  <p class="text-muted">
+    Vale a pena adicionar um atalho do MedIA na tela de início do seu celular — assim você (ou sua
+    equipe) abre direto no app, sem precisar procurar o link no navegador.
+  </p>
+
+  {% if current_user.tipo == "medico" %}
+  {# No iPhone/iPad, "Adicionar à Tela de Início" do Safari NÃO lê o manifesto do
+     app - ele trava o atalho na URL que estava aberta no Safari no momento do
+     toque em "Compartilhar". Por isso, pro médico (que no celular só usa "Meus
+     exames agendados" e o "Portal de atendimento"), o atalho tem que ser criado
+     A PARTIR da própria página do Portal - nunca a partir desta tela de
+     instruções - senão o ícone abriria sempre o app completo por engano (mesmo
+     bug de uma sessão anterior). O Portal já tem seu próprio aviso de instalação
+     (iOS e Android, ver portal/atendimento.html), então aqui só direcionamos
+     pra lá. #}
+  <div id="wizardAvisoIosMedico" class="alert alert-primary align-items-start mb-3" style="display: none;">
+    <div class="d-flex">
+      <span class="me-2" style="font-size: 1.4rem; line-height: 1;">📲</span>
+      <div>
+        <strong>No iPhone/iPad (Safari)</strong>
+        <div class="small mt-1">
+          O atalho precisa ser criado a partir da própria tela do Portal de atendimento — é lá que o
+          Safari vai "gravar" o link certo. Toque no botão abaixo para abrir o Portal e, uma vez lá,
+          toque no ícone de compartilhar <strong>⎋</strong> e depois em
+          <strong>"Adicionar à Tela de Início"</strong>.
+        </div>
+        <a href="{{ url_for('medico.portal_atendimento') }}" class="btn btn-primary btn-sm mt-2">
+          Abrir o Portal de atendimento
+        </a>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div id="wizardAvisoIos" class="alert alert-primary align-items-start mb-3" style="display: none;">
+    <div class="d-flex">
+      <span class="me-2" style="font-size: 1.4rem; line-height: 1;">📲</span>
+      <div>
+        <strong>No iPhone/iPad (Safari)</strong>
+        <div class="small mt-1">
+          Toque no ícone de compartilhar <strong>⎋</strong> na barra do Safari (embaixo, ou em cima em
+          alguns modelos) e depois em <strong>"Adicionar à Tela de Início"</strong>.
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div id="wizardAvisoAndroid" class="alert alert-primary align-items-center mb-3" style="display: none;">
+    <div class="d-flex align-items-center justify-content-between w-100">
+      <div class="small">Instale o MedIA como um app, com um toque.</div>
+      <button type="button" class="btn btn-primary btn-sm ms-2" onclick="wizardInstalarAndroid()">Instalar app</button>
+    </div>
+  </div>
+
+  <div id="wizardAvisoAndroidGenerico" class="alert alert-secondary mb-3" style="display: none;">
+    <div class="small">
+      Se o botão "Instalar app" não aparecer aqui em cima, procure no menu <strong>⋮</strong> (três
+      pontinhos) do Chrome e escolha <strong>"Instalar app"</strong> ou <strong>"Adicionar à tela
+      inicial"</strong>.
+    </div>
+  </div>
+
+  <div id="wizardAvisoDesktop" class="alert alert-secondary mb-3" style="display: none;">
+    <div class="small">
+      <strong>Você está num computador ou tablet</strong> — dá pra instalar o MedIA aqui também, mas
+      isso não é a mesma coisa que o atalho no celular.
+      <ul class="mb-2 mt-2">
+        <li>
+          Para instalar <strong>neste computador</strong>: procure o ícone de instalação
+          (geralmente <strong>⊕</strong> ou uma tela com uma seta) do lado direito da barra de
+          endereço do Chrome ou Edge, ou abra o menu <strong>⋮</strong> e escolha
+          <strong>"Instalar app"</strong> (ou "Instalar MedIA...").
+        </li>
+        <li>
+          Para adicionar o atalho <strong>na tela de início do celular</strong>, abra este mesmo
+          link direto no navegador do celular — Safari no iPhone, ou Chrome no Android — e volte
+          nesta página por lá.
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <form method="post">
+    <button type="submit" class="btn btn-primary">{% if current_user.tipo == "medico" %}Continuar{% else %}Concluir{% endif %}</button>
+    <a href="{{ url_for('medico.primeiros_passos') }}" class="btn btn-link">Voltar aos primeiros passos</a>
+  </form>
+</div>
+
+<script>
+  (function () {
+    function jaInstalado() {
+      return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    }
+    if (jaInstalado()) return;
+
+    var eIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    // Distingue Android (celular, sem "Mobile" nem sempre confiável em
+    // tablets - mas o suficiente pra separar "provavelmente celular" de
+    // "provavelmente computador/tablet maior") de desktop, pra dar uma
+    // mensagem certa em cada caso enquanto o botão real de instalar
+    // (beforeinstallprompt, abaixo) ainda não apareceu.
+    var eAndroid = /Android/.test(navigator.userAgent);
+    var ehMedico = {{ "true" if current_user.tipo == "medico" else "false" }};
+    if (eIos) {
+      var avisoIos = document.getElementById(ehMedico ? "wizardAvisoIosMedico" : "wizardAvisoIos");
+      if (avisoIos) avisoIos.style.display = "flex";
+    } else if (eAndroid) {
+      var avisoAndroidGenerico = document.getElementById("wizardAvisoAndroidGenerico");
+      if (avisoAndroidGenerico) avisoAndroidGenerico.style.display = "block";
+    } else {
+      var avisoDesktop = document.getElementById("wizardAvisoDesktop");
+      if (avisoDesktop) avisoDesktop.style.display = "block";
+    }
+
+    var eventoInstalacaoApp = null;
+    window.addEventListener("beforeinstallprompt", function (evento) {
+      evento.preventDefault();
+      eventoInstalacaoApp = evento;
+      var avisoAndroid = document.getElementById("wizardAvisoAndroid");
+      var avisoAndroidGenerico = document.getElementById("wizardAvisoAndroidGenerico");
+      var avisoDesktop = document.getElementById("wizardAvisoDesktop");
+      if (avisoAndroid) avisoAndroid.style.display = "flex";
+      if (avisoAndroidGenerico) avisoAndroidGenerico.style.display = "none";
+      if (avisoDesktop) avisoDesktop.style.display = "none";
+    });
+
+    window.wizardInstalarAndroid = function () {
+      var avisoAndroid = document.getElementById("wizardAvisoAndroid");
+      if (avisoAndroid) avisoAndroid.style.display = "none";
+      if (!eventoInstalacaoApp) return;
+      eventoInstalacaoApp.prompt();
+      eventoInstalacaoApp = null;
+    };
+  })();
+</script>
+{% endblock %}

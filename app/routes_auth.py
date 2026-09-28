@@ -1,11 +1,17 @@
 import re
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, session
 from flask_login import login_user, logout_user, login_required, current_user
 
 from app.extensions import db
-from app.models import Usuario, Paciente, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.models import Usuario, Paciente, PlataformaConfig, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.whatsapp_envio import enviar_boas_vindas_whatsapp
+# `proximo_seguro` mora em clinica_utils.py (compartilhado com
+# routes_medico.py:escolher_clinica, que precisa do mesmo tratamento pra
+# não perder o destino original de quem tem vínculo em mais de um Grupo -
+# ver staff_required/escolher_clinica).
+from app.clinica_utils import proximo_seguro as _proximo_seguro
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -13,7 +19,7 @@ auth_bp = Blueprint("auth", __name__)
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        return redirect(_proximo_seguro(request.args.get("next")) or url_for("index"))
 
     if request.method == "POST":
         # BBP MedIA (tela 5.1.2): login do sistema principal por CPF +
@@ -25,10 +31,16 @@ def login():
         senha = request.form.get("senha", "")
         cpf_digitos = re.sub(r"\D", "", identificador)
 
+        # Desde 2026-09-02 o dono da plataforma pode compartilhar o CPF com
+        # uma conta de médico/secretária dele mesmo (ver auth.meus_dados) -
+        # então mais de uma conta pode bater com o mesmo CPF aqui. Em vez
+        # de ficar só com a primeira encontrada (que poderia ter uma senha
+        # diferente da digitada), testa a senha em CADA candidata com esse
+        # CPF e usa a primeira que bater de verdade.
         usuario = None
         if len(cpf_digitos) == 11:
             for candidato in Usuario.query.filter(Usuario.cpf.isnot(None), Usuario.tipo != "paciente").all():
-                if re.sub(r"\D", "", candidato.cpf or "") == cpf_digitos:
+                if re.sub(r"\D", "", candidato.cpf or "") == cpf_digitos and candidato.ativo and candidato.checar_senha(senha):
                     usuario = candidato
                     break
         if not usuario:
@@ -42,7 +54,7 @@ def login():
             session.pop("clinica_id", None)
             session.pop("grupo_ativo_id", None)
             login_user(usuario)
-            return redirect(url_for("index"))
+            return redirect(_proximo_seguro(request.values.get("next")) or url_for("index"))
 
         flash("CPF/e-mail ou senha inválidos.", "danger")
 
@@ -200,6 +212,126 @@ def trocar_senha():
     return render_template("auth/trocar_senha.html")
 
 
+# Quanto tempo a confirmação de senha vale para acessar/editar "Meus
+# dados" (auth.meus_dados) - depois desse tempo sem usar a tela, pede a
+# senha de novo (mesmo padrão de "reautenticação por tempo" usado em
+# vários apps para telas de dados sensíveis). Guardado na sessão, não no
+# banco - não sobrevive a logout/troca de navegador, de propósito.
+MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS = 15
+
+
+@auth_bp.route("/meus-dados", methods=["GET", "POST"])
+@login_required
+def meus_dados():
+    """Dados pessoais da PRÓPRIA conta logada (nome, CPF, e-mail, telefone,
+    endereço) - pedido do Silvan para o dono da plataforma poder manter seu
+    próprio cadastro atualizado (hoje só dava pra editar dados de médico/
+    secretária pela tela de exclusão/licença; o dono não tinha cadastro
+    nenhum pra editar). Disponível para qualquer tipo de conta com senha
+    (dono/médico/secretária) - não só o dono - já que a mesma necessidade
+    vale para qualquer um deles.
+
+    Por serem dados sensíveis (CPF é inclusive credencial de login), o
+    acesso exige confirmar a senha atual antes de ver/editar qualquer
+    coisa, mesmo já estando logado - a confirmação vale por
+    MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS minutos (guardado na sessão),
+    então a pessoa não precisa digitar a senha de novo a cada campo que
+    for ajustar na mesma visita."""
+    if not current_user.tem_senha:
+        flash("Esta tela é só para contas com senha (dono, médico ou secretária).", "info")
+        return redirect(url_for("index"))
+
+    confirmado_em = session.get("meus_dados_confirmado_em")
+    confirmado = (
+        confirmado_em is not None
+        and datetime.utcnow() - datetime.fromisoformat(confirmado_em) < timedelta(minutes=MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS)
+    )
+
+    if request.method == "POST" and request.form.get("acao") == "confirmar_senha":
+        senha_atual = request.form.get("senha_atual", "")
+        if not current_user.checar_senha(senha_atual):
+            flash("Senha incorreta.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=False)
+        session["meus_dados_confirmado_em"] = datetime.utcnow().isoformat()
+        return redirect(url_for("auth.meus_dados"))
+
+    if not confirmado:
+        return render_template("auth/meus_dados.html", confirmado=False)
+
+    if request.method == "POST" and request.form.get("acao") == "salvar":
+        nome = request.form.get("nome", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        cpf = request.form.get("cpf", "").strip()
+
+        if not nome or not email or not cpf:
+            flash("Nome, CPF e e-mail são obrigatórios.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=True)
+
+        if not validar_cpf(cpf):
+            flash("CPF inválido — confira os números digitados.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=True)
+
+        if telefone_incompleto(request.form.get("telefone", "")):
+            flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=True)
+
+        if cep_incompleto(request.form.get("cep", "")):
+            flash("CEP incompleto — digite os 8 números.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=True)
+
+        # Pedido do Silvan (2026-09-10): só o médico tem esse campo (ver
+        # auth/meus_dados.html) - vira a identificação (CPF + data de
+        # nascimento) do "paciente de teste" de medico.testar_ia (ver
+        # routes_medico._paciente_teste_do_medico). Médicos cadastrados
+        # antes deste campo existir passam por aqui pra preencher depois.
+        data_nascimento = current_user.data_nascimento
+        if current_user.tipo == "medico":
+            data_nascimento_str = request.form.get("data_nascimento", "").strip()
+            data_nascimento = _parse_data_nascimento(data_nascimento_str)
+            if not data_nascimento:
+                flash("Informe sua data de nascimento (DD/MM/AAAA).", "danger")
+                return render_template("auth/meus_dados.html", confirmado=True)
+
+        # E-mail/CPF são credenciais de login (ver auth.login) - não podem
+        # colidir com a conta de outra pessoa (comparação de CPF ignora
+        # pontuação, mesma lógica usada pra localizar a conta no login).
+        # Exceção (pedido do Silvan, 2026-09-02): o DONO da plataforma pode
+        # ser a mesma pessoa física de uma conta de médico/secretária já
+        # cadastrada - nesse caso o CPF é legitimamente o mesmo em duas
+        # contas/logins diferentes, então a checagem de duplicidade de CPF
+        # não se aplica a ele (a de e-mail continua valendo pra todo mundo,
+        # já que o e-mail é um valor livre, sem motivo de negócio pra
+        # repetir entre contas).
+        if Usuario.query.filter(Usuario.id != current_user.id, Usuario.email == email).first():
+            flash("Já existe uma conta com esse e-mail.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=True)
+
+        if current_user.tipo != "dono":
+            cpf_alvo = re.sub(r"\D", "", cpf)
+            for outro in Usuario.query.filter(Usuario.id != current_user.id, Usuario.cpf.isnot(None)).all():
+                if re.sub(r"\D", "", outro.cpf or "") == cpf_alvo:
+                    flash("Já existe uma conta com esse CPF.", "danger")
+                    return render_template("auth/meus_dados.html", confirmado=True)
+
+        current_user.nome = nome
+        current_user.email = email
+        current_user.cpf = cpf
+        current_user.data_nascimento = data_nascimento
+        current_user.telefone = normalizar_telefone(request.form.get("telefone", ""))
+        current_user.cep = request.form.get("cep", "").strip()
+        current_user.rua = request.form.get("rua", "").strip()
+        current_user.numero = request.form.get("numero", "").strip()
+        current_user.complemento = request.form.get("complemento", "").strip()
+        current_user.bairro = request.form.get("bairro", "").strip()
+        current_user.cidade = request.form.get("cidade", "").strip()
+        current_user.uf = request.form.get("uf", "").strip().upper() or None
+        db.session.commit()
+        flash("Dados atualizados com sucesso.", "success")
+        return redirect(url_for("auth.meus_dados"))
+
+    return render_template("auth/meus_dados.html", confirmado=True)
+
+
 @auth_bp.route("/cadastro", methods=["GET", "POST"])
 def cadastro():
     """Cadastro público — uma ÚNICA tela pra todo mundo (médico(a) ou
@@ -240,12 +372,36 @@ def cadastro():
         nome = request.form.get("nome", "").strip()
         email = request.form.get("email", "").strip().lower()
         senha = request.form.get("senha", "")
+        senha_confirmacao = request.form.get("senha_confirmacao", "")
         cpf = request.form.get("cpf", "").strip()
 
         papel = request.form.get("papel", "secretaria")
 
-        if not nome or not email or not senha or not cpf:
-            flash("Preencha todos os campos obrigatórios (nome, e-mail, senha e CPF).", "danger")
+        # Pedido do Silvan (2026-09-10): todo o formulário de cadastro
+        # (exceto Complemento, que nem todo endereço tem) virou
+        # obrigatório - antes só nome/e-mail/senha/CPF eram exigidos de
+        # verdade, telefone e CEP só validavam formato quando preenchidos
+        # (podiam ficar em branco), e o resto do endereço (rua, número,
+        # bairro, cidade, UF) não tinha validação nenhuma. Vale só para
+        # cadastros NOVOS a partir de agora - contas já existentes com
+        # esses campos vazios não são bloqueadas nem avisadas.
+        campos_endereco = {
+            "rua": request.form.get("rua", "").strip(),
+            "numero": request.form.get("numero", "").strip(),
+            "bairro": request.form.get("bairro", "").strip(),
+            "cidade": request.form.get("cidade", "").strip(),
+            "uf": request.form.get("uf", "").strip(),
+        }
+        if (
+            not nome
+            or not email
+            or not senha
+            or not cpf
+            or not request.form.get("telefone", "").strip()
+            or not request.form.get("cep", "").strip()
+            or not all(campos_endereco.values())
+        ):
+            flash("Preencha todos os campos obrigatórios (todos, exceto Complemento).", "danger")
             return render_template("auth/cadastro.html")
 
         if not validar_cpf(cpf):
@@ -270,11 +426,31 @@ def cadastro():
             if not crm_numero or not crm_uf:
                 flash("Informe o número e o estado (UF) do seu CRM.", "danger")
                 return render_template("auth/cadastro.html")
+
+            # Pedido do Silvan (2026-09-10): só o médico precisa informar -
+            # é o CPF+data de nascimento do PRÓPRIO médico (não do
+            # paciente) que vira a identificação do "paciente de teste" na
+            # tela medico.testar_ia, permitindo testar o fluxo do WhatsApp
+            # de ponta a ponta com identificação de verdade (ver
+            # routes_medico._paciente_teste_do_medico).
+            data_nascimento_str = request.form.get("data_nascimento", "").strip()
+            data_nascimento = _parse_data_nascimento(data_nascimento_str)
+            if not data_nascimento:
+                flash("Informe sua data de nascimento (DD/MM/AAAA).", "danger")
+                return render_template("auth/cadastro.html")
         else:
             crm_numero = crm_uf = None
+            data_nascimento = None
 
         if len(senha) < 6:
             flash("A senha deve ter pelo menos 6 caracteres.", "danger")
+            return render_template("auth/cadastro.html")
+
+        # Pedido do Silvan (2026-09-10): confirmação de senha (digitar
+        # duas vezes) só no cadastro inicial - outras telas de senha
+        # (trocar-senha, etc.) ficam como estão por enquanto.
+        if senha != senha_confirmacao:
+            flash("A confirmação não corresponde à senha digitada.", "danger")
             return render_template("auth/cadastro.html")
 
         if Usuario.query.filter_by(email=email).first():
@@ -293,6 +469,21 @@ def cadastro():
         usuario.uf = request.form.get("uf", "").strip().upper() or None
         usuario.crm_numero = crm_numero
         usuario.crm_uf = crm_uf
+        usuario.data_nascimento = data_nascimento
+
+        # Fatia 8 (licença individual): a cobrança é por médico e vale a
+        # partir do cadastro, independente de Grupo (decisão do Silvan) -
+        # todo médico novo já nasce em trial, com vencimento calculado a
+        # partir do mesmo parâmetro configurável que os Grupos usam
+        # (PlataformaConfig.trial_dias), pra não introduzir uma segunda
+        # constante de negócio. valor_licenca_mensal nasce com o valor
+        # padrão global (PlataformaConfig.valor_licenca_padrao), mas o dono
+        # pode reajustar depois em /dono/usuarios (restruturação de
+        # 2026-09-02, pedido do Silvan).
+        if papel == "medico":
+            config = PlataformaConfig.obter()
+            usuario.licenca_vencimento = date.today() + timedelta(days=config.trial_dias)
+            usuario.valor_licenca_mensal = config.valor_licenca_padrao
 
         db.session.add(usuario)
         # Fatia 6: o cadastro NÃO cria mais um Grupo. A conta nasce solo,
@@ -312,10 +503,63 @@ def cadastro():
         db.session.commit()
         login_user(usuario)
 
+        # Pedido do Silvan (2026-09-10): médico recebe a mensagem de
+        # boas-vindas no PRÓPRIO WhatsApp já no cadastro (não só quando
+        # abre "Testar IA" pela primeira vez, ver
+        # routes_medico._paciente_teste_do_medico), avisando que falta
+        # cadastrar um modelo de preparo antes de poder testar. Import
+        # local (não no topo do arquivo) para não criar um acoplamento
+        # direto entre os módulos de rota auth/medico - mesmo padrão já
+        # usado em app/__init__.py:_registrar_deploy_atual. Sem telefone
+        # (campo opcional no cadastro), o envio é só pulado - a pessoa
+        # ainda consegue usar "Testar IA" normalmente depois, só sem essa
+        # mensagem proativa.
+        #
+        # Correção (2026-09-12): esse `aviso_extra`, por ser a 2ª variável
+        # de um template Meta, NÃO pode conter quebra de linha - a Graph
+        # API recusa o envio inteiro com erro #132018 ("Param text cannot
+        # have new-line/tab characters or more than 4 consecutive
+        # spaces"), e esse erro era só registrado no log (padrão de
+        # "falha aberta" de app.whatsapp_envio), então o cadastro do
+        # médico terminava normalmente mas a mensagem nunca saía. Por
+        # isso o texto abaixo virou um parágrafo único, sem "\n" nem
+        # lista numerada em linhas separadas.
+        if papel == "medico" and usuario.telefone:
+            from app.routes_medico import PacienteMedicoConflitanteError, _paciente_teste_do_medico
+
+            try:
+                paciente_teste = _paciente_teste_do_medico(usuario, enviar_boas_vindas=False)
+                enviar_boas_vindas_whatsapp(
+                    paciente_teste,
+                    aviso_extra=(
+                        "seus pacientes irão conversar com este número pelo WhatsApp. "
+                        "O MedIA já criou um paciente de teste no sistema com os dados "
+                        "necessários para você realizar os testes. Agora você deverá: "
+                        '1) cadastrar um modelo de preparo, importando um PDF no menu "Exames & preparo"; '
+                        '2) criar um agendamento para o seu paciente de teste no menu "Agendar exame".'
+                    ),
+                )
+            except PacienteMedicoConflitanteError:
+                # Pedido do Silvan (2026-09-10): o CPF deste médico já
+                # pertence a outro Paciente cadastrado na plataforma - não
+                # bloqueia a criação da conta do médico (já commitada
+                # acima) nem tenta resolver sozinho (ver docstring de
+                # _paciente_teste_do_medico); só pula, em silêncio, a
+                # criação do cadastro de paciente e a mensagem de
+                # boas-vindas. O médico continua conseguindo usar o
+                # sistema normalmente, só sem o atalho de "Testar IA" até
+                # esse CPF duplicado ser resolvido manualmente (ex.: pelo
+                # dono/suporte).
+                pass
+
         flash(
             f"Conta criada com sucesso, {usuario.nome}! Bem-vindo(a) ao MedIA.",
             "success",
         )
+        # O passo a passo de atalho/modelo de preparo/exame deixou de ser
+        # forçado logo após o cadastro - agora é um item de menu
+        # ("Primeiros passos", ver medico.primeiros_passos em
+        # routes_medico.py) que a pessoa acessa quando quiser.
         return redirect(url_for("medico.dashboard"))
 
     return render_template("auth/cadastro.html")
@@ -443,6 +687,12 @@ def cadastro_paciente_global():
         db.session.add(paciente)
         db.session.commit()
 
+        # Pedido do Silvan (2026-09-06): mandar boas-vindas por WhatsApp já
+        # no cadastro, pra ele salvar o número da clínica e saber que pode
+        # tirar dúvidas por lá - falha aberta (sem template Meta configurado,
+        # só é pulado, ver app.whatsapp_envio.enviar_boas_vindas_whatsapp).
+        enviar_boas_vindas_whatsapp(paciente)
+
         login_user(usuario)
         session["paciente_id"] = paciente.id
         flash(
@@ -464,70 +714,3 @@ def cadastro_paciente(codigo):
     caem aqui e são redirecionados pro cadastro global."""
     return redirect(url_for("auth.cadastro_paciente_global"))
 
-
-
-# ---------- Ferramenta temporária: limpar base de dados (uso interno) ----------
-#
-# Botão de uso pessoal do Silvan para limpar dados de teste rapidamente,
-# direto pela tela de login, sem precisar entrar no banco na mão. Fica
-# visível em QUALQUER ambiente onde este código estiver publicado (não é
-# um recurso pensado para clientes) - a única proteção é exigir que a
-# pessoa digite a frase de confirmação abaixo antes de apagar qualquer
-# coisa, já que é um endpoint acessível sem estar logado.
-#
-# ATENÇÃO: remover esta rota, o link em auth/login.html e este comentário
-# assim que a limpeza de dados de teste não for mais necessária - não é
-# para ficar em produção a longo prazo.
-FRASE_CONFIRMACAO_LIMPAR_BASE = "APAGAR TUDO"
-
-# Tabelas que NÃO são "dados de teste" e por isso não são apagadas:
-# histórico de deploy (metadado de infraestrutura) e a config global da
-# plataforma (configuração única, não dado de clínica/paciente).
-TABELAS_PRESERVADAS_LIMPAR_BASE = {"historico_deploy", "plataforma_config"}
-
-
-@auth_bp.route("/dev/limpar-base", methods=["GET", "POST"])
-def dev_limpar_base():
-    erro = None
-    if request.method == "POST":
-        confirmacao = request.form.get("confirmacao", "").strip()
-        if confirmacao != FRASE_CONFIRMACAO_LIMPAR_BASE:
-            erro = f'Frase incorreta. Digite exatamente "{FRASE_CONFIRMACAO_LIMPAR_BASE}" para confirmar.'
-        else:
-            # Apaga na ordem inversa de dependência (tabelas "filhas" antes
-            # das "pai") para não esbarrar em restrições de chave
-            # estrangeira, sem precisar listar cada model manualmente -
-            # assim continua funcionando mesmo se novos models forem
-            # adicionados no futuro.
-            for tabela in reversed(db.metadata.sorted_tables):
-                if tabela.name in TABELAS_PRESERVADAS_LIMPAR_BASE:
-                    continue
-                if tabela.name == "usuarios":
-                    # Preserva a(s) conta(s) do DONO da plataforma - sem
-                    # isso, a limpeza apagava a credencial do dono junto e
-                    # ninguém conseguia mais entrar no painel dele (o dono
-                    # não é recriado pelo cadastro público nem depende de
-                    # empresa/filial, então preservar a linha é seguro).
-                    db.session.execute(tabela.delete().where(tabela.c.tipo != "dono"))
-                    continue
-                db.session.execute(tabela.delete())
-
-            # Garantia extra: se por qualquer motivo a base ficou SEM a
-            # conta do dono (ex.: uma limpeza feita por versões antigas,
-            # que apagavam o dono junto), recria a conta padrão - senão
-            # ninguém consegue mais entrar no painel da plataforma.
-            if not Usuario.query.filter_by(tipo="dono").first():
-                dono = Usuario(nome="Dono da Plataforma", email="dono@plataforma.com", tipo="dono")
-                dono.set_senha("123456")
-                db.session.add(dono)
-
-            db.session.commit()
-            flash(
-                "Base de dados limpa com sucesso (preservados: conta do dono da plataforma, "
-                "configuração da plataforma e histórico de deploy). Use \"Criar minha clínica\" "
-                "para começar de novo, ou rode o seed.py.",
-                "success",
-            )
-            return redirect(url_for("auth.login"))
-
-    return render_template("auth/dev_limpar_base.html", erro=erro, frase=FRASE_CONFIRMACAO_LIMPAR_BASE)

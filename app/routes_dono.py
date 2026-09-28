@@ -1,12 +1,19 @@
 from datetime import datetime, date
 from functools import wraps
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash
+from flask import Blueprint, render_template, redirect, url_for, request, flash, abort, current_app
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao
 from app.clinica_utils import verificar_vencimento_grupo
+from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
+from app.mercadopago_integration import (
+    criar_preferencia_pagamento, criar_preferencia_pagamento_anual, criar_cobranca_pix,
+    MercadoPagoNaoConfigurado,
+)
+from app.exclusao_usuario import verificar_bloqueios_exclusao, excluir_usuario_e_dados
+from app.limpar_dados import apagar_todos_os_dados
 
 dono_bp = Blueprint("dono", __name__, url_prefix="/dono")
 
@@ -19,6 +26,79 @@ def dono_required(f):
             return redirect(url_for("auth.login"))
         return f(*args, **kwargs)
     return decorado
+
+
+def _usuarios_com_custo():
+    """Monta a lista de todo Usuario da equipe (médico/secretária),
+    junto com o(s) grupo(s) de trabalho de cada um (ou nenhum, pra uma
+    conta "solo" - ver Fatia 6) e o custo estimado de IA (ver
+    app.custo_ia/app.models.ChamadaIA). Usado tanto no dashboard
+    principal quanto na tela `usuarios` (mantida como um link direto pra
+    essa mesma lista, sem o resto do dashboard)."""
+    lista_usuarios = (
+        Usuario.query.filter(Usuario.tipo.in_(["medico", "secretaria"]))
+        .order_by(Usuario.criado_em.desc()).all()
+    )
+
+    nomes_de_grupo_por_usuario = {}
+    for gm in GrupoMembro.query.filter(GrupoMembro.ativo.is_(True)).all():
+        nomes_de_grupo_por_usuario.setdefault(gm.usuario_id, []).append(gm.grupo.nome)
+
+    custo_por_usuario = {}
+    for c in ChamadaIA.query.filter(ChamadaIA.usuario_id.isnot(None)).all():
+        item = custo_por_usuario.setdefault(c.usuario_id, {"total_chamadas": 0, "custo_total": 0.0, "tem_custo_desconhecido": False})
+        item["total_chamadas"] += 1
+        if c.custo_estimado_usd is not None:
+            item["custo_total"] += float(c.custo_estimado_usd)
+        if c.preco_desconhecido:
+            item["tem_custo_desconhecido"] = True
+
+    # Calendário de pagamento (Fatia 8): mostra de cara se o mês corrente já
+    # foi marcado como pago pra cada médico, sem precisar abrir o
+    # calendário completo de cada um - ver usuario_licenca_pagamentos.
+    # Garante o mês atual pra cada médico antes de contar meses seguidos
+    # sem pagar - sem isso, um médico que ninguém abriu a tela dele ainda
+    # este mês ficaria subcontado (mês atual "não existe" em vez de "não
+    # pago").
+    # Atualiza trial->ativa/inadimplência de cada médico antes de exibir a
+    # lista - não existe job em segundo plano, então isso é conferido
+    # sempre que o dono olha a lista (mesmo padrão de
+    # verificar_vencimento_grupo no dashboard de Grupos, e do
+    # staff_required no lado do médico).
+    houve_mudanca = False
+    for u in lista_usuarios:
+        if garantir_meses_licenca(u):
+            houve_mudanca = True
+        if u.tipo == "medico" and u.verificar_vencimento_licenca():
+            houve_mudanca = True
+    if houve_mudanca:
+        db.session.commit()
+
+    mes_atual = date.today().replace(day=1)
+    pago_mes_atual_por_usuario = {
+        p.usuario_id: p.pago
+        for p in LicencaPagamento.query.filter_by(mes=mes_atual).all()
+    }
+
+    # Restruturação de 2026-09-02: o limite de meses pra aviso de
+    # inadimplência deixou de ser por médico e virou um único parâmetro
+    # global (PlataformaConfig.aviso_inadimplencia_meses).
+    limite_aviso_inadimplencia = PlataformaConfig.obter().aviso_inadimplencia_meses or 2
+
+    linhas = []
+    for u in lista_usuarios:
+        meses_sem_pagar = meses_consecutivos_sem_pagar(u)
+        linhas.append({
+            "usuario": u,
+            "grupos": nomes_de_grupo_por_usuario.get(u.id, []),
+            "custo": custo_por_usuario.get(u.id),
+            "pago_mes_atual": pago_mes_atual_por_usuario.get(u.id),
+            "meses_sem_pagar": meses_sem_pagar,
+            "em_alerta_inadimplencia": (
+                u.tipo == "medico" and meses_sem_pagar >= limite_aviso_inadimplencia
+            ),
+        })
+    return linhas
 
 
 @dono_bp.route("/")
@@ -46,8 +126,24 @@ def dashboard():
 
     config = PlataformaConfig.obter()
 
+    # Desde a Fatia 6, uma conta pode existir "solo" (sem Grupo nenhum) -
+    # por isso os números de Grupo acima ficam zerados/baixos mesmo com
+    # gente cadastrada de verdade e usando o sistema normalmente. Traz a
+    # lista de usuários (com o custo de IA de cada um) direto aqui no
+    # dashboard principal, pra não dar a impressão de que "não tem
+    # ninguém cadastrado" - ver `_usuarios_com_custo` acima.
+    linhas_usuarios = _usuarios_com_custo()
+    custo_total_usuarios = sum(l["custo"]["custo_total"] for l in linhas_usuarios if l["custo"])
+
+    # Contagem de mensagens novas do "Fale com a gente" (ver MensagemSuporte
+    # em app/models.py), pra mostrar um badge no menu sem precisar abrir a
+    # tela de mensagens.
+    mensagens_suporte_novas = MensagemSuporte.query.filter_by(status="nova").count()
+
     return render_template(
         "dono/dashboard.html", grupos=grupos, resumo=resumo, hoje=date.today(), config=config,
+        linhas_usuarios=linhas_usuarios, custo_total_usuarios=custo_total_usuarios,
+        mensagens_suporte_novas=mensagens_suporte_novas,
     )
 
 
@@ -63,7 +159,139 @@ def configuracoes():
 
     config.trial_dias = trial_dias
     db.session.commit()
-    flash(f"Duração do trial atualizada para {trial_dias} dia(s). Vale para novos grupos cadastrados a partir de agora.", "success")
+    flash(f"Duração do trial atualizada para {trial_dias} dia(s). Vale para novos grupos e médicos cadastrados a partir de agora.", "success")
+    return redirect(url_for("dono.dashboard"))
+
+
+@dono_bp.route("/configuracoes/licenca-medico", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_licenca_medico():
+    """Restruturação de 2026-09-02 (pedido do Silvan): valor mensal padrão
+    e limite de meses pra aviso de inadimplência deixaram de ser
+    configuráveis por médico (ver antiga dono.usuario_licenca_editar) e
+    viraram parâmetros globais da plataforma, editados aqui."""
+    config = PlataformaConfig.obter()
+
+    aviso_meses = request.form.get("aviso_inadimplencia_meses", type=int)
+    if not aviso_meses or aviso_meses < 1:
+        flash("Informe um número de meses para aviso de inadimplência válido (maior que zero).", "danger")
+        return redirect(url_for("dono.dashboard"))
+    config.aviso_inadimplencia_meses = aviso_meses
+
+    valor_str = request.form.get("valor_licenca_padrao", "").strip().replace(",", ".")
+    if valor_str:
+        try:
+            config.valor_licenca_padrao = float(valor_str)
+        except ValueError:
+            flash("Valor mensal padrão inválido.", "danger")
+            return redirect(url_for("dono.dashboard"))
+    else:
+        config.valor_licenca_padrao = None
+
+    # Pedido do Silvan (2026-09-10): valor anual padrão, INDEPENDENTE do
+    # mensal acima (não é calculado como desconto) - ver
+    # PlataformaConfig.valor_licenca_anual_padrao em models.py.
+    valor_anual_str = request.form.get("valor_licenca_anual_padrao", "").strip().replace(",", ".")
+    if valor_anual_str:
+        try:
+            config.valor_licenca_anual_padrao = float(valor_anual_str)
+        except ValueError:
+            flash("Valor anual padrão inválido.", "danger")
+            return redirect(url_for("dono.dashboard"))
+    else:
+        config.valor_licenca_anual_padrao = None
+
+    db.session.commit()
+    flash("Configuração da licença de médico atualizada.", "success")
+    return redirect(url_for("dono.dashboard"))
+
+
+# As 3 IAs suportadas hoje no chat de dúvidas do paciente (ver
+# app.ia_preparo._PROVEDORES_CHAT) - mantido também aqui para validar o
+# formulário sem precisar importar app.ia_preparo (evita import cruzado
+# desnecessário; são só nomes/strings, não lógica).
+PROVEDORES_CHAT_VALIDOS = ("Gemini", "ChatGPT", "Claude")
+
+
+@dono_bp.route("/configuracoes/ia-chat", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_ia_chat():
+    """Escolhe quais 2 das 3 IAs (Gemini/ChatGPT/Claude) respondem o chat
+    de dúvidas do paciente - ver PlataformaConfig.ia_chat_provedor_1/2 e
+    app.ia_preparo.responder_com_ia. A Claude continua sempre fazendo o
+    papel de árbitro/síntese quando as duas divergem, mesmo se não for
+    uma das duas escolhidas aqui - ver comentário em responder_com_ia."""
+    config = PlataformaConfig.obter()
+    provedor_1 = request.form.get("ia_chat_provedor_1")
+    provedor_2 = request.form.get("ia_chat_provedor_2")
+
+    if provedor_1 not in PROVEDORES_CHAT_VALIDOS or provedor_2 not in PROVEDORES_CHAT_VALIDOS:
+        flash("Selecione duas IAs válidas.", "danger")
+        return redirect(url_for("dono.dashboard"))
+    if provedor_1 == provedor_2:
+        flash("Escolha duas IAs diferentes para responder o chat de dúvidas.", "danger")
+        return redirect(url_for("dono.dashboard"))
+
+    config.ia_chat_provedor_1 = provedor_1
+    config.ia_chat_provedor_2 = provedor_2
+    db.session.commit()
+    flash(f"Chat de dúvidas do paciente agora responde com {provedor_1} e {provedor_2}.", "success")
+    return redirect(url_for("dono.dashboard"))
+
+
+@dono_bp.route("/configuracoes/ia-validador", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_ia_validador():
+    """Escolhe qual das 3 IAs (Gemini/ChatGPT/Claude) faz a checagem
+    dedicada de "isso faz sentido e é sobre este exame?" ANTES de
+    qualquer chamada de resposta de verdade (pedido do Silvan,
+    2026-09-24 - ver PlataformaConfig.ia_validador_pergunta e
+    app.ia_preparo.validar_pergunta). Uma ÚNICA IA (diferente do chat de
+    respostas, que usa 2 com reforço mútuo) - independente da escolha em
+    "IAs que respondem o chat de dúvidas" acima."""
+    config = PlataformaConfig.obter()
+    provedor = request.form.get("ia_validador_pergunta")
+
+    if provedor not in PROVEDORES_CHAT_VALIDOS:
+        flash("Selecione uma IA válida para o validador de pergunta.", "danger")
+        return redirect(url_for("dono.dashboard"))
+
+    config.ia_validador_pergunta = provedor
+    db.session.commit()
+    flash(f"Validador de pergunta agora usa {provedor}.", "success")
+    return redirect(url_for("dono.dashboard"))
+
+
+@dono_bp.route("/configuracoes/limite-perguntas", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_limite_perguntas():
+    """Limite diário de mensagens que um paciente pode mandar sobre um
+    MESMO exame, por WhatsApp (pedido do Silvan, 2026-09-24) - global
+    para toda a plataforma (ver PlataformaConfig.limite_perguntas_dia_
+    exame e app.whatsapp_conversa._excedeu_limite_perguntas_dia). Campo
+    em branco = sem limite (comportamento padrão, sem restrição
+    nenhuma)."""
+    config = PlataformaConfig.obter()
+    limite_str = request.form.get("limite_perguntas_dia_exame", "").strip()
+
+    if not limite_str:
+        config.limite_perguntas_dia_exame = None
+        db.session.commit()
+        flash("Limite diário de mensagens por exame removido - sem restrição.", "success")
+        return redirect(url_for("dono.dashboard"))
+
+    limite = request.form.get("limite_perguntas_dia_exame", type=int)
+    if not limite or limite < 1:
+        flash("Informe um limite diário válido (maior que zero), ou deixe em branco para não ter limite.", "danger")
+        return redirect(url_for("dono.dashboard"))
+
+    config.limite_perguntas_dia_exame = limite
+    db.session.commit()
+    flash(f"Limite diário de mensagens por exame atualizado para {limite}.", "success")
     return redirect(url_for("dono.dashboard"))
 
 
@@ -143,3 +371,643 @@ def grupo_desbloquear(grupo_id):
     db.session.commit()
     flash(f"Acesso do grupo '{grupo.nome}' foi restabelecido.", "success")
     return redirect(url_for("dono.grupo_detalhe", grupo_id=grupo.id))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_editar(usuario_id):
+    """Restruturação de 2026-09-02 (pedido do Silvan): a licença de um
+    médico deixou de ser controlada campo-a-campo por aqui - trial→ativa é
+    automático (ver Usuario.verificar_vencimento_licenca) e o vencimento do
+    trial não é mais uma data digitada à mão. O único valor que continua
+    editável por médico é o valor mensal cobrado (nasce com o padrão
+    global de PlataformaConfig.valor_licenca_padrao, mas pode ser
+    reajustado individualmente)."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    if usuario.tipo != "medico":
+        abort(404)
+
+    valor_str = request.form.get("valor_licenca_mensal", "").strip().replace(",", ".")
+    if valor_str:
+        try:
+            usuario.valor_licenca_mensal = float(valor_str)
+        except ValueError:
+            flash("Valor mensal inválido.", "danger")
+            return redirect(url_for("dono.usuarios"))
+    else:
+        usuario.valor_licenca_mensal = None
+
+    # Pedido do Silvan (2026-09-10): valor anual individual deste médico -
+    # mesmo padrão do mensal acima (nasce do padrão global, dono pode
+    # reajustar por médico). Ver Usuario.valor_licenca_anual em models.py.
+    valor_anual_str = request.form.get("valor_licenca_anual", "").strip().replace(",", ".")
+    if valor_anual_str:
+        try:
+            usuario.valor_licenca_anual = float(valor_anual_str)
+        except ValueError:
+            flash("Valor anual inválido.", "danger")
+            return redirect(url_for("dono.usuarios"))
+    else:
+        usuario.valor_licenca_anual = None
+
+    db.session.commit()
+    flash(f"Valor da licença de '{usuario.nome}' atualizado.", "success")
+    return redirect(url_for("dono.usuarios"))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/bloquear", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_bloquear(usuario_id):
+    """Restruturação de 2026-09-02 (pedido do Silvan): "bloquear o acesso"
+    é a ÚNICA ação manual que sobra sobre o status da licença de um médico
+    - todo o resto (trial→ativa, ativa→inadimplente e de volta) é
+    automático (ver Usuario.verificar_vencimento_licenca)."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    if usuario.tipo != "medico":
+        abort(404)
+
+    usuario.licenca_status = "bloqueada"
+    db.session.commit()
+    flash(f"Acesso de '{usuario.nome}' bloqueado.", "success")
+    return redirect(url_for("dono.usuarios"))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/desbloquear", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_desbloquear(usuario_id):
+    """Reverte o bloqueio manual - o médico volta pra "ativa" (a checagem
+    automática, no próximo acesso dele, reavalia se ele deveria estar em
+    "inadimplente" de novo, ver Usuario.verificar_vencimento_licenca)."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    if usuario.tipo != "medico":
+        abort(404)
+
+    usuario.licenca_status = "ativa"
+    db.session.commit()
+    flash(f"Acesso de '{usuario.nome}' desbloqueado.", "success")
+    return redirect(url_for("dono.usuarios"))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos")
+@login_required
+@dono_required
+def usuario_licenca_pagamentos(usuario_id):
+    """Calendário de pagamento mensal do médico (convive com licenca_status/
+    licenca_vencimento, que continuam controlando o trial/status geral) -
+    controle 100% manual do dono, sem gateway de pagamento integrado
+    (decisão do Silvan). Gera os meses que faltam (desde o cadastro) antes
+    de exibir, pra ninguém precisar "abrir o mês" manualmente."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    if usuario.tipo != "medico":
+        abort(404)
+
+    if garantir_meses_licenca(usuario):
+        db.session.commit()
+
+    pagamentos = (
+        LicencaPagamento.query.filter_by(usuario_id=usuario.id)
+        .order_by(LicencaPagamento.mes.desc())
+        .all()
+    )
+    return render_template("dono/usuario_licenca_pagamentos.html", usuario=usuario, pagamentos=pagamentos)
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos/<int:pagamento_id>/marcar", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_pagamento_marcar(usuario_id, pagamento_id):
+    """Alterna um mês entre pago/não pago - marcado manualmente pelo dono
+    (não existe gateway de pagamento integrado nesta versão)."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    pagamento = LicencaPagamento.query.get_or_404(pagamento_id)
+    if pagamento.usuario_id != usuario.id:
+        abort(404)
+
+    pagamento.pago = not pagamento.pago
+    pagamento.pago_em = datetime.utcnow() if pagamento.pago else None
+    db.session.commit()
+
+    flash(
+        f"{usuario.nome}: mês {pagamento.mes.strftime('%m/%Y')} marcado como {'pago' if pagamento.pago else 'não pago'}.",
+        "success",
+    )
+    return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos/<int:pagamento_id>/cobrar", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_pagamento_cobrar(usuario_id, pagamento_id):
+    """Gera (ou regenera) a cobrança REAL desse mês via Mercado Pago
+    (Checkout Pro) - fica ao lado do "marcar como pago" manual acima, não no
+    lugar dele (decisão do Silvan de manter os dois caminhos: Pix fora do
+    sistema, acordos informais etc continuam podendo ser marcados na mão).
+    O link gerado aparece aqui pro dono repassar, e também na tela "Minha
+    licença" do próprio médico (ver routes_medico.py:minha_licenca)."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    pagamento = LicencaPagamento.query.get_or_404(pagamento_id)
+    if pagamento.usuario_id != usuario.id:
+        abort(404)
+
+    try:
+        criar_preferencia_pagamento(pagamento)
+    except MercadoPagoNaoConfigurado:
+        flash(
+            "Mercado Pago ainda não está configurado nesta instalação "
+            "(defina MERCADOPAGO_ACCESS_TOKEN no .env).",
+            "danger",
+        )
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+    except ValueError as erro:
+        flash(str(erro), "danger")
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+    except Exception:
+        current_app.logger.exception(
+            "Falha ao criar cobrança no Mercado Pago para o pagamento %s.", pagamento.id
+        )
+        flash("Não foi possível gerar a cobrança agora - tente novamente em instantes.", "danger")
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+    db.session.commit()
+    flash(f"Cobrança gerada para {usuario.nome} ({pagamento.mes.strftime('%m/%Y')}).", "success")
+    return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos/<int:pagamento_id>/cobrar-anual", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_pagamento_cobrar_anual(usuario_id, pagamento_id):
+    """Pedido do Silvan (2026-09-10, licença anual): mesma ideia de
+    usuario_licenca_pagamento_cobrar acima, só que cobrando o valor ANUAL
+    de uma vez (pagamento único via Checkout Pro, decisão do Silvan de não
+    usar assinatura recorrente por enquanto) - só faz sentido quando
+    `usuario.ciclo_licenca == "anual"` (o próprio médico escolhe isso em
+    "Minha licença", ver medico.licenca_escolher_ciclo). O link gerado
+    aparece aqui pro dono repassar, e também em "Minha licença" do médico.
+
+    `pagamento_id` é o LicencaPagamento do mês em que o ciclo anual
+    começa (normalmente o mês vigente, já existente via
+    garantir_meses_licenca) - ver docstring de
+    mercadopago_integration.criar_preferencia_pagamento_anual para o
+    porquê de usar esse registro como "âncora" da cobrança."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    pagamento = LicencaPagamento.query.get_or_404(pagamento_id)
+    if pagamento.usuario_id != usuario.id:
+        abort(404)
+    if usuario.ciclo_licenca != "anual":
+        flash(f"{usuario.nome} não está no ciclo de cobrança anual.", "danger")
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+    valor_anual = usuario.valor_licenca_anual
+    try:
+        criar_preferencia_pagamento_anual(pagamento, valor_anual)
+    except MercadoPagoNaoConfigurado:
+        flash(
+            "Mercado Pago ainda não está configurado nesta instalação "
+            "(defina MERCADOPAGO_ACCESS_TOKEN no .env).",
+            "danger",
+        )
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+    except ValueError as erro:
+        flash(str(erro), "danger")
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+    except Exception:
+        current_app.logger.exception(
+            "Falha ao criar cobrança anual no Mercado Pago para o pagamento %s.", pagamento.id
+        )
+        flash("Não foi possível gerar a cobrança agora - tente novamente em instantes.", "danger")
+        return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+    db.session.commit()
+    flash(f"Cobrança anual gerada para {usuario.nome} (a partir de {pagamento.mes.strftime('%m/%Y')}).", "success")
+    return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/excluir", methods=["POST"])
+@login_required
+@dono_required
+def usuario_excluir(usuario_id):
+    """Exclusão PERMANENTE de um médico ou secretária (substitui a antiga
+    tela "Limpar dados de teste", que apagava o banco inteiro sem login -
+    decisão do Silvan de trocar por uma opção escopada a uma pessoa,
+    disponível de verdade em produção). Apaga a conta e tudo relacionado a
+    ela (exames/agendamentos em que é responsável, licença, custo de IA,
+    convites, vínculo com grupos) - pacientes cadastrados por ela só
+    perdem essa atribuição, não são apagados (ver app/exclusao_usuario.py).
+
+    Confirmação: exige a SENHA do próprio dono (decisão do Silvan) - não
+    basta estar logado, porque essa ação não tem volta."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    if usuario.tipo not in ("medico", "secretaria"):
+        abort(404)
+
+    senha_confirmacao = request.form.get("senha_confirmacao", "")
+    if not current_user.checar_senha(senha_confirmacao):
+        flash("Senha incorreta - a conta NÃO foi excluída.", "danger")
+        return redirect(url_for("dono.usuarios"))
+
+    bloqueios = verificar_bloqueios_exclusao(usuario)
+    if bloqueios:
+        for mensagem in bloqueios:
+            flash(mensagem, "danger")
+        return redirect(url_for("dono.usuarios"))
+
+    nome = usuario.nome
+    excluir_usuario_e_dados(usuario)
+    db.session.commit()
+    flash(f'"{nome}" e todos os dados associados foram excluídos permanentemente.', "success")
+    return redirect(url_for("dono.usuarios"))
+
+
+@dono_bp.route("/limpar-dados", methods=["POST"])
+@login_required
+@dono_required
+def limpar_dados_banco():
+    """Apaga TODOS os dados operacionais da plataforma (médicos,
+    secretárias, pacientes, grupos, exames, preparos, agendamentos,
+    conversas de WhatsApp, histórico de IA etc.) - pedido explícito do
+    Silvan (2026-09-10). Ver app/limpar_dados.py para o histórico completo
+    de por que isso é sensível (substituiu uma ferramenta parecida que já
+    tinha sido removida antes por ser insegura) e o que exatamente é
+    apagado/preservado.
+
+    Disponível para qualquer dono da plataforma, em QUALQUER ambiente
+    (inclusive produção) - decisão explícita do Silvan, mesmo depois de
+    avisado do histórico acima. Duas confirmações antes de executar,
+    nenhuma delas contornável: a senha do próprio dono (mesmo padrão de
+    usuario_excluir) e a digitação literal de "APAGAR TUDO" - a ideia é
+    tornar bem difícil de disparar isso sem querer, já que não tem volta
+    (nenhum backup automático é feito aqui)."""
+    senha_confirmacao = request.form.get("senha_confirmacao", "")
+    frase_confirmacao = request.form.get("frase_confirmacao", "").strip()
+
+    if frase_confirmacao != "APAGAR TUDO":
+        flash('Digite exatamente "APAGAR TUDO" para confirmar - nada foi apagado.', "danger")
+        return redirect(url_for("dono.dashboard"))
+
+    if not current_user.checar_senha(senha_confirmacao):
+        flash("Senha incorreta - nada foi apagado.", "danger")
+        return redirect(url_for("dono.dashboard"))
+
+    apagar_todos_os_dados(current_user)
+    db.session.commit()
+    flash(
+        "Todos os dados foram apagados (médicos, secretárias, pacientes, grupos, exames, preparos, "
+        "agendamentos, conversas e histórico de IA). Sua conta de dono continua ativa.",
+        "warning",
+    )
+    return redirect(url_for("dono.dashboard"))
+
+
+@dono_bp.route("/usuarios")
+@login_required
+@dono_required
+def usuarios():
+    """Lista TODOS os usuários da equipe (médico/secretária) cadastrados
+    na plataforma - independente de terem um Grupo de trabalho ou não.
+
+    Importante desde a Fatia 6 (ver docstring de app.routes_auth.cadastro):
+    uma conta pode existir "solo", sem nenhum Grupo, plenamente usável
+    (cadastra paciente/exame/agendamento com escopo pessoal). O
+    dashboard principal (`dashboard`, acima) só lista Grupos e itera os
+    membros de cada um - uma conta solo nunca aparece ali, ficando
+    completamente invisível pro dono da plataforma. Esta tela cobre esse
+    ponto cego, listando a partir do Usuario direto, não do Grupo.
+
+    Já traz junto o custo estimado de IA de cada usuário (ver
+    app.custo_ia e app.models.ChamadaIA) - cada linha tem um botão que
+    abre o detalhe das chamadas individuais daquele usuário
+    (`custo_ia_usuario`, mesma tela usada pelo painel de custo em
+    `custo_ia`).
+
+    Desde que essa lista passou a aparecer também direto no dashboard
+    principal (ver `dashboard` acima), esta rota serve como um link pra
+    ver SÓ essa lista, sem o restante da tela de Grupos."""
+    return render_template("dono/usuarios.html", linhas=_usuarios_com_custo())
+
+
+@dono_bp.route("/usuarios/gerar-cobrancas-ano", methods=["POST"])
+@login_required
+@dono_required
+def licencas_gerar_cobrancas_ano():
+    """Gera, de uma vez só, a cobrança Mercado Pago dos meses que FALTAM
+    neste ano civil (do mês seguinte ao atual até dezembro, inclusive)
+    pra todo médico em ciclo MENSAL (pedido do Silvan, 2026-09-25 - antes
+    só dava pra gerar usuário por usuário/mês por mês, na tela de
+    pagamentos de cada um). Médico em ciclo ANUAL fica de fora - ele usa o
+    próprio fluxo de "cobrar anual" (ver usuario_licenca_pagamento_cobrar_
+    anual), que já cobre o ano inteiro num pagamento único; gerar cobrança
+    mensal pra ele aqui cobraria em duplicado.
+
+    Critérios (decididos com o Silvan): só os meses AINDA NÃO PAGOS, e só
+    onde ainda NÃO existe cobrança gerada (não substitui/duplica um link
+    já ativo) - meses já pagos na mão (Pix, acordo informal etc.) e meses
+    com cobrança já pendente ficam intocados.
+
+    Pedido do Silvan (2026-09-25, Pix nativo): além do link de Checkout
+    Pro de sempre, cada mês também recebe um QR code Pix (opção adicional,
+    ver app.mercadopago_integration.criar_cobranca_pix) - as duas geração
+    são independentes (um mês pode já ter link mas ainda não ter Pix, por
+    exemplo se essa função rodou antes de o Pix existir), cada uma só
+    pula o que JÁ tem, e uma falha na geração do Pix não desfaz o link já
+    gerado com sucesso (e vice-versa) - contadas e avisadas separadamente
+    no resumo final."""
+    hoje = date.today()
+    if hoje.month == 12:
+        flash("Já estamos em dezembro - não há mais meses restantes neste ano civil pra gerar.", "warning")
+        return redirect(url_for("dono.usuarios"))
+    mes_inicio = date(hoje.year, hoje.month + 1, 1)
+    mes_fim = date(hoje.year, 12, 1)
+
+    medicos = Usuario.query.filter_by(tipo="medico", ciclo_licenca="mensal").all()
+
+    geradas = 0
+    ja_tinham = 0
+    sem_valor = 0
+    falhas = []
+    pix_geradas = 0
+    pix_ja_tinham = 0
+    pix_falhas = []
+
+    for medico in medicos:
+        garantir_meses_licenca(medico, fim=mes_fim)
+    db.session.flush()
+
+    for medico in medicos:
+        pagamentos = LicencaPagamento.query.filter(
+            LicencaPagamento.usuario_id == medico.id,
+            LicencaPagamento.mes >= mes_inicio,
+            LicencaPagamento.mes <= mes_fim,
+            LicencaPagamento.pago.is_(False),
+        ).all()
+        for pagamento in pagamentos:
+            if pagamento.mp_init_point:
+                ja_tinham += 1
+            else:
+                try:
+                    criar_preferencia_pagamento(pagamento)
+                    geradas += 1
+                except MercadoPagoNaoConfigurado:
+                    db.session.commit()
+                    flash(
+                        "Mercado Pago ainda não está configurado nesta instalação "
+                        "(defina MERCADOPAGO_ACCESS_TOKEN no .env) - nenhuma cobrança foi gerada.",
+                        "danger",
+                    )
+                    return redirect(url_for("dono.usuarios"))
+                except ValueError:
+                    sem_valor += 1
+                except Exception:
+                    current_app.logger.exception(
+                        "Falha ao gerar cobrança em massa para %s, mês %s.",
+                        medico.nome, pagamento.mes.strftime("%m/%Y"),
+                    )
+                    falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
+
+            if pagamento.pix_qr_code:
+                pix_ja_tinham += 1
+                continue
+            try:
+                criar_cobranca_pix(pagamento)
+                pix_geradas += 1
+            except MercadoPagoNaoConfigurado:
+                # Mesma configuração (MERCADOPAGO_ACCESS_TOKEN) do link -
+                # se faltou pro link acima, vai faltar pro Pix também, mas
+                # já foi avisado e interrompido lá em cima; chegar aqui
+                # sem token só é possível se o link já existia (bloco
+                # acima não chamou _access_token) e só o Pix falta - avisa
+                # e continua pro próximo mês, sem interromper tudo.
+                pix_falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
+            except ValueError:
+                pass  # mesmo "sem valor" já contado em sem_valor acima
+            except Exception:
+                current_app.logger.exception(
+                    "Falha ao gerar Pix em massa para %s, mês %s.",
+                    medico.nome, pagamento.mes.strftime("%m/%Y"),
+                )
+                pix_falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
+
+    db.session.commit()
+
+    partes = [f"{geradas} cobrança{'s' if geradas != 1 else ''} gerada{'s' if geradas != 1 else ''}"]
+    if ja_tinham:
+        partes.append(f"{ja_tinham} já tinham cobrança (não duplicadas)")
+    if sem_valor:
+        partes.append(f"{sem_valor} sem valor mensal definido (puladas)")
+    if falhas:
+        exibidas = ", ".join(falhas[:5])
+        partes.append(f"{len(falhas)} falharam: {exibidas}{' ...' if len(falhas) > 5 else ''}")
+    partes.append(f"{pix_geradas} Pix gerado{'s' if pix_geradas != 1 else ''}")
+    if pix_ja_tinham:
+        partes.append(f"{pix_ja_tinham} já tinham Pix (não duplicados)")
+    if pix_falhas:
+        exibidas_pix = ", ".join(pix_falhas[:5])
+        partes.append(f"{len(pix_falhas)} Pix falharam: {exibidas_pix}{' ...' if len(pix_falhas) > 5 else ''}")
+    flash(" · ".join(partes) + ".", "success" if not falhas and not pix_falhas else "warning")
+    return redirect(url_for("dono.usuarios"))
+
+
+@dono_bp.route("/custo-ia")
+@login_required
+@dono_required
+def custo_ia():
+    """Painel de custo ESTIMADO das chamadas de IA (Gemini/ChatGPT/Claude),
+    somado por quem gerou cada chamada - um Usuario da equipe/médico (ao
+    importar um PDF de preparo, ver app.ia_pdf_preparo) ou um Paciente
+    (ao usar o chat de dúvidas, ver app.ia_preparo). Ver app.custo_ia
+    para o cálculo do custo (a partir da contagem de tokens devolvida
+    por cada API - nenhum provedor devolve o valor em dólares direto) e
+    app.models.ChamadaIA para o que fica registrado por chamada.
+
+    Soma tudo em memória (não em SQL) de propósito - o volume de
+    chamadas de IA de uma clínica é baixo o bastante pra isso não pesar,
+    e evita ter que lidar com agregação de custo NULL (modelo sem preço
+    cadastrado na tabela, ver `preco_desconhecido`) direto na query."""
+    todas = ChamadaIA.query.order_by(ChamadaIA.criado_em.desc()).all()
+
+    por_pessoa = {}
+    for c in todas:
+        if c.usuario_id:
+            chave = ("usuario", c.usuario_id)
+            nome = c.usuario.nome if c.usuario else f"Usuário #{c.usuario_id} (removido)"
+        else:
+            chave = ("paciente", c.paciente_id)
+            nome = c.paciente.nome if c.paciente else f"Paciente #{c.paciente_id} (removido)"
+
+        item = por_pessoa.setdefault(chave, {
+            "tipo": chave[0], "id": chave[1], "nome": nome,
+            "total_chamadas": 0, "custo_total": 0.0, "tem_custo_desconhecido": False,
+            "ultima_chamada_em": c.criado_em,
+        })
+        item["total_chamadas"] += 1
+        if c.custo_estimado_usd is not None:
+            item["custo_total"] += float(c.custo_estimado_usd)
+        if c.preco_desconhecido:
+            item["tem_custo_desconhecido"] = True
+
+    linhas = sorted(por_pessoa.values(), key=lambda i: i["custo_total"], reverse=True)
+    custo_total_geral = sum(i["custo_total"] for i in linhas)
+    tem_custo_desconhecido_geral = any(i["tem_custo_desconhecido"] for i in linhas)
+
+    # Tabela de preços por token, só para consulta (ver app.custo_ia) -
+    # ordenada por modelo, pra quem quiser conferir/entender de onde vem
+    # cada valor estimado acima, sem precisar abrir o código.
+    precos_por_token = sorted(
+        (
+            {
+                "modelo": modelo,
+                "preco_entrada_usd": preco_entrada,
+                "preco_saida_usd": preco_saida,
+            }
+            for modelo, (preco_entrada, preco_saida) in PRECOS_POR_MILHAO_TOKENS.items()
+        ),
+        key=lambda i: i["modelo"],
+    )
+
+    return render_template(
+        "dono/custo_ia.html", linhas=linhas, custo_total_geral=custo_total_geral,
+        tem_custo_desconhecido_geral=tem_custo_desconhecido_geral,
+        precos_por_token=precos_por_token, cotacao_usd_brl=COTACAO_USD_PARA_BRL,
+    )
+
+
+@dono_bp.route("/custo-ia/usuario/<int:usuario_id>")
+@login_required
+@dono_required
+def custo_ia_usuario(usuario_id):
+    """Detalhe das chamadas de IA feitas por um Usuario da equipe (ao
+    importar PDFs de preparo) - ver `custo_ia` acima."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    chamadas = (
+        ChamadaIA.query.filter_by(usuario_id=usuario_id)
+        .order_by(ChamadaIA.criado_em.desc()).all()
+    )
+    return render_template(
+        "dono/custo_ia_detalhe.html", pessoa_nome=usuario.nome, chamadas=chamadas,
+    )
+
+
+@dono_bp.route("/custo-ia/paciente/<int:paciente_id>")
+@login_required
+@dono_required
+def custo_ia_paciente(paciente_id):
+    """Detalhe das chamadas de IA feitas em nome de um Paciente (ao usar
+    o chat de dúvidas) - ver `custo_ia` acima."""
+    paciente = Paciente.query.get_or_404(paciente_id)
+    chamadas = (
+        ChamadaIA.query.filter_by(paciente_id=paciente_id)
+        .order_by(ChamadaIA.criado_em.desc()).all()
+    )
+    return render_template(
+        "dono/custo_ia_detalhe.html", pessoa_nome=paciente.nome, chamadas=chamadas,
+    )
+
+
+
+# ---------- "Fale com a gente" (mensagens de médico/secretária) ----------
+
+@dono_bp.route("/mensagens-suporte")
+@login_required
+@dono_required
+def mensagens_suporte():
+    """Lista todas as mensagens de todas as clínicas (ver MensagemSuporte
+    em app/models.py) - as mais novas primeiro, pra o dono sempre ver o
+    que ainda não foi respondido no topo."""
+    mensagens = (
+        MensagemSuporte.query.order_by(
+            MensagemSuporte.status == "respondida",
+            MensagemSuporte.criado_em.desc(),
+        ).all()
+    )
+    return render_template("dono/mensagens_suporte.html", mensagens=mensagens)
+
+
+@dono_bp.route("/mensagens-suporte/<int:mensagem_id>/responder", methods=["POST"])
+@login_required
+@dono_required
+def mensagens_suporte_responder(mensagem_id):
+    mensagem = MensagemSuporte.query.get_or_404(mensagem_id)
+    resposta = request.form.get("resposta", "").strip()
+    if not resposta:
+        flash("Escreva uma resposta antes de enviar.", "danger")
+        return redirect(url_for("dono.mensagens_suporte"))
+    mensagem.resposta = resposta
+    mensagem.status = "respondida"
+    mensagem.respondida_em = datetime.utcnow()
+    # Avisa quem perguntou pelo sininho de notificações (pedido do Silvan,
+    # 2026-09-25 - ver Notificacao em app/models.py).
+    db.session.add(Notificacao(
+        usuario_id=mensagem.usuario_id,
+        tipo="resposta_suporte",
+        titulo="Resposta do \"Fale com a gente\"",
+        mensagem=resposta,
+        link_endpoint="medico.fale_com_a_gente",
+    ))
+    db.session.commit()
+    flash("Resposta enviada.", "success")
+    return redirect(url_for("dono.mensagens_suporte"))
+
+
+@dono_bp.route("/mensagens-suporte/<int:mensagem_id>/marcar-lida", methods=["POST"])
+@login_required
+@dono_required
+def mensagens_suporte_marcar_lida(mensagem_id):
+    mensagem = MensagemSuporte.query.get_or_404(mensagem_id)
+    if mensagem.status == "nova":
+        mensagem.status = "lida"
+        db.session.commit()
+    return redirect(url_for("dono.mensagens_suporte"))
+
+
+# ---------- Anúncios (avisos manuais do dono, via sininho de notificações) ----------
+
+@dono_bp.route("/anuncios", methods=["GET"])
+@login_required
+@dono_required
+def anuncios():
+    """Formulário pra o dono escrever um aviso e mandar pra um médico/
+    secretária específico ou pra todo mundo (pedido do Silvan, 2026-09-25)
+    - vira uma Notificacao (ver app/models.py) pra cada destinatário,
+    mostrada no sininho do cabeçalho dele."""
+    equipe = (
+        Usuario.query.filter(Usuario.tipo.in_(["medico", "secretaria"]))
+        .order_by(Usuario.nome)
+        .all()
+    )
+    return render_template("dono/anuncios.html", equipe=equipe)
+
+
+@dono_bp.route("/anuncios/enviar", methods=["POST"])
+@login_required
+@dono_required
+def anuncio_enviar():
+    destinatario = request.form.get("destinatario", "todos")
+    titulo = request.form.get("titulo", "").strip()
+    mensagem = request.form.get("mensagem", "").strip()
+    if not titulo or not mensagem:
+        flash("Preencha o título e a mensagem antes de enviar.", "danger")
+        return redirect(url_for("dono.anuncios"))
+
+    if destinatario == "todos":
+        destinatarios = Usuario.query.filter(Usuario.tipo.in_(["medico", "secretaria"])).all()
+    else:
+        destinatarios = Usuario.query.filter(
+            Usuario.id == destinatario, Usuario.tipo.in_(["medico", "secretaria"])
+        ).all()
+        if not destinatarios:
+            flash("Destinatário inválido.", "danger")
+            return redirect(url_for("dono.anuncios"))
+
+    for usuario in destinatarios:
+        db.session.add(Notificacao(
+            usuario_id=usuario.id, tipo="anuncio", titulo=titulo, mensagem=mensagem,
+        ))
+    db.session.commit()
+    flash(
+        f"Anúncio enviado para {len(destinatarios)} pessoa{'s' if len(destinatarios) != 1 else ''}.",
+        "success",
+    )
+    return redirect(url_for("dono.anuncios"))

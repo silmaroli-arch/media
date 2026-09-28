@@ -66,7 +66,7 @@
     <div class="chat-bubble-user mb-2">{{ pergunta_enviada }}</div>
     {% if resposta_ia %}
       <div class="chat-bubble-ia"><i class="bi bi-robot"></i> {{ resposta_ia }}</div>
-    {% elif origem == 'ia_aguardando' %}
+    {% elif origem in ('ia_aguardando', 'alimento_aguard', 'medicamento_aguard') %}
       <div class="chat-bubble-alerta"><i class="bi bi-hourglass-split"></i> Já tenho uma resposta, mas ela precisa ser revisada pelo médico antes de te enviar — assim que ele aprovar, ela aparece aqui embaixo, na sua lista de perguntas.</div>
     {% elif encaminhada %}
       <div class="chat-bubble-alerta"><i class="bi bi-hourglass-split"></i> Ainda não sei responder essa pergunta com certeza. Encaminhei para a secretaria, que vai responder em breve — e a resposta ficará salva para as próximas pessoas que perguntarem o mesmo.</div>

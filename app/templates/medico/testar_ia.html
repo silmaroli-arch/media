@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block titulo %}Testar IA{% endblock %}
+{% block conteudo %}
+<h3 class="mb-1"><i class="bi bi-robot"></i> Testar IA nos meus preparos</h3>
+<p class="text-muted mb-4">
+  Faça uma pergunta como se você fosse um paciente, para ver como a IA responderia sobre o preparo de um dos
+  seus exames — usa exatamente o mesmo caminho do chat do paciente (a mesma IA configurada, a mesma base de
+  conhecimento, o mesmo fluxo de aprovação), sem envolver nenhum paciente de verdade.
+</p>
+
+<div class="card p-4 mb-4">
+  {% if exames %}
+  <form method="post" id="form-testar-ia">
+    <div class="mb-3">
+      <label class="form-label">Sobre qual exame/preparo é a pergunta de teste?</label>
+      <select name="exame_id" class="form-select" required>
+        <option value="">Escolha um exame...</option>
+        {% for e in exames %}
+        <option value="{{ e.id }}" {% if exame_id_selecionado == e.id|string %}selected{% endif %}>{{ e.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Pergunta de teste</label>
+      <div class="input-group">
+        <input type="text" name="pergunta" class="form-control" value="{{ pergunta_enviada or '' }}" placeholder='Ex: "Posso comer batata antes do exame?"' required>
+        <button type="submit" class="btn btn-success" id="btn-testar">Perguntar</button>
+      </div>
+    </div>
+  </form>
+  <script>
+    document.getElementById('form-testar-ia').addEventListener('submit', function () {
+      var botao = document.getElementById('btn-testar');
+      botao.disabled = true;
+      botao.innerHTML = 'Consultando...';
+    });
+  </script>
+  {% else %}
+  <p class="text-muted mb-0">
+    Você ainda não tem nenhum modelo de preparo cadastrado para testar.
+    <a href="{{ url_for('medico.preparo_modelos_novo') }}">Cadastre um modelo de preparo</a> primeiro.
+  </p>
+  {% endif %}
+
+  {% if pergunta_enviada %}
+  <div class="mt-4">
+    <div class="chat-bubble-user mb-2">{{ pergunta_enviada }}</div>
+    {% if resposta_ia %}
+      <div class="chat-bubble-ia"><i class="bi bi-robot"></i> {{ resposta_ia }}</div>
+      <p class="text-muted small mt-2 mb-0">
+        {% if origem == 'faq' %}Resposta encontrada na base de conhecimento (pergunta parecida já respondida antes).
+        {% elif origem == 'alimento' %}Resposta calculada na hora a partir da lista de alimentos do preparo.
+        {% elif origem == 'medicamento' %}Resposta calculada na hora a partir da lista de medicamentos do preparo.
+        {% endif %}
+        Assim que uma pergunta parecida chegar de um paciente de verdade, ele veria exatamente esta resposta na hora, sem precisar de aprovação.
+      </p>
+    {% elif origem == 'ia_aguardando' %}
+      <div class="chat-bubble-alerta"><i class="bi bi-hourglass-split"></i> A IA respondeu, mas — igual aconteceria com um paciente de verdade — essa resposta precisa passar pela sua revisão antes de valer. Veja o rascunho em <a href="{{ url_for('medico.perguntas_pendentes') }}">Perguntas pendentes</a> para aprovar, editar ou reprovar.</div>
+    {% elif encaminhada %}
+      <div class="chat-bubble-alerta"><i class="bi bi-hourglass-split"></i> Nenhuma resposta automática foi encontrada — com um paciente de verdade, esta pergunta cairia na fila da secretaria/equipe para responder manualmente. Ela já está em <a href="{{ url_for('medico.perguntas_pendentes') }}">Perguntas pendentes</a>.</div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

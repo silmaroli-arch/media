@@ -2,7 +2,19 @@
 {% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}Painel{% endblock %}
 {% block conteudo %}
-<h3 class="mb-1">{% if current_user.tipo == "medico" %}Meu painel{% else %}Painel da secretaria{% endif %}</h3>
+<h3 class="mb-1">
+  {% if current_user.tipo == "medico" %}Meu painel{% else %}Painel da secretaria{% endif %}
+  {% if licenca_label %}
+    <a href="{{ url_for('medico.minha_licenca') }}" class="badge bg-{{ licenca_cor }} align-middle" style="font-size: 0.9rem;" title="Status da sua licença — clique para ver detalhes">
+      {{ licenca_label }}
+    </a>
+    {% if current_user.licenca_status == "trial" and licenca_vencimento %}
+      <span class="text-muted align-middle" style="font-size: 0.85rem;">
+        · vence em {{ licenca_vencimento.strftime('%d/%m/%Y') }}
+      </span>
+    {% endif %}
+  {% endif %}
+</h3>
 <p class="text-muted mb-4">{{ clinica.nome if clinica else current_user.nome }}</p>
 
 <div class="row g-3 mb-4">
@@ -31,23 +43,55 @@
   </div>
 </div>
 
-{% if convites_pendentes %}
-<div class="card p-3 mb-4 border-warning">
-  <h6 class="mb-1"><i class="bi bi-envelope-exclamation me-1"></i>Convites para entrar em outros grupos</h6>
-  <p class="text-muted small mb-2">
-    Você foi convidado(a) pelo seu CPF. O vínculo só começa se você aceitar.
-  </p>
-  {% for convite in convites_pendentes %}
-  <div class="d-flex justify-content-between align-items-center border rounded p-2 mb-2">
-    <div>
-      <strong>{{ convite.grupo.nome }}</strong>
-      <span class="text-muted small">— convite de {{ convite.criado_em.strftime('%d/%m/%Y') }}</span>
+{# Pedido do Silvan (2026-09-13/14, movido pro painel em 2026-09-25 - antes
+   só ficava no Portal de atendimento rápido): liga/desliga a exigência de
+   aprovação antes de uma resposta de alimento/medicamento/IA ir pro
+   paciente (ver medico.perguntas_configuracao). #}
+<div class="card mb-4">
+  <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-2 py-2">
+    <div class="small">
+      <strong>Exigir minha aprovação antes de responder o paciente</strong>
+      <div class="text-muted">Desativado, as respostas de alimento/medicamento/IA vão direto pro paciente. A FAQ já aprovada antes sempre responde direto, com ou sem isto.</div>
     </div>
-    <div class="d-flex gap-2">
-      <a href="{{ url_for('grupo.meus_convites') }}" class="btn btn-sm btn-success">Ver convite</a>
+    <form method="post" action="{{ url_for('medico.perguntas_configuracao') }}" class="form-check form-switch fs-4 mb-0">
+      <input type="hidden" name="origem" value="painel">
+      {# Checkbox desmarcado não é enviado pelo navegador (padrão HTML) -
+         a rota trata a AUSÊNCIA do campo como "desativar" - sem hidden
+         auxiliar pro próprio "aprovacao_ativa", pra não correr o risco de
+         dois valores do mesmo campo no POST. #}
+      <input class="form-check-input" type="checkbox" role="switch" id="aprovacao-ativa" name="aprovacao_ativa" value="1" {% if aprovacao_ativa %}checked{% endif %} onchange="this.form.submit()">
+      <label class="form-check-label fs-6" for="aprovacao-ativa">{{ "Ativada" if aprovacao_ativa else "Desativada" }}</label>
+    </form>
+  </div>
+</div>
+
+{% if convites_pendentes %}
+{# Pedido do Silvan: destacar bem mais este aviso - antes era um card
+   discreto, fácil de passar despercebido no meio do painel, mesmo sendo
+   uma ação pendente importante (o vínculo com o outro grupo só começa se
+   a pessoa aceitar). Vira um alerta grande, mesmo estilo de destaque
+   usado nos avisos de "conta em teste"/inadimplência da plataforma. #}
+<div class="alert alert-warning border-warning border-2 mb-4 p-4">
+  <div class="d-flex align-items-start">
+    <i class="bi bi-envelope-exclamation-fill me-3" style="font-size: 2rem;"></i>
+    <div class="flex-grow-1">
+      <h5 class="alert-heading mb-1">
+        {{ convites_pendentes|length }} convite{{ "s" if convites_pendentes|length != 1 else "" }} para entrar em outro grupo
+      </h5>
+      <p class="mb-3">
+        Você foi convidado(a) pelo seu CPF. O vínculo só começa se você aceitar.
+      </p>
+      {% for convite in convites_pendentes %}
+      <div class="d-flex justify-content-between align-items-center bg-white border rounded p-3 mb-2">
+        <div>
+          <strong class="fs-5">{{ convite.grupo.nome }}</strong>
+          <div class="text-muted small">Convite de {{ convite.criado_em.strftime('%d/%m/%Y') }}</div>
+        </div>
+        <a href="{{ url_for('grupo.meus_convites') }}" class="btn btn-success">Ver convite</a>
+      </div>
+      {% endfor %}
     </div>
   </div>
-  {% endfor %}
 </div>
 {% endif %}
 
@@ -80,27 +124,5 @@
     {% endif %}
   </div>
 
-  <div class="card p-3">
-    <h5>Lista completa</h5>
-    <table class="table table-hover">
-      <thead><tr><th>Data/Hora</th>{{ th_filial() }}<th>Paciente</th><th>Exame</th><th>Médico</th><th></th></tr></thead>
-      <tbody>
-        {% for a in agendamentos %}
-        <tr>
-          <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
-          {{ td_filial(a) }}
-          <td>{{ a.paciente.nome }}</td>
-          <td>{{ a.exame.nome }}</td>
-          <td>{{ a.medico.nome }}</td>
-          <td>
-            {% if a.encerrada %}<span class="badge bg-dark">encerrado</span>{% endif %}
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="{{ 6 if mostrar_filial else 5 }}" class="text-muted text-center">Nenhum agendamento cadastrado.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
 </div>
 {% endblock %}
