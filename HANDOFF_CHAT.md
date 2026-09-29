@@ -1835,6 +1835,20 @@ Docstring de `_paciente_teste_do_medico` atualizada explicando a exceção. Veri
 Aplicado só no `dev` (aguardando auto-commit do Silvan) - ele vai testar de novo criando outro médico (ou usando "Importar para esta clínica" manualmente pra resolver o caso já existente) após o deploy.
 
 
+## Bug corrigido: link "Responder agora" do painel do médico ia para a tela errada (2026-09-29)
+
+Reportado pelo Silvan com prints: no painel (`/equipe/`), o card "Perguntas
+pendentes de resposta" tem um link "Responder agora" que deveria levar ao
+"Portal de atendimento" (`/equipe/portal`, tela enxuta pensada como atalho
+rápido no celular, sem menu/barra lateral), mas estava levando para a tela
+completa de perguntas (`/equipe/perguntas`).
+
+Causa: `app/templates/medico/dashboard.html` (linha do link) usava
+`url_for('medico.perguntas_pendentes')` em vez de
+`url_for('medico.portal_atendimento')`.
+
+Corrigido trocando o `url_for` do link para `medico.portal_atendimento`.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
