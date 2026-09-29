@@ -207,6 +207,18 @@ ITENS_PADRAO = [
 ]
 
 
+# Cargas por grupo de exames (2026-09-29), cada uma em seu módulo para manter
+# este arquivo enxuto. Os módulos não importam nada do projeto.
+from app.base_conhecimento_padrao_g1 import ITENS as _G1  # digestivo funcional e endoscópico
+from app.base_conhecimento_padrao_g2 import ITENS as _G2  # ultrassom, tomografia e ressonância
+from app.base_conhecimento_padrao_g3 import ITENS as _G3  # radiografia contrastada e medicina nuclear
+from app.base_conhecimento_padrao_g4 import ITENS as _G4  # cardiologia
+from app.base_conhecimento_padrao_g5 import ITENS as _G5  # laboratório
+from app.base_conhecimento_padrao_g6 import ITENS as _G6  # ginecologia, urologia, pneumologia e outros
+
+ITENS_PADRAO = ITENS_PADRAO + _G1 + _G2 + _G3 + _G4 + _G5 + _G6
+
+
 def semear_base_conhecimento(db):
     """Insere os itens acima que ainda não existem (mesmo tipo de exame e
     mesma pergunta, sem diferenciar maiúsculas). Idempotente e NÃO
