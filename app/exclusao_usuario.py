@@ -125,9 +125,8 @@ def excluir_usuario_e_dados(usuario):
             ConversaWhatsapp.query.filter(ConversaWhatsapp.agendamento_id.in_(agendamentos_a_apagar_ids)).update(
                 {"agendamento_id": None}, synchronize_session=False
             )
-            Agendamento.query.filter(Agendamento.id.in_(agendamentos_a_apagar_ids)).delete(
-                synchronize_session=False
-            )  # ResultadoExame é apagado via ON DELETE CASCADE do banco
+            for agendamento in Agendamento.query.filter(Agendamento.id.in_(agendamentos_a_apagar_ids)).all():
+                db.session.delete(agendamento)  # cascade do ORM apaga o ResultadoExame junto
         ChatMensagem.query.filter(ChatMensagem.exame_id.in_(exames_proprios_ids)).update(
             {"exame_id": None}, synchronize_session=False
         )
@@ -147,7 +146,8 @@ def excluir_usuario_e_dados(usuario):
     # 6. Agendamentos em que ele é o médico responsável, mas o exame não
     # era dele (ex.: cobrindo um colega) — continuam sendo agendamentos
     # DELE, não têm como existir sem um médico responsável, então saem.
-    agendamentos_proprios_ids = [a.id for a in Agendamento.query.filter_by(medico_id=uid).all()]
+    agendamentos_proprios = Agendamento.query.filter_by(medico_id=uid).all()
+    agendamentos_proprios_ids = [a.id for a in agendamentos_proprios]
     if agendamentos_proprios_ids:
         ChatMensagem.query.filter(ChatMensagem.agendamento_id.in_(agendamentos_proprios_ids)).update(
             {"agendamento_id": None}, synchronize_session=False
@@ -155,7 +155,8 @@ def excluir_usuario_e_dados(usuario):
         ConversaWhatsapp.query.filter(ConversaWhatsapp.agendamento_id.in_(agendamentos_proprios_ids)).update(
             {"agendamento_id": None}, synchronize_session=False
         )
-        Agendamento.query.filter(Agendamento.id.in_(agendamentos_proprios_ids)).delete(synchronize_session=False)
+        for agendamento in agendamentos_proprios:
+            db.session.delete(agendamento)  # cascade do ORM apaga o ResultadoExame junto
     Agendamento.query.filter_by(criado_por_id=uid).update({"criado_por_id": None}, synchronize_session=False)
 
     # 7. Perguntas/FAQ que ele só criou/respondeu (atribuição, não é dado
