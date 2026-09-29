@@ -6,7 +6,11 @@ from sqlalchemy import func
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico
+from app.base_conhecimento import (
+    PROVEDORES_BUSCA, PROVEDOR_PALAVRA_CHAVE, provedor_configurado, atualizar_embedding_do_item, buscar_na_base,
+    LIMIAR_PALAVRA_CHAVE, LIMIAR_EMBEDDING,
+)
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 from app.mercadopago_integration import (
@@ -946,6 +950,236 @@ def tipos_exame_alternar(tipo_id):
     db.session.commit()
     flash(f"Tipo \"{tipo.nome}\" {'ativado' if tipo.ativo else 'inativado'}.", "success")
     return redirect(url_for("dono.tipos_exame"))
+
+
+# ---------- Base de conhecimento compartilhada (a "terceira IA") ----------
+
+LIMITE_ITENS_BASE_NA_TELA = 300
+LIMITE_EMBEDDINGS_POR_CLIQUE = 40
+
+
+def _registrar_historico_base(item, motivo):
+    """Guarda a versão ATUAL (antes de mudar) do item no histórico - permite
+    desfazer uma atualização ruim (decisão do Silvan)."""
+    db.session.add(BaseConhecimentoHistorico(
+        item_id=item.id, pergunta=item.pergunta, resposta=item.resposta,
+        alterado_por_nome=current_user.nome, motivo=motivo,
+    ))
+
+
+@dono_bp.route("/base-conhecimento")
+@login_required
+@dono_required
+def base_conhecimento():
+    """Pedido do Silvan (2026-09-29): gestão da base compartilhada - o
+    interruptor da terceira IA, o provedor de busca, os itens (filtráveis) e
+    um "Testar busca" para calibrar a busca com perguntas reais antes de
+    ligar de vez. Ver app.base_conhecimento e app.models.BaseConhecimentoItem."""
+    config = PlataformaConfig.obter()
+    tipo_id = request.args.get("tipo", type=int)
+    texto = request.args.get("q", "").strip()
+    status = request.args.get("status", "")
+
+    consulta = BaseConhecimentoItem.query
+    if tipo_id:
+        consulta = consulta.filter(BaseConhecimentoItem.tipo_exame_id == tipo_id)
+    if status in ("ativo", "inativo"):
+        consulta = consulta.filter(BaseConhecimentoItem.status == status)
+    if texto:
+        like = f"%{texto}%"
+        consulta = consulta.filter(
+            BaseConhecimentoItem.pergunta.ilike(like) | BaseConhecimentoItem.resposta.ilike(like)
+        )
+    total = consulta.count()
+    itens = consulta.order_by(BaseConhecimentoItem.tipo_exame_id, BaseConhecimentoItem.id).limit(LIMITE_ITENS_BASE_NA_TELA).all()
+
+    teste_pergunta = request.args.get("teste", "").strip()
+    teste_resultados = None
+    if teste_pergunta:
+        teste_resultados = buscar_na_base(teste_pergunta, tipo_exame_id=request.args.get("teste_tipo", type=int), limite=5)
+
+    provedor = provedor_configurado()
+    return render_template(
+        "dono/base_conhecimento.html", config=config, itens=itens, total=total,
+        tipos=TipoExame.query.order_by(TipoExame.ordem, TipoExame.nome).all(),
+        filtro_tipo=tipo_id, filtro_texto=texto, filtro_status=status,
+        provedores=PROVEDORES_BUSCA, provedor_atual=provedor,
+        sem_embedding=BaseConhecimentoItem.query.filter(
+            BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.embedding.is_(None)
+        ).count() if provedor != PROVEDOR_PALAVRA_CHAVE else 0,
+        nao_revisados=BaseConhecimentoItem.query.filter_by(revisado=False).count(),
+        teste_pergunta=teste_pergunta, teste_resultados=teste_resultados,
+        limiar_palavra=LIMIAR_PALAVRA_CHAVE, limiar_embedding=LIMIAR_EMBEDDING,
+        limite_tela=LIMITE_ITENS_BASE_NA_TELA,
+    )
+
+
+@dono_bp.route("/base-conhecimento/config", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_config():
+    """Interruptor da terceira IA e provedor de busca (ver
+    PlataformaConfig.base_conhecimento_ativa / base_busca_provedor)."""
+    provedor = request.form.get("base_busca_provedor", PROVEDOR_PALAVRA_CHAVE)
+    if provedor not in PROVEDORES_BUSCA:
+        flash("Provedor de busca inválido.", "danger")
+        return redirect(url_for("dono.base_conhecimento"))
+    config = PlataformaConfig.obter()
+    mudou_provedor = config.base_busca_provedor != provedor
+    config.base_conhecimento_ativa = request.form.get("base_conhecimento_ativa") == "on"
+    config.base_busca_provedor = provedor
+    db.session.commit()
+    flash(
+        "Configuração da base de conhecimento salva."
+        + (" Como o provedor mudou, use \"Calcular vetores de busca\" para os itens existentes." if mudou_provedor and provedor != PROVEDOR_PALAVRA_CHAVE else ""),
+        "success",
+    )
+    return redirect(url_for("dono.base_conhecimento"))
+
+
+@dono_bp.route("/base-conhecimento/novo", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_novo():
+    tipo_id = request.form.get("tipo_exame_id", type=int)
+    pergunta = request.form.get("pergunta", "").strip()
+    resposta = request.form.get("resposta", "").strip()
+    if not tipo_id or not TipoExame.query.get(tipo_id):
+        flash("Escolha o tipo de exame.", "danger")
+        return redirect(url_for("dono.base_conhecimento"))
+    if not pergunta or not resposta:
+        flash("Pergunta e resposta são obrigatórias.", "danger")
+        return redirect(url_for("dono.base_conhecimento", tipo=tipo_id))
+    item = BaseConhecimentoItem(
+        tipo_exame_id=tipo_id, pergunta=pergunta, resposta=resposta,
+        fonte_nome=request.form.get("fonte_nome", "").strip() or None,
+        fonte_url=request.form.get("fonte_url", "").strip() or None,
+        origem="dono", status="ativo", revisado=True,
+        autor_usuario_id=current_user.id, autor_nome=current_user.nome,
+    )
+    db.session.add(item)
+    db.session.flush()
+    atualizar_embedding_do_item(item)
+    db.session.commit()
+    flash("Item adicionado à base de conhecimento.", "success")
+    return redirect(url_for("dono.base_conhecimento", tipo=tipo_id))
+
+
+@dono_bp.route("/base-conhecimento/<int:item_id>/editar", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_editar(item_id):
+    """Edita pergunta/resposta/fonte/tipo. Se o texto mudou, guarda a versão
+    anterior no histórico e recalcula o vetor de busca. Editar pelo dono já
+    conta como revisado."""
+    item = BaseConhecimentoItem.query.get_or_404(item_id)
+    pergunta = request.form.get("pergunta", "").strip()
+    resposta = request.form.get("resposta", "").strip()
+    tipo_id = request.form.get("tipo_exame_id", type=int)
+    if not pergunta or not resposta:
+        flash("Pergunta e resposta são obrigatórias.", "danger")
+        return redirect(url_for("dono.base_conhecimento", tipo=item.tipo_exame_id))
+    if not tipo_id or not TipoExame.query.get(tipo_id):
+        tipo_id = item.tipo_exame_id
+
+    texto_mudou = pergunta != item.pergunta or resposta != item.resposta
+    if texto_mudou:
+        _registrar_historico_base(item, "Edição pelo dono")
+        item.pergunta = pergunta
+        item.resposta = resposta
+    item.tipo_exame_id = tipo_id
+    item.fonte_nome = request.form.get("fonte_nome", "").strip() or None
+    item.fonte_url = request.form.get("fonte_url", "").strip() or None
+    item.revisado = True
+    if texto_mudou:
+        atualizar_embedding_do_item(item)
+    db.session.commit()
+    flash("Item atualizado.", "success")
+    return redirect(url_for("dono.base_conhecimento", tipo=item.tipo_exame_id))
+
+
+@dono_bp.route("/base-conhecimento/<int:item_id>/alternar", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_alternar(item_id):
+    """Ativa/inativa um item (inativo nunca é usado nas respostas, mas nada
+    é apagado)."""
+    item = BaseConhecimentoItem.query.get_or_404(item_id)
+    item.status = "inativo" if item.status == "ativo" else "ativo"
+    db.session.commit()
+    flash(f"Item {'ativado' if item.status == 'ativo' else 'inativado'}.", "success")
+    return redirect(url_for("dono.base_conhecimento", tipo=item.tipo_exame_id))
+
+
+@dono_bp.route("/base-conhecimento/<int:item_id>/desfazer", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_desfazer(item_id):
+    """Volta o item para a versão anterior mais recente do histórico (a
+    versão atual também é guardada, então dá para "refazer")."""
+    item = BaseConhecimentoItem.query.get_or_404(item_id)
+    anterior = item.historico[0] if item.historico else None
+    if not anterior:
+        flash("Este item não tem versão anterior.", "warning")
+        return redirect(url_for("dono.base_conhecimento", tipo=item.tipo_exame_id))
+    pergunta_antiga, resposta_antiga = anterior.pergunta, anterior.resposta
+    _registrar_historico_base(item, "Antes de desfazer")
+    item.pergunta = pergunta_antiga
+    item.resposta = resposta_antiga
+    atualizar_embedding_do_item(item)
+    db.session.commit()
+    flash("Item voltou para a versão anterior.", "success")
+    return redirect(url_for("dono.base_conhecimento", tipo=item.tipo_exame_id))
+
+
+@dono_bp.route("/base-conhecimento/<int:item_id>/revisar", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_revisar(item_id):
+    item = BaseConhecimentoItem.query.get_or_404(item_id)
+    item.revisado = True
+    db.session.commit()
+    flash("Item marcado como revisado.", "success")
+    return redirect(url_for("dono.base_conhecimento", tipo=item.tipo_exame_id))
+
+
+@dono_bp.route("/base-conhecimento/calcular-vetores", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_calcular_vetores():
+    """Calcula o vetor de busca dos itens ativos que ainda não têm (ou que
+    vieram de outro modelo), no provedor de embeddings atual. Limite por
+    clique de propósito (cada item é uma chamada de rede - mesma lição do 502
+    de "Gerar cobranças do ano"): se sobrar, basta clicar de novo."""
+    provedor = provedor_configurado()
+    if provedor == PROVEDOR_PALAVRA_CHAVE:
+        flash("O provedor atual é palavra-chave e não usa vetores. Escolha OpenAI ou Gemini primeiro.", "warning")
+        return redirect(url_for("dono.base_conhecimento"))
+    pendentes = BaseConhecimentoItem.query.filter(
+        BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.embedding.is_(None)
+    ).limit(LIMITE_EMBEDDINGS_POR_CLIQUE + 1).all()
+    if not pendentes:
+        flash("Todos os itens ativos já têm vetor de busca.", "success")
+        return redirect(url_for("dono.base_conhecimento"))
+    sobra = len(pendentes) > LIMITE_EMBEDDINGS_POR_CLIQUE
+    ok = falhas = 0
+    for item in pendentes[:LIMITE_EMBEDDINGS_POR_CLIQUE]:
+        if atualizar_embedding_do_item(item, provedor):
+            ok += 1
+        else:
+            falhas += 1
+            if falhas >= 3 and ok == 0:
+                break  # provavelmente sem chave/credencial - não insistir item por item
+    db.session.commit()
+    if ok == 0 and falhas:
+        flash("Não foi possível calcular os vetores. Verifique se a chave de API do provedor está configurada.", "danger")
+    else:
+        flash(
+            f"{ok} vetor(es) calculado(s)" + (f", {falhas} falhou(aram)" if falhas else "")
+            + (". Ainda há itens pendentes: clique de novo." if sobra else "."),
+            "success" if not falhas else "warning",
+        )
+    return redirect(url_for("dono.base_conhecimento"))
 
 
 @dono_bp.route("/custo-ia")

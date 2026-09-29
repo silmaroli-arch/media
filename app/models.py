@@ -47,6 +47,15 @@ class PlataformaConfig(db.Model):
     # da mesma cautela.
     ia_validador_pergunta = db.Column(db.String(20), nullable=False, default="Claude")
 
+    # "Terceira IA" - base de conhecimento compartilhada (pedido do Silvan,
+    # 2026-09-29, ver BaseConhecimentoItem e app.base_conhecimento). Liga/
+    # desliga o uso da base nas respostas do chat (desligada = tudo como
+    # antes) e escolhe COMO a base acha a pergunta parecida: "palavra_chave"
+    # (sem custo, reaproveita o motor de FAQ), "openai" ou "gemini"
+    # (embeddings - busca por sentido, custo mínimo por chamada).
+    base_conhecimento_ativa = db.Column(db.Boolean, nullable=False, default=False)
+    base_busca_provedor = db.Column(db.String(20), nullable=False, default="palavra_chave")
+
     # Limite diário de mensagens que um paciente pode mandar sobre um MESMO
     # exame, por WhatsApp (pedido do Silvan, 2026-09-24) - configurável
     # pelo dono aqui, valendo igual pra toda a plataforma (sem
@@ -1188,6 +1197,65 @@ class TipoExame(db.Model):
     @property
     def lista_especialidades(self):
         return [e.strip() for e in (self.especialidades or "").split(",") if e.strip()]
+
+
+class BaseConhecimentoItem(db.Model):
+    """Pergunta e resposta da base de conhecimento COMPARTILHADA da
+    plataforma (a "terceira IA", pedido do Silvan, 2026-09-29) - global,
+    vale para todas as clínicas, organizada por TipoExame. O preparo
+    cadastrado pelo médico SEMPRE tem prioridade sobre a base (ver
+    app.base_conhecimento). O texto aqui é sempre GENERALIZADO: sem nome de
+    paciente, telefone, dados da clínica nem detalhes de protocolo.
+
+    `origem`: "internet" (carga inicial pesquisada e reescrita), "medico"
+    (aprendida das respostas dos médicos) ou "dono" (cadastrada pelo dono).
+    `revisado`: o dono já conferiu o conteúdo. `autor_usuario_id` vira NULL
+    se o médico for excluído do sistema, mas `autor_nome` guarda o nome como
+    texto - a resposta dele NUNCA é apagada junto com a conta (decisão do
+    Silvan). `embedding` é o vetor de busca (JSON), só usado quando o dono
+    escolhe um provedor de embeddings - `embedding_modelo` diz de qual
+    modelo ele veio (vetores de modelos diferentes não se comparam)."""
+    __tablename__ = "base_conhecimento"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tipo_exame_id = db.Column(db.Integer, db.ForeignKey("tipos_exame.id"), nullable=False)
+    pergunta = db.Column(db.Text, nullable=False)
+    resposta = db.Column(db.Text, nullable=False)
+    fonte_nome = db.Column(db.String(200))
+    fonte_url = db.Column(db.String(500))
+    origem = db.Column(db.String(20), nullable=False, default="dono")
+    status = db.Column(db.String(20), nullable=False, default="ativo")
+    revisado = db.Column(db.Boolean, nullable=False, default=False)
+    autor_usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    autor_nome = db.Column(db.String(150))
+    embedding = db.Column(db.Text)
+    embedding_modelo = db.Column(db.String(60))
+    vezes_utilizada = db.Column(db.Integer, nullable=False, default=0)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tipo_exame = db.relationship("TipoExame", foreign_keys=[tipo_exame_id])
+    historico = db.relationship(
+        "BaseConhecimentoHistorico", back_populates="item", cascade="all, delete-orphan",
+        order_by="BaseConhecimentoHistorico.alterado_em.desc()",
+    )
+
+
+class BaseConhecimentoHistorico(db.Model):
+    """Versão ANTERIOR de um item da base, gravada toda vez que o texto
+    muda (edição do dono, atualização automática a partir da edição de um
+    médico, sugestão aprovada) - permite desfazer uma atualização ruim."""
+    __tablename__ = "base_conhecimento_historico"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey("base_conhecimento.id"), nullable=False)
+    pergunta = db.Column(db.Text, nullable=False)
+    resposta = db.Column(db.Text, nullable=False)
+    alterado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    alterado_por_nome = db.Column(db.String(150))
+    motivo = db.Column(db.String(200))
+
+    item = db.relationship("BaseConhecimentoItem", back_populates="historico")
 
 
 class PreparoModelo(db.Model):

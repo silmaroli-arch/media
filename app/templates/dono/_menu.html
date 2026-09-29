@@ -11,7 +11,7 @@
 
    Uso: {% include "dono/_menu.html" with context %}, com uma variável
    `aba_ativa` no contexto de quem inclui - um de "visao-geral", "usuarios",
-   "grupos", "custo-ia", "config", "licencas", "tipos-exame", "meus-dados". #}
+   "grupos", "custo-ia", "config", "licencas", "tipos-exame", "base-conhecimento", "meus-dados". #}
 <ul class="nav nav-tabs mb-4">
   <li class="nav-item">
     <a class="nav-link {{ 'active' if aba_ativa == 'visao-geral' }}" href="{{ url_for('dono.dashboard') }}#painel-visao-geral">
@@ -46,6 +46,11 @@
   <li class="nav-item">
     <a class="nav-link {{ 'active' if aba_ativa == 'tipos-exame' }}" href="{{ url_for('dono.tipos_exame') }}">
       <i class="bi bi-clipboard2-pulse me-1"></i>Tipos de exame
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if aba_ativa == 'base-conhecimento' }}" href="{{ url_for('dono.base_conhecimento') }}">
+      <i class="bi bi-journal-medical me-1"></i>Base de conhecimento
     </a>
   </li>
   <li class="nav-item">

@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block titulo %}Base de conhecimento{% endblock %}
+{% block conteudo %}
+{% set aba_ativa = 'base-conhecimento' %}
+{% include "dono/_menu.html" %}
+
+<h3 class="mb-2">Base de conhecimento (terceira IA)</h3>
+<p class="text-muted small">
+  Perguntas e respostas de preparo, por tipo de exame, compartilhadas por todas as clínicas. O preparo cadastrado
+  pelo médico sempre tem prioridade sobre a base. Os textos devem ser genéricos: sem nome de paciente, telefone,
+  dados de clínica nem prazos ou doses específicos.
+</p>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <h6 class="card-title">Configuração</h6>
+    <form method="post" action="{{ url_for('dono.base_conhecimento_config') }}" class="row g-3 align-items-end">
+      <div class="col-md-4">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" role="switch" id="base_ativa" name="base_conhecimento_ativa" {% if config.base_conhecimento_ativa %}checked{% endif %}>
+          <label class="form-check-label" for="base_ativa">Usar a base de conhecimento como terceira IA</label>
+        </div>
+        <div class="form-text">Desligada, o chat funciona exatamente como antes.</div>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label mb-1">Como a base acha a pergunta parecida</label>
+        <select name="base_busca_provedor" class="form-select">
+          {% for chave, rotulo in provedores.items() %}
+          <option value="{{ chave }}" {% if provedor_atual == chave %}selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">OpenAI e Gemini buscam por sentido e usam a chave de API que já está configurada no servidor.</div>
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-primary w-100">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if nao_revisados %}
+<div class="alert alert-warning py-2 small">
+  {{ nao_revisados }} item(ns) ainda não foram revisados por você (carga inicial da internet ou aprendidos dos médicos).
+  Confira o texto e use "Marcar como revisado".
+</div>
+{% endif %}
+{% if sem_embedding %}
+<div class="alert alert-info py-2 small d-flex justify-content-between align-items-center">
+  <span>{{ sem_embedding }} item(ns) ativo(s) sem vetor de busca para o provedor atual.</span>
+  <form method="post" action="{{ url_for('dono.base_conhecimento_calcular_vetores') }}">
+    <button type="submit" class="btn btn-sm btn-outline-primary">Calcular vetores de busca</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card mb-3">
+  <div class="card-body">
+    <h6 class="card-title">Testar busca</h6>
+    <form method="get" class="row g-2">
+      <div class="col-md-6"><input type="text" name="teste" class="form-control" placeholder="Digite uma pergunta como o paciente escreveria" value="{{ teste_pergunta }}"></div>
+      <div class="col-md-4">
+        <select name="teste_tipo" class="form-select">
+          <option value="">Qualquer tipo de exame</option>
+          {% for t in tipos %}<option value="{{ t.id }}" {% if request.args.get('teste_tipo', type=int) == t.id %}selected{% endif %}>{{ t.nome }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2"><button type="submit" class="btn btn-outline-primary w-100">Buscar</button></div>
+    </form>
+    {% if teste_resultados is not none %}
+      <div class="mt-3">
+        {% for r in teste_resultados %}
+          <div class="border rounded p-2 mb-2">
+            <div class="small text-muted">{{ r.item.tipo_exame.nome }} · {{ r.metodo }} · similaridade {{ "%.2f"|format(r.score) }}</div>
+            <div><strong>{{ r.item.pergunta }}</strong></div>
+            <div class="small">{{ r.item.resposta }}</div>
+          </div>
+        {% else %}
+          <div class="text-muted small">Nada parecido o bastante (mínimo {{ "%.2f"|format(limiar_embedding if provedor_atual != 'palavra_chave' else limiar_palavra) }}). Uma pergunta assim iria só para as duas IAs.</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <h6 class="card-title">Adicionar item</h6>
+    <form method="post" action="{{ url_for('dono.base_conhecimento_novo') }}" class="row g-2">
+      <div class="col-md-4">
+        <select name="tipo_exame_id" class="form-select" required>
+          <option value="">Tipo de exame...</option>
+          {% for t in tipos if t.ativo %}<option value="{{ t.id }}" {% if filtro_tipo == t.id %}selected{% endif %}>{{ t.nome }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-8"><input type="text" name="pergunta" class="form-control" placeholder="Pergunta (como o paciente perguntaria)" required></div>
+      <div class="col-12"><textarea name="resposta" class="form-control" rows="3" placeholder="Resposta (genérica, curta e sem prazos específicos)" required></textarea></div>
+      <div class="col-md-5"><input type="text" name="fonte_nome" class="form-control" placeholder="Fonte (nome)"></div>
+      <div class="col-md-5"><input type="url" name="fonte_url" class="form-control" placeholder="Fonte (link)"></div>
+      <div class="col-md-2"><button type="submit" class="btn btn-primary w-100">Adicionar</button></div>
+    </form>
+  </div>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-4">
+    <select name="tipo" class="form-select">
+      <option value="">Todos os tipos de exame</option>
+      {% for t in tipos %}<option value="{{ t.id }}" {% if filtro_tipo == t.id %}selected{% endif %}>{{ t.nome }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3">
+    <select name="status" class="form-select">
+      <option value="">Ativos e inativos</option>
+      <option value="ativo" {% if filtro_status == 'ativo' %}selected{% endif %}>Só ativos</option>
+      <option value="inativo" {% if filtro_status == 'inativo' %}selected{% endif %}>Só inativos</option>
+    </select>
+  </div>
+  <div class="col-md-3"><input type="text" name="q" class="form-control" placeholder="Buscar no texto" value="{{ filtro_texto }}"></div>
+  <div class="col-md-2"><button type="submit" class="btn btn-outline-secondary w-100">Filtrar</button></div>
+</form>
+
+<p class="text-muted small">{{ total }} item(ns){% if total > limite_tela %} - mostrando os primeiros {{ limite_tela }}, refine o filtro{% endif %}.</p>
+
+{% for i in itens %}
+<div class="card mb-2 {{ '' if i.status == 'ativo' else 'border-secondary' }}">
+  <div class="card-body py-2">
+    <div class="d-flex justify-content-between flex-wrap gap-1">
+      <div class="small text-muted">
+        {{ i.tipo_exame.nome }}
+        · <span class="badge bg-{{ 'success' if i.status == 'ativo' else 'secondary' }}">{{ i.status }}</span>
+        · <span class="badge bg-light text-dark border">{{ i.origem }}</span>
+        {% if i.revisado %}<span class="badge bg-info text-dark">revisado</span>{% else %}<span class="badge bg-warning text-dark">não revisado</span>{% endif %}
+        {% if i.autor_nome %}· por {{ i.autor_nome }}{% endif %}
+        {% if i.fonte_url %}· <a href="{{ i.fonte_url }}" target="_blank" rel="noopener">{{ i.fonte_nome or 'fonte' }}</a>{% elif i.fonte_nome %}· {{ i.fonte_nome }}{% endif %}
+      </div>
+      <div class="small text-muted">usada {{ i.vezes_utilizada }}x{% if i.historico %} · {{ i.historico|length }} versão(ões) anterior(es){% endif %}</div>
+    </div>
+    <div class="mt-1"><strong>{{ i.pergunta }}</strong></div>
+    <div class="small">{{ i.resposta }}</div>
+
+    <details class="mt-2">
+      <summary class="small text-primary" style="cursor: pointer;">Editar</summary>
+      <form method="post" action="{{ url_for('dono.base_conhecimento_editar', item_id=i.id) }}" class="row g-2 mt-1">
+        <div class="col-md-4">
+          <select name="tipo_exame_id" class="form-select form-select-sm">
+            {% for t in tipos %}<option value="{{ t.id }}" {% if t.id == i.tipo_exame_id %}selected{% endif %}>{{ t.nome }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-8"><input type="text" name="pergunta" class="form-control form-control-sm" value="{{ i.pergunta }}" required></div>
+        <div class="col-12"><textarea name="resposta" class="form-control form-control-sm" rows="3" required>{{ i.resposta }}</textarea></div>
+        <div class="col-md-5"><input type="text" name="fonte_nome" class="form-control form-control-sm" placeholder="Fonte (nome)" value="{{ i.fonte_nome or '' }}"></div>
+        <div class="col-md-5"><input type="url" name="fonte_url" class="form-control form-control-sm" placeholder="Fonte (link)" value="{{ i.fonte_url or '' }}"></div>
+        <div class="col-md-2"><button type="submit" class="btn btn-sm btn-primary w-100">Salvar</button></div>
+      </form>
+    </details>
+
+    <div class="d-flex gap-2 mt-2">
+      {% if not i.revisado %}
+      <form method="post" action="{{ url_for('dono.base_conhecimento_revisar', item_id=i.id) }}"><button type="submit" class="btn btn-sm btn-outline-info">Marcar como revisado</button></form>
+      {% endif %}
+      <form method="post" action="{{ url_for('dono.base_conhecimento_alternar', item_id=i.id) }}"><button type="submit" class="btn btn-sm btn-outline-secondary">{{ 'Inativar' if i.status == 'ativo' else 'Ativar' }}</button></form>
+      {% if i.historico %}
+      <form method="post" action="{{ url_for('dono.base_conhecimento_desfazer', item_id=i.id) }}" onsubmit="return confirm('Voltar este item para a versão anterior?');"><button type="submit" class="btn btn-sm btn-outline-warning">Desfazer última mudança</button></form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="text-muted text-center py-4">Nenhum item encontrado.</div>
+{% endfor %}
+{% endblock %}

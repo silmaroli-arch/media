@@ -57,6 +57,10 @@ with _app_para_create_all.app_context():
     from app.tipos_exame_padrao import semear_tipos_exame
     _novos_tipos = semear_tipos_exame(db, TipoExame)
     print(f"Tipos de exame: {_novos_tipos} novo(s) inserido(s) na lista padrao.")
+    # Conteudo inicial da base de conhecimento (so insere o que falta).
+    from app.base_conhecimento_padrao import semear_base_conhecimento
+    _novos_itens = semear_base_conhecimento(db)
+    print(f"Base de conhecimento: {_novos_itens} item(ns) inicial(is) inserido(s).")
 print("Schema de tabelas OK - seguindo para os ajustes de coluna (ALTER TABLE).")
 
 SQL = """
@@ -487,6 +491,10 @@ ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_expira_em TIMESTAMP;
 
 -- Tipo de exame do preparo (lista global tipos_exame, criada pelo db.create_all()).
 ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS tipo_exame_id INTEGER REFERENCES tipos_exame(id);
+
+-- Terceira IA (base de conhecimento): interruptor e provedor de busca. As tabelas base_conhecimento e base_conhecimento_historico sao criadas pelo db.create_all().
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS base_conhecimento_ativa BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS base_busca_provedor VARCHAR(20) NOT NULL DEFAULT 'palavra_chave';
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

@@ -25,6 +25,7 @@ Sempre chame `verificar_bloqueios_exclusao(usuario)` ANTES de
 from app.extensions import db
 from app.models import (
     Agendamento,
+    BaseConhecimentoItem,
     ChamadaIA,
     ChatMensagem,
     ContagemPerguntasDia,
@@ -94,6 +95,12 @@ def excluir_usuario_e_dados(usuario):
     PushSubscription.query.filter_by(usuario_id=uid).delete(synchronize_session=False)
     LicencaPagamento.query.filter_by(usuario_id=uid).delete(synchronize_session=False)
     ChamadaIA.query.filter_by(usuario_id=uid).update({"usuario_id": None}, synchronize_session=False)
+    # Base de conhecimento compartilhada: a resposta do médico NUNCA é
+    # apagada junto com a conta (decisão do Silvan) - só perde o vínculo,
+    # o nome da autoria já está guardado como texto em autor_nome.
+    BaseConhecimentoItem.query.filter_by(autor_usuario_id=uid).update(
+        {"autor_usuario_id": None}, synchronize_session=False
+    )
     # "Fale com a gente" e notificações — dados pessoais da conta, sem
     # nada mais dependendo deles (usuario_id é NOT NULL nos dois modelos,
     # então não dá pra só desvincular: precisam ser apagados).
