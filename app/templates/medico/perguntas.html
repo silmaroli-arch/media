@@ -35,7 +35,8 @@
     <div class="card-body">
       <div class="accordion" id="accordionAguardando">
         {% for p in aguardando %}
-        {% set eh_ia = p.resposta_bruta_claude or p.resposta_bruta_chatgpt or p.resposta_bruta_gemini %}
+        {% set eh_ia = p.resposta_bruta_claude or p.resposta_bruta_chatgpt or p.resposta_bruta_gemini or p.resposta_bruta_base %}
+        {% set col = 'col-md-3' if p.resposta_bruta_base else 'col-md-4' %}
         <div class="accordion-item border-warning">
           <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#aguardando-{{ p.id }}" aria-expanded="false" aria-controls="aguardando-{{ p.id }}">
@@ -43,6 +44,11 @@
               {% if p.exame %}<span class="badge bg-light text-dark me-2">{{ p.exame.nome }}</span>{% endif %}
               {% if not eh_ia %}<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle me-2">Automática (preparo cadastrado)</span>{% endif %}
               {{ badge_filial(p) }}
+              {% if p.base_divergiu %}
+              <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-2" title="A base de conhecimento diverge das IAs (ou respondeu sozinha) - revise com atenção">
+                <i class="bi bi-journal-medical"></i> Base diverge
+              </span>
+              {% endif %}
               {% if p.ias_com_erro %}
               <span class="badge bg-danger-subtle text-danger border border-danger-subtle me-2" title="Essa(s) IA(s) deu(ram) erro de chamada ao responder esta pergunta">
                 <i class="bi bi-exclamation-triangle"></i> {{ p.ias_com_erro.replace(',', ', ') }} falhou
@@ -61,6 +67,16 @@
                 (indisponibilidade momentânea do provedor) — o rascunho abaixo usa a resposta de outra IA disponível no momento.
               </div>
               {% endif %}
+              {% if p.base_divergiu %}
+              <div class="alert alert-warning py-2 small mb-3">
+                <i class="bi bi-journal-medical"></i>
+                {% if not (p.resposta_bruta_claude or p.resposta_bruta_chatgpt or p.resposta_bruta_gemini) %}
+                  Nenhuma IA soube responder com base no preparo - o rascunho abaixo veio da <strong>base de conhecimento</strong> da plataforma. Revise com atenção.
+                {% else %}
+                  A resposta da <strong>base de conhecimento</strong> da plataforma é bem diferente da resposta das IAs (diferenças só de prazo não contam). Compare e revise com atenção.
+                {% endif %}
+              </div>
+              {% endif %}
               <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
                 {# Só mostra coluna pra IA que o dono escolheu pra esta pergunta
                    (ver PlataformaConfig.ia_chat_provedor_1/2 em /dono/configuracoes) -
@@ -69,24 +85,31 @@
                    escondidas em vez de aparecer vazias/com "—". #}
                 <div class="row g-3 mb-2">
                   {% if p.resposta_bruta_gemini %}
-                  <div class="col-md-4">
+                  <div class="{{ col }}">
                     <label class="form-label small text-muted mb-1 fw-semibold">Resposta do Gemini</label>
                     <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_gemini }}</div>
                   </div>
                   {% endif %}
                   {% if p.resposta_bruta_chatgpt %}
-                  <div class="col-md-4">
+                  <div class="{{ col }}">
                     <label class="form-label small text-muted mb-1 fw-semibold">Resposta do ChatGPT</label>
                     <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_chatgpt }}</div>
                   </div>
                   {% endif %}
                   {% if p.resposta_bruta_claude %}
-                  <div class="col-md-4">
+                  <div class="{{ col }}">
                     <label class="form-label small text-muted mb-1 fw-semibold">Resposta do Claude</label>
                     <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_claude }}</div>
                   </div>
                   {% endif %}
-                  <div class="col-md-4">
+                  {% if p.resposta_bruta_base %}
+                  <div class="{{ col }}">
+                    <label class="form-label small text-muted mb-1 fw-semibold"><i class="bi bi-journal-medical"></i> Base de conhecimento</label>
+                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_base }}
+{% if p.base_item and (p.base_item.fonte_nome or p.base_item.fonte_url) %}<div class="text-muted mt-1" style="white-space: normal;">Fonte: {% if p.base_item.fonte_url %}<a href="{{ p.base_item.fonte_url }}" target="_blank" rel="noopener">{{ p.base_item.fonte_nome or p.base_item.fonte_url }}</a>{% else %}{{ p.base_item.fonte_nome }}{% endif %}</div>{% endif %}</div>
+                  </div>
+                  {% endif %}
+                  <div class="{{ col }}">
                     <label class="form-label small text-muted mb-1 fw-semibold">Resposta sugerida (edite se precisar)</label>
                     <textarea name="resposta" class="form-control h-100" style="min-height: 8rem;" required>{{ p.resposta_sugerida_ia }}</textarea>
                   </div>

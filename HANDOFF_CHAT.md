@@ -2045,7 +2045,7 @@ Problema reportado com prints: o Silvan definiu o valor mensal padrão (R$ 150,0
 ### Ordem das fatias
 1. **[FEITA, ver abaixo]** Tipos de exame + campo no preparo + tela do dono.
 2. **[FEITA, ver abaixo]** Base de conhecimento (tabela + tela do dono + interruptor + provedor de busca).
-3. Integração na resposta (4ª coluna, árbitro, aprovação só quando divergir).
+3. **[FEITA, ver abaixo]** Integração na resposta (4ª coluna, árbitro, aprovação só quando divergir).
 4. Auto-alimentação e atualização por edição do médico (com generalização e prazo ignorado).
 5. Especialidade do médico + sugestões de alteração aprovadas pelo dono.
 
@@ -2069,6 +2069,19 @@ Problema reportado com prints: o Silvan definiu o valor mensal padrão (R$ 150,0
 - **Ainda NÃO integrado ao chat**: com a base ligada ou desligada, o comportamento do paciente/médico é idêntico ao de antes. A integração é a fatia 3.
 - **Não verificado**: as chamadas reais às APIs de embeddings (OpenAI/Gemini) não foram testadas contra a API de verdade, só simuladas. O custo dos embeddings NÃO é registrado em `ChamadaIA` (avaliar na fatia 3).
 - **Teste**: `test_base_conhecimento.py` (novo, provedor de embeddings simulado, sem rede). **NÃO executado** (sem Flask no ambiente do assistente): conferidos só a sintaxe e a renderização Jinja. Rodar: `DATABASE_URL=sqlite:///teste_base_conhecimento.db python test_base_conhecimento.py`, mais `test_tipos_exame.py`.
+
+### Fatia 3 - Integração da base na resposta do chat (implementada, 2026-09-29)
+Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conhecimento") a base é consultada em toda pergunta que passou pelas IAs. **O preparo cadastrado continua sendo o prioritário**: a base NUNCA substitui a resposta das IAs (que se baseiam no preparo), só complementa.
+- **IAs responderam**: o árbitro Claude compara a resposta delas com a da base **ignorando diferenças só de prazo/horas/dose** (`_respostas_divergem(..., ignorar_prazos=True)`). Se são "muito diferentes" -> `exige_revisao_base=True`: o médico revisa MESMO com a aprovação geral desligada (mesmo mecanismo de `exige_revisao_medicamento`). Se não divergem, a base só aparece como 3ª voz, sem revisão extra. Sem árbitro disponível (sem ANTHROPIC_API_KEY) conta como divergente (mais seguro). O rascunho final continua sendo o das IAs.
+- **IAs sem resposta** (preparo não cobre, erro, sem chave) e a base achou algo: o rascunho passa a ser a resposta da base, SEMPRE com revisão do médico.
+- **A base não entra** quando: está desligada, o preparo do exame não tem tipo de exame (`PreparoModelo.tipo_exame_id`), nada parecido foi achado, ou a IA julgou a mensagem sem sentido. Uma falha na base é logada e o chat segue só com as IAs.
+- **`app/ia_preparo.py`**: a função antiga virou `_responder_com_duas_ias` (intacta) e `responder_com_ia` agora é um wrapper que chama `_aplicar_base_de_conhecimento`. Retorno ganhou `por_provedor["Base"]`, `base` (item_id, score, método, divergiu, preencheu_lacuna) e `exige_revisao_base`. A resposta da base passa pelo mesmo filtro que remove "confirme com seu médico". Cada uso conta em `BaseConhecimentoItem.vezes_utilizada`.
+- **`PerguntaPendente`**: colunas novas `resposta_bruta_base`, `base_item_id` (FK, ON DELETE SET NULL) e `base_divergiu`; `migrar_banco.py` com os 3 `ALTER TABLE`. Gravadas nos 3 pontos que criam a pergunta: `routes_paciente.chat`, `whatsapp_conversa._responder_pergunta` e o chat de teste do médico em `routes_medico`. As duas primeiras também passaram a exigir revisão quando `exige_revisao_base`.
+- **`medico/perguntas.html`**: 4ª coluna "Base de conhecimento" (com a fonte e link), badge "Base diverge" no cabeçalho e um alerta explicando se a base divergiu das IAs ou se o rascunho veio só da base.
+- **Verificação feita**: sintaxe dos arquivos, renderização Jinja da tela nos 3 cenários (só IA, IA + base divergente, só base) e a lógica de `responder_com_ia` EXECUTADA com peças simuladas (não diverge, diverge, lacuna, sem tipo, desligada, sem sentido, falha na base, prompt do árbitro com/sem `ignorar_prazos`) - tudo como esperado.
+- **Teste**: `test_base_integracao_chat.py` (novo, IAs e árbitro simulados). **NÃO executado** com Flask/banco (sem Flask no ambiente do assistente). Precisa de banco recriado + seed: `DATABASE_URL=sqlite:///teste_base_integracao.db python seed.py` e depois o teste. Rodar também os testes de regressão do chat/perguntas (`test_whatsapp_pergunta.py`, `test_perguntas_medico_so_do_proprio_exame.py`).
+- **Limitação conhecida**: preparos cadastrados antes desta mudança não têm tipo de exame, então a base não os atende até o médico escolher o tipo ao editar o preparo.
+- **Custo**: a chamada extra do árbitro (base x IAs) é registrada como as demais em `ChamadaIA`. Embeddings ainda não.
 
 ## Como continuar
 

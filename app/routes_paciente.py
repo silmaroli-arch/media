@@ -466,6 +466,9 @@ def chat():
                         resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
                         resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
                         resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
+                        resposta_bruta_base=resultado_ia["por_provedor"].get("Base"),
+                        base_item_id=(resultado_ia.get("base") or {}).get("item_id"),
+                        base_divergiu=(resultado_ia.get("base") or {}).get("divergiu"),
                         # Nomes das IAs que deram erro de chamada nesta
                         # pergunta (ver app.ia_preparo.responder_com_ia) -
                         # mostrado como aviso na tela de aprovação, mesmo
@@ -482,7 +485,15 @@ def chat():
                     # SEMPRE vai pra fila do médico - é conhecimento
                     # farmacológico genérico da IA, não uma informação
                     # certa tirada do preparo cadastrado.
-                    if exige_aprovacao or resultado_ia.get("exige_revisao_medicamento"):
+                    # Terceira IA (base de conhecimento, 2026-09-29): quando a
+                    # base diverge das IAs (ou preenche uma lacuna), o médico
+                    # revisa mesmo com a aprovação geral desligada - ver
+                    # app.ia_preparo.responder_com_ia ("exige_revisao_base").
+                    if (
+                        exige_aprovacao
+                        or resultado_ia.get("exige_revisao_medicamento")
+                        or resultado_ia.get("exige_revisao_base")
+                    ):
                         db.session.commit()
                         notificar_equipe_nova_pergunta(pendente)
                         # Mesma mensagem de "aguarde" usada quando ninguém sabe

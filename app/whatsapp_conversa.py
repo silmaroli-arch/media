@@ -638,6 +638,9 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
                 resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
                 resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
+                resposta_bruta_base=resultado_ia["por_provedor"].get("Base"),
+                base_item_id=(resultado_ia.get("base") or {}).get("item_id"),
+                base_divergiu=(resultado_ia.get("base") or {}).get("divergiu"),
                 # Nomes das IAs que deram erro de chamada nesta pergunta (ver
                 # app.ia_preparo.responder_com_ia) - mostrado como aviso na
                 # tela de aprovação, mesmo quando a reserva "tapou o buraco"
@@ -653,7 +656,14 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             # "medicamento não cadastrado neste preparo" SEMPRE vai pra
             # fila do médico - é conhecimento farmacológico genérico da
             # IA, não uma informação certa tirada do preparo cadastrado.
-            if not exige_aprovacao and not resultado_ia.get("exige_revisao_medicamento"):
+            # Terceira IA (base de conhecimento, 2026-09-29): idem - base que
+            # diverge das IAs (ou preenche uma lacuna) sempre passa pelo
+            # médico (ver app.ia_preparo.responder_com_ia).
+            if (
+                not exige_aprovacao
+                and not resultado_ia.get("exige_revisao_medicamento")
+                and not resultado_ia.get("exige_revisao_base")
+            ):
                 # Pedido do Silvan (2026-09-13): aprovação desativada para
                 # este Grupo/médico.
                 aprovar_pergunta_automaticamente(pergunta_pendente_criada, resultado_ia["final"])

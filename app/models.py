@@ -1841,6 +1841,16 @@ class PerguntaPendente(db.Model):
     # rascunho final saiu normal - o médico continua tendo visibilidade de
     # que uma IA configurada falhou nesta pergunta específica.
     ias_com_erro = db.Column(db.String(60), nullable=True)
+    # "Terceira IA" (base de conhecimento compartilhada, ver
+    # BaseConhecimentoItem e app.ia_preparo.responder_com_ia): a resposta do
+    # item da base que foi consultado nesta pergunta (None quando a base
+    # estava desligada, o preparo não tem tipo de exame ou nada parecido foi
+    # achado), qual item foi e se a base DIVERGIU das IAs (True obriga a
+    # revisão do médico mesmo com a aprovação geral desligada). Na tela de
+    # aprovação é a coluna "Base de conhecimento" (ver medico/perguntas.html).
+    resposta_bruta_base = db.Column(db.Text)
+    base_item_id = db.Column(db.Integer, db.ForeignKey("base_conhecimento.id", ondelete="SET NULL"), nullable=True)
+    base_divergiu = db.Column(db.Boolean, nullable=True)
     resposta = db.Column(db.Text)
     respondida_por = db.Column(db.String(150))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
@@ -1848,6 +1858,7 @@ class PerguntaPendente(db.Model):
 
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     paciente = db.relationship("Paciente", back_populates="perguntas_pendentes")
+    base_item = db.relationship("BaseConhecimentoItem", foreign_keys=[base_item_id])
     exame = db.relationship("Exame")
 
 

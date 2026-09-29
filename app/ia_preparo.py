@@ -611,12 +611,18 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
     return texto, chamada, False, exige_revisao
 
 
-def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=None):
+def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=None, ignorar_prazos=False):
     """Quando as duas IAs respondem, usa uma chamada extra rápida e barata
     (Claude Haiku, poucos tokens) só para CLASSIFICAR se as duas respostas
     passam a mesma orientação prática ao paciente - não reescreve nem
     tenta "resolver" a diferença sozinha, só sinaliza para o médico
-    revisar com mais atenção quando elas divergem."""
+    revisar com mais atenção quando elas divergem.
+
+    `ignorar_prazos` (pedido do Silvan, 2026-09-29, comparação com a base de
+    conhecimento): quando True, diferenças SÓ de prazo/hora/quantidade
+    (ex.: jejum de 6h vs 8h, dose ou dias de suspensão) NÃO contam como
+    divergência - esses valores variam por clínica e por médico, e o que
+    vale é o preparo cadastrado, não a base."""
     if not cliente_anthropic:
         # Sem a Claude disponível para julgar, não dá pra comparar - trata
         # como divergência (mais seguro pedir revisão do que presumir
@@ -632,6 +638,12 @@ def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=N
                 "com a palavra SIM se elas passam a mesma orientação prática ao "
                 "paciente, ou NAO se divergem em algum ponto que mudaria o que o "
                 "paciente deveria fazer."
+                + (
+                    " IGNORE diferenças que sejam apenas de prazo, horário, quantidade de "
+                    "horas ou dias, ou dose (esses valores variam por clínica): duas respostas "
+                    "que dão a mesma orientação com prazos diferentes contam como SIM."
+                    if ignorar_prazos else ""
+                )
             ),
             messages=[{
                 "role": "user",
@@ -746,7 +758,7 @@ def _tentar_provedor(nome_provedor, pergunta_usuario, contexto, paciente_id=None
     return texto, chamada, True, sem_sentido, exige_revisao
 
 
-def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
+def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico=None):
     """Tenta responder a pergunta do paciente usando IA, com o preparo do
     exame como contexto. As duas IAs que respondem são escolhidas pelo
     dono da plataforma entre Gemini/ChatGPT/Claude (ver
@@ -876,7 +888,7 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     provedor_b = config.ia_chat_provedor_2 or "ChatGPT"
     provedor_c = next(nome for nome in _PROVEDORES_CHAT if nome not in (provedor_a, provedor_b))
 
-    respostas_por_provedor = {"Claude": None, "ChatGPT": None, "Gemini": None}
+    respostas_por_provedor = {"Claude": None, "ChatGPT": None, "Gemini": None, "Base": None}
     contexto = _formatar_contexto_preparo(exame)
 
     resposta_a, chamada_a, tentou_a, sem_sentido_a, exige_revisao_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id, historico)
@@ -1036,6 +1048,83 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
         "sem_sentido": sem_sentido,
         "exige_revisao_medicamento": exige_revisao_medicamento,
     }
+
+
+def _aplicar_base_de_conhecimento(resultado, pergunta_usuario, exame, paciente_id=None):
+    """Terceira voz (pedido do Silvan, 2026-09-29): consulta a base de
+    conhecimento compartilhada e ajusta `resultado` (o dicionário devolvido
+    por _responder_com_duas_ias) NO LUGAR. Regras decididas com o Silvan:
+    - só quando o dono ligou a base E o preparo do exame tem um tipo de exame
+      (ver TipoExame) E a IA não julgou a mensagem sem sentido;
+    - o preparo cadastrado pelo médico SEMPRE é o prioritário: a base nunca
+      substitui a resposta das IAs (que são alimentadas pelo preparo), só a
+      complementa;
+    - se as IAs responderam, o árbitro (Claude) compara a resposta delas com
+      a da base IGNORANDO diferenças só de prazo: "muito diferente" liga
+      `exige_revisao_base` (o médico revisa mesmo com a aprovação geral
+      desligada) - sem árbitro disponível, conta como diferente (mais seguro);
+    - se as IAs NÃO tinham resposta (o preparo não cobre, erro, sem chave) e
+      a base achou algo, o rascunho passa a ser a resposta da base, sempre
+      com revisão do médico."""
+    from app.base_conhecimento import base_ativa, buscar_na_base
+
+    if not base_ativa() or resultado.get("sem_sentido"):
+        return
+    modelo_preparo = getattr(exame, "preparo_modelo", None)
+    tipo_exame_id = getattr(modelo_preparo, "tipo_exame_id", None)
+    if not tipo_exame_id:
+        return
+    achados = buscar_na_base(pergunta_usuario, tipo_exame_id=tipo_exame_id, limite=1)
+    if not achados:
+        return
+
+    item = achados[0]["item"]
+    resposta_base = _remover_recomendacao_de_consultar_medico(item.resposta)
+    item.vezes_utilizada = (item.vezes_utilizada or 0) + 1
+    resultado["por_provedor"]["Base"] = resposta_base
+    resultado["base"] = {
+        "item_id": item.id, "resposta": resposta_base, "score": achados[0]["score"],
+        "metodo": achados[0]["metodo"], "divergiu": False, "preencheu_lacuna": False,
+    }
+
+    final = resultado.get("final")
+    if not final:
+        resultado["final"] = resposta_base
+        resultado["exige_revisao_base"] = True
+        resultado["base"]["divergiu"] = True
+        resultado["base"]["preencheu_lacuna"] = True
+        return
+
+    diverge = _respostas_divergem(
+        _cliente_anthropic(), final, resposta_base, paciente_id, ignorar_prazos=True,
+    )
+    resultado["base"]["divergiu"] = bool(diverge)
+    if diverge:
+        resultado["exige_revisao_base"] = True
+
+
+def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
+    """Ponto de entrada do chat de dúvidas: consulta as duas IAs escolhidas
+    pelo dono (ver _responder_com_duas_ias, que tem a documentação completa
+    do dicionário devolvido) e, se o dono ligou a "terceira IA", também a
+    base de conhecimento compartilhada (ver _aplicar_base_de_conhecimento).
+
+    Acrescenta ao dicionário: "por_provedor"["Base"] (resposta do item da
+    base, ou None), "base" (detalhes: item_id, score, método, se divergiu
+    das IAs e se preencheu uma lacuna - ou None) e "exige_revisao_base"
+    (True obriga o médico a revisar, mesmo com a aprovação geral desativada,
+    exatamente como "exige_revisao_medicamento"). Uma falha na base NUNCA
+    derruba o chat: é registrada no log e o resultado das duas IAs segue
+    intacto."""
+    resultado = _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=paciente_id, historico=historico)
+    resultado.setdefault("base", None)
+    resultado.setdefault("exige_revisao_base", False)
+    resultado["por_provedor"].setdefault("Base", None)
+    try:
+        _aplicar_base_de_conhecimento(resultado, pergunta_usuario, exame, paciente_id)
+    except Exception:
+        current_app.logger.exception("Falha ao consultar a base de conhecimento - seguindo só com as IAs.")
+    return resultado
 
 
 # Ver docstring do módulo ("Validador de pergunta dedicado", 2026-09-24).

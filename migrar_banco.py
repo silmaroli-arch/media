@@ -495,6 +495,11 @@ ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS tipo_exame_id INTEGER REFER
 -- Terceira IA (base de conhecimento): interruptor e provedor de busca. As tabelas base_conhecimento e base_conhecimento_historico sao criadas pelo db.create_all().
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS base_conhecimento_ativa BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS base_busca_provedor VARCHAR(20) NOT NULL DEFAULT 'palavra_chave';
+
+-- Terceira IA na fila de aprovacao: resposta da base, item usado e se divergiu das IAs.
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_base TEXT;
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS base_item_id INTEGER REFERENCES base_conhecimento(id) ON DELETE SET NULL;
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS base_divergiu BOOLEAN;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

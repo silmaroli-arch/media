@@ -3527,6 +3527,9 @@ def testar_ia():
                     resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
                     resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
                     resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
+                    resposta_bruta_base=resultado_ia["por_provedor"].get("Base"),
+                    base_item_id=(resultado_ia.get("base") or {}).get("item_id"),
+                    base_divergiu=(resultado_ia.get("base") or {}).get("divergiu"),
                     ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
                 )
                 db.session.add(pendente)
