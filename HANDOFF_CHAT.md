@@ -1710,6 +1710,22 @@ Confirmado com o Silvan: **o ambiente `qa`/`qualidade` não vai mais existir**, 
 
 Nada relacionado ao Render (nem `media-dev` nem `media-prod`) é afetado por essa remoção - o Render nunca dependeu desse workflow, ele observa o repositório diretamente.
 
+## Workflow do GitHub Actions para abrir o PR de promoção (2026-09-29, pedido do Silvan)
+
+Depois da dificuldade encontrada pra abrir manualmente o primeiro PR dev→main (base/compare invertidos, botão "Create pull request" difícil de achar no navegador do celular), o Silvan pediu um jeito mais simples de abrir esse PR daqui pra frente.
+
+Criado `.github/workflows/abrir_pr_promocao.yml` (working tree do `dev`, aguardando auto-commit). Características:
+
+- **Disparo manual apenas** (`workflow_dispatch`) - decisão explícita do Silvan entre isso e disparo automático a cada push no `dev`. Ele decide quando promover; o workflow só facilita a abertura do PR.
+- Fica na aba **Actions** do GitHub > "Abrir PR de promoção (dev -> main)" > botão **"Run workflow"**.
+- **Só abre (ou reaproveita, se já existir) o PR comparando `main` (base) <- `dev` (compare)** - nunca mescla sozinho. A revisão, a resolução de conflito no `render.yaml` (sempre mantendo a versão da própria `main` - ver aviso de sempre) e o clique final em "Merge pull request" continuam manuais.
+- Se não houver nenhuma diferença real entre `dev` e `main` (fora do `render.yaml`, que nunca deve ser promovido), o workflow não faz nada, evitando abrir um PR vazio.
+- Se já existir um PR aberto dessa promoção, só informa o número/URL dele em vez de duplicar.
+
+Verificado antes de comitar: YAML validado com `python3 -c "import yaml; yaml.safe_load(...)"`, e o script de shell dentro do `run:` validado à parte com `bash -n` (sintaxe OK) - havia um bug real na primeira versão (uma string de várias linhas dentro do `--body` quebrou a indentação do bloco YAML e virou uma chave solta no arquivo), corrigido reescrevendo o corpo do PR como uma única linha com `$'...\n...'` (aspas ANSI-C do bash, que interpretam `\n` como quebra de linha de verdade sem quebrar a estrutura do YAML).
+
+**Pendência**: como o `workflow_dispatch` só aparece no botão "Run workflow" da aba Actions quando o arquivo do workflow existe no branch padrão do repositório, pode ser necessário que esse arquivo também chegue à `main` (no próximo PR de promoção) para o botão aparecer de forma confiável - se não aparecer assim que o auto-commit subir isso pro `dev`, avisar para investigarmos.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
