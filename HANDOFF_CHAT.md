@@ -1765,6 +1765,21 @@ Pedido do Silvan: "Vamos montar o app do whatsapp para o ambiente dev. Lembrando
 **Setup do WhatsApp para o `media-dev` está completo** - as 7 tasks da lista de configuração (criar app, número de teste, destinatário verificado, credenciais/token permanente, webhook, variáveis no Render, teste ponta a ponta) foram concluídas.
 
 
+## Bug corrigido: erro 500 ao excluir médico/secretária (IntegrityError) (2026-09-29)
+
+Silvan reportou "Internal Server Error" ao tentar excluir a conta de um médico na área do dono (`dev.media.med.br`), rota `POST /dono/usuarios/<id>/excluir`. Log do Render mostrou um `IntegrityError` do SQLAlchemy (link `sqlalche.me/e/21/gkpj`, confirmado como violação de chave estrangeira).
+
+**Causa raiz**: `app/exclusao_usuario.py` (`excluir_usuario_e_dados()`) apaga/desvincula manualmente cada tabela que referencia `usuarios.id` antes de apagar a própria conta - mas dois modelos criados depois da última atualização dessa função nunca foram incluídos: `MensagemSuporte` ("Fale com a gente", 2026-09-25) e `Notificacao`. Ambos têm `usuario_id` como `nullable=False` apontando para `usuarios.id`. Se a pessoa excluída tivesse qualquer mensagem de suporte ou notificação, o `DELETE` da própria conta batia na constraint de chave estrangeira dessas duas tabelas.
+
+**Correção** em `app/exclusao_usuario.py`:
+- Import de `MensagemSuporte` e `Notificacao` adicionado.
+- No passo 1 ("Histórico puramente pessoal, sem nada mais dependendo dele"), adicionadas duas linhas apagando `MensagemSuporte.query.filter_by(usuario_id=uid)` e `Notificacao.query.filter_by(usuario_id=uid)` - apagadas de vez (não dá pra só desvincular, já que a coluna é obrigatória), mesmo padrão do `PushSubscription`/`LicencaPagamento` já existentes ali.
+
+Verificado com `python3 -c "import ast; ast.parse(...)"` (sintaxe OK) e releitura do arquivo do disco confirmando as linhas novas.
+
+Aplicado só no `dev` (aguardando auto-commit do Silvan) - Silvan vai testar de novo após o deploy. Vale lembrar pra próxima vez que um novo modelo ganhar uma FK obrigatória pra `usuarios.id`: já checar se `exclusao_usuario.py` precisa saber dele.
+
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

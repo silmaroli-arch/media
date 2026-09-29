@@ -27,6 +27,7 @@ from app.models import (
     Agendamento,
     ChamadaIA,
     ChatMensagem,
+    ConversaWhatsapp,
     Exame,
     FaqItem,
     Grupo,
@@ -34,6 +35,8 @@ from app.models import (
     GrupoMembro,
     GrupoPaciente,
     LicencaPagamento,
+    MensagemSuporte,
+    Notificacao,
     Paciente,
     PerguntaPendente,
     PreparoModelo,
@@ -90,6 +93,11 @@ def excluir_usuario_e_dados(usuario):
     PushSubscription.query.filter_by(usuario_id=uid).delete(synchronize_session=False)
     LicencaPagamento.query.filter_by(usuario_id=uid).delete(synchronize_session=False)
     ChamadaIA.query.filter_by(usuario_id=uid).update({"usuario_id": None}, synchronize_session=False)
+    # "Fale com a gente" e notificações — dados pessoais da conta, sem
+    # nada mais dependendo deles (usuario_id é NOT NULL nos dois modelos,
+    # então não dá pra só desvincular: precisam ser apagados).
+    MensagemSuporte.query.filter_by(usuario_id=uid).delete(synchronize_session=False)
+    Notificacao.query.filter_by(usuario_id=uid).delete(synchronize_session=False)
 
     # 2. Convites de grupo — ele convidado, ou ele quem convidou.
     GrupoConvite.query.filter_by(usuario_convidado_id=uid).delete(synchronize_session=False)
@@ -103,8 +111,23 @@ def excluir_usuario_e_dados(usuario):
     # são exclusivamente dele: apaga o exame e tudo que aponta pra ele.
     exames_proprios_ids = [e.id for e in Exame.query.filter_by(medico_id=uid).all()]
     if exames_proprios_ids:
-        for agendamento in Agendamento.query.filter(Agendamento.exame_id.in_(exames_proprios_ids)).all():
-            db.session.delete(agendamento)  # cascade do ORM apaga o ResultadoExame junto
+        agendamentos_a_apagar_ids = [
+            a.id for a in Agendamento.query.filter(Agendamento.exame_id.in_(exames_proprios_ids)).all()
+        ]
+        if agendamentos_a_apagar_ids:
+            # Mensagens de chat/WhatsApp que apontam pra esse agendamento
+            # específico (coluna separada de exame_id, ver ChatMensagem/
+            # ConversaWhatsapp) - precisam ser desvinculadas ANTES de
+            # apagar o agendamento, senão a FK trava a exclusão.
+            ChatMensagem.query.filter(ChatMensagem.agendamento_id.in_(agendamentos_a_apagar_ids)).update(
+                {"agendamento_id": None}, synchronize_session=False
+            )
+            ConversaWhatsapp.query.filter(ConversaWhatsapp.agendamento_id.in_(agendamentos_a_apagar_ids)).update(
+                {"agendamento_id": None}, synchronize_session=False
+            )
+            Agendamento.query.filter(Agendamento.id.in_(agendamentos_a_apagar_ids)).delete(
+                synchronize_session=False
+            )  # ResultadoExame é apagado via ON DELETE CASCADE do banco
         ChatMensagem.query.filter(ChatMensagem.exame_id.in_(exames_proprios_ids)).update(
             {"exame_id": None}, synchronize_session=False
         )
@@ -124,8 +147,15 @@ def excluir_usuario_e_dados(usuario):
     # 6. Agendamentos em que ele é o médico responsável, mas o exame não
     # era dele (ex.: cobrindo um colega) — continuam sendo agendamentos
     # DELE, não têm como existir sem um médico responsável, então saem.
-    for agendamento in Agendamento.query.filter_by(medico_id=uid).all():
-        db.session.delete(agendamento)
+    agendamentos_proprios_ids = [a.id for a in Agendamento.query.filter_by(medico_id=uid).all()]
+    if agendamentos_proprios_ids:
+        ChatMensagem.query.filter(ChatMensagem.agendamento_id.in_(agendamentos_proprios_ids)).update(
+            {"agendamento_id": None}, synchronize_session=False
+        )
+        ConversaWhatsapp.query.filter(ConversaWhatsapp.agendamento_id.in_(agendamentos_proprios_ids)).update(
+            {"agendamento_id": None}, synchronize_session=False
+        )
+        Agendamento.query.filter(Agendamento.id.in_(agendamentos_proprios_ids)).delete(synchronize_session=False)
     Agendamento.query.filter_by(criado_por_id=uid).update({"criado_por_id": None}, synchronize_session=False)
 
     # 7. Perguntas/FAQ que ele só criou/respondeu (atribuição, não é dado
