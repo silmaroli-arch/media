@@ -2025,6 +2025,40 @@ Problema reportado com prints: o Silvan definiu o valor mensal padrão (R$ 150,0
 - **`app/templates/dono/usuarios.html`**: botão "Aplicar valor padrão a todos" (com confirmação) ao lado de "Gerar itens do ano para todos".
 - **Teste**: `test_licencas_aplicar_valor_padrao.py` (novo) - sem padrão, aplicar sem sobrescrever valor próprio, mês em aberto vs. pago/com link, ciclo anual, idempotência, acesso só do dono. **Ainda NÃO executado** (sem Flask/PyPI no ambiente do assistente) - rodar no terminal do Silvan.
 
+## "Terceira IA": base de conhecimento compartilhada - ESPECIFICAÇÃO E FATIA 1 (2026-09-29, pedido do Silvan)
+
+**Ideia**: hoje o paciente pergunta e duas IAs respondem (Claude/ChatGPT/Gemini, o dono escolhe o par, e a Claude arbitra divergência). Vamos adicionar uma TERCEIRA voz: uma base de conhecimento própria do app (perguntas e respostas de preparo por tipo de exame), consultada por busca de similaridade. Não é um modelo treinado, é uma base com busca.
+
+### Decisões do Silvan (definem as próximas fatias - não reabrir sem ele)
+1. **A base é do app (global, todas as clínicas)** e se alimenta sozinha das perguntas respondidas pelos médicos.
+2. **O preparo cadastrado pelo médico é SEMPRE o prioritário.** A base só complementa.
+3. **Aprovação do médico só quando a resposta da base for "muito diferente" das IAs.** Quem julga "muito diferente" é o ÁRBITRO CLAUDE (reaproveitar `_respostas_divergem` em `app/ia_preparo.py`), não similaridade de texto. Isso vale para as duas comparações: base x IAs e edição do médico x base.
+4. **Ao comparar, diferenças só de prazo/horas NÃO contam como divergência** (jejum de 6h vs 8h varia por clínica).
+5. **Se o médico editar a resposta e ela ficar muito diferente da base, a base é ATUALIZADA** (guardar histórico da versão anterior, para desfazer).
+6. **Interruptor na área do dono** para usar ou não a terceira IA (desligada = tudo como hoje). Também na área do dono: **configuração de qual provedor faz a busca** (OpenAI/Gemini embeddings, ou palavra-chave).
+7. **Ao carregar o preparo, o médico informa o TIPO DE EXAME** (dropdown de lista criada por nós) - FEITO na fatia 1.
+8. **Médico excluído: as respostas dele na base NÃO são apagadas** (guardar nome da autoria como texto e soltar o vínculo; ajustar `app/exclusao_usuario.py`, que já teve erro 500 por FK).
+9. **Por especialidade, o médico pode ver a base e SUGERIR alterações, aprovadas pelo dono.** Exige campo novo "especialidade" no cadastro do médico (dropdown) - não existe hoje.
+10. **Sem Excel**: a carga inicial é inserção direta na base (migração/script), não planilha.
+11. Recomendações minhas aceitas: **generalizar o texto antes de salvar na base** (remover nome de paciente, telefone, dados da clínica e detalhes de protocolo - LGPD) e mostrar a base como uma 4ª coluna "Base" na tela de aprovação do médico, com a fonte visível.
+
+### Ordem das fatias
+1. **[FEITA, ver abaixo]** Tipos de exame + campo no preparo + tela do dono.
+2. Base de conhecimento (tabela + tela do dono + interruptor + provedor de busca).
+3. Integração na resposta (4ª coluna, árbitro, aprovação só quando divergir).
+4. Auto-alimentação e atualização por edição do médico (com generalização e prazo ignorado).
+5. Especialidade do médico + sugestões de alteração aprovadas pelo dono.
+
+### Fatia 1 - Tipos de exame (implementada)
+- **`app/models.py`**: novo modelo `TipoExame` (`tipos_exame`: nome único, `especialidades` em texto separado por vírgula, `ativo`, `ordem`). `PreparoModelo.tipo_exame_id` (FK, nullable) + relação `tipo_exame`. O tipo fica no PREPARO (`PreparoModelo`), que é o que o médico "carrega".
+- **`app/tipos_exame_padrao.py`** (novo): lista inicial com 66 tipos de exame que exigem preparo (endoscopia/digestivo, ultrassom, tomografia/ressonância, radiografias contrastadas, medicina nuclear, cardiologia, laboratório, ginecologia/urologia, pneumologia/neurologia, oftalmo/otorrino), cada um ligado a especialidades. `semear_tipos_exame()` só INSERE o que falta, nunca altera nem reativa o que o dono mexeu.
+- **`migrar_banco.py`**: semeia a lista logo após o `db.create_all()` e adiciona `ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS tipo_exame_id`.
+- **`app/routes_medico.py`**: `_tipos_exame_ativos()` e `_ler_tipo_exame()`. Novo preparo: tipo OBRIGATÓRIO (só quando existem tipos ativos, então o banco de testes vazio não trava). Editar: preparo antigo sem tipo não é obrigado a escolher, e um tipo que o preparo já tinha continua válido mesmo se o dono o inativou depois.
+- **`app/templates/medico/preparo_modelo_form.html`**: dropdown "Tipo de exame".
+- **Área do dono**: nova aba "Tipos de exame" (`/dono/tipos-exame`): adicionar, renomear/ajustar especialidades, ativar/inativar, com contagem de preparos por tipo e aviso de preparos sem tipo. Rotas `dono.tipos_exame*` em `app/routes_dono.py`, template `dono/tipos_exame.html`, item no `_menu.html`.
+- **Teste**: `test_tipos_exame.py` (novo). **NÃO executado** nesta sessão (sem Flask no ambiente do assistente): conferidos só a sintaxe Python e a renderização Jinja. Rodar no terminal: `DATABASE_URL=sqlite:///teste_tipos_exame.db python test_tipos_exame.py` e, de regressão, `test_preparo_form_abas_importar.py` e `test_dono_conteudo_clinico.py` (criam preparos pelo formulário).
+- **Pendência do Silvan**: revisar a lista inicial de 66 tipos (aba "Tipos de exame" depois do deploy) e ajustar o que quiser. Preparos já cadastrados ficam "sem tipo" até o médico escolher ao editar.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
