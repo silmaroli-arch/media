@@ -6,14 +6,18 @@
 
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h3 class="mb-0">Usuários cadastrados (equipe)</h3>
-  {# Pedido do Silvan (2026-09-25): gerar de uma vez a cobrança Mercado
-     Pago dos meses que faltam neste ano pra todo médico em ciclo mensal,
-     em vez de entrar usuário por usuário/mês por mês (ver
-     dono.licencas_gerar_cobrancas_ano em app/routes_dono.py). #}
+  {# Pedido do Silvan (2026-09-25, redesenhado em 2026-09-29): garantir de
+     uma vez o ITEM de pagamento dos meses que faltam neste ano pra todo
+     médico em ciclo mensal, em vez de entrar usuário por usuário/mês por
+     mês (ver dono.licencas_gerar_cobrancas_ano em app/routes_dono.py).
+     Desde 2026-09-29 esta ação NÃO gera mais cobrança real (link/Pix) -
+     só a linha do mês; a cobrança em si continua sendo gerada
+     individualmente, na hora de cobrar de verdade (ver texto de ajuda
+     abaixo). #}
   <form method="post" action="{{ url_for('dono.licencas_gerar_cobrancas_ano') }}"
-        onsubmit="return confirm('Gerar a cobrança Mercado Pago dos meses restantes deste ano (a partir do mês seguinte ao atual) pra TODO médico em ciclo mensal? Meses já pagos ou que já têm cobrança gerada não são afetados.');">
+        onsubmit="return confirm('Garantir o item de pagamento dos meses restantes deste ano (a partir do mês seguinte ao atual) pra todo médico com licença ativa/inadimplente em ciclo mensal? Isso não gera cobrança nenhuma (link/Pix) ainda - só cria a linha do mês.');">
     <button type="submit" class="btn btn-outline-primary btn-sm">
-      <i class="bi bi-cash-stack me-1"></i>Gerar cobranças do ano para todos
+      <i class="bi bi-calendar-plus me-1"></i>Gerar itens do ano para todos
     </button>
   </form>
 </div>
@@ -24,12 +28,13 @@
   sistema sozinha, sem trial/vencimento/bloqueio) e não aparece na lista de Grupos.
 </p>
 <p class="text-muted small">
-  <i class="bi bi-info-circle"></i> "Gerar cobranças do ano para todos" cria o link de pagamento (Mercado Pago)
-  dos meses que faltam neste ano civil, a partir do mês seguinte ao atual, só pra médico com licença ATIVA ou
-  INADIMPLENTE, no ciclo mensal - médico ainda em trial não é cobrado, quem já pagou aquele mês na mão ou já
-  tem cobrança gerada não é afetado, e médico em ciclo anual continua usando o próprio botão de cobrança
-  anual, na tela de pagamentos dele. Processa no máximo 100 médicos por clique (evita travar a requisição com
-  uma base grande) - se sobrar mais gente elegível, é só clicar de novo.
+  <i class="bi bi-info-circle"></i> "Gerar itens do ano para todos" só cria a LINHA do mês (LicencaPagamento)
+  dos meses que faltam neste ano civil, a partir do mês seguinte ao atual, pra médico com licença ATIVA ou
+  INADIMPLENTE, no ciclo mensal - médico ainda em trial não entra, e médico em ciclo anual continua usando o
+  próprio botão de cobrança anual. Isso NÃO gera cobrança real nenhuma (nem link, nem Pix) - a cobrança de
+  verdade continua sendo gerada mês a mês, individualmente, na tela de pagamento de cada médico ("Gerar
+  cobrança") ou pelo próprio médico em "Minha licença" (Pix) - clicado só quando for de fato cobrar aquele
+  mês, nunca com antecedência (o Pix, em especial, expira em ~30 minutos).
 </p>
 
 {% set em_alerta = linhas|selectattr("em_alerta_inadimplencia")|list %}

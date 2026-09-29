@@ -10,7 +10,7 @@ from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, Cham
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 from app.mercadopago_integration import (
-    criar_preferencia_pagamento, criar_preferencia_pagamento_anual, criar_cobranca_pix,
+    criar_preferencia_pagamento, criar_preferencia_pagamento_anual,
     MercadoPagoNaoConfigurado,
 )
 from app.exclusao_usuario import verificar_bloqueios_exclusao, excluir_usuario_e_dados
@@ -744,164 +744,69 @@ def usuarios():
     return render_template("dono/usuarios.html", linhas=_usuarios_com_custo())
 
 
-# Pedido do Silvan (2026-09-29, depois do 502 causado por gerar cobrança
-# pra 1000 médicos de teste de uma vez só - ver app/performance_teste.py):
-# processa no máximo esta quantidade de médicos por clique. Cada médico
-# elegível pode disparar até ~6 chamadas de rede reais ao Mercado Pago
-# (link + Pix, para até uns 3 meses restantes do ano) DENTRO da mesma
-# requisição HTTP - sem esse limite, uma base grande o suficiente de
-# médicos travava a requisição até o Render matar o worker (502 Bad
-# Gateway), bem antes do Mercado Pago sequer terminar de responder tudo.
-# Pra gerar mais que isso, é só clicar de novo (mesmo padrão já usado na
-# ferramenta de teste de performance).
-LIMITE_MEDICOS_POR_CLIQUE_COBRANCA_ANO = 100
-
-
 @dono_bp.route("/usuarios/gerar-cobrancas-ano", methods=["POST"])
 @login_required
 @dono_required
 def licencas_gerar_cobrancas_ano():
-    """Gera, de uma vez só, a cobrança Mercado Pago dos meses que FALTAM
-    neste ano civil (do mês seguinte ao atual até dezembro, inclusive)
-    pra médico em ciclo MENSAL e com licença já ATIVA ou INADIMPLENTE
-    (pedido do Silvan, 2026-09-25 - antes só dava pra gerar usuário por
-    usuário/mês por mês, na tela de pagamentos de cada um). Médico em
-    ciclo ANUAL fica de fora - ele usa o próprio fluxo de "cobrar anual"
-    (ver usuario_licenca_pagamento_cobrar_anual), que já cobre o ano
-    inteiro num pagamento único; gerar cobrança mensal pra ele aqui
-    cobraria em duplicado. Médico ainda em TRIAL também fica de fora
-    (correção de 2026-09-29, ver abaixo) - ele ainda não está sendo
-    cobrado, gerar uma cobrança de licença pra quem está no período
-    gratuito não faz sentido.
+    """Garante que existe o ITEM de pagamento (LicencaPagamento, "não
+    pago") de cada mês que falta neste ano civil (do mês seguinte ao
+    atual até dezembro, inclusive), para todo médico em ciclo MENSAL com
+    licença já ATIVA ou INADIMPLENTE (médico em TRIAL ainda não é
+    cobrado, então não faz sentido pré-criar item de pagamento pra ele;
+    médico em ciclo ANUAL usa o próprio fluxo de cobrança anual - ver
+    usuario_licenca_pagamento_cobrar_anual - que já cobre o ano inteiro
+    num pagamento único).
 
-    Critérios (decididos com o Silvan): só os meses AINDA NÃO PAGOS, e só
-    onde ainda NÃO existe cobrança gerada (não substitui/duplica um link
-    já ativo) - meses já pagos na mão (Pix, acordo informal etc.) e meses
-    com cobrança já pendente ficam intocados.
+    Redesenho de 2026-09-29 (pedido do Silvan, depois de um 502 Bad
+    Gateway real ao clicar aqui com 1000 médicos de teste de performance
+    cadastrados - ver app/performance_teste.py): esta rota ANTES também
+    gerava, pra cada médico e cada mês, a cobrança REAL no Mercado Pago
+    (link de Checkout Pro + Pix) - ou seja, até ~6 chamadas de rede por
+    médico, TODAS dentro da mesma requisição HTTP. Com uma base grande
+    de médicos, isso travava o worker do Render até ele matar a
+    requisição (502), bem antes do Mercado Pago terminar de responder.
+    Pior ainda: o Pix expira em ~30 minutos (ver
+    app.mercadopago_integration.criar_cobranca_pix) - gerar um Pix hoje
+    para um mês de dezembro nunca fazia sentido, ele já estaria expirado
+    há meses quando alguém finalmente fosse usá-lo.
 
-    Pedido do Silvan (2026-09-25, Pix nativo): além do link de Checkout
-    Pro de sempre, cada mês também recebe um QR code Pix (opção adicional,
-    ver app.mercadopago_integration.criar_cobranca_pix) - as duas geração
-    são independentes (um mês pode já ter link mas ainda não ter Pix, por
-    exemplo se essa função rodou antes de o Pix existir), cada uma só
-    pula o que JÁ tem, e uma falha na geração do Pix não desfaz o link já
-    gerado com sucesso (e vice-versa) - contadas e avisadas separadamente
-    no resumo final.
-
-    Correção de 2026-09-29 (bug real, reportado pelo Silvan: 502 Bad
-    Gateway ao clicar, depois de gerar 1000 médicos de teste de
-    performance - ver app/performance_teste.py): esta rota SEMPRE incluiu
-    todo médico em ciclo mensal, mesmo os ainda em trial (que não
-    deveriam ser cobrados ainda) - com uma base grande o suficiente de
-    médicos, isso significa centenas/milhares de chamadas de rede reais
-    ao Mercado Pago (link + Pix, por mês restante) DENTRO de uma única
-    requisição HTTP, travando o worker do Render até ele matar a
-    requisição. Duas mudanças: (1) filtra só licença ativa/inadimplente
-    (trial nunca deveria entrar aqui, de qualquer forma - correção de
-    comportamento, não só de performance); (2) processa no máximo
-    `LIMITE_MEDICOS_POR_CLIQUE_COBRANCA_ANO` médicos por clique, avisando
-    quando sobrar mais pra gerar (é só clicar de novo)."""
+    Agora esta rota faz só a parte BARATA e que faz sentido gerar com
+    antecedência (criar a linha do mês, sem nenhuma chamada de rede) -
+    gerar a cobrança de verdade (link OU Pix) continua sendo uma ação
+    manual, feita quando alguém realmente for cobrar aquele mês
+    especificamente:
+    - o dono gera o link em Usuários > (médico) > calendário de
+      pagamento > "Gerar cobrança" (ver usuario_licenca_pagamento_cobrar);
+    - o próprio médico gera o Pix em "Minha licença" (ver
+      medico.minha_licenca_gerar_pix) quando for pagar.
+    Sem chamada de rede nenhuma, não há mais risco de travar a
+    requisição, então também não precisa mais de nenhum limite de
+    quantos médicos processar por clique."""
     hoje = date.today()
     if hoje.month == 12:
         flash("Já estamos em dezembro - não há mais meses restantes neste ano civil pra gerar.", "warning")
         return redirect(url_for("dono.usuarios"))
-    mes_inicio = date(hoje.year, hoje.month + 1, 1)
     mes_fim = date(hoje.year, 12, 1)
 
-    query_elegiveis = Usuario.query.filter(
+    medicos = Usuario.query.filter(
         Usuario.tipo == "medico",
         Usuario.ciclo_licenca == "mensal",
         Usuario.licenca_status.in_(["ativa", "inadimplente"]),
-    ).order_by(Usuario.id)
-    total_elegiveis = query_elegiveis.count()
-    medicos = query_elegiveis.limit(LIMITE_MEDICOS_POR_CLIQUE_COBRANCA_ANO).all()
+    ).all()
 
-    geradas = 0
-    ja_tinham = 0
-    sem_valor = 0
-    falhas = []
-    pix_geradas = 0
-    pix_ja_tinham = 0
-    pix_falhas = []
-
+    itens_criados = 0
     for medico in medicos:
-        garantir_meses_licenca(medico, fim=mes_fim)
-    db.session.flush()
-
-    for medico in medicos:
-        pagamentos = LicencaPagamento.query.filter(
-            LicencaPagamento.usuario_id == medico.id,
-            LicencaPagamento.mes >= mes_inicio,
-            LicencaPagamento.mes <= mes_fim,
-            LicencaPagamento.pago.is_(False),
-        ).all()
-        for pagamento in pagamentos:
-            if pagamento.mp_init_point:
-                ja_tinham += 1
-            else:
-                try:
-                    criar_preferencia_pagamento(pagamento)
-                    geradas += 1
-                except MercadoPagoNaoConfigurado:
-                    db.session.commit()
-                    flash(
-                        "Mercado Pago ainda não está configurado nesta instalação "
-                        "(defina MERCADOPAGO_ACCESS_TOKEN no .env) - nenhuma cobrança foi gerada.",
-                        "danger",
-                    )
-                    return redirect(url_for("dono.usuarios"))
-                except ValueError:
-                    sem_valor += 1
-                except Exception:
-                    current_app.logger.exception(
-                        "Falha ao gerar cobrança em massa para %s, mês %s.",
-                        medico.nome, pagamento.mes.strftime("%m/%Y"),
-                    )
-                    falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
-
-            if pagamento.pix_qr_code:
-                pix_ja_tinham += 1
-                continue
-            try:
-                criar_cobranca_pix(pagamento)
-                pix_geradas += 1
-            except MercadoPagoNaoConfigurado:
-                # Mesma configuração (MERCADOPAGO_ACCESS_TOKEN) do link -
-                # se faltou pro link acima, vai faltar pro Pix também, mas
-                # já foi avisado e interrompido lá em cima; chegar aqui
-                # sem token só é possível se o link já existia (bloco
-                # acima não chamou _access_token) e só o Pix falta - avisa
-                # e continua pro próximo mês, sem interromper tudo.
-                pix_falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
-            except ValueError:
-                pass  # mesmo "sem valor" já contado em sem_valor acima
-            except Exception:
-                current_app.logger.exception(
-                    "Falha ao gerar Pix em massa para %s, mês %s.",
-                    medico.nome, pagamento.mes.strftime("%m/%Y"),
-                )
-                pix_falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
-
+        itens_criados += len(garantir_meses_licenca(medico, fim=mes_fim))
     db.session.commit()
 
-    partes = [f"{geradas} cobrança{'s' if geradas != 1 else ''} gerada{'s' if geradas != 1 else ''}"]
-    if ja_tinham:
-        partes.append(f"{ja_tinham} já tinham cobrança (não duplicadas)")
-    if sem_valor:
-        partes.append(f"{sem_valor} sem valor mensal definido (puladas)")
-    if falhas:
-        exibidas = ", ".join(falhas[:5])
-        partes.append(f"{len(falhas)} falharam: {exibidas}{' ...' if len(falhas) > 5 else ''}")
-    partes.append(f"{pix_geradas} Pix gerado{'s' if pix_geradas != 1 else ''}")
-    if pix_ja_tinham:
-        partes.append(f"{pix_ja_tinham} já tinham Pix (não duplicados)")
-    if pix_falhas:
-        exibidas_pix = ", ".join(pix_falhas[:5])
-        partes.append(f"{len(pix_falhas)} Pix falharam: {exibidas_pix}{' ...' if len(pix_falhas) > 5 else ''}")
-    if total_elegiveis > len(medicos):
-        restantes = total_elegiveis - len(medicos)
-        partes.append(f"ainda restam {restantes} médico(s) elegível(is) - clique em \"Gerar cobranças do ano para todos\" de novo para continuar")
-    flash(" · ".join(partes) + ".", "success" if not falhas and not pix_falhas else "warning")
+    if itens_criados:
+        flash(
+            f"{itens_criados} item(ns) de pagamento criado(s), cobrindo {len(medicos)} médico(s) - "
+            "gere o link ou o Pix de cada mês individualmente, na hora de cobrar de verdade.",
+            "success",
+        )
+    else:
+        flash(f"Nenhum item novo - os {len(medicos)} médico(s) elegível(is) já tinham todos os meses deste ano gerados.", "success")
     return redirect(url_for("dono.usuarios"))
 
 
