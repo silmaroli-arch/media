@@ -187,6 +187,57 @@ def _eh_recusa_generica_disfarcada(texto):
         and _PADROES_ENCAMINHA_PARA_CLINICA.search(texto_normalizado)
     )
 
+
+# Pedido do Silvan (2026-09-29, ver print do "Rascunho final" com "seria
+# importante confirmar com seu médico antes de tomar" sublinhado): TODA
+# pergunta que passa por este módulo já está, ela mesma, sendo respondida
+# pelo médico (a pergunta cai numa fila de aprovação - ver
+# PerguntaPendente/medico.perguntas_pendentes - e só chega ao paciente
+# depois que ele revisa/aprova, mesmo quando a IA "acerta" e o rascunho é
+# só copiado sem edição) - então quando a própria IA recomenda "confirme/
+# consulte/fale com seu médico" dentro da resposta, isso é redundante e
+# sem sentido no contexto: o paciente NÃO tem esse médico à disposição
+# pra perguntar por fora - ele está, literalmente, perguntando ao médico
+# através deste mesmo chat. PROMPT_SISTEMA já tenta evitar isso (ver a
+# regra do MEDICAMENTO_NAO_CADASTRADO_REVISAR, mais abaixo), mas depender
+# só da IA seguir a instrução não é confiável o bastante (foi exatamente
+# isso que vazou no caso reportado) - por isso este filtro determinístico
+# roda em cima de QUALQUER rascunho final (resposta única, síntese de
+# duas divergentes, ou as duas coladas lado a lado), como uma rede de
+# segurança por código, não só por prompt.
+#
+# Remove a FRASE INTEIRA (delimitada por ponto/exclamação/interrogação)
+# que menciona "médico(a)" junto com um verbo de "buscar confirmação"
+# (confirmar/consultar/conversar/falar/perguntar/verificar/checar) - de
+# propósito, remove a frase toda (não só o trecho específico) para nunca
+# devolver uma frase gramaticalmente quebrada; se a frase também trazia
+# alguma informação útil (ex.: "geralmente é seguro, mas confirme com o
+# médico"), prefere perder essa informação a manter a recomendação sem
+# sentido. Não afeta menção a "secretaria/equipe" (escalar para a equipe
+# continua fazendo sentido em alguns casos - ver NAO_SEI_ENCAMINHAR).
+_PADRAO_MENCAO_MEDICO = re.compile(r"médic[oa]", re.IGNORECASE)
+_PADRAO_VERBO_CONFIRMACAO = re.compile(
+    r"confirm|consult|convers|fal(?:e|ar|ando|asse)|pergunt|verifiqu|verificar|check",
+    re.IGNORECASE,
+)
+
+
+def _remover_recomendacao_de_consultar_medico(texto):
+    """Ver comentário acima. Devolve o texto sem nenhuma frase que
+    recomende ao paciente confirmar/consultar/falar com o médico -
+    devolve o texto original, sem alterar nada, se a remoção zerasse a
+    resposta por completo (mais seguro que devolver uma resposta vazia
+    ao paciente)."""
+    if not texto:
+        return texto
+    frases = re.split(r"(?<=[.!?])\s+", texto.strip())
+    frases_mantidas = [
+        frase for frase in frases
+        if not (_PADRAO_MENCAO_MEDICO.search(frase) and _PADRAO_VERBO_CONFIRMACAO.search(frase))
+    ]
+    resultado = " ".join(frases_mantidas).strip()
+    return resultado if resultado else texto
+
 # Pode ser trocado por variável de ambiente sem precisar mexer no código —
 # útil pra ajustar custo/qualidade sem um novo deploy.
 #
@@ -220,6 +271,7 @@ Regras importantes:
 - Quando o item tiver um prazo/data calculado nos dados fornecidos, cite esse prazo/data na resposta.
 - Reserve o texto NAO_SEI_ENCAMINHAR só para perguntas que genuinamente não têm nenhuma informação útil a dar (ex.: assunto totalmente fora do preparo, ou um item que você não consegue identificar de jeito nenhum) — nesse caso, responda EXATAMENTE com esse texto, nada mais, nenhuma outra palavra, nenhuma pontuação extra.
 - Antes de aplicar qualquer regra acima, avalie se o texto do paciente é sequer uma pergunta ou comentário coerente (mesmo que informal, curto ou com erros de digitação/ortografia). Se o texto for palavras reais mas sem nenhum sentido coerente entre si, ou for sobre um assunto qualquer que nem chega a formar uma pergunta/comentário compreensível, responda EXATAMENTE com o texto SEM_SENTIDO_ENCAMINHAR, nada mais. NÃO use SEM_SENTIDO_ENCAMINHAR para uma pergunta coerente que só está fora do preparo ou que você não consegue identificar (esses casos usam NAO_SEI_ENCAMINHAR, acima) — a diferença é: NAO_SEI_ENCAMINHAR é "entendi a pergunta, mas não tenho a informação"; SEM_SENTIDO_ENCAMINHAR é "isso nem é uma pergunta/comentário que eu consiga entender". Na dúvida entre os dois, ou na dúvida entre usar SEM_SENTIDO_ENCAMINHAR e simplesmente responder, prefira responder normalmente ou usar NAO_SEI_ENCAMINHAR — evite usar SEM_SENTIDO_ENCAMINHAR para um texto que dá pra entender, mesmo que mal escrito.
+- NUNCA termine (nem inclua em nenhum ponto) uma resposta recomendando que o paciente "confirme/consulte/converse/fale com o médico" - isso não faz sentido neste contexto: esta própria pergunta já está sendo respondida pelo médico (ela passa pela revisão/aprovação dele antes de chegar ao paciente), então pedir para o paciente confirmar com o médico por fora é redundante e confuso. Se realmente não houver informação suficiente para responder, use o marcador NAO_SEI_ENCAMINHAR (abaixo) em vez de tentar responder e sugerir que o paciente pergunte ao médico.
 - Nunca responda sobre assuntos fora do preparo deste exame específico (ex.: diagnósticos, tratamentos, outros exames).
 - Quando houver um "Histórico recente desta conversa" listado antes da pergunta atual, use-o para entender o CONTEXTO da conversa em aberto com este paciente — principalmente perguntas de acompanhamento curtas que só fazem sentido em conjunto com a pergunta anterior (ex.: depois de "posso comer batata?", a pergunta seguinte "e frita?" deve ser entendida como "posso comer batata frita?", não como uma pergunta solta e incompleta). Sem esse histórico, trate a pergunta como isolada, do jeito de sempre."""
 
@@ -937,6 +989,16 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
             chamada_a.resposta_final_usada = bool(resposta_a)
         if chamada_b:
             chamada_b.resposta_final_usada = bool(resposta_b)
+
+    # Rede de segurança determinística (pedido do Silvan, 2026-09-29 - ver
+    # _remover_recomendacao_de_consultar_medico acima): aplicada aqui, num
+    # único ponto, cobre os 4 caminhos que podem ter preenchido `final`
+    # acima (síntese, as duas divergentes coladas lado a lado, concordância,
+    # ou resposta única) - o rascunho final NUNCA deve recomendar ao
+    # paciente confirmar/consultar com o médico, já que esta mesma pergunta
+    # está passando pela revisão do médico.
+    if final:
+        final = _remover_recomendacao_de_consultar_medico(final)
 
     # Ver docstring acima ("sem_sentido") - só quando não sobrou nenhum
     # rascunho final E todas as IAs que de fato responderam (chamada
