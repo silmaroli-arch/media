@@ -27,6 +27,7 @@ from app.models import (
     Agendamento,
     ChamadaIA,
     ChatMensagem,
+    ContagemPerguntasDia,
     ConversaWhatsapp,
     Exame,
     FaqItem,
@@ -135,6 +136,17 @@ def excluir_usuario_e_dados(usuario):
         )
         PerguntaPendente.query.filter(PerguntaPendente.exame_id.in_(exames_proprios_ids)).update(
             {"exame_id": None}, synchronize_session=False
+        )
+        # Contador de perguntas/dia (exame_id é obrigatório aqui - não dá
+        # pra desvincular, só apagar) e vínculos de médicos EXTRAS (outro
+        # médico que não o dono da conta, associado via
+        # exame_medicos_associados) - o passo 3 acima só limpou o lado do
+        # próprio uid, mas o exame pode ter outros médicos vinculados.
+        ContagemPerguntasDia.query.filter(ContagemPerguntasDia.exame_id.in_(exames_proprios_ids)).delete(
+            synchronize_session=False
+        )
+        db.session.execute(
+            exame_medicos_associados.delete().where(exame_medicos_associados.c.exame_id.in_(exames_proprios_ids))
         )
         Exame.query.filter(Exame.id.in_(exames_proprios_ids)).delete(synchronize_session=False)
 
