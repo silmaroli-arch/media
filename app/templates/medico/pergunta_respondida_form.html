@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "medico/_filial.html" import th_filial, td_filial with context %}
+{% block titulo %}Editar resposta{% endblock %}
+{% block conteudo %}
+<h3 class="mb-3">Editar pergunta respondida</h3>
+<div class="card p-4">
+  {# Corrigir aqui também atualiza (ou remove, se a pergunta virar outra
+     coisa) o item correspondente na base de conhecimento da IA, para que
+     ela não continue reaproveitando uma resposta que foi corrigida aqui.
+     O exame/escopo não é editável - só pergunta/resposta. #}
+  <div class="mb-3">
+    <label class="form-label">Paciente</label>
+    <input type="text" class="form-control" value="{{ pergunta.paciente.nome }}" disabled>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Exame relacionado</label>
+    <input type="text" class="form-control" value="{{ pergunta.exame.nome if pergunta.exame else 'Geral (qualquer exame)' }}" disabled>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Data</label>
+    <input type="text" class="form-control" value="{{ pergunta.criado_em.strftime('%d/%m/%Y %H:%M') }}" disabled>
+  </div>
+  <form method="post" action="{{ url_for('medico.pergunta_respondida_editar', pergunta_id=pergunta.id) }}">
+    <div class="mb-3">
+      <label class="form-label">Pergunta</label>
+      <input type="text" name="pergunta" class="form-control" value="{{ pergunta.pergunta }}" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Resposta</label>
+      <textarea name="resposta" class="form-control" rows="3" required>{{ pergunta.resposta }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Salvar</button>
+    <a href="{{ url_for('medico.perguntas_respondidas') }}" class="btn btn-link">Cancelar</a>
+  </form>
+</div>
+{% endblock %}

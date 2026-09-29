@@ -2724,6 +2724,101 @@ def perguntas_respondidas():
     return render_template("medico/perguntas_respondidas.html", respondidas=respondidas)
 
 
+def _pergunta_respondida_da_permissao(pergunta_id):
+    """Busca a pergunta já respondida (mesmo escopo de sempre) e confere a
+    mesma regra de permissão de medico.perguntas_responder - um médico só
+    pode editar/excluir perguntas dos seus próprios exames (ou gerais, se
+    também administra pacientes). Aborta com 404/flash+redirect quando não
+    pode - chamadores tratam o retorno None como "já respondi, pode
+    voltar"."""
+    pergunta = PerguntaPendente.query.filter(
+        PerguntaPendente.id == pergunta_id,
+        filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id),
+        PerguntaPendente.status == "respondida",
+    ).first_or_404()
+
+    if eh_medico():
+        exame_proprio = pergunta.exame is not None and pergunta.exame.medico_pode_atender(current_user.id)
+        geral_administravel = pergunta.exame is None and current_user.perm_pacientes
+        if not exame_proprio and not geral_administravel:
+            return None
+
+    return pergunta
+
+
+def _sincronizar_faq_da_pergunta_respondida(pergunta_pendente, pergunta_nova, resposta_nova):
+    """Ao editar/excluir a resposta de uma PerguntaPendente já respondida
+    (pedido do Silvan, 2026-09-29), aplica a MESMA mudança em qualquer item
+    da base de FAQ criado a partir dela (mesma pergunta/exame/escopo, ver
+    medico.perguntas_responder e app.routes_paciente.
+    aprovar_pergunta_automaticamente, que sempre criam um FaqItem junto).
+    Sem isso, corrigir/remover aqui não teria efeito nenhum na prática: a
+    IA continuaria reaproveitando o texto antigo (possivelmente errado)
+    pela base de FAQ para a próxima pergunta idêntica - a correção
+    "sumiria" só da tela de histórico, não do comportamento real do chat.
+
+    `resposta_nova=None` sinaliza exclusão (remove os itens de FAQ
+    correspondentes em vez de atualizar); a busca do FaqItem usa sempre o
+    texto ORIGINAL de `pergunta_pendente.pergunta` (antes de qualquer
+    edição), já que é esse o texto com que o item de FAQ foi criado."""
+    query_faq = FaqItem.query.filter(
+        FaqItem.pergunta == pergunta_pendente.pergunta,
+        FaqItem.exame_id == pergunta_pendente.exame_id,
+        FaqItem.grupo_id == pergunta_pendente.grupo_id,
+        FaqItem.criado_por_id == pergunta_pendente.criado_por_id,
+    )
+    if resposta_nova is None:
+        query_faq.delete(synchronize_session=False)
+    else:
+        query_faq.update(
+            {"pergunta": pergunta_nova, "resposta": resposta_nova},
+            synchronize_session=False,
+        )
+
+
+@medico_bp.route("/perguntas/respondidas/<int:pergunta_id>/editar", methods=["GET", "POST"])
+@login_required
+@staff_required
+def pergunta_respondida_editar(pergunta_id):
+    pergunta = _pergunta_respondida_da_permissao(pergunta_id)
+    if pergunta is None:
+        flash("Você só pode editar perguntas sobre os seus próprios exames.", "danger")
+        return redirect(url_for("medico.perguntas_respondidas"))
+
+    if request.method == "POST":
+        pergunta_texto = request.form.get("pergunta", "").strip()
+        resposta_texto = request.form.get("resposta", "").strip()
+
+        if not pergunta_texto or not resposta_texto:
+            flash("Pergunta e resposta são obrigatórias.", "danger")
+            return render_template("medico/pergunta_respondida_form.html", pergunta=pergunta)
+
+        _sincronizar_faq_da_pergunta_respondida(pergunta, pergunta_texto, resposta_texto)
+        pergunta.pergunta = pergunta_texto
+        pergunta.resposta = resposta_texto
+        db.session.commit()
+        flash("Resposta atualizada (a base de conhecimento da IA foi corrigida junto).", "success")
+        return redirect(url_for("medico.perguntas_respondidas"))
+
+    return render_template("medico/pergunta_respondida_form.html", pergunta=pergunta)
+
+
+@medico_bp.route("/perguntas/respondidas/<int:pergunta_id>/excluir", methods=["POST"])
+@login_required
+@staff_required
+def pergunta_respondida_excluir(pergunta_id):
+    pergunta = _pergunta_respondida_da_permissao(pergunta_id)
+    if pergunta is None:
+        flash("Você só pode excluir perguntas sobre os seus próprios exames.", "danger")
+        return redirect(url_for("medico.perguntas_respondidas"))
+
+    _sincronizar_faq_da_pergunta_respondida(pergunta, None, None)
+    db.session.delete(pergunta)
+    db.session.commit()
+    flash("Pergunta removida do histórico (o item correspondente na base de conhecimento da IA também foi removido).", "success")
+    return redirect(url_for("medico.perguntas_respondidas"))
+
+
 @medico_bp.route("/portal")
 @login_required
 @staff_required
@@ -3465,6 +3560,53 @@ def faq_novo():
         return redirect(url_for("medico.faq_lista"))
 
     return render_template("medico/faq_form.html", exames=exames)
+
+
+def _faq_query_do_usuario_atual():
+    """Mesmo filtro de escopo/permissão usado em medico.faq_lista - extraído
+    aqui para ser reaproveitado também nas rotas de editar/excluir (pedido
+    do Silvan, 2026-09-29: a base de conhecimento precisa permitir editar e
+    excluir um item, não só criar e listar)."""
+    query = FaqItem.query.filter(filtro_escopo_atual(FaqItem.grupo_id, FaqItem.criado_por_id))
+    if eh_medico():
+        query = query.join(Exame, FaqItem.exame_id == Exame.id).filter(
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
+        )
+    return query
+
+
+@medico_bp.route("/faq/<int:item_id>/editar", methods=["GET", "POST"])
+@login_required
+@staff_required
+def faq_editar(item_id):
+    item = _faq_query_do_usuario_atual().filter(FaqItem.id == item_id).first_or_404()
+
+    if request.method == "POST":
+        pergunta = request.form.get("pergunta", "").strip()
+        resposta = request.form.get("resposta", "").strip()
+
+        if not pergunta or not resposta:
+            flash("Pergunta e resposta são obrigatórias.", "danger")
+            return render_template("medico/faq_form.html", item=item)
+
+        item.pergunta = pergunta
+        item.resposta = resposta
+        db.session.commit()
+        flash("Item da base de conhecimento atualizado.", "success")
+        return redirect(url_for("medico.faq_lista"))
+
+    return render_template("medico/faq_form.html", item=item)
+
+
+@medico_bp.route("/faq/<int:item_id>/excluir", methods=["POST"])
+@login_required
+@staff_required
+def faq_excluir(item_id):
+    item = _faq_query_do_usuario_atual().filter(FaqItem.id == item_id).first_or_404()
+    db.session.delete(item)
+    db.session.commit()
+    flash("Item removido da base de conhecimento.", "success")
+    return redirect(url_for("medico.faq_lista"))
 
 
 # ---------- Dados Cadastrais (gerais, endereço, fiscais) ----------

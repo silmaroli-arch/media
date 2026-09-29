@@ -1,9 +1,18 @@
 {# Popup "Importar de um PDF" + toda a lógica de extração (streaming de
-   progresso da IA, fallback de extração local com pdfjs, tratamento de
-   erro de rede/timeout) - extraído de medico/preparo_modelo_form.html
-   (pedido do Silvan, 2026-09-11) pra poder ser reaproveitado também no
-   menu reduzido do celular (medico/preparo_modelos_aviso_mobile.html),
-   sem duplicar ~230 linhas de JS nos dois lugares.
+   progresso da IA, tratamento de erro de rede/timeout) - extraído de
+   medico/preparo_modelo_form.html (pedido do Silvan, 2026-09-11) pra
+   poder ser reaproveitado também no menu reduzido do celular
+   (medico/preparo_modelos_aviso_mobile.html), sem duplicar ~230 linhas de
+   JS nos dois lugares.
+
+   Decisão do Silvan (2026-09-29): removida a opção "Usar IA para
+   extrair" que existia aqui - a extração de PDF agora SEMPRE usa a IA,
+   sem alternativa de extração local (pdfjs) sem custo. O fallback pra
+   extração heurística (app.pdf_preparo) continua existindo do lado do
+   servidor, mas só como rede de segurança automática/silenciosa quando a
+   IA falha ou não está configurada (ver app.routes_medico,
+   preparo_modelos_importar_xlsx) - não é mais uma opção que a pessoa
+   escolhe na tela.
 
    Quem inclui este partial precisa ter, antes dele, um botão que abra o
    modal (data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx") -
@@ -35,17 +44,6 @@
             <span id="aviso-progresso-ia-texto"></span>
           </div>
           <input type="file" name="arquivo_xlsx" id="input-arquivo-importar" class="form-control" accept=".pdf" required>
-          <input type="hidden" name="texto_extraido_cliente" id="input-texto-extraido-cliente">
-          <div class="form-check mt-2 d-none" id="opcao-usar-ia-wrapper">
-            <input type="checkbox" class="form-check-input" id="checkbox-usar-ia" checked>
-            <label class="form-check-label" for="checkbox-usar-ia">
-              Usar IA para extrair (recomendado — entende melhor o texto)
-            </label>
-            <div class="form-text">
-              Desmarque para extrair só com regras simples, direto no navegador, sem custo nenhum —
-              tende a reconhecer menos coisas automaticamente, então revise com mais atenção depois.
-            </div>
-          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
@@ -79,20 +77,6 @@
     var avisoProgressoIa = document.getElementById('aviso-progresso-ia');
     var avisoProgressoIaTexto = document.getElementById('aviso-progresso-ia-texto');
     var inputArquivo = document.getElementById('input-arquivo-importar');
-    var inputTextoCliente = document.getElementById('input-texto-extraido-cliente');
-    var opcaoUsarIaWrapper = document.getElementById('opcao-usar-ia-wrapper');
-    var checkboxUsarIa = document.getElementById('checkbox-usar-ia');
-    var PDFJS_CDN_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/';
-    var pdfjsCarregado = null;
-
-    // Só existe hoje uma opção de arquivo (PDF), mas o checkbox "Usar IA"
-    // continua condicionado à extensão por segurança (ver histórico: já
-    // existiu opção de planilha aqui, sem IA nenhuma envolvida).
-    inputArquivo.addEventListener('change', function () {
-      var arquivo = inputArquivo.files[0];
-      var ehPdf = arquivo && /\.pdf$/i.test(arquivo.name);
-      opcaoUsarIaWrapper.classList.toggle('d-none', !ehPdf);
-    });
 
     function mostrarErro(mensagem) {
       alerta.textContent = mensagem;
@@ -113,48 +97,6 @@
     function mostrarProgressoDeIa(provedor) {
       avisoProgressoIaTexto.textContent = 'Tentando extrair os dados com ' + provedor + '... isso pode levar até 1 minuto.';
       avisoProgressoIa.classList.remove('d-none');
-    }
-
-    // Carrega o pdf.js (biblioteca da Mozilla para ler PDF no navegador) só
-    // quando realmente precisa dele (alguém desmarcou "Usar IA" pra um
-    // PDF) - via CDN, mesmo padrão já usado pro Bootstrap neste projeto,
-    // pra não pesar o carregamento normal da tela com uma biblioteca que a
-    // maioria das pessoas (que deixa a IA marcada) nunca vai usar.
-    function carregarPdfjs() {
-      if (pdfjsCarregado) return pdfjsCarregado;
-      pdfjsCarregado = new Promise(function (resolve, reject) {
-        var script = document.createElement('script');
-        script.src = PDFJS_CDN_BASE + 'pdf.min.js';
-        script.onload = function () {
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_CDN_BASE + 'pdf.worker.min.js';
-          resolve(window.pdfjsLib);
-        };
-        script.onerror = function () { reject(new Error('pdfjs-falhou-carregar')); };
-        document.head.appendChild(script);
-      });
-      return pdfjsCarregado;
-    }
-
-    // Extrai todo o texto selecionável do PDF no navegador, uma página de
-    // cada vez - mesma ideia de app.pdf_preparo.extrair_texto (pypdf), só
-    // que rodando no cliente em vez do servidor, sem custo de IA nenhum.
-    function extrairTextoPdfNoNavegador(arquivo) {
-      return carregarPdfjs()
-        .then(function (pdfjsLib) { return arquivo.arrayBuffer().then(function (buf) { return pdfjsLib.getDocument({ data: buf }).promise; }); })
-        .then(function (pdf) {
-          var promessasPaginas = [];
-          for (var i = 1; i <= pdf.numPages; i++) {
-            promessasPaginas.push(
-              pdf.getPage(i).then(function (pagina) {
-                return pagina.getTextContent().then(function (conteudo) {
-                  return conteudo.items.map(function (item) { return item.str; }).join(' ');
-                });
-              })
-            );
-          }
-          return Promise.all(promessasPaginas);
-        })
-        .then(function (textosPorPagina) { return textosPorPagina.join('\n'); });
     }
 
     // Lê a resposta em streaming (ver app.routes_medico._importar_pdf_com_progresso)
@@ -224,33 +166,19 @@
       if (botao.disabled) return;
 
       alerta.classList.add('d-none');
-      inputTextoCliente.value = '';
       botao.disabled = true;
       botao.dataset.textoOriginal = botao.innerHTML;
       botao.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Extraindo dados...';
 
       var arquivo = inputArquivo.files[0];
-      var usarExtracaoLocal = arquivo && /\.pdf$/i.test(arquivo.name) && !checkboxUsarIa.checked;
-
-      var preparacao = usarExtracaoLocal
-        ? extrairTextoPdfNoNavegador(arquivo).then(function (texto) { inputTextoCliente.value = texto; })
-        : Promise.resolve();
 
       // Mostra em tempo real qual provedor de IA (Gemini/ChatGPT/Claude)
       // está sendo tentado no momento - só faz sentido quando o servidor
-      // vai mesmo chamar alguma IA (PDF com "Usar IA" marcado); pro PDF
-      // sem IA a resposta é instantânea, sem chamada nenhuma, então nem
-      // vale streaming.
-      var vaiChamarIa = arquivo && /\.pdf$/i.test(arquivo.name) && !usarExtracaoLocal;
+      // vai mesmo chamar alguma IA (todo PDF agora sempre passa por IA,
+      // ver decisão do Silvan no comentário do topo deste arquivo).
+      var vaiChamarIa = arquivo && /\.pdf$/i.test(arquivo.name);
 
-      preparacao
-        .catch(function () {
-          // Se a extração local falhar (ex.: CDN do pdfjs bloqueado/fora do
-          // ar), segue sem o texto pronto - o servidor cai automaticamente
-          // pro caminho normal (Gemini, se configurado, ou heurística sobre
-          // o PDF original), em vez de travar a importação por completo.
-          inputTextoCliente.value = '';
-        })
+      Promise.resolve()
         .then(function () {
           var dadosForm = new FormData(formImportar);
           if (vaiChamarIa) {

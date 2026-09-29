@@ -372,7 +372,8 @@ def enviar_agendamento_criado_whatsapp(agendamento):
         texto=(
             f"Olá, {paciente.nome}! Seu exame {exame.nome} foi agendado para "
             f"{data_hora_formatada}. Salve este número: é por aqui que você tira "
-            "dúvidas sobre o preparo do exame."
+            "dúvidas sobre o preparo do exame.\n\n"
+            'Digite "oi" para tirar dúvidas sobre seu exame.'
         ),
         content_variables=[paciente.nome, exame.nome, data_hora_formatada],
         nome_template_env="WHATSAPP_META_TEMPLATE_AGENDAMENTO_CRIADO",

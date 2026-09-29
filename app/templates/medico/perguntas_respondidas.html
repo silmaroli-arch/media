@@ -5,7 +5,7 @@
 <h3 class="mb-3">Últimas respondidas</h3>
 
 <table class="table table-sm">
-  <thead><tr><th>Paciente</th>{{ th_filial() }}<th>Exame</th><th>Data</th><th>Pergunta</th><th>Resposta</th><th>Por</th></tr></thead>
+  <thead><tr><th>Paciente</th>{{ th_filial() }}<th>Exame</th><th>Data</th><th>Pergunta</th><th>Resposta</th><th>Por</th><th>Ações</th></tr></thead>
   <tbody>
     {% for p in respondidas %}
     <tr>
@@ -16,9 +16,15 @@
       <td>{{ p.pergunta }}</td>
       <td>{{ p.resposta }}</td>
       <td>{{ p.respondida_por }}</td>
+      <td class="text-nowrap">
+        <a href="{{ url_for('medico.pergunta_respondida_editar', pergunta_id=p.id) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
+        <form method="post" action="{{ url_for('medico.pergunta_respondida_excluir', pergunta_id=p.id) }}" class="d-inline" onsubmit="return confirm('Excluir esta pergunta do histórico? O item correspondente na base de conhecimento também será removido.');">
+          <button type="submit" class="btn btn-sm btn-outline-danger">Excluir</button>
+        </form>
+      </td>
     </tr>
     {% else %}
-    <tr><td colspan="{{ 7 if mostrar_filial else 6 }}" class="text-muted text-center">Nenhuma respondida ainda.</td></tr>
+    <tr><td colspan="{{ 8 if mostrar_filial else 7 }}" class="text-muted text-center">Nenhuma respondida ainda.</td></tr>
     {% endfor %}
   </tbody>
 </table>
