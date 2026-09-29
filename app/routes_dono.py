@@ -744,6 +744,69 @@ def usuarios():
     return render_template("dono/usuarios.html", linhas=_usuarios_com_custo())
 
 
+@dono_bp.route("/usuarios/aplicar-valor-padrao", methods=["POST"])
+@login_required
+@dono_required
+def licencas_aplicar_valor_padrao():
+    """Pedido do Silvan (2026-09-29): o valor mensal padrão
+    (PlataformaConfig.valor_licenca_padrao) só é copiado pro médico NO
+    CADASTRO (ver routes_auth.cadastro) - médico que já existia antes do
+    padrão ser definido (ou que se cadastrou com ele em branco) continua
+    sem valor pra sempre, e "Minha licença" dele não consegue gerar link/
+    Pix. Este botão preenche isso de uma vez.
+
+    Regras (decididas com o Silvan):
+    - só médico que está SEM valor (None) recebe o padrão - valor
+      individual já negociado nunca é sobrescrito;
+    - o valor anual segue a mesma regra, com o padrão anual (se houver);
+    - os meses EM ABERTO desses médicos (ciclo mensal, não pagos, ainda
+      sem link/Pix gerado e sem valor) recebem o novo valor - mês pago ou
+      com cobrança já gerada nunca muda (é uma "fatura já emitida", ver
+      LicencaPagamento.valor). Sem nenhuma chamada de rede."""
+    config = PlataformaConfig.obter()
+    padrao_mensal = config.valor_licenca_padrao
+    padrao_anual = config.valor_licenca_anual_padrao
+    if not padrao_mensal and not padrao_anual:
+        flash(
+            "Defina primeiro o valor mensal (ou anual) padrão em Configurações > Licença de médico.",
+            "warning",
+        )
+        return redirect(url_for("dono.usuarios"))
+
+    medicos_mensal = medicos_anual = meses_atualizados = 0
+    for medico in Usuario.query.filter(Usuario.tipo == "medico").all():
+        if padrao_mensal and medico.valor_licenca_mensal is None:
+            medico.valor_licenca_mensal = padrao_mensal
+            medicos_mensal += 1
+        if padrao_anual and medico.valor_licenca_anual is None:
+            medico.valor_licenca_anual = padrao_anual
+            medicos_anual += 1
+
+        if medico.ciclo_licenca == "mensal" and medico.valor_licenca_mensal is not None:
+            abertos = LicencaPagamento.query.filter(
+                LicencaPagamento.usuario_id == medico.id,
+                LicencaPagamento.pago.is_(False),
+                LicencaPagamento.valor.is_(None),
+                LicencaPagamento.mp_init_point.is_(None),
+                LicencaPagamento.pix_qr_code.is_(None),
+            ).all()
+            for pagamento in abertos:
+                pagamento.valor = medico.valor_licenca_mensal
+                meses_atualizados += 1
+
+    db.session.commit()
+    if medicos_mensal or medicos_anual or meses_atualizados:
+        flash(
+            f"Valor padrão aplicado: {medicos_mensal} médico(s) sem valor mensal, "
+            f"{medicos_anual} sem valor anual, {meses_atualizados} mês(es) em aberto atualizado(s). "
+            "Médicos que já tinham valor próprio não foram alterados.",
+            "success",
+        )
+    else:
+        flash("Nada a atualizar - todos os médicos já têm valor definido.", "success")
+    return redirect(url_for("dono.usuarios"))
+
+
 @dono_bp.route("/usuarios/gerar-cobrancas-ano", methods=["POST"])
 @login_required
 @dono_required

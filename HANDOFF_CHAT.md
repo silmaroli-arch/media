@@ -2017,6 +2017,14 @@ Antes, o link "Pagar agora" (Checkout Pro) de um mês só existia se o dono tive
 - **Teste**: `test_licenca_gerar_link_medico.py` (novo, mock de `requests.post`, sem rede) - botão visível, sem credenciais, geração com credenciais + "Pagar agora", sem valor definido, isolamento entre médicos, mês pago, ciclo anual.
 - **Verificação feita**: sintaxe Python dos arquivos e renderização Jinja do template (3 cenários) conferidas. **A suíte NÃO foi executada** nesta sessão (sem Flask/PyPI acessível no ambiente) - rodar `DATABASE_URL=sqlite:///teste_licenca_gerar_link.db python test_licenca_gerar_link_medico.py` e também `test_pix_licenca.py`/`test_licenca_pagamento_valor_e_gateway.py` (regressão) antes de promover pro `main`.
 
+## Botão "Aplicar valor padrão a todos" em /dono/usuarios (2026-09-29, pedido do Silvan)
+
+Problema reportado com prints: o Silvan definiu o valor mensal padrão (R$ 150,00, Configurações > Licença de médico), mas o médico continuou com "Valor mensal: ainda não definido" e o "Gerar link de pagamento" (ver seção anterior) recusava com "Ainda não há um valor de licença definido para a sua conta". Causa: o padrão só é copiado pro médico NO CADASTRO (`routes_auth.cadastro`) - médico que já existia (ou se cadastrou com o padrão em branco) fica sem valor pra sempre, e o mês dele também nasce sem valor (`garantir_meses_licenca` tira a "fotografia" do valor do médico).
+
+- **`app/routes_dono.py`**: nova rota `dono.licencas_aplicar_valor_padrao` (POST `/dono/usuarios/aplicar-valor-padrao`). Regras decididas com o Silvan: (1) só médico SEM valor (None) recebe o padrão - valor individual negociado nunca é sobrescrito (vale pro mensal e pro anual); (2) meses em aberto (ciclo mensal, não pago, sem link/Pix, sem valor) também recebem o valor; mês pago ou com cobrança já gerada não muda. Sem chamada de rede. Se não houver padrão configurado, só avisa. Mostra resumo (quantos médicos/meses atualizados).
+- **`app/templates/dono/usuarios.html`**: botão "Aplicar valor padrão a todos" (com confirmação) ao lado de "Gerar itens do ano para todos".
+- **Teste**: `test_licencas_aplicar_valor_padrao.py` (novo) - sem padrão, aplicar sem sobrescrever valor próprio, mês em aberto vs. pago/com link, ciclo anual, idempotência, acesso só do dono. **Ainda NÃO executado** (sem Flask/PyPI no ambiente do assistente) - rodar no terminal do Silvan.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
