@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}Sugestões da base{% endblock %}
+{% block conteudo %}
+{% set aba_ativa = 'base-conhecimento' %}
+{% include "dono/_menu.html" %}
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h3 class="mb-0">Sugestões dos médicos</h3>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dono.base_conhecimento') }}">Voltar à base</a>
+</div>
+<p class="text-muted small">Médicos veem a base da própria especialidade e sugerem melhorias. Nada muda na base até você aprovar; ao aprovar uma alteração, a versão anterior fica no histórico do item.</p>
+
+{% if not pendentes %}
+<div class="alert alert-light border">Nenhuma sugestão pendente.</div>
+{% endif %}
+
+{% for s in pendentes %}
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between">
+      <strong>{{ s.tipo_exame.nome }}</strong>
+      <span class="badge {{ 'bg-info' if s.item else 'bg-success' }}">{{ 'Alteração de item' if s.item else 'Item novo' }}</span>
+    </div>
+    <div class="small text-muted mb-2">Por {{ s.autor_nome or 'médico removido' }} em {{ s.criado_em.strftime('%d/%m/%Y') if s.criado_em }}</div>
+    {% if s.item %}
+    <div class="border rounded p-2 mb-2 bg-body-tertiary small">
+      <div class="text-muted">Texto atual</div>
+      <div><strong>{{ s.item.pergunta }}</strong></div>
+      <div>{{ s.item.resposta }}</div>
+    </div>
+    {% endif %}
+    {% if s.motivo %}<div class="small mb-2"><em>Motivo:</em> {{ s.motivo }}</div>{% endif %}
+    <form method="post" action="{{ url_for('dono.base_sugestao_aprovar', sug_id=s.id) }}">
+      <label class="form-label small mb-0">Pergunta (você pode ajustar)</label>
+      <input type="text" name="pergunta" class="form-control form-control-sm mb-2" value="{{ s.pergunta }}">
+      <label class="form-label small mb-0">Resposta (você pode ajustar)</label>
+      <textarea name="resposta" rows="3" class="form-control form-control-sm mb-2">{{ s.resposta }}</textarea>
+      <input type="text" name="resposta_dono" class="form-control form-control-sm mb-2" placeholder="Recado para o médico (opcional)">
+      <button class="btn btn-sm btn-success">Aprovar e aplicar</button>
+      <button class="btn btn-sm btn-outline-danger" formaction="{{ url_for('dono.base_sugestao_rejeitar', sug_id=s.id) }}">Rejeitar</button>
+    </form>
+  </div>
+</div>
+{% endfor %}
+
+{% if decididas %}
+<h6 class="mt-4">Últimas decisões</h6>
+<ul class="list-group">
+  {% for s in decididas %}
+  <li class="list-group-item small">
+    <span class="badge {{ 'bg-success' if s.status == 'aprovada' else 'bg-secondary' }}">{{ s.status }}</span>
+    {{ s.tipo_exame.nome }} - {{ s.pergunta }} <span class="text-muted">({{ s.autor_nome or 'médico removido' }})</span>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

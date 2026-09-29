@@ -149,6 +149,14 @@
          Grupos de trabalho / Minha licença ("Médico + IA" foi removido -
          ver comentário mais abaixo). #}
 
+      {% if current_user.tipo == 'medico' %}
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.base_compartilhada') %}active{% endif %}" href="{{ url_for('medico.base_compartilhada') }}">
+          <i class="bi bi-journal-medical me-2"></i>Base compartilhada
+        </a>
+      </li>
+      {% endif %}
+
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">
           <i class="bi bi-sliders me-2"></i>Exames &amp; preparo

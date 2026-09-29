@@ -6,7 +6,7 @@ from sqlalchemy import func
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico, BaseConhecimentoSugestao
 from app.base_conhecimento import (
     PROVEDORES_BUSCA, PROVEDOR_PALAVRA_CHAVE, provedor_configurado, atualizar_embedding_do_item, buscar_na_base,
     LIMIAR_PALAVRA_CHAVE, LIMIAR_EMBEDDING,
@@ -1008,6 +1008,7 @@ def base_conhecimento():
             BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.embedding.is_(None)
         ).count() if provedor != PROVEDOR_PALAVRA_CHAVE else 0,
         nao_revisados=BaseConhecimentoItem.query.filter_by(revisado=False).count(),
+        sugestoes_pendentes=BaseConhecimentoSugestao.query.filter_by(status="pendente").count(),
         teste_pergunta=teste_pergunta, teste_resultados=teste_resultados,
         limiar_palavra=LIMIAR_PALAVRA_CHAVE, limiar_embedding=LIMIAR_EMBEDDING,
         limite_tela=LIMITE_ITENS_BASE_NA_TELA,
@@ -1064,6 +1065,76 @@ def base_conhecimento_novo():
     db.session.commit()
     flash("Item adicionado à base de conhecimento.", "success")
     return redirect(url_for("dono.base_conhecimento", tipo=tipo_id))
+
+
+@dono_bp.route("/base-conhecimento/sugestoes")
+@login_required
+@dono_required
+def base_sugestoes():
+    """Fila de sugestões dos médicos (alteração de item ou item novo)."""
+    pendentes = BaseConhecimentoSugestao.query.filter_by(status="pendente").order_by(BaseConhecimentoSugestao.criado_em).all()
+    decididas = BaseConhecimentoSugestao.query.filter(BaseConhecimentoSugestao.status != "pendente").order_by(
+        BaseConhecimentoSugestao.decidido_em.desc()).limit(30).all()
+    return render_template("dono/base_sugestoes.html", pendentes=pendentes, decididas=decididas)
+
+
+def _notificar_autor_sugestao(sug, texto):
+    if sug.autor_usuario_id:
+        db.session.add(Notificacao(
+            usuario_id=sug.autor_usuario_id, tipo="sugestao_base", titulo="Sua sugestão para a base compartilhada",
+            mensagem=texto, link_endpoint="medico.base_compartilhada",
+        ))
+
+
+@dono_bp.route("/base-conhecimento/sugestoes/<int:sug_id>/aprovar", methods=["POST"])
+@login_required
+@dono_required
+def base_sugestao_aprovar(sug_id):
+    """Aplica a sugestão (o dono pode ajustar o texto antes). Alteração: guarda
+    a versão anterior no histórico. Item novo: entra já revisado."""
+    sug = BaseConhecimentoSugestao.query.get_or_404(sug_id)
+    if sug.status != "pendente":
+        flash("Esta sugestão já foi analisada.", "info")
+        return redirect(url_for("dono.base_sugestoes"))
+    pergunta = request.form.get("pergunta", "").strip() or sug.pergunta
+    resposta = request.form.get("resposta", "").strip() or sug.resposta
+    item = sug.item
+    if item:
+        _registrar_historico_base(item, f"Sugestão do médico {sug.autor_nome or ''} aprovada".strip())
+        item.pergunta, item.resposta = pergunta, resposta
+        item.revisado = True
+    else:
+        item = BaseConhecimentoItem(
+            tipo_exame_id=sug.tipo_exame_id, pergunta=pergunta, resposta=resposta, origem="medico",
+            status="ativo", revisado=True, autor_usuario_id=sug.autor_usuario_id, autor_nome=sug.autor_nome,
+        )
+        db.session.add(item)
+        db.session.flush()
+    atualizar_embedding_do_item(item)
+    sug.status = "aprovada"
+    sug.decidido_em = datetime.utcnow()
+    sug.resposta_dono = request.form.get("resposta_dono", "").strip() or None
+    _notificar_autor_sugestao(sug, "Sua sugestão foi aprovada e já está na base compartilhada.")
+    db.session.commit()
+    flash("Sugestão aprovada e aplicada à base.", "success")
+    return redirect(url_for("dono.base_sugestoes"))
+
+
+@dono_bp.route("/base-conhecimento/sugestoes/<int:sug_id>/rejeitar", methods=["POST"])
+@login_required
+@dono_required
+def base_sugestao_rejeitar(sug_id):
+    sug = BaseConhecimentoSugestao.query.get_or_404(sug_id)
+    if sug.status != "pendente":
+        flash("Esta sugestão já foi analisada.", "info")
+        return redirect(url_for("dono.base_sugestoes"))
+    sug.status = "rejeitada"
+    sug.decidido_em = datetime.utcnow()
+    sug.resposta_dono = request.form.get("resposta_dono", "").strip() or None
+    _notificar_autor_sugestao(sug, "Sua sugestão não foi aceita." + (f" Motivo: {sug.resposta_dono}" if sug.resposta_dono else ""))
+    db.session.commit()
+    flash("Sugestão rejeitada.", "success")
+    return redirect(url_for("dono.base_sugestoes"))
 
 
 @dono_bp.route("/base-conhecimento/<int:item_id>/editar", methods=["POST"])

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block titulo %}Base compartilhada{% endblock %}
+{% block conteudo %}
+<h3 class="mb-1">Base compartilhada de conhecimento</h3>
+<p class="text-muted small">
+  Perguntas e respostas de preparo usadas pela plataforma como apoio às IAs (o seu preparo cadastrado sempre tem prioridade).
+  Você vê os exames da sua especialidade e pode sugerir alterações ou itens novos; o administrador aprova antes de valer.
+  Escreva de forma genérica: sem nomes de pacientes, telefones ou dados da clínica.
+</p>
+
+{% if not current_user.especialidade %}
+<div class="alert alert-warning">
+  Informe sua especialidade em <a href="{{ url_for('auth.meus_dados') }}">Meus dados</a> para ver a parte da base que corresponde a ela.
+</div>
+{% elif not tipos %}
+<div class="alert alert-light border">Ainda não há tipos de exame ligados à especialidade {{ current_user.especialidade }}.</div>
+{% else %}
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-5">
+    <select name="tipo" class="form-select form-select-sm" onchange="this.form.submit()">
+      <option value="">Todos os exames da minha especialidade</option>
+      {% for t in tipos %}<option value="{{ t.id }}" {% if filtro_tipo == t.id %}selected{% endif %}>{{ t.nome }}</option>{% endfor %}
+    </select>
+  </div>
+</div>
+
+<details class="card card-body mb-3">
+  <summary class="fw-semibold">Sugerir um item novo</summary>
+  <form method="post" action="{{ url_for('medico.base_compartilhada_sugerir') }}" class="mt-2">
+    <select name="tipo_exame_id" class="form-select form-select-sm mb-2" required>
+      {% for t in tipos %}<option value="{{ t.id }}" {% if filtro_tipo == t.id %}selected{% endif %}>{{ t.nome }}</option>{% endfor %}
+    </select>
+    <input type="text" name="pergunta" class="form-control form-control-sm mb-2" placeholder="Pergunta do paciente" required>
+    <textarea name="resposta" rows="3" class="form-control form-control-sm mb-2" placeholder="Resposta" required></textarea>
+    <input type="text" name="motivo" class="form-control form-control-sm mb-2" placeholder="Observação para o administrador (opcional)">
+    <button class="btn btn-sm btn-primary">Enviar sugestão</button>
+  </form>
+</details>
+
+{% for i in itens %}
+<div class="card mb-2">
+  <div class="card-body py-2">
+    <div class="small text-muted">{{ i.tipo_exame.nome }}</div>
+    <div class="fw-semibold">{{ i.pergunta }}</div>
+    <div class="mb-1">{{ i.resposta }}</div>
+    <details>
+      <summary class="small text-primary">Sugerir alteração</summary>
+      <form method="post" action="{{ url_for('medico.base_compartilhada_sugerir') }}" class="mt-2">
+        <input type="hidden" name="item_id" value="{{ i.id }}">
+        <input type="text" name="pergunta" class="form-control form-control-sm mb-2" value="{{ i.pergunta }}" required>
+        <textarea name="resposta" rows="3" class="form-control form-control-sm mb-2" required>{{ i.resposta }}</textarea>
+        <input type="text" name="motivo" class="form-control form-control-sm mb-2" placeholder="Por que mudar? (opcional)">
+        <button class="btn btn-sm btn-primary">Enviar sugestão</button>
+      </form>
+    </details>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-light border">Nenhum item para mostrar.</div>
+{% endfor %}
+{% endif %}
+
+{% if minhas %}
+<h6 class="mt-4">Minhas sugestões</h6>
+<ul class="list-group">
+  {% for s in minhas %}
+  <li class="list-group-item small">
+    <span class="badge {{ 'bg-success' if s.status == 'aprovada' else ('bg-secondary' if s.status == 'rejeitada' else 'bg-warning text-dark') }}">{{ s.status }}</span>
+    {{ s.pergunta }}{% if s.resposta_dono %} <span class="text-muted">- {{ s.resposta_dono }}</span>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

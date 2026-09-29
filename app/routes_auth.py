@@ -5,6 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_user, logout_user, login_required, current_user
 
 from app.extensions import db
+from app.especialidades import ESPECIALIDADES, especialidade_valida
 from app.models import Usuario, Paciente, PlataformaConfig, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
 from app.whatsapp_envio import enviar_boas_vindas_whatsapp
 # `proximo_seguro` mora em clinica_utils.py (compartilhado com
@@ -14,6 +15,12 @@ from app.whatsapp_envio import enviar_boas_vindas_whatsapp
 from app.clinica_utils import proximo_seguro as _proximo_seguro
 
 auth_bp = Blueprint("auth", __name__)
+
+
+@auth_bp.app_context_processor
+def _injetar_especialidades():
+    """Lista do dropdown de especialidade (cadastro e Meus dados)."""
+    return {"ESPECIALIDADES": ESPECIALIDADES}
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
@@ -317,6 +324,8 @@ def meus_dados():
         current_user.email = email
         current_user.cpf = cpf
         current_user.data_nascimento = data_nascimento
+        if current_user.tipo == "medico":
+            current_user.especialidade = especialidade_valida(request.form.get("especialidade"))
         current_user.telefone = normalizar_telefone(request.form.get("telefone", ""))
         current_user.cep = request.form.get("cep", "").strip()
         current_user.rua = request.form.get("rua", "").strip()
@@ -469,6 +478,7 @@ def cadastro():
         usuario.uf = request.form.get("uf", "").strip().upper() or None
         usuario.crm_numero = crm_numero
         usuario.crm_uf = crm_uf
+        usuario.especialidade = especialidade_valida(request.form.get("especialidade")) if papel == "medico" else None
         usuario.data_nascimento = data_nascimento
         # Checkbox "Exigir minha aprovação antes de responder o paciente"
         # (ver auth/cadastro.html) - checkbox desmarcado não manda a

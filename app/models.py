@@ -216,6 +216,10 @@ class Usuario(db.Model, UserMixin):
     # médico sem o estado de emissão.
     crm_numero = db.Column(db.String(20))
     crm_uf = db.Column(db.String(2))
+    # Especialidade médica (dropdown de app.especialidades) - só médico, opcional.
+    # Define que parte da base de conhecimento compartilhada ele enxerga e
+    # pode sugerir alterações (fatia 5 da "terceira IA", 2026-09-29).
+    especialidade = db.Column(db.String(80))
 
     # Fatia 8 (licença individual): a cobrança agora é POR MÉDICO, não só
     # por Grupo (Grupo.valor_por_medico é uma estimativa de mercado; a
@@ -1244,6 +1248,31 @@ class BaseConhecimentoItem(db.Model):
         "BaseConhecimentoHistorico", back_populates="item", cascade="all, delete-orphan",
         order_by="BaseConhecimentoHistorico.alterado_em.desc()",
     )
+
+
+class BaseConhecimentoSugestao(db.Model):
+    """Sugestão de um MÉDICO para a base compartilhada, aguardando o dono
+    (fatia 5). `item_id` preenchido = sugestão de ALTERAÇÃO de um item;
+    vazio = sugestão de item NOVO (nesse caso `tipo_exame_id` diz onde). O
+    médico nunca altera a base direto: só o dono aprova. A autoria fica também
+    como texto (`autor_nome`) para sobreviver à exclusão da conta do médico."""
+    __tablename__ = "base_conhecimento_sugestoes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey("base_conhecimento.id", ondelete="SET NULL"), nullable=True)
+    tipo_exame_id = db.Column(db.Integer, db.ForeignKey("tipos_exame.id"), nullable=False)
+    pergunta = db.Column(db.Text, nullable=False)
+    resposta = db.Column(db.Text, nullable=False)
+    motivo = db.Column(db.Text)
+    autor_usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    autor_nome = db.Column(db.String(150))
+    status = db.Column(db.String(12), nullable=False, default="pendente")  # pendente|aprovada|rejeitada
+    resposta_dono = db.Column(db.Text)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    decidido_em = db.Column(db.DateTime)
+
+    item = db.relationship("BaseConhecimentoItem")
+    tipo_exame = db.relationship("TipoExame")
 
 
 class BaseConhecimentoHistorico(db.Model):

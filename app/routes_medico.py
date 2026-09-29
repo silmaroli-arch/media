@@ -22,7 +22,7 @@ from app.models import (
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, PushSubscription, LicencaPagamento, garantir_meses_licenca,
-    PlataformaConfig, MensagemSuporte, Notificacao, TipoExame,
+    PlataformaConfig, MensagemSuporte, Notificacao, TipoExame, BaseConhecimentoItem, BaseConhecimentoSugestao,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto,
 )
@@ -2927,6 +2927,90 @@ _LICENCA_LABELS = {
     "inadimplente": ("Pendente de pagamento", "warning"),
     "bloqueada": ("Bloqueada", "danger"),
 }
+
+
+def _tipos_exame_da_especialidade():
+    """Tipos de exame que a ESPECIALIDADE do médico logado enxerga na base
+    compartilhada: os que listam a especialidade dele (comparação sem
+    diferenciar maiúsculas) mais os que não têm nenhuma especialidade
+    definida (visíveis a todos). Sem especialidade no cadastro -> lista vazia."""
+    esp = (current_user.especialidade or "").strip().lower()
+    if not esp:
+        return []
+    visiveis = []
+    for tipo in TipoExame.query.filter_by(ativo=True).order_by(TipoExame.ordem, TipoExame.nome).all():
+        lista = [e.lower() for e in tipo.lista_especialidades]
+        if not lista or esp in lista:
+            visiveis.append(tipo)
+    return visiveis
+
+
+@medico_bp.route("/base-compartilhada")
+@login_required
+@staff_required
+def base_compartilhada():
+    """Fatia 5 da "terceira IA" (pedido do Silvan, 2026-09-29): o MÉDICO vê
+    a base compartilhada só da(s) parte(s) da sua especialidade (somente
+    leitura) e sugere alterações ou itens novos - quem aprova é o dono
+    (ver dono.base_sugestoes)."""
+    if not eh_medico():
+        flash("A base compartilhada é exclusiva para médicos.", "info")
+        return redirect(url_for("medico.dashboard"))
+    tipos = _tipos_exame_da_especialidade()
+    tipo_id = request.args.get("tipo", type=int)
+    ids = [t.id for t in tipos]
+    itens = []
+    if ids:
+        consulta = BaseConhecimentoItem.query.filter(
+            BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.tipo_exame_id.in_([tipo_id] if tipo_id in ids else ids)
+        )
+        itens = consulta.order_by(BaseConhecimentoItem.tipo_exame_id, BaseConhecimentoItem.id).limit(300).all()
+    minhas = BaseConhecimentoSugestao.query.filter_by(autor_usuario_id=current_user.id).order_by(
+        BaseConhecimentoSugestao.criado_em.desc()).limit(30).all()
+    return render_template("medico/base_compartilhada.html", tipos=tipos, itens=itens, filtro_tipo=tipo_id, minhas=minhas)
+
+
+@medico_bp.route("/base-compartilhada/sugerir", methods=["POST"])
+@login_required
+@staff_required
+def base_compartilhada_sugerir():
+    """Registra a sugestão (alteração de um item existente ou item novo) para
+    o dono aprovar. O texto NÃO deve ter dados de paciente nem da clínica."""
+    if not eh_medico():
+        abort(403)
+    item_id = request.form.get("item_id", type=int)
+    pergunta = request.form.get("pergunta", "").strip()
+    resposta = request.form.get("resposta", "").strip()
+    motivo = request.form.get("motivo", "").strip()
+    permitidos = {t.id for t in _tipos_exame_da_especialidade()}
+    if item_id:
+        item = BaseConhecimentoItem.query.get_or_404(item_id)
+        tipo_id = item.tipo_exame_id
+    else:
+        item = None
+        tipo_id = request.form.get("tipo_exame_id", type=int)
+    if tipo_id not in permitidos:
+        flash("Você só pode sugerir para tipos de exame da sua especialidade.", "danger")
+        return redirect(url_for("medico.base_compartilhada"))
+    if not pergunta or not resposta:
+        flash("Pergunta e resposta são obrigatórias.", "danger")
+        return redirect(url_for("medico.base_compartilhada", tipo=tipo_id))
+    if item and pergunta == item.pergunta and resposta == item.resposta:
+        flash("Nenhuma mudança em relação ao texto atual.", "info")
+        return redirect(url_for("medico.base_compartilhada", tipo=tipo_id))
+    # Uma sugestão pendente por médico e item: reenviar substitui a anterior.
+    if item:
+        anterior = BaseConhecimentoSugestao.query.filter_by(
+            item_id=item.id, autor_usuario_id=current_user.id, status="pendente").first()
+        if anterior:
+            db.session.delete(anterior)
+    db.session.add(BaseConhecimentoSugestao(
+        item_id=item.id if item else None, tipo_exame_id=tipo_id, pergunta=pergunta, resposta=resposta,
+        motivo=motivo or None, autor_usuario_id=current_user.id, autor_nome=current_user.nome, status="pendente",
+    ))
+    db.session.commit()
+    flash("Sugestão enviada. O administrador vai analisar.", "success")
+    return redirect(url_for("medico.base_compartilhada", tipo=tipo_id))
 
 
 @medico_bp.route("/minha-licenca")

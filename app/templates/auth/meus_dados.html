@@ -59,6 +59,16 @@
                    value="{{ current_user.data_nascimento.strftime('%d/%m/%Y') if current_user.data_nascimento else '' }}" required>
             <div class="invalid-feedback" id="data_nascimento_status"></div>
           </div>
+          <div class="col-md-6">
+            <label class="form-label">Especialidade</label>
+            <select name="especialidade" class="form-select">
+              <option value="">Não informar</option>
+              {% for e in ESPECIALIDADES %}
+              <option value="{{ e }}" {% if current_user.especialidade == e %}selected{% endif %}>{{ e }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Define que parte da base de conhecimento compartilhada você pode consultar e sugerir melhorias.</div>
+          </div>
           {% endif %}
         </div>
 

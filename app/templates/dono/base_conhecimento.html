@@ -11,6 +11,11 @@
   dados de clínica nem prazos ou doses específicos.
 </p>
 
+<div class="alert alert-{{ 'warning' if sugestoes_pendentes else 'light border' }} d-flex justify-content-between align-items-center py-2">
+  <span><i class="bi bi-inbox me-1"></i>{{ sugestoes_pendentes }} sugestão(ões) de médicos aguardando aprovação.</span>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dono.base_sugestoes') }}">Ver sugestões</a>
+</div>
+
 <div class="card mb-3">
   <div class="card-body">
     <h6 class="card-title">Configuração</h6>

@@ -26,6 +26,7 @@ from app.extensions import db
 from app.models import (
     Agendamento,
     BaseConhecimentoItem,
+    BaseConhecimentoSugestao,
     ChamadaIA,
     ChatMensagem,
     ContagemPerguntasDia,
@@ -99,6 +100,9 @@ def excluir_usuario_e_dados(usuario):
     # apagada junto com a conta (decisão do Silvan) - só perde o vínculo,
     # o nome da autoria já está guardado como texto em autor_nome.
     BaseConhecimentoItem.query.filter_by(autor_usuario_id=uid).update(
+        {"autor_usuario_id": None}, synchronize_session=False
+    )
+    BaseConhecimentoSugestao.query.filter_by(autor_usuario_id=uid).update(
         {"autor_usuario_id": None}, synchronize_session=False
     )
     # "Fale com a gente" e notificações — dados pessoais da conta, sem
