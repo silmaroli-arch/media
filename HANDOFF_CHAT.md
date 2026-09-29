@@ -1710,6 +1710,8 @@ Confirmado com o Silvan: **o ambiente `qa`/`qualidade` não vai mais existir**, 
 
 Nada relacionado ao Render (nem `media-dev` nem `media-prod`) é afetado por essa remoção - o Render nunca dependeu desse workflow, ele observa o repositório diretamente.
 
+**Ambientes AWS Elastic Beanstalk sendo apagados (2026-09-29)**: Silvan reportou que os ambientes na AWS estavam gerando custo. Localizados os 3 ambientes na região **América do Sul (São Paulo) / sa-east-1** (não apareciam na região padrão us-east-1/Norte da Virgínia): `media-dev`, `media-prod` (estava "Degraded") e `media-qa`. Confirmado que nenhum dos 3 está em uso (produção real é o Render, dev real é o  do Render, QA abandonado). Encerramento dos 3 iniciado pelo Silvan no console AWS - status "No Data"/encerrando confirmado. Ainda falta: confirmar que os 3 desapareceram por completo da lista, e verificar se não ficou nenhum outro recurso AWS órfão gerando custo (RDS, load balancers, etc. associados a esses ambientes).
+
 ## Workflow do GitHub Actions para abrir o PR de promoção (2026-09-29, pedido do Silvan)
 
 Depois da dificuldade encontrada pra abrir manualmente o primeiro PR dev→main (base/compare invertidos, botão "Create pull request" difícil de achar no navegador do celular), o Silvan pediu um jeito mais simples de abrir esse PR daqui pra frente.
@@ -1746,7 +1748,17 @@ Pedido do Silvan: "Vamos montar o app do whatsapp para o ambiente dev. Lembrando
 
 **Task #5 concluída**: webhook do `media-dev` configurado no Meta (App `media-dev` > WhatsApp > Configuração básica > Etapa 2) - URL de callback `https://media-dev.onrender.com/whatsapp/webhook`, Verify Token `media_dev_wh_2026` (mesmo valor salvo no Render). Primeira tentativa de verificação falhou ("Não foi possível validar a URL de callback") porque o deploy do Render com as novas variáveis ainda não tinha concluído / o serviço free tier estava dormindo - após aguardar o deploy ficar "Live" e acessar a URL raiz pra acordar o serviço, a verificação passou na segunda tentativa. Campo de webhook `messages` inscrito.
 
-**Próximo passo (task #7, ainda não iniciado)**: teste ponta a ponta no ambiente dev (enviar/receber mensagem real via `media-dev`, usando o número de teste `+1 (555) 176-8599` e o destinatário verificado `+55 27 99876-6702`, não mais o número/App de produção).
+**Task #7 concluída - teste ponta a ponta com sucesso**: mensagem real enviada pelo WhatsApp do Silvan para o número de teste `+1 (555) 176-8599`, e o backend do `media-dev` (Render) respondeu automaticamente pedindo o CPF - fluxo real do Media/MedIA funcionando de ponta a ponta no ambiente de teste, isolado da produção.
+
+**Problema encontrado e resolvido no caminho**: a primeira tentativa de mensagem real não gerou resposta. Diagnóstico passo a passo:
+- Logs do Render (`media-dev`) só mostravam o `GET /whatsapp/webhook` da verificação inicial - nenhum `POST` da mensagem real.
+- Confirmado que o campo `messages` estava "Assinado" na configuração do app ("Campos do webhook").
+- Usado o botão "Teste" ao lado do campo `messages` (Meta manda um payload de exemplo direto pro servidor) - chegou certinho no Render (`POST /whatsapp/webhook` 200, user-agent `facebookexternalua`). Isso confirmou que a URL/token do webhook e o backend estavam OK.
+- **Causa raiz**: a "Test WhatsApp Business Account" (WABA, ID `1626458592554109`) não estava de fato inscrita para repassar mensagens reais ao app `media-dev` - isso é uma etapa separada da configuração de URL/token do webhook e da assinatura de campos, e não é feita automaticamente ao reivindicar o número de teste.
+- **Correção**: usado o Graph API Explorer (developers.facebook.com/tools/explorer), com o app `media-dev` selecionado e um token de usuário com as permissões `whatsapp_business_management`/`whatsapp_business_messaging`, fazendo uma chamada `POST 1626458592554109/subscribed_apps` - retornou `{"success": true}`. Depois disso, a mensagem real passou a chegar no webhook normalmente.
+- **Nota para o futuro**: se algum dia for preciso repetir esse processo pra um novo número/WABA (produção ou outro ambiente de teste), lembrar desse passo de inscrição via `POST /{waba-id}/subscribed_apps` - é fácil esquecer porque o app-level "Teste" do campo webhook funciona mesmo sem essa inscrição, mascarando o problema.
+
+**Setup do WhatsApp para o `media-dev` está completo** - as 7 tasks da lista de configuração (criar app, número de teste, destinatário verificado, credenciais/token permanente, webhook, variáveis no Render, teste ponta a ponta) foram concluídas.
 
 
 ## Como continuar
