@@ -1802,6 +1802,21 @@ Verificado com `python3 -c "import ast; ast.parse(...)"` (sintaxe OK) e releitur
 Aplicado só no `dev` (aguardando auto-commit do Silvan) - ele vai criar uma conta de teste nova depois do deploy pra confirmar que a escolha do checkbox agora é respeitada.
 
 
+## Modelos de mensagem (templates do WhatsApp) recriados para o `media-dev` (2026-09-29)
+
+Silvan perguntou se os modelos de mensagem (templates aprovados do WhatsApp, usados para mandar mensagem fora da janela de 24h - ver docstring de `app/whatsapp_envio.py`) são compartilhados entre dev e produção. Resposta: **não** - cada template pertence à conta do WhatsApp Business Account (WABA) onde foi criado/aprovado, e como o `media-dev` agora usa uma WABA própria ("Test WhatsApp Business Account", separada da "Silmaroli" de produção - ver seção "Novo app do WhatsApp para o ambiente dev" mais acima), os templates aprovados na produção não existem lá.
+
+**Os 4 templates usados pelo sistema, conforme cadastrados na produção** (conferido no WhatsApp Manager, conta "Silmaroli", Gerenciador do WhatsApp > Modelos de mensagem):
+- `resposta_a_paciente` (Utilidade, Portuguese BR, 2 variáveis: pergunta e resposta) - env var `WHATSAPP_META_TEMPLATE_RESPOSTA`.
+- `agendamento_novo` (Utilidade, Portuguese BR, 3 variáveis) - env var `WHATSAPP_META_TEMPLATE_AGENDAMENTO_CRIADO`.
+- `preparo_cadastrado_medico_msg` (Marketing, Portuguese BR, 1 variável) - env var `WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO`. Corpo: "Boa notícia, {{1}}! Seu modelo de preparo foi cadastrado com sucesso.\nAgora você já pode continuar os seus testes: cadastre um agendamento para o paciente de teste (criado com o seu nome) no menu "Agendar Exame"."
+- `boas_vindas_clinica` (Marketing, Portuguese BR, 2 variáveis) - env var `WHATSAPP_META_TEMPLATE_BOAS_VINDAS`.
+
+Os nomes de cada template precisam ser IDÊNTICOS aos já configurados nas variáveis de ambiente do `media-dev` no Render (ver seção "Task #6 concluída" mais acima) - por isso Silvan recriou os 4 na conta de teste usando exatamente os mesmos nomes, copiando o conteúdo (cabeçalho/corpo/variáveis) de cada um a partir da conta de produção. Os 4 foram enviados para análise da Meta e ficaram com status "Em análise" - depois de aprovados (normalmente rápido para templates simples de utilidade/marketing), o `media-dev` já poderá mandar mensagens de template normalmente, sem precisar alterar nada no Render (os nomes já batem).
+
+**Pendência**: confirmar, depois de um tempo, se os 4 templates mudaram de "Em análise" para "Ativo"/aprovado na conta de teste - se algum for rejeitado, o motivo aparece na própria lista de modelos (coluna "Principal motivo do..."), e o texto pode precisar de ajuste (as políticas da Meta para templates variam por categoria - "Marketing" tem regras mais estritas que "Utilidade").
+
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
