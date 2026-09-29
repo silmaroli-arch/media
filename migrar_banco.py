@@ -416,6 +416,13 @@ ALTER TABLE conversas_whatsapp ADD COLUMN IF NOT EXISTS motivo_bloqueio VARCHAR(
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS ia_validador_pergunta VARCHAR(20) NOT NULL DEFAULT 'Claude';
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS limite_perguntas_dia_exame INTEGER;
 
+-- Toggle da checagem de dicionário no chat de WhatsApp (pedido do
+-- Silvan, 2026-09-29, ver PlataformaConfig.verificar_dicionario_chat em
+-- models.py e app.whatsapp_conversa._eh_mensagem_com_muitas_palavras_
+-- desconhecidas) - nasce TRUE (mesmo comportamento que já estava valendo
+-- para toda clínica antes deste campo existir).
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS verificar_dicionario_chat BOOLEAN NOT NULL DEFAULT TRUE;
+
 -- Contador de mensagens do dia por paciente x exame, usado só para
 -- aplicar o limite acima (ver ContagemPerguntasDia em models.py) - já
 -- seria criada de qualquer jeito pelo db.create_all() na inicialização

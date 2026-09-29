@@ -83,6 +83,19 @@
      cadastro - nome/CPF/e-mail/telefone/endereço - protegido por
      confirmação de senha). Disponível pra qualquer conta com senha, não
      só o dono, mas o link fica aqui no painel dele por conveniência. #}
+  {# Idem - link direto pra dono.ferramentas_performance (pedido do
+     Silvan, 2026-09-29): ferramenta pra gerar/apagar médicos e pacientes
+     sintéticos em massa, usada pra testar como a aplicação se comporta
+     com uma base de dados bem maior (ver app/performance_teste.py).
+     Antes só era acessível digitando a URL direto - o Silvan pediu pra
+     ela aparecer no menu do painel também. Continua exigindo senha do
+     dono em toda ação (gerar/apagar), então o link em si não é um risco
+     extra mesmo aparecendo aqui. #}
+  <li class="nav-item" role="presentation">
+    <a class="nav-link" href="{{ url_for('dono.ferramentas_performance') }}">
+      <i class="bi bi-speedometer me-1"></i>Ferramentas
+    </a>
+  </li>
   <li class="nav-item" role="presentation">
     <a class="nav-link" href="{{ url_for('auth.meus_dados') }}">
       <i class="bi bi-person-circle me-1"></i>Meus dados
@@ -115,30 +128,38 @@
       </div>
     </div>
 
-    <h5 class="mb-3">Grupos na plataforma</h5>
+    {# Pedido do Silvan (2026-09-29): a licença é por MÉDICO, não por
+       Grupo/clínica (Fatia 8) - por isso este resumo (reaproveitando os
+       mesmos 4 cards que antes mostravam Grupo.status) passou a contar
+       Usuario.licenca_status dos médicos, que é o que reflete de
+       verdade quem está pagando/trial/inadimplente. Ver resumo_licencas
+       em dono.dashboard (app/routes_dono.py). O resumo por Grupo
+       continua existindo, só que na aba "Grupos" (ver painel-grupos
+       abaixo), que é sobre clínicas mesmo, não sobre licença. #}
+    <h5 class="mb-3">Licenças de médico</h5>
     <div class="row g-3">
       <div class="col-md-3">
         <div class="card p-3">
-          <div class="text-muted small">Total de grupos</div>
-          <div class="fs-3 fw-bold">{{ resumo.total }}</div>
+          <div class="text-muted small">Total de médicos</div>
+          <div class="fs-3 fw-bold">{{ resumo_licencas.total }}</div>
         </div>
       </div>
       <div class="col-md-3">
         <div class="card p-3">
           <div class="text-muted small">Ativos</div>
-          <div class="fs-3 fw-bold text-success">{{ resumo.ativas }}</div>
+          <div class="fs-3 fw-bold text-success">{{ resumo_licencas.ativas }}</div>
         </div>
       </div>
       <div class="col-md-3">
         <div class="card p-3">
           <div class="text-muted small">Em trial</div>
-          <div class="fs-3 fw-bold text-info">{{ resumo.trial }}</div>
+          <div class="fs-3 fw-bold text-info">{{ resumo_licencas.trial }}</div>
         </div>
       </div>
       <div class="col-md-3">
         <div class="card p-3">
           <div class="text-muted small">Inadimplentes / Bloqueados</div>
-          <div class="fs-3 fw-bold text-danger">{{ resumo.inadimplentes + resumo.bloqueadas }}</div>
+          <div class="fs-3 fw-bold text-danger">{{ resumo_licencas.inadimplentes + resumo_licencas.bloqueadas }}</div>
         </div>
       </div>
     </div>
@@ -391,6 +412,27 @@
           <input type="number" name="limite_perguntas_dia_exame" min="1" class="form-control" style="max-width: 120px"
                  placeholder="Sem limite"
                  value="{{ config.limite_perguntas_dia_exame if config.limite_perguntas_dia_exame is not none else '' }}">
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </form>
+    </div>
+
+    <div class="card p-3 mb-4">
+      <h5 class="mb-1">Checagem de dicionário no chat de WhatsApp</h5>
+      <p class="text-muted small mb-3">
+        Além da checagem de "isso faz sentido?" pela IA, o chat do paciente também rejeita mensagens
+        com 2+ palavras que não estão num dicionário genérico de português ("Não consegui entender essa
+        mensagem"). Esse dicionário não conhece nome de medicamento (ex.: "paracetamol", "dipirona"), o
+        que pode fazer uma pergunta legítima do paciente ser recusada por engano. Desligue aqui se isso
+        estiver incomodando mais do que ajudando.
+      </p>
+      <form method="post" action="{{ url_for('dono.configuracoes_dicionario_chat') }}">
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" role="switch" id="verificar_dicionario_chat"
+                 name="verificar_dicionario_chat" {% if config.verificar_dicionario_chat %}checked{% endif %}>
+          <label class="form-check-label" for="verificar_dicionario_chat">
+            Rejeitar mensagens com palavras desconhecidas pelo dicionário
+          </label>
         </div>
         <button type="submit" class="btn btn-primary">Salvar</button>
       </form>

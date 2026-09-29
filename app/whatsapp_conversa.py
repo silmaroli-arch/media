@@ -964,7 +964,16 @@ def _eh_mensagem_com_muitas_palavras_desconhecidas(texto_original):
     disponível (ver acima). Recebe o texto ORIGINAL da mensagem (não o
     `_normalizar_texto`, que tira os acentos) - o dicionário reconhece
     palavras acentuadas normalmente ("não", "é", "está"), e removê-los
-    faria muita palavra de verdade parecer desconhecida por engano."""
+    faria muita palavra de verdade parecer desconhecida por engano.
+
+    Também desligável pelo dono (pedido do Silvan, 2026-09-29, ver
+    PlataformaConfig.verificar_dicionario_chat) - constatado na prática
+    que o dicionário genérico do pyspellchecker não conhece nome de
+    medicamento (ex.: "paracetamol", "dipirona"), fazendo pergunta de
+    paciente bem legítima ("posso tomar dipirona?") ser recusada como
+    "não consegui entender"."""
+    if not PlataformaConfig.obter().verificar_dicionario_chat:
+        return False
     verificador = _obter_verificador_ortografico()
     if not verificador:
         return False

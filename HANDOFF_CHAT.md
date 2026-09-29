@@ -1710,6 +1710,12 @@ Confirmado com o Silvan: **o ambiente `qa`/`qualidade` não vai mais existir**, 
 
 Nada relacionado ao Render (nem `media-dev` nem `media-prod`) é afetado por essa remoção - o Render nunca dependeu desse workflow, ele observa o repositório diretamente.
 
+**Ambientes AWS Elastic Beanstalk sendo apagados (2026-09-29)**: Silvan reportou que os ambientes na AWS estavam gerando custo. Localizados os 3 ambientes na região **América do Sul (São Paulo) / sa-east-1** (não apareciam na região padrão us-east-1/Norte da Virgínia): `media-dev`, `media-prod` (estava "Degraded") e `media-qa`. Confirmado que nenhum dos 3 está em uso (produção real é o Render, dev real é o `media-dev` do Render, QA abandonado). Encerramento dos 3 iniciado pelo Silvan no console AWS - status "No Data"/encerrando confirmado.
+
+**Bancos RDS órfãos também excluídos**: verificado o console RDS (mesma região sa-east-1) e encontrados 2 bancos PostgreSQL que sobraram dos ambientes EB, ambos com status "Inaccessible" (esperado, pois os ambientes que os usavam já estavam sendo encerrados): `database-1` e `media-prod-db`. Confirmado com o Silvan que nenhum outro sistema usa esses bancos (produção e dev do Media/MedIA usam os bancos gerenciados pelo próprio Render: `media-prod-db`/`media-dev-db` do Render, que são recursos totalmente separados, apesar do nome parecido). Os dois foram excluídos via console RDS (sem snapshot final, já que não serão usados de novo) - exclusão CONCLUÍDA e confirmada (lista de bancos de dados voltou a mostrar "(0)", vazia).
+
+Com isso, a decomissão da AWS Elastic Beanstalk está completa: 3 ambientes (`media-dev`, `media-prod`, `media-qa`) + 2 bancos RDS órfãos (`database-1`, `media-prod-db`) todos em processo de exclusão. Nenhum outro recurso AWS conhecido está associado a esse setup antigo - se aparecer alguma cobrança inesperada da AWS no próximo ciclo de faturamento, vale checar Elastic Load Balancers, Auto Scaling Groups ou S3 buckets que o EB também costuma criar por trás dos panos (normalmente excluídos automaticamente junto com o ambiente, mas vale confirmar).
+
 ## Workflow do GitHub Actions para abrir o PR de promoção (2026-09-29, pedido do Silvan)
 
 Depois da dificuldade encontrada pra abrir manualmente o primeiro PR dev→main (base/compare invertidos, botão "Create pull request" difícil de achar no navegador do celular), o Silvan pediu um jeito mais simples de abrir esse PR daqui pra frente.
@@ -1725,6 +1731,291 @@ Criado `.github/workflows/abrir_pr_promocao.yml` (working tree do `dev`, aguarda
 Verificado antes de comitar: YAML validado com `python3 -c "import yaml; yaml.safe_load(...)"`, e o script de shell dentro do `run:` validado à parte com `bash -n` (sintaxe OK) - havia um bug real na primeira versão (uma string de várias linhas dentro do `--body` quebrou a indentação do bloco YAML e virou uma chave solta no arquivo), corrigido reescrevendo o corpo do PR como uma única linha com `$'...\n...'` (aspas ANSI-C do bash, que interpretam `\n` como quebra de linha de verdade sem quebrar a estrutura do YAML).
 
 **Pendência**: como o `workflow_dispatch` só aparece no botão "Run workflow" da aba Actions quando o arquivo do workflow existe no branch padrão do repositório, pode ser necessário que esse arquivo também chegue à `main` (no próximo PR de promoção) para o botão aparecer de forma confiável - se não aparecer assim que o auto-commit subir isso pro `dev`, avisar para investigarmos.
+
+## Novo app do WhatsApp para o ambiente dev (2026-09-29, pedido do Silvan)
+
+Pedido do Silvan: "Vamos montar o app do whatsapp para o ambiente dev. Lembrando que deveremos utilizar um número que o whatsapp oferece" - até então o `media-dev` reutilizava o mesmo número/App de produção do WhatsApp, o que não é ideal pra testes.
+
+**Criado no Meta for Developers/Business Manager (portfólio "Silmaroli obras")**:
+- App novo: **media-dev** (App ID `1528908272594379`).
+- Número de teste gratuito reivindicado em "Etapa 1. Experimente": **+1 (555) 176-8599**, Phone Number ID **1267356273137404**, WhatsApp Business Account ID **1626458592554109** ("Test WhatsApp Business Account").
+- Destinatário de teste verificado: **+55 27 99876-6702** - mensagem de teste enviada e recebida com sucesso.
+- App Secret do `media-dev` já revelado pelo Silvan em "Configurações do app > Básico" (valor não compartilhado no chat, por política de privacidade).
+- O usuário do sistema já existente **API_integracao_whatsapp** (ID `61594309139062`, que já é Admin/acesso total no App "Media" e na WABA "Silmaroli" de produção) foi **também** atribuído com acesso total:
+  - Ao App **media-dev** (via "Apps" > `media-dev` > "Atribuir pessoas").
+  - À conta **Test WhatsApp Business Account** (via "Contas do WhatsApp" > selecionar a conta > "Atribuir pessoas" > marcar "Acesso total > Tudo" > "Atribuir").
+  Isso evita criar um segundo usuário do sistema só pra dev - o mesmo usuário agora gerencia produção e dev sem conflito, já que os ativos (App e WABA) são completamente separados entre os dois ambientes.
+
+**Task #4 concluída**: token de acesso permanente gerado a partir da página do usuário do sistema "API_integracao_whatsapp" (botão "Gerar token", app `media-dev`, permissões `whatsapp_business_messaging` + `whatsapp_business_management`). Valor do token não compartilhado no chat, por política de privacidade - o Silvan guardou por conta própria. Nesse ponto, o `media-dev` já tem todos os 4 dados necessários: Phone Number ID (`1267356273137404`), WABA ID (`1626458592554109`), App Secret e Access Token permanente.
+
+**Task #6 concluída**: as 4 variáveis de ambiente do serviço `media-dev` no Render foram atualizadas com os valores do novo app/número de dev: `WHATSAPP_META_ACCESS_TOKEN` (token permanente do usuário do sistema, escopado ao app `media-dev`), `WHATSAPP_META_APP_SECRET` (do app `media-dev`), `WHATSAPP_META_PHONE_NUMBER_ID` (`1267356273137404`) e `WHATSAPP_META_VERIFY_TOKEN` (valor escolhido: `media_dev_wh_2026`). As variáveis `WHATSAPP_META_TEMPLATE_*` não foram alteradas.
+
+**Task #5 concluída**: webhook do `media-dev` configurado no Meta (App `media-dev` > WhatsApp > Configuração básica > Etapa 2) - URL de callback `https://media-dev.onrender.com/whatsapp/webhook`, Verify Token `media_dev_wh_2026` (mesmo valor salvo no Render). Primeira tentativa de verificação falhou ("Não foi possível validar a URL de callback") porque o deploy do Render com as novas variáveis ainda não tinha concluído / o serviço free tier estava dormindo - após aguardar o deploy ficar "Live" e acessar a URL raiz pra acordar o serviço, a verificação passou na segunda tentativa. Campo de webhook `messages` inscrito.
+
+**Task #7 concluída - teste ponta a ponta com sucesso**: mensagem real enviada pelo WhatsApp do Silvan para o número de teste `+1 (555) 176-8599`, e o backend do `media-dev` (Render) respondeu automaticamente pedindo o CPF - fluxo real do Media/MedIA funcionando de ponta a ponta no ambiente de teste, isolado da produção.
+
+**Problema encontrado e resolvido no caminho**: a primeira tentativa de mensagem real não gerou resposta. Diagnóstico passo a passo:
+- Logs do Render (`media-dev`) só mostravam o `GET /whatsapp/webhook` da verificação inicial - nenhum `POST` da mensagem real.
+- Confirmado que o campo `messages` estava "Assinado" na configuração do app ("Campos do webhook").
+- Usado o botão "Teste" ao lado do campo `messages` (Meta manda um payload de exemplo direto pro servidor) - chegou certinho no Render (`POST /whatsapp/webhook` 200, user-agent `facebookexternalua`). Isso confirmou que a URL/token do webhook e o backend estavam OK.
+- **Causa raiz**: a "Test WhatsApp Business Account" (WABA, ID `1626458592554109`) não estava de fato inscrita para repassar mensagens reais ao app `media-dev` - isso é uma etapa separada da configuração de URL/token do webhook e da assinatura de campos, e não é feita automaticamente ao reivindicar o número de teste.
+- **Correção**: usado o Graph API Explorer (developers.facebook.com/tools/explorer), com o app `media-dev` selecionado e um token de usuário com as permissões `whatsapp_business_management`/`whatsapp_business_messaging`, fazendo uma chamada `POST 1626458592554109/subscribed_apps` - retornou `{"success": true}`. Depois disso, a mensagem real passou a chegar no webhook normalmente.
+- **Nota para o futuro**: se algum dia for preciso repetir esse processo pra um novo número/WABA (produção ou outro ambiente de teste), lembrar desse passo de inscrição via `POST /{waba-id}/subscribed_apps` - é fácil esquecer porque o app-level "Teste" do campo webhook funciona mesmo sem essa inscrição, mascarando o problema.
+
+**Setup do WhatsApp para o `media-dev` está completo** - as 7 tasks da lista de configuração (criar app, número de teste, destinatário verificado, credenciais/token permanente, webhook, variáveis no Render, teste ponta a ponta) foram concluídas.
+
+
+## Bug corrigido: erro 500 ao excluir médico/secretária (IntegrityError) (2026-09-29)
+
+Silvan reportou "Internal Server Error" ao tentar excluir a conta de um médico na área do dono (`dev.media.med.br`), rota `POST /dono/usuarios/<id>/excluir`. Log do Render mostrou um `IntegrityError` do SQLAlchemy.
+
+**Duas causas raiz distintas encontradas** (a segunda só apareceu depois de corrigir a primeira e testar de novo - o traceback completo do Render, obtido depois, apontou pra ela):
+
+1. `app/exclusao_usuario.py` (`excluir_usuario_e_dados()`) apaga/desvincula manualmente cada tabela que referencia `usuarios.id` antes de apagar a própria conta - mas dois modelos criados depois da última atualização dessa função nunca foram incluídos: `MensagemSuporte` ("Fale com a gente", 2026-09-25) e `Notificacao`. Ambos têm `usuario_id` como `nullable=False` apontando para `usuarios.id`.
+
+2. **Causa real do erro que o Silvan reproduziu**: traceback completo do Render mostrou `psycopg2.errors.ForeignKeyViolation: update or delete on table "agendamentos" violates foreign key constraint "chat_mensagens_agendamento_id_fkey" on table "chat_mensagens"` - `ChatMensagem` e `ConversaWhatsapp` têm uma coluna `agendamento_id` (separada de `exame_id`, que já era desvinculada) apontando pra um agendamento específico. Ao apagar os agendamentos do médico (passos 4 e 6 da função), essas duas tabelas nunca eram desvinculadas primeiro, travando a exclusão sempre que o médico tivesse algum agendamento com mensagem de chat/WhatsApp associada.
+
+**Correção** em `app/exclusao_usuario.py`:
+- Import de `MensagemSuporte`, `Notificacao` e `ConversaWhatsapp` adicionado.
+- Passo 1 ("Histórico puramente pessoal"): apaga `MensagemSuporte` e `Notificacao` do usuário (não dá pra só desvincular, coluna é obrigatória nos dois).
+- Passos 4 e 6 (exclusão de agendamentos): antes de cada `db.session.delete(agendamento)`, agora desvincula `ChatMensagem.agendamento_id` e `ConversaWhatsapp.agendamento_id` dos agendamentos que vão ser apagados. Mantido o `db.session.delete()` por objeto (não um `.delete()` em massa) de propósito - o cascade que apaga o `ResultadoExame` junto é feito pelo ORM do SQLAlchemy (`cascade="all, delete-orphan"` na relação `Agendamento.resultado`), não por uma constraint `ON DELETE CASCADE` do próprio banco, então um `.delete()` em massa (que ignora o ORM) quebraria essa limpeza e geraria o mesmo tipo de erro só que na tabela `resultados_exame`.
+
+Verificado com `python3 -c "import ast; ast.parse(...)"` (sintaxe OK) e releitura do arquivo do disco confirmando as linhas novas, incluindo a checagem específica de que o cascade do `ResultadoExame` continuou usando `db.session.delete()` por objeto.
+
+**Terceira rodada (depois de testar de novo)**: o Silvan tentou excluir de novo e bateu num terceiro caso, dessa vez ao apagar os EXAMES (não mais os agendamentos): `ForeignKeyViolation` em `contagem_perguntas_dia_exame_id_fkey` - a tabela `contagem_perguntas_dia` (contador de perguntas/dia por paciente+exame, usado pro limite diário configurável) também referencia `exame_id` e nunca era limpa. Aproveitei pra revisar TODAS as tabelas que referenciam `exames.id` (`grep 'ForeignKey("exames.id")'` em `app/models.py`) em vez de esperar aparecer mais um caso, e encontrei um segundo problema pelo caminho, ainda não reportado como erro: a tabela de associação `exame_medicos_associados` (médicos extras vinculados a um exame, além do médico principal) só era limpa pelo lado do `medico_id` (passo 3, só os vínculos do próprio uid) - se outro médico também estivesse associado a um dos exames sendo apagados, aquela linha continuaria existindo e travaria a exclusão do exame da mesma forma, só que num teste futuro.
+
+Corrigido: import de `ContagemPerguntasDia` adicionado; antes do `Exame.query.filter(...).delete()`, agora apaga as linhas de `ContagemPerguntasDia` desses exames (não dá pra só desvincular, `exame_id` é obrigatório ali) e remove qualquer linha de `exame_medicos_associados` pelo lado do `exame_id` (não só do `medico_id` como já era feito).
+
+Aplicado só no `dev` (aguardando auto-commit do Silvan) - Silvan vai testar de novo após o deploy. Vale lembrar pra próxima vez que um novo modelo ganhar uma FK obrigatória pra `usuarios.id`, `agendamentos.id` OU `exames.id`: já checar se `exclusao_usuario.py` precisa saber dele - esse arquivo já causou 3 rodadas de erro 500 diferentes na mesma tentativa de exclusão, então vale considerar, numa próxima sessão, escrever um teste automatizado que crie um médico com pelo menos uma linha em CADA tabela que referencia `usuarios.id`/`agendamentos.id`/`exames.id` e confirme que a exclusão completa sem erro - mais confiável que ir descobrindo tabela por tabela via traceback de produção/dev.
+
+
+## Bug corrigido: checkbox "exigir aprovação" do cadastro era ignorado (2026-09-29)
+
+Silvan testou o cadastro público (`auth/cadastro`) desmarcando o checkbox "Exigir minha aprovação antes de responder o paciente" (ou seja, escolhendo que a IA responda direto, sem esperar aprovação) - mas depois de criar a conta, o painel mostrava a aprovação como EXIGIDA (toggle ligado), o oposto do que ele escolheu.
+
+**Causa raiz**: a rota `cadastro()` em `app/routes_auth.py` nunca lia o campo `aprovacao_perguntas_paciente` do formulário - simplesmente não existia nenhuma linha `request.form.get("aprovacao_perguntas_paciente")` nessa função. Toda conta nova nascia com o valor padrão do próprio modelo (`Usuario.aprovacao_perguntas_paciente`, `default=True`), ignorando completamente a escolha feita na tela de cadastro.
+
+**Correção**: adicionada a linha `usuario.aprovacao_perguntas_paciente = bool(request.form.get("aprovacao_perguntas_paciente"))` logo depois de setar `crm_numero`/`crm_uf`/`data_nascimento`. Funciona porque checkbox HTML desmarcado simplesmente não é enviado no POST - `bool(None)` vira `False` (não exigir aprovação), e `bool("1")` (valor do checkbox marcado, ver template) vira `True` (exigir aprovação) - coerente com o comportamento padrão de checkbox em formulário HTML.
+
+Verificado com `python3 -c "import ast; ast.parse(...)"` (sintaxe OK) e releitura do arquivo confirmando a linha nova.
+
+Aplicado só no `dev` (aguardando auto-commit do Silvan) - ele vai criar uma conta de teste nova depois do deploy pra confirmar que a escolha do checkbox agora é respeitada.
+
+
+## Modelos de mensagem (templates do WhatsApp) recriados para o `media-dev` (2026-09-29)
+
+Silvan perguntou se os modelos de mensagem (templates aprovados do WhatsApp, usados para mandar mensagem fora da janela de 24h - ver docstring de `app/whatsapp_envio.py`) são compartilhados entre dev e produção. Resposta: **não** - cada template pertence à conta do WhatsApp Business Account (WABA) onde foi criado/aprovado, e como o `media-dev` agora usa uma WABA própria ("Test WhatsApp Business Account", separada da "Silmaroli" de produção - ver seção "Novo app do WhatsApp para o ambiente dev" mais acima), os templates aprovados na produção não existem lá.
+
+**Os 4 templates usados pelo sistema, conforme cadastrados na produção** (conferido no WhatsApp Manager, conta "Silmaroli", Gerenciador do WhatsApp > Modelos de mensagem):
+- `resposta_a_paciente` (Utilidade, Portuguese BR, 2 variáveis: pergunta e resposta) - env var `WHATSAPP_META_TEMPLATE_RESPOSTA`.
+- `agendamento_novo` (Utilidade, Portuguese BR, 3 variáveis) - env var `WHATSAPP_META_TEMPLATE_AGENDAMENTO_CRIADO`.
+- `preparo_cadastrado_medico_msg` (Marketing, Portuguese BR, 1 variável) - env var `WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO`. Corpo: "Boa notícia, {{1}}! Seu modelo de preparo foi cadastrado com sucesso.\nAgora você já pode continuar os seus testes: cadastre um agendamento para o paciente de teste (criado com o seu nome) no menu "Agendar Exame"."
+- `boas_vindas_clinica` (Marketing, Portuguese BR, 2 variáveis) - env var `WHATSAPP_META_TEMPLATE_BOAS_VINDAS`.
+
+Os nomes de cada template precisam ser IDÊNTICOS aos já configurados nas variáveis de ambiente do `media-dev` no Render (ver seção "Task #6 concluída" mais acima) - por isso Silvan recriou os 4 na conta de teste usando exatamente os mesmos nomes, copiando o conteúdo (cabeçalho/corpo/variáveis) de cada um a partir da conta de produção. Os 4 foram enviados para análise da Meta e ficaram com status "Em análise" - depois de aprovados (normalmente rápido para templates simples de utilidade/marketing), o `media-dev` já poderá mandar mensagens de template normalmente, sem precisar alterar nada no Render (os nomes já batem).
+
+**Pendência**: confirmar, depois de um tempo, se os 4 templates mudaram de "Em análise" para "Ativo"/aprovado na conta de teste - se algum for rejeitado, o motivo aparece na própria lista de modelos (coluna "Principal motivo do..."), e o texto pode precisar de ajuste (as políticas da Meta para templates variam por categoria - "Marketing" tem regras mais estritas que "Utilidade").
+
+
+## Ajuste de comportamento: paciente de teste órfão agora é reaproveitado automaticamente (2026-09-29, pedido do Silvan)
+
+Silvan cadastrou um novo médico no `dev` e reparou que o paciente de teste automático (ver `_paciente_teste_do_medico` em `app/routes_medico.py`) não foi criado - "Meus pacientes" veio vazio. Ao investigar pela tela "Novo paciente > Importar paciente pelo CPF", o próprio CPF do médico já existia na plataforma como um Paciente separado ("Silvan Oliveira", provavelmente sobra de um médico de teste excluído durante as correções desta sessão - excluir médico só desvincula o paciente que ele cadastrou, nunca apaga, ver `app/exclusao_usuario.py`).
+
+Comportamento até então (decisão original do Silvan, 2026-09-10, documentada na própria função): SEMPRE que o CPF do médico já pertence a outro Paciente, a criação do paciente de teste é recusada (`PacienteMedicoConflitanteError`) e pulada em silêncio - de propósito, pra nunca arriscar sobrescrever/misturar dados de outra pessoa sozinho.
+
+Silvan pediu: "ele deveria associar automático, mesmo nessa situação". Como isso reabre exatamente o risco que a proteção original evitava (se o conflito for com um paciente de OUTRA pessoa/clínica ainda ativa, associar sozinho misturaria dados de gente diferente), a implementação ficou mais específica em vez de remover a proteção:
+
+- Nova função `_paciente_esta_orfao(paciente)`: True quando o Paciente conflitante não tem NENHUM dono - nem pessoal (`cadastrado_por_id` nulo) nem de clínica (nenhuma linha em `GrupoPaciente`).
+- Na criação do paciente de teste: se o CPF conflitante pertence a um paciente ÓRFÃO, o registro é reaproveitado automaticamente (atualiza nome/data de nascimento/telefone e associa `cadastrado_por_id` ao médico atual) em vez de levantar a exceção - já manda a mensagem de boas-vindas normalmente, como se fosse criação nova.
+- Na atualização do paciente de teste já existente (caso o médico mude o próprio CPF depois, em "Meus dados"): mesma lógica - se o conflito for órfão, o registro órfão é APAGADO (não reaproveitado, já que o médico já tem seu próprio paciente de teste; só limpa a duplicata) em vez de bloquear a atualização.
+- Se o conflito NÃO for órfão (tem dono ativo - outro médico, outra clínica, ou paciente de verdade), o comportamento de sempre continua: recusa e cabe a quem chamou decidir manualmente.
+
+Docstring de `_paciente_teste_do_medico` atualizada explicando a exceção. Verificado com `python3 -c "import ast; ast.parse(...)"` (sintaxe OK).
+
+Aplicado só no `dev` (aguardando auto-commit do Silvan) - ele vai testar de novo criando outro médico (ou usando "Importar para esta clínica" manualmente pra resolver o caso já existente) após o deploy.
+
+
+## Bug corrigido: link "Responder agora" do painel do médico ia para a tela errada (2026-09-29)
+
+Reportado pelo Silvan com prints: no painel (`/equipe/`), o card "Perguntas
+pendentes de resposta" tem um link "Responder agora" que deveria levar ao
+"Portal de atendimento" (`/equipe/portal`, tela enxuta pensada como atalho
+rápido no celular, sem menu/barra lateral), mas estava levando para a tela
+completa de perguntas (`/equipe/perguntas`).
+
+Causa: `app/templates/medico/dashboard.html` (linha do link) usava
+`url_for('medico.perguntas_pendentes')` em vez de
+`url_for('medico.portal_atendimento')`.
+
+Corrigido trocando o `url_for` do link para `medico.portal_atendimento`.
+
+## Ferramenta de teste de performance (2026-09-29, pedido do Silvan)
+
+Pedido: gerar um número considerável de médicos e pacientes sintéticos no `media-dev`, para observar
+como a aplicação responde com uma base de dados bem maior. Como este ambiente (sandbox de nuvem) não
+tem `flask`/`psycopg2` nem acesso de rede para instalá-los, e o `device_bash` (máquina do Silvan) tem
+Python mas sem acesso de rede para instalar pacotes nem ao Postgres direto, e o plano Free do Render
+não tem Shell - não havia como rodar um script Python "avulso" (`python script.py`) diretamente contra
+o banco do dev. Solução: em vez de um script avulso, virou uma ferramenta dentro da própria aplicação
+(reaproveita a conexão com o banco que o Render já mantém).
+
+**Novo módulo `app/performance_teste.py`**: gera (`gerar_medicos_teste`/`gerar_pacientes_teste`) e apaga
+(`apagar_dados_teste`) médicos/pacientes sintéticos via `bulk_insert_mappings` (rápido, sem passar pelas
+rotas normais de cadastro nem pelas cascatas do ORM). Cada médico é solo (sem Grupo), com todas as
+permissões administrativas e licença em trial; cada paciente tem `cadastrado_por_id` apontando pra um
+desses médicos, em rodízio. Todos claramente identificáveis (e-mail com prefixo `medico.perfteste`, nome
+de paciente com prefixo `Paciente PerfTeste`) e usam faixas de CPF/telefone bem distintas das reais
+(`99.000.000.000+` para médico, `88.000.000.000+` para paciente), para nunca colidir com dado de verdade
+nem ser confundido com ele.
+
+**Novas rotas em `app/routes_dono.py`** (só o dono acessa, senha de confirmação obrigatória em toda
+ação, mesmo padrão de `dono.limpar_dados`):
+- `GET /dono/ferramentas/performance` - mostra quantos médicos/pacientes de teste já existem e os
+  formulários de gerar/apagar (`app/templates/dono/ferramentas_performance.html`).
+- `POST /dono/ferramentas/performance/gerar` - gera até 2.000 médicos e/ou 10.000 pacientes por clique
+  (limite de segurança, pra não travar a requisição/worker do Render gerando um volume enorme de uma vez
+  só - para um lote maior, é só clicar de novo).
+- `POST /dono/ferramentas/performance/limpar` - apaga TODOS os médicos/pacientes de teste (só eles,
+  identificados pelo mesmo prefixo).
+
+**Atualização (2026-09-29, mesmo dia)**: a pedido do Silvan, ganhou um link de verdade no menu do
+painel do dono ("Ferramentas", ao lado de "Meus dados") - deixou de ser só acessível digitando a URL
+direto. Continua exigindo a senha do dono em toda ação (gerar/apagar), então o link em si não é um
+risco extra.
+
+**Pendência/recomendação**: esta ferramenta não deveria ser promovida para `main`/produção - se algum
+dia isso for cogitado, vale ou removê-la antes, ou adicionar uma proteção extra (ex.: só funcionar
+quando uma variável de ambiente `AMBIENTE=dev` estiver definida) para não correr o risco de alguém
+gerar dados sintéticos em produção por engano.
+
+## Bug reportado + toggle novo: checagem de dicionário rejeitando perguntas legítimas (2026-09-29)
+
+Reportado pelo Silvan com prints do WhatsApp: perguntas normais do paciente ("Paracetamol e dipirona
+estão liberados?", "Se eu tiver dor ou febre durante o preparo, qual medicamento posso usar?") estavam
+sendo recusadas com "Não consegui entender essa mensagem".
+
+**Causa**: `_eh_mensagem_com_muitas_palavras_desconhecidas` (`app/whatsapp_conversa.py`, pedido do
+Silvan de 2026-09-24) passou a valer de verdade depois que o `pyspellchecker` foi instalado no deploy
+mais recente (antes disso era um no-op silencioso). Essa checagem marca a mensagem como "sem sentido"
+quando 2+ palavras (3+ letras) não estão no dicionário genérico de português do pacote - que não conhece
+nome de medicamento ("paracetamol", "dipirona") nem, aparentemente, algumas conjugações menos comuns
+("tiver"). Resultado: justamente perguntas sobre medicamento (o tipo mais comum nesse contexto) caem
+nesse filtro.
+
+**Pedido do Silvan**: em vez de resolver isso "escondido" no código, colocar um parâmetro em
+Configurações (área do dono) para ligar/desligar essa checagem por dicionário à vontade.
+
+**Implementado**:
+- `PlataformaConfig.verificar_dicionario_chat` (novo campo booleano, `app/models.py`) - nasce `True`
+  (mesmo comportamento que já estava valendo). Migração correspondente em `migrar_banco.py`
+  (`ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS verificar_dicionario_chat BOOLEAN NOT NULL
+  DEFAULT TRUE;`).
+- `app/whatsapp_conversa.py`: `_eh_mensagem_com_muitas_palavras_desconhecidas` agora devolve `False` sem
+  fazer nada quando `PlataformaConfig.obter().verificar_dicionario_chat` é `False`.
+- Nova rota `POST /dono/configuracoes/dicionario-chat` (`app/routes_dono.py`) e um novo card em
+  Configurações (`app/templates/dono/dashboard.html`, aba "Configurações") com um switch "Rejeitar
+  mensagens com palavras desconhecidas pelo dicionário".
+
+**Pendência**: essa checagem por si só continua sem saber diferenciar "paciente mandando lixo" de
+"paciente perguntando sobre remédio" - se o Silvan preferir manter a checagem ligada só que mais
+inteligente (em vez de simplesmente desligá-la), uma opção futura é não contar como "desconhecida" uma
+palavra que bate com o nome de algum `Medicamento` já cadastrado, antes de consultar o dicionário.
+
+## Painel do dono: resumo de "Grupos" na Visão geral virou resumo de licença por médico (2026-09-29)
+
+Depois de gerar os médicos de teste de performance, o Silvan notou que os indicadores de "Grupos na
+plataforma" (Total/Ativos/Em trial/Inadimplentes-Bloqueados) na aba "Visão geral" não reagiam ao volume
+novo de médicos - o que é esperado: esses 4 números sempre contaram `Grupo.status` (clínicas), nunca
+médico. Ao explicar isso, o Silvan apontou o ponto de fundo: **a licença sempre é por médico (Fatia 8),
+nunca por clínica/Grupo** - então esse resumo baseado em Grupo nunca refletiu de verdade "quem está
+pagando/trial/inadimplente" nesta plataforma, com ou sem dado de teste.
+
+**Mudança**: os mesmos 4 cards (pedido explícito do Silvan: "usar os cards que já existem hoje", sem
+criar cards novos) passaram a contar `Usuario.licenca_status` dos médicos, em vez de `Grupo.status`:
+- `app/routes_dono.py` (rota `dono.dashboard`): novo `resumo_licencas`, contado direto no banco via
+  `GROUP BY` (`func.count`), sem carregar cada `Usuario` em Python - importante com potencialmente
+  milhares de médicos (ver a ferramenta de teste de performance, seção acima). De propósito, NÃO chama
+  `Usuario.verificar_vencimento_licenca()` aqui (isso já roda a cada acesso autenticado do próprio
+  médico, via `staff_required`) - repetir para cada médico só para exibir o dashboard do dono seria uma
+  consulta extra por médico, desnecessária aqui.
+- `app/templates/dono/dashboard.html`: o card antes chamado "Grupos na plataforma" (na aba Visão geral)
+  virou "Licenças de médico" ("Total de médicos"/"Ativos"/"Em trial"/"Inadimplentes / Bloqueados").
+
+**O que NÃO mudou**: a aba "Grupos" (lista completa de clínicas, com membros/médicos/status/vencimento
+de cada uma) continua exatamente como estava - ela é sobre Grupo mesmo, faz sentido continuar existindo
+separada. O card "Grupos de trabalho criados" no topo da Visão geral também não mudou.
+
+## Bug corrigido: resposta da IA recomendando "confirme com seu médico" (2026-09-29)
+
+Reportado pelo Silvan com print da tela de aprovação ("Rascunho final"): a resposta sugerida pela IA
+para "Paracetamol e dipirona estão liberados?" terminava com "...seria importante confirmar com seu
+médico antes de tomar, especialmente se você já usa outros medicamentos." - texto sem sentido neste
+produto: esta MESMA pergunta já está passando pela revisão do médico (fila de aprovação) antes de
+chegar ao paciente, então "confirme com seu médico" é redundante/confuso. Pedido do Silvan: essa frase
+(ou parecida) nunca deve sobrar no rascunho enviado ao paciente, em nenhum merge/síntese de resposta.
+
+**Implementado em `app/ia_preparo.py`**:
+- Nova função `_remover_recomendacao_de_consultar_medico(texto)`: remove, por regex, qualquer FRASE
+  inteira (delimitada por ponto/exclamação/interrogação) que mencione "médico(a)" junto com um verbo de
+  "buscar confirmação" (confirmar/consultar/conversar/falar/perguntar/verificar/checar). Remove a frase
+  toda (não só o trecho específico) para nunca devolver algo gramaticalmente quebrado - se a frase
+  também trazia informação útil, prefere perder essa informação a manter a recomendação sem sentido.
+  Não afeta menção a "secretaria/equipe" (escalar pra equipe ainda faz sentido em alguns casos, ver
+  NAO_SEI_ENCAMINHAR). Se a remoção zerasse a resposta por completo, devolve o texto original sem
+  alterar nada (mais seguro que mandar uma resposta vazia).
+- Aplicada num ÚNICO ponto dentro de `responder_com_ia`, logo depois que `final` é decidido - cobre os
+  4 caminhos que podem preenchê-lo (síntese de duas respostas divergentes, as duas coladas lado a lado
+  quando não dá pra sintetizar, concordância entre as duas, ou resposta de uma IA só).
+- Reforço no próprio `PROMPT_SISTEMA`: nova regra proibindo explicitamente a IA de recomendar "confirme/
+  consulte/converse/fale com o médico" em qualquer resposta - mas o filtro por código acima é o que
+  garante isso de fato (a instrução no prompt já existia de forma mais restrita para o caso
+  MEDICAMENTO_NAO_CADASTRADO_REVISAR e mesmo assim vazou nesse caso reportado - depender só da IA seguir
+  a instrução não é confiável o bastante).
+
+Testado manualmente (fora da suite automatizada) com os 3 textos exatos dos prints do Silvan - nos 3
+casos a frase problemática foi removida corretamente, sem quebrar o restante da resposta.
+
+## Bug corrigido: 502 Bad Gateway em "Gerar cobranças do ano para todos" (2026-09-29)
+
+Reportado pelo Silvan com print (502 Bad Gateway do Render) ao clicar em "Gerar cobranças do ano para
+todos" (`dono.licencas_gerar_cobrancas_ano`), depois de gerar os 1000 médicos de teste de performance
+(ver seção acima, `app/performance_teste.py`).
+
+**Causa**: a rota SEMPRE incluiu todo médico em ciclo mensal, mesmo os ainda em TRIAL (que não deveriam
+ser cobrados ainda de qualquer forma - isso já era um problema de comportamento, não só de
+performance). Para cada médico elegível e cada mês restante do ano (até ~3 neste caso: out/nov/dez), a
+rota faz até 2 chamadas de rede REAIS ao Mercado Pago (link de pagamento + Pix) - tudo síncrono, dentro
+de uma única requisição HTTP. Com 1000 médicos de teste (todos em trial, então antes deste fix TODOS
+entravam), isso significava até ~6000 chamadas de rede numa única requisição - o worker do Render
+travava e acabava sendo encerrado bem antes de terminar, resultando no 502.
+
+**Corrigido em `app/routes_dono.py`**:
+- Filtro agora exige `licenca_status in ("ativa", "inadimplente")` - médico em trial nunca entra nesta
+  rota (correção de comportamento: ele ainda não está sendo cobrado, gerar cobrança de licença pra quem
+  está no período gratuito não fazia sentido, com ou sem dado de teste).
+- Processa no máximo `LIMITE_MEDICOS_POR_CLIQUE_COBRANCA_ANO = 100` médicos por clique (mesmo padrão já
+  usado na ferramenta de teste de performance) - se sobrar mais gente elegível, a mensagem de resumo
+  avisa e basta clicar de novo. Isso é uma rede de segurança pensada para o crescimento real da base, não
+  só para o cenário de teste.
+- Texto de ajuda em `app/templates/dono/usuarios.html` atualizado para refletir os dois critérios novos.
+
+**Nota**: os 1000 médicos de teste de performance nascem em trial (ver `app/performance_teste.py`) -
+antes do fix, a rota incluía TODO médico em ciclo mensal, trial ou não, então os 1000 entravam de
+qualquer jeito, e foi exatamente isso que causou o 502. Depois do fix, esse mesmo lote de teste nem
+chegaria a entrar na rota (todos em trial) - mas o limite de 100 por clique continua valendo pra
+proteger contra o cenário real de a base crescer o suficiente para ter, ela mesma, mais de 100 médicos
+elegíveis (ativa/inadimplente) de uma vez.
+
+## Botão "Gerar link de pagamento" em "Minha licença" do médico (2026-09-29, pedido do Silvan)
+
+Antes, o link "Pagar agora" (Checkout Pro) de um mês só existia se o dono tivesse gerado em `/dono/usuarios` (`dono.usuario_licenca_pagamento_cobrar`, que continua igual). Agora o próprio médico gera, mês a mês, no calendário de "Minha licença" - decisão do Silvan: botão POR MÊS EM ABERTO (não um botão único de "todos os meses"), ao lado do "Gerar Pix" que já existia.
+
+- **`app/routes_medico.py`**: nova rota `medico.minha_licenca_gerar_link` (POST `/equipe/minha-licenca/pagamentos/<id>/link`), mesmo padrão de `minha_licenca_gerar_pix`: só médico, 404 se o pagamento é de outro médico, recusa mês já pago, trata `MercadoPagoNaoConfigurado`/`ValueError` (sem valor definido)/erro genérico com mensagem clara. Import de `criar_preferencia_pagamento` adicionado.
+- **Ciclo mensal**: chama `criar_preferencia_pagamento(pagamento)` (`external_reference` = `licenca_pagamento:<id>`, o mesmo formato que o webhook já entende - nenhuma mudança no webhook).
+- **Ciclo anual**: só o mês vigente (mês-âncora) pode gerar, e a cobrança é a anual (`criar_preferencia_pagamento_anual`, `licenca_anual:<id>`); mês futuro é recusado pra não duplicar cobrança.
+- **`app/templates/medico/minha_licenca.html`**: novo macro `link_bloco(p)`. O botão só aparece enquanto o mês não tem `mp_init_point`; depois vira "Pagar agora". Também aparece no card de "Pagamento anual pendente" quando ainda não há link.
+- **Teste**: `test_licenca_gerar_link_medico.py` (novo, mock de `requests.post`, sem rede) - botão visível, sem credenciais, geração com credenciais + "Pagar agora", sem valor definido, isolamento entre médicos, mês pago, ciclo anual.
+- **Verificação feita**: sintaxe Python dos arquivos e renderização Jinja do template (3 cenários) conferidas. **A suíte NÃO foi executada** nesta sessão (sem Flask/PyPI acessível no ambiente) - rodar `DATABASE_URL=sqlite:///teste_licenca_gerar_link.db python test_licenca_gerar_link_medico.py` e também `test_pix_licenca.py`/`test_licenca_pagamento_valor_e_gateway.py` (regressão) antes de promover pro `main`.
 
 ## Como continuar
 

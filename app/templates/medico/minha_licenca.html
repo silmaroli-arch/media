@@ -32,6 +32,18 @@
   {% endif %}
 {% endmacro %}
 
+{# Pedido do Silvan (2026-09-29): o médico gera o próprio link de
+   pagamento (Checkout Pro) de um mês em aberto - ver
+   medico.minha_licenca_gerar_link. Só aparece enquanto o mês ainda não tem
+   link; depois disso o botão vira "Pagar agora". #}
+{% macro link_bloco(p) %}
+  <form method="post" action="{{ url_for('medico.minha_licenca_gerar_link', pagamento_id=p.id) }}" class="d-inline">
+    <button type="submit" class="btn btn-sm btn-outline-primary mb-1">
+      <i class="bi bi-link-45deg"></i> Gerar link de pagamento
+    </button>
+  </form>
+{% endmacro %}
+
 <h3 class="mb-3">Minha licença</h3>
 
 <div class="card" style="max-width: 480px;">
@@ -135,6 +147,8 @@
       </div>
       {% if pagamento_mes_atual.mp_init_point %}
         <a href="{{ pagamento_mes_atual.mp_init_point }}" target="_blank" rel="noopener" class="btn btn-sm btn-primary ms-2">Pagar agora</a>
+      {% else %}
+        <span class="ms-2">{{ link_bloco(pagamento_mes_atual) }}</span>
       {% endif %}
     </div>
     <div class="mt-2">
@@ -175,6 +189,8 @@
             {% if not p.pago %}
               {% if p.mp_init_point %}
                 <a href="{{ p.mp_init_point }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary mb-1">Pagar agora</a>
+              {% elif ciclo_licenca != "anual" %}
+                {{ link_bloco(p) }}
               {% endif %}
               <div>{{ pix_bloco(p) }}</div>
             {% endif %}

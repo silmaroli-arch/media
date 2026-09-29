@@ -470,6 +470,12 @@ def cadastro():
         usuario.crm_numero = crm_numero
         usuario.crm_uf = crm_uf
         usuario.data_nascimento = data_nascimento
+        # Checkbox "Exigir minha aprovação antes de responder o paciente"
+        # (ver auth/cadastro.html) - checkbox desmarcado não manda a
+        # chave no POST, então ausência = False (não exigir aprovação).
+        # Sem isso, a conta sempre nascia com o default do modelo
+        # (True), ignorando a escolha feita no próprio cadastro.
+        usuario.aprovacao_perguntas_paciente = bool(request.form.get("aprovacao_perguntas_paciente"))
 
         # Fatia 8 (licença individual): a cobrança é por médico e vale a
         # partir do cadastro, independente de Grupo (decisão do Silvan) -

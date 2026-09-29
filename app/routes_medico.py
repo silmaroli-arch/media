@@ -27,7 +27,8 @@ from app.models import (
     cep_incompleto, telefone_incompleto,
 )
 from app.mercadopago_integration import (
-    criar_preferencia_pagamento_anual, criar_cobranca_pix, MercadoPagoNaoConfigurado,
+    criar_preferencia_pagamento, criar_preferencia_pagamento_anual, criar_cobranca_pix,
+    MercadoPagoNaoConfigurado,
 )
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
@@ -3084,11 +3085,108 @@ def minha_licenca_gerar_pix(pagamento_id):
     return redirect(url_for("medico.minha_licenca"))
 
 
+@medico_bp.route("/minha-licenca/pagamentos/<int:pagamento_id>/link", methods=["POST"])
+@login_required
+@staff_required
+def minha_licenca_gerar_link(pagamento_id):
+    """Pedido do Silvan (2026-09-29): autoatendimento do LINK de pagamento
+    (Checkout Pro) - mesma ideia de minha_licenca_gerar_pix acima, só que
+    pro link "Pagar agora". Antes, esse link só existia se o dono tivesse
+    gerado em /dono/usuarios (ver dono.usuario_licenca_pagamento_cobrar,
+    que continua existindo do jeito que estava); agora o próprio médico
+    gera, mês a mês, direto no calendário de "Minha licença".
+
+    Ciclo ANUAL: o único mês que pode ser cobrado é o mês-âncora (o mês
+    vigente) e a cobrança é o valor anual de uma vez (mesmo fluxo de
+    medico.licenca_escolher_ciclo) - gerar uma cobrança MENSAL avulsa pra
+    quem está no anual duplicaria a cobrança, então é recusado.
+
+    Cada clique gera uma preferência NOVA (sobrescreve mp_init_point) -
+    útil se o link anterior tiver dado problema; o webhook confirma pelo
+    external_reference, que é o mesmo pro mesmo mês."""
+    if not eh_medico():
+        flash("Essa tela é só para contas de médico.", "warning")
+        return redirect(url_for("medico.dashboard"))
+
+    pagamento = LicencaPagamento.query.get_or_404(pagamento_id)
+    if pagamento.usuario_id != current_user.id:
+        abort(404)
+    if pagamento.pago:
+        flash("Este mês já está pago.", "warning")
+        return redirect(url_for("medico.minha_licenca"))
+
+    try:
+        if current_user.ciclo_licenca == "anual":
+            if pagamento.mes != _primeiro_dia_do_mes_licenca(date.today()):
+                flash(
+                    "No ciclo anual, o pagamento é feito de uma vez pelo mês vigente - "
+                    "não é possível gerar cobrança avulsa para este mês.",
+                    "warning",
+                )
+                return redirect(url_for("medico.minha_licenca"))
+            valor_anual = current_user.valor_licenca_anual or PlataformaConfig.obter().valor_licenca_anual_padrao
+            if not valor_anual:
+                flash(
+                    "Ainda não há um valor de licença anual configurado - fale com o administrador "
+                    "da plataforma.",
+                    "danger",
+                )
+                return redirect(url_for("medico.minha_licenca"))
+            criar_preferencia_pagamento_anual(pagamento, valor_anual)
+        else:
+            criar_preferencia_pagamento(pagamento)
+    except MercadoPagoNaoConfigurado:
+        flash(
+            "O pagamento online ainda não está disponível nesta instalação - fale com o "
+            "administrador da plataforma.",
+            "danger",
+        )
+        return redirect(url_for("medico.minha_licenca"))
+    except ValueError:
+        flash(
+            "Ainda não há um valor de licença definido para a sua conta - fale com o "
+            "administrador da plataforma.",
+            "danger",
+        )
+        return redirect(url_for("medico.minha_licenca"))
+    except Exception:
+        current_app.logger.exception(
+            "Falha ao gerar link de pagamento no Mercado Pago para o pagamento %s.", pagamento.id
+        )
+        flash("Não foi possível gerar o link de pagamento agora - tente novamente em instantes.", "danger")
+        return redirect(url_for("medico.minha_licenca"))
+
+    db.session.commit()
+    flash(
+        f"Link de pagamento gerado para o mês {pagamento.mes.strftime('%m/%Y')} - "
+        "clique em \"Pagar agora\" para concluir.",
+        "success",
+    )
+    return redirect(url_for("medico.minha_licenca"))
+
+
 class PacienteMedicoConflitanteError(Exception):
     """Levantada por _paciente_teste_do_medico quando o CPF do médico já
     pertence a um Paciente de OUTRA pessoa (cadastrado_por_id diferente) -
     ver docstring da função para o motivo de não tentar resolver isso
     sozinho."""
+
+
+def _paciente_esta_orfao(paciente):
+    """True quando este Paciente não tem mais dono nenhum: nem dono
+    pessoal (`cadastrado_por_id` nulo - caso comum depois que o médico/
+    secretária que o cadastrou é excluído, ver app.exclusao_usuario, que
+    só desvincula, nunca apaga o cadastro do paciente) nem vínculo a
+    nenhuma clínica (nenhuma linha em GrupoPaciente). Usado por
+    _paciente_teste_do_medico (pedido do Silvan, 2026-09-29) para
+    distinguir um CPF "sobrando de teste antigo" - seguro de reaproveitar
+    automaticamente - de um CPF que já pertence a uma pessoa/clínica de
+    verdade ainda ativa, onde reaproveitar sozinho arriscaria misturar
+    dados de gente diferente (ver docstring de _paciente_teste_do_medico
+    sobre a decisão original de não resolver isso sozinho)."""
+    if paciente.cadastrado_por_id is not None:
+        return False
+    return GrupoPaciente.query.filter_by(paciente_id=paciente.id).first() is None
 
 
 def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
@@ -3139,15 +3237,22 @@ def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
     próprio CPF). Só na CRIAÇÃO de um paciente novo para este médico, se o
     CPF dele já pertencer a um Paciente com outro cadastrado_por_id (ex.:
     o médico é paciente de verdade em outra clínica, ou dois médicos
-    diferentes compartilhando famnília/erro de digitação de CPF), a
+    diferentes compartilhando família/erro de digitação de CPF), a
     criação é RECUSADA (levanta PacienteMedicoConflitanteError) em vez de
-    tentar resolver sozinha - diferente do mecanismo antigo (quando este
-    cadastro ainda era "de teste"), que sobrescrevia CPFs de órfãos
-    automaticamente porque sabia que eram descartáveis; agora que o
-    registro é um paciente real com histórico potencial de
-    agendamentos/mensagens, sobrescrever um CPF sozinho arriscaria misturar
-    ou perder dados de outra pessoa. Cabe a quem chamou decidir manualmente
+    tentar resolver sozinha - registro real, com histórico potencial de
+    agendamentos/mensagens, então reassociar sozinho arriscaria misturar ou
+    perder dados de outra pessoa. Cabe a quem chamou decidir manualmente
     (ex.: avisar o Silvan/dono para investigar o CPF duplicado).
+
+    EXCEÇÃO (pedido do Silvan, 2026-09-29) - conflito ÓRFÃO: se o Paciente
+    conflitante não tem mais dono nenhum (`cadastrado_por_id` nulo E sem
+    nenhuma linha em GrupoPaciente - ver `_paciente_esta_orfao` acima),
+    é seguro assumir que é sobra de um médico/secretária de teste já
+    excluído (a exclusão de conta só desvincula o paciente, nunca apaga -
+    ver app.exclusao_usuario) - nesse caso, o registro é reaproveitado e
+    associado ao médico atual automaticamente, SEM levantar a exceção. A
+    proteção contra reassociar sozinho continua valendo, sem exceção,
+    para qualquer conflito com dono ativo (outra pessoa ou clínica).
 
     Médico SEM CPF cadastrado: `Paciente.cpf` é NOT NULL no banco (embora
     `Usuario.cpf` seja opcional, para não quebrar contas antigas de antes
@@ -3167,12 +3272,17 @@ def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
             conflito = Paciente.query.filter(
                 Paciente.cpf == cpf_desejado, Paciente.id != paciente.id
             ).first()
-            if conflito:
+            if conflito and not _paciente_esta_orfao(conflito):
                 raise PacienteMedicoConflitanteError(
                     f"O CPF {cpf_desejado} já pertence a outro paciente cadastrado "
                     f"(id {conflito.id}, cadastrado por usuário {conflito.cadastrado_por_id}) - "
                     "não é possível atualizar automaticamente."
                 )
+            # Conflito órfão (sobra de teste antigo, sem dono nem clínica -
+            # ver _paciente_esta_orfao) - descartado em favor do cadastro
+            # ATUAL do médico, que é o que continua em uso.
+            if conflito:
+                db.session.delete(conflito)
             paciente.cpf = cpf_desejado
         paciente.nome = medico.nome
         paciente.data_nascimento = medico.data_nascimento
@@ -3181,12 +3291,23 @@ def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
         return paciente
 
     conflito = Paciente.query.filter_by(cpf=cpf_desejado).first()
-    if conflito:
+    if conflito and not _paciente_esta_orfao(conflito):
         raise PacienteMedicoConflitanteError(
             f"O CPF {cpf_desejado} já pertence a outro paciente cadastrado "
             f"(id {conflito.id}, cadastrado por usuário {conflito.cadastrado_por_id}) - "
             "não é possível criar o cadastro deste médico como paciente."
         )
+    if conflito:
+        # Órfão (sobra de teste antigo, sem dono nem clínica) - reaproveita
+        # o registro em vez de criar um novo, associando ao médico atual.
+        conflito.nome = medico.nome
+        conflito.data_nascimento = medico.data_nascimento
+        conflito.telefone = medico.telefone
+        conflito.cadastrado_por_id = medico.id
+        db.session.commit()
+        if enviar_boas_vindas:
+            enviar_boas_vindas_whatsapp(conflito)
+        return conflito
 
     paciente = Paciente(
         nome=medico.nome,

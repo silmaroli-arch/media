@@ -2,6 +2,7 @@ from datetime import datetime, date
 from functools import wraps
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, abort, current_app
+from sqlalchemy import func
 from flask_login import login_required, current_user
 
 from app.extensions import db
@@ -9,11 +10,14 @@ from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, Cham
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 from app.mercadopago_integration import (
-    criar_preferencia_pagamento, criar_preferencia_pagamento_anual, criar_cobranca_pix,
+    criar_preferencia_pagamento, criar_preferencia_pagamento_anual,
     MercadoPagoNaoConfigurado,
 )
 from app.exclusao_usuario import verificar_bloqueios_exclusao, excluir_usuario_e_dados
 from app.limpar_dados import apagar_todos_os_dados
+from app.performance_teste import (
+    contar_dados_teste, gerar_medicos_teste, gerar_pacientes_teste, apagar_dados_teste,
+)
 
 dono_bp = Blueprint("dono", __name__, url_prefix="/dono")
 
@@ -126,6 +130,34 @@ def dashboard():
 
     config = PlataformaConfig.obter()
 
+    # Pedido do Silvan (2026-09-29): a licença é sempre POR MÉDICO (Fatia
+    # 8), nunca por Grupo/clínica - então o resumo acima (baseado em
+    # Grupo.status) não reflete a realidade de quem cobra o quê. Este
+    # resumo por status de licença de médico é o que realmente importa
+    # (mesmos 4 números - total/ativas/trial/inadimplentes+bloqueadas -
+    # só que contando Usuario.licenca_status em vez de Grupo.status).
+    # Conta direto no banco (GROUP BY), sem carregar cada Usuario - com
+    # potencialmente milhares de médicos (ex.: teste de performance, ver
+    # app/performance_teste.py), carregar todo mundo em Python pra só
+    # contar seria um desperdício. De propósito, NÃO chama
+    # Usuario.verificar_vencimento_licenca() aqui (isso já roda a cada
+    # acesso autenticado do próprio médico, ver staff_required) - repetir
+    # isso pra cada médico só pra exibir o dashboard do dono adicionaria
+    # uma consulta extra por médico, o que aqui seria contraproducente.
+    contagem_licencas = dict(
+        db.session.query(Usuario.licenca_status, func.count(Usuario.id))
+        .filter(Usuario.tipo == "medico")
+        .group_by(Usuario.licenca_status)
+        .all()
+    )
+    resumo_licencas = {
+        "total": sum(contagem_licencas.values()),
+        "ativas": contagem_licencas.get("ativa", 0),
+        "trial": contagem_licencas.get("trial", 0),
+        "inadimplentes": contagem_licencas.get("inadimplente", 0),
+        "bloqueadas": contagem_licencas.get("bloqueada", 0),
+    }
+
     # Desde a Fatia 6, uma conta pode existir "solo" (sem Grupo nenhum) -
     # por isso os números de Grupo acima ficam zerados/baixos mesmo com
     # gente cadastrada de verdade e usando o sistema normalmente. Traz a
@@ -141,7 +173,8 @@ def dashboard():
     mensagens_suporte_novas = MensagemSuporte.query.filter_by(status="nova").count()
 
     return render_template(
-        "dono/dashboard.html", grupos=grupos, resumo=resumo, hoje=date.today(), config=config,
+        "dono/dashboard.html", grupos=grupos, resumo=resumo, resumo_licencas=resumo_licencas,
+        hoje=date.today(), config=config,
         linhas_usuarios=linhas_usuarios, custo_total_usuarios=custo_total_usuarios,
         mensagens_suporte_novas=mensagens_suporte_novas,
     )
@@ -292,6 +325,28 @@ def configuracoes_limite_perguntas():
     config.limite_perguntas_dia_exame = limite
     db.session.commit()
     flash(f"Limite diário de mensagens por exame atualizado para {limite}.", "success")
+    return redirect(url_for("dono.dashboard"))
+
+
+@dono_bp.route("/configuracoes/dicionario-chat", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_dicionario_chat():
+    """Liga/desliga a checagem de "duas ou mais palavras desconhecidas
+    pelo dicionário de português" no chat de WhatsApp (pedido do Silvan,
+    2026-09-29 - ver PlataformaConfig.verificar_dicionario_chat e
+    app.whatsapp_conversa._eh_mensagem_com_muitas_palavras_desconhecidas).
+    Criada depois de constatar que o dicionário genérico não conhece nome
+    de medicamento (ex.: "paracetamol", "dipirona"), fazendo perguntas de
+    paciente legítimas serem recusadas como "não consegui entender"."""
+    config = PlataformaConfig.obter()
+    config.verificar_dicionario_chat = bool(request.form.get("verificar_dicionario_chat"))
+    db.session.commit()
+    flash(
+        "Checagem de dicionário no chat de WhatsApp "
+        + ("ativada." if config.verificar_dicionario_chat else "desativada."),
+        "success",
+    )
     return redirect(url_for("dono.dashboard"))
 
 
@@ -693,120 +748,65 @@ def usuarios():
 @login_required
 @dono_required
 def licencas_gerar_cobrancas_ano():
-    """Gera, de uma vez só, a cobrança Mercado Pago dos meses que FALTAM
-    neste ano civil (do mês seguinte ao atual até dezembro, inclusive)
-    pra todo médico em ciclo MENSAL (pedido do Silvan, 2026-09-25 - antes
-    só dava pra gerar usuário por usuário/mês por mês, na tela de
-    pagamentos de cada um). Médico em ciclo ANUAL fica de fora - ele usa o
-    próprio fluxo de "cobrar anual" (ver usuario_licenca_pagamento_cobrar_
-    anual), que já cobre o ano inteiro num pagamento único; gerar cobrança
-    mensal pra ele aqui cobraria em duplicado.
+    """Garante que existe o ITEM de pagamento (LicencaPagamento, "não
+    pago") de cada mês que falta neste ano civil (do mês seguinte ao
+    atual até dezembro, inclusive), para todo médico em ciclo MENSAL com
+    licença já ATIVA ou INADIMPLENTE (médico em TRIAL ainda não é
+    cobrado, então não faz sentido pré-criar item de pagamento pra ele;
+    médico em ciclo ANUAL usa o próprio fluxo de cobrança anual - ver
+    usuario_licenca_pagamento_cobrar_anual - que já cobre o ano inteiro
+    num pagamento único).
 
-    Critérios (decididos com o Silvan): só os meses AINDA NÃO PAGOS, e só
-    onde ainda NÃO existe cobrança gerada (não substitui/duplica um link
-    já ativo) - meses já pagos na mão (Pix, acordo informal etc.) e meses
-    com cobrança já pendente ficam intocados.
+    Redesenho de 2026-09-29 (pedido do Silvan, depois de um 502 Bad
+    Gateway real ao clicar aqui com 1000 médicos de teste de performance
+    cadastrados - ver app/performance_teste.py): esta rota ANTES também
+    gerava, pra cada médico e cada mês, a cobrança REAL no Mercado Pago
+    (link de Checkout Pro + Pix) - ou seja, até ~6 chamadas de rede por
+    médico, TODAS dentro da mesma requisição HTTP. Com uma base grande
+    de médicos, isso travava o worker do Render até ele matar a
+    requisição (502), bem antes do Mercado Pago terminar de responder.
+    Pior ainda: o Pix expira em ~30 minutos (ver
+    app.mercadopago_integration.criar_cobranca_pix) - gerar um Pix hoje
+    para um mês de dezembro nunca fazia sentido, ele já estaria expirado
+    há meses quando alguém finalmente fosse usá-lo.
 
-    Pedido do Silvan (2026-09-25, Pix nativo): além do link de Checkout
-    Pro de sempre, cada mês também recebe um QR code Pix (opção adicional,
-    ver app.mercadopago_integration.criar_cobranca_pix) - as duas geração
-    são independentes (um mês pode já ter link mas ainda não ter Pix, por
-    exemplo se essa função rodou antes de o Pix existir), cada uma só
-    pula o que JÁ tem, e uma falha na geração do Pix não desfaz o link já
-    gerado com sucesso (e vice-versa) - contadas e avisadas separadamente
-    no resumo final."""
+    Agora esta rota faz só a parte BARATA e que faz sentido gerar com
+    antecedência (criar a linha do mês, sem nenhuma chamada de rede) -
+    gerar a cobrança de verdade (link OU Pix) continua sendo uma ação
+    manual, feita quando alguém realmente for cobrar aquele mês
+    especificamente:
+    - o dono gera o link em Usuários > (médico) > calendário de
+      pagamento > "Gerar cobrança" (ver usuario_licenca_pagamento_cobrar);
+    - o próprio médico gera o Pix em "Minha licença" (ver
+      medico.minha_licenca_gerar_pix) quando for pagar.
+    Sem chamada de rede nenhuma, não há mais risco de travar a
+    requisição, então também não precisa mais de nenhum limite de
+    quantos médicos processar por clique."""
     hoje = date.today()
     if hoje.month == 12:
         flash("Já estamos em dezembro - não há mais meses restantes neste ano civil pra gerar.", "warning")
         return redirect(url_for("dono.usuarios"))
-    mes_inicio = date(hoje.year, hoje.month + 1, 1)
     mes_fim = date(hoje.year, 12, 1)
 
-    medicos = Usuario.query.filter_by(tipo="medico", ciclo_licenca="mensal").all()
+    medicos = Usuario.query.filter(
+        Usuario.tipo == "medico",
+        Usuario.ciclo_licenca == "mensal",
+        Usuario.licenca_status.in_(["ativa", "inadimplente"]),
+    ).all()
 
-    geradas = 0
-    ja_tinham = 0
-    sem_valor = 0
-    falhas = []
-    pix_geradas = 0
-    pix_ja_tinham = 0
-    pix_falhas = []
-
+    itens_criados = 0
     for medico in medicos:
-        garantir_meses_licenca(medico, fim=mes_fim)
-    db.session.flush()
-
-    for medico in medicos:
-        pagamentos = LicencaPagamento.query.filter(
-            LicencaPagamento.usuario_id == medico.id,
-            LicencaPagamento.mes >= mes_inicio,
-            LicencaPagamento.mes <= mes_fim,
-            LicencaPagamento.pago.is_(False),
-        ).all()
-        for pagamento in pagamentos:
-            if pagamento.mp_init_point:
-                ja_tinham += 1
-            else:
-                try:
-                    criar_preferencia_pagamento(pagamento)
-                    geradas += 1
-                except MercadoPagoNaoConfigurado:
-                    db.session.commit()
-                    flash(
-                        "Mercado Pago ainda não está configurado nesta instalação "
-                        "(defina MERCADOPAGO_ACCESS_TOKEN no .env) - nenhuma cobrança foi gerada.",
-                        "danger",
-                    )
-                    return redirect(url_for("dono.usuarios"))
-                except ValueError:
-                    sem_valor += 1
-                except Exception:
-                    current_app.logger.exception(
-                        "Falha ao gerar cobrança em massa para %s, mês %s.",
-                        medico.nome, pagamento.mes.strftime("%m/%Y"),
-                    )
-                    falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
-
-            if pagamento.pix_qr_code:
-                pix_ja_tinham += 1
-                continue
-            try:
-                criar_cobranca_pix(pagamento)
-                pix_geradas += 1
-            except MercadoPagoNaoConfigurado:
-                # Mesma configuração (MERCADOPAGO_ACCESS_TOKEN) do link -
-                # se faltou pro link acima, vai faltar pro Pix também, mas
-                # já foi avisado e interrompido lá em cima; chegar aqui
-                # sem token só é possível se o link já existia (bloco
-                # acima não chamou _access_token) e só o Pix falta - avisa
-                # e continua pro próximo mês, sem interromper tudo.
-                pix_falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
-            except ValueError:
-                pass  # mesmo "sem valor" já contado em sem_valor acima
-            except Exception:
-                current_app.logger.exception(
-                    "Falha ao gerar Pix em massa para %s, mês %s.",
-                    medico.nome, pagamento.mes.strftime("%m/%Y"),
-                )
-                pix_falhas.append(f"{medico.nome} ({pagamento.mes.strftime('%m/%Y')})")
-
+        itens_criados += len(garantir_meses_licenca(medico, fim=mes_fim))
     db.session.commit()
 
-    partes = [f"{geradas} cobrança{'s' if geradas != 1 else ''} gerada{'s' if geradas != 1 else ''}"]
-    if ja_tinham:
-        partes.append(f"{ja_tinham} já tinham cobrança (não duplicadas)")
-    if sem_valor:
-        partes.append(f"{sem_valor} sem valor mensal definido (puladas)")
-    if falhas:
-        exibidas = ", ".join(falhas[:5])
-        partes.append(f"{len(falhas)} falharam: {exibidas}{' ...' if len(falhas) > 5 else ''}")
-    partes.append(f"{pix_geradas} Pix gerado{'s' if pix_geradas != 1 else ''}")
-    if pix_ja_tinham:
-        partes.append(f"{pix_ja_tinham} já tinham Pix (não duplicados)")
-    if pix_falhas:
-        exibidas_pix = ", ".join(pix_falhas[:5])
-        partes.append(f"{len(pix_falhas)} Pix falharam: {exibidas_pix}{' ...' if len(pix_falhas) > 5 else ''}")
-    flash(" · ".join(partes) + ".", "success" if not falhas and not pix_falhas else "warning")
+    if itens_criados:
+        flash(
+            f"{itens_criados} item(ns) de pagamento criado(s), cobrindo {len(medicos)} médico(s) - "
+            "gere o link ou o Pix de cada mês individualmente, na hora de cobrar de verdade.",
+            "success",
+        )
+    else:
+        flash(f"Nenhum item novo - os {len(medicos)} médico(s) elegível(is) já tinham todos os meses deste ano gerados.", "success")
     return redirect(url_for("dono.usuarios"))
 
 
@@ -1011,3 +1011,75 @@ def anuncio_enviar():
         "success",
     )
     return redirect(url_for("dono.anuncios"))
+
+
+
+@dono_bp.route("/ferramentas/performance")
+@login_required
+@dono_required
+def ferramentas_performance():
+    """Ferramenta de teste de performance (pedido do Silvan, 2026-09-29,
+    ver app/performance_teste.py) - gera médicos e pacientes sintéticos
+    em massa direto no banco, pra observar como a aplicação se comporta
+    com uma base bem maior do que a atual. Pensada só para o ambiente de
+    teste (media-dev) - link no menu do painel ("Ferramentas", pedido do
+    Silvan, 2026-09-29), mas com toda ação (gerar/apagar) exigindo a
+    senha do próprio dono, mesmo padrão de dono.limpar_dados_banco."""
+    qtd_medicos, qtd_pacientes = contar_dados_teste()
+    return render_template(
+        "dono/ferramentas_performance.html",
+        qtd_medicos=qtd_medicos, qtd_pacientes=qtd_pacientes,
+    )
+
+
+@dono_bp.route("/ferramentas/performance/gerar", methods=["POST"])
+@login_required
+@dono_required
+def ferramentas_performance_gerar():
+    senha_confirmacao = request.form.get("senha_confirmacao", "")
+    if not current_user.checar_senha(senha_confirmacao):
+        flash("Senha incorreta - nada foi gerado.", "danger")
+        return redirect(url_for("dono.ferramentas_performance"))
+
+    try:
+        qtd_medicos = int(request.form.get("qtd_medicos", "0"))
+        qtd_pacientes = int(request.form.get("qtd_pacientes", "0"))
+    except ValueError:
+        flash("Quantidade inválida.", "danger")
+        return redirect(url_for("dono.ferramentas_performance"))
+
+    # Limite por clique (pedido de segurança, não do Silvan): evita travar
+    # a requisição/worker do Render gerando um volume enorme de uma vez só
+    # - para um lote grande, é só clicar mais de uma vez.
+    qtd_medicos = max(0, min(qtd_medicos, 2000))
+    qtd_pacientes = max(0, min(qtd_pacientes, 10000))
+
+    criados_medicos = gerar_medicos_teste(qtd_medicos) if qtd_medicos else 0
+    criados_pacientes = gerar_pacientes_teste(qtd_pacientes) if qtd_pacientes else 0
+
+    if not criados_medicos and not criados_pacientes:
+        flash("Nada gerado - informe uma quantidade de médicos e/ou pacientes maior que zero.", "warning")
+    else:
+        flash(
+            f"Gerados {criados_medicos} médico(s) e {criados_pacientes} paciente(s) de teste.",
+            "success",
+        )
+    return redirect(url_for("dono.ferramentas_performance"))
+
+
+@dono_bp.route("/ferramentas/performance/limpar", methods=["POST"])
+@login_required
+@dono_required
+def ferramentas_performance_limpar():
+    senha_confirmacao = request.form.get("senha_confirmacao", "")
+    if not current_user.checar_senha(senha_confirmacao):
+        flash("Senha incorreta - nada foi apagado.", "danger")
+        return redirect(url_for("dono.ferramentas_performance"))
+
+    qtd_medicos, qtd_pacientes = apagar_dados_teste()
+    db.session.commit()
+    flash(
+        f"Removidos {qtd_medicos} médico(s) e {qtd_pacientes} paciente(s) de teste.",
+        "success",
+    )
+    return redirect(url_for("dono.ferramentas_performance"))
