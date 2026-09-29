@@ -2107,6 +2107,12 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - `test_base_conhecimento.py` ajustado: a checagem "respeita o tipo de exame" e a do item inativo deixaram de assumir que endoscopia não tem itens parecidos. Continua **NÃO executado** (sem Flask no ambiente do assistente).
 - Próximos tipos sugeridos por volume de dúvida: ressonância magnética, tomografia com contraste, ultrassonografia abdominal, exames de sangue (jejum).
 
+### Carga 3 da base - Ressonância, tomografia, ultrassom de abdome e exames de sangue (2026-09-29)
+- `app/base_conhecimento_padrao.py` ganhou 20 itens (agora 48 no total): 6 de "Ressonância magnética com contraste" (jejum, marcapasso/implante, roupa e joias, claustrofobia, barulho/imobilidade, gravidez), 6 de "Tomografia computadorizada com contraste" (jejum, alergia, rins, metformina, sensação do contraste, cuidados depois), 3 de "Ultrassonografia de abdome total" (jejum, água/bexiga cheia, dieta contra gases) e 5 de "Exames de sangue com jejum..." (água, café/chiclete, remédios, exercício, comeu sem querer). Fontes: Doctoralia, Mais Laudo, Instituto da Imagem, Diagnósticos do Brasil. Reescritos, sem prazos/horas/doses. Origem "internet", não revisados, insert-only.
+- **Vale o dono revisar**: as fontes citam prazos de jejum diferentes (ex.: 4 a 6 vs 8 a 12), por isso nenhum número entrou nos textos - todos mandam seguir o preparo cadastrado.
+- **Lacuna**: cada tipo cobre só o essencial. Ressonância e tomografia SEM contraste, ultrassom pélvico/transvaginal (bexiga cheia), curva glicêmica, ecocardiograma e outros tipos da lista ainda não têm itens. Como a base também aprende com as respostas dos médicos (fatia 4), os itens tendem a crescer sozinhos onde há mais perguntas.
+- Sem execução de teste (sem Flask no ambiente do assistente): conferidos sintaxe, nomes de tipo existentes em `tipos_exame_padrao.py`, ausência de duplicatas e de prazos em horas/dias.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
