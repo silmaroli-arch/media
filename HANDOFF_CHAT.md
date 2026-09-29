@@ -1742,9 +1742,10 @@ Pedido do Silvan: "Vamos montar o app do whatsapp para o ambiente dev. Lembrando
 
 **Task #4 concluída**: token de acesso permanente gerado a partir da página do usuário do sistema "API_integracao_whatsapp" (botão "Gerar token", app `media-dev`, permissões `whatsapp_business_messaging` + `whatsapp_business_management`). Valor do token não compartilhado no chat, por política de privacidade - o Silvan guardou por conta própria. Nesse ponto, o `media-dev` já tem todos os 4 dados necessários: Phone Number ID (`1267356273137404`), WABA ID (`1626458592554109`), App Secret e Access Token permanente.
 
-**Próximos passos (tasks #5-7, ainda não iniciados)**:
-- Configurar o webhook do `media-dev` (`https://media-dev.onrender.com/whatsapp/webhook`) com um **Verify Token novo**, diferente do de produção.
-- Atualizar as variáveis de ambiente do serviço `media-dev` no Render: `WHATSAPP_META_VERIFY_TOKEN`, `WHATSAPP_META_APP_SECRET`, `WHATSAPP_META_ACCESS_TOKEN`, `WHATSAPP_META_PHONE_NUMBER_ID`.
+**Task #6 concluída**: as 4 variáveis de ambiente do serviço `media-dev` no Render foram atualizadas com os valores do novo app/número de dev: `WHATSAPP_META_ACCESS_TOKEN` (token permanente do usuário do sistema, escopado ao app `media-dev`), `WHATSAPP_META_APP_SECRET` (do app `media-dev`), `WHATSAPP_META_PHONE_NUMBER_ID` (`1267356273137404`) e `WHATSAPP_META_VERIFY_TOKEN` (valor escolhido: `media_dev_wh_2026`). As variáveis `WHATSAPP_META_TEMPLATE_*` não foram alteradas.
+
+**Próximos passos (tasks #5 e #7, ainda não iniciados)**:
+- Configurar o webhook do `media-dev` no Meta (App `media-dev` > WhatsApp > Configuração > Webhook): URL `https://media-dev.onrender.com/whatsapp/webhook`, Verify Token `media_dev_wh_2026` (mesmo valor já salvo no Render), inscrever pelo menos o campo `messages`.
 - Teste ponta a ponta no ambiente dev (enviar/receber mensagem real via `media-dev`, não mais o número/App de produção).
 
 
