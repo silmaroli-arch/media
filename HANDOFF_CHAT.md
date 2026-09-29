@@ -1726,6 +1726,28 @@ Verificado antes de comitar: YAML validado com `python3 -c "import yaml; yaml.sa
 
 **Pendência**: como o `workflow_dispatch` só aparece no botão "Run workflow" da aba Actions quando o arquivo do workflow existe no branch padrão do repositório, pode ser necessário que esse arquivo também chegue à `main` (no próximo PR de promoção) para o botão aparecer de forma confiável - se não aparecer assim que o auto-commit subir isso pro `dev`, avisar para investigarmos.
 
+## Novo app do WhatsApp para o ambiente dev (2026-09-29, pedido do Silvan)
+
+Pedido do Silvan: "Vamos montar o app do whatsapp para o ambiente dev. Lembrando que deveremos utilizar um número que o whatsapp oferece" - até então o `media-dev` reutilizava o mesmo número/App de produção do WhatsApp, o que não é ideal pra testes.
+
+**Criado no Meta for Developers/Business Manager (portfólio "Silmaroli obras")**:
+- App novo: **media-dev** (App ID `1528908272594379`).
+- Número de teste gratuito reivindicado em "Etapa 1. Experimente": **+1 (555) 176-8599**, Phone Number ID **1267356273137404**, WhatsApp Business Account ID **1626458592554109** ("Test WhatsApp Business Account").
+- Destinatário de teste verificado: **+55 27 99876-6702** - mensagem de teste enviada e recebida com sucesso.
+- App Secret do `media-dev` já revelado pelo Silvan em "Configurações do app > Básico" (valor não compartilhado no chat, por política de privacidade).
+- O usuário do sistema já existente **API_integracao_whatsapp** (ID `61594309139062`, que já é Admin/acesso total no App "Media" e na WABA "Silmaroli" de produção) foi **também** atribuído com acesso total:
+  - Ao App **media-dev** (via "Apps" > `media-dev` > "Atribuir pessoas").
+  - À conta **Test WhatsApp Business Account** (via "Contas do WhatsApp" > selecionar a conta > "Atribuir pessoas" > marcar "Acesso total > Tudo" > "Atribuir").
+  Isso evita criar um segundo usuário do sistema só pra dev - o mesmo usuário agora gerencia produção e dev sem conflito, já que os ativos (App e WABA) são completamente separados entre os dois ambientes.
+
+**Ainda faltando (task #4 da lista em andamento)**: gerar o **token de acesso permanente** a partir da própria página do usuário do sistema "API_integracao_whatsapp" (botão "Gerar novo token", selecionando o app `media-dev` e as permissões `whatsapp_business_messaging` + `whatsapp_business_management`, sem expiração) - até agora só existe o token temporário de 24h gerado durante o teste rápido.
+
+**Próximos passos (tasks #5-7, ainda não iniciados)**:
+- Configurar o webhook do `media-dev` (`https://media-dev.onrender.com/whatsapp/webhook`) com um **Verify Token novo**, diferente do de produção.
+- Atualizar as variáveis de ambiente do serviço `media-dev` no Render: `WHATSAPP_META_VERIFY_TOKEN`, `WHATSAPP_META_APP_SECRET`, `WHATSAPP_META_ACCESS_TOKEN`, `WHATSAPP_META_PHONE_NUMBER_ID`.
+- Teste ponta a ponta no ambiente dev (enviar/receber mensagem real via `media-dev`, não mais o número/App de produção).
+
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
