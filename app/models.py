@@ -71,6 +71,18 @@ class PlataformaConfig(db.Model):
     # licença" (medico.minha_licenca / medico.licenca_escolher_ciclo).
     valor_licenca_anual_padrao = db.Column(db.Numeric(10, 2))
 
+    # Pedido do Silvan (2026-09-29): liga/desliga a checagem de "duas ou
+    # mais palavras desconhecidas pelo dicionário de português" no chat de
+    # WhatsApp (ver app.whatsapp_conversa._eh_mensagem_com_muitas_palavras_
+    # desconhecidas) - criada depois de constatar, na prática, que o
+    # dicionário genérico do pyspellchecker não conhece nome de
+    # medicamento (ex.: "paracetamol", "dipirona"), fazendo perguntas de
+    # paciente bem legítimas ("posso tomar dipirona?") serem recusadas
+    # como "não consegui entender". Nasce True (mesmo comportamento que já
+    # estava valendo antes deste campo existir) - o dono desliga em
+    # /dono/configuracoes se preferir.
+    verificar_dicionario_chat = db.Column(db.Boolean, nullable=False, default=True)
+
     @classmethod
     def obter(cls):
         config = cls.query.first()
@@ -78,6 +90,7 @@ class PlataformaConfig(db.Model):
             config = cls(
                 trial_dias=14, ia_chat_provedor_1="Claude", ia_chat_provedor_2="ChatGPT",
                 ia_validador_pergunta="Claude", aviso_inadimplencia_meses=2,
+                verificar_dicionario_chat=True,
             )
             db.session.add(config)
             db.session.commit()
