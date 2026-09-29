@@ -128,30 +128,38 @@
       </div>
     </div>
 
-    <h5 class="mb-3">Grupos na plataforma</h5>
+    {# Pedido do Silvan (2026-09-29): a licença é por MÉDICO, não por
+       Grupo/clínica (Fatia 8) - por isso este resumo (reaproveitando os
+       mesmos 4 cards que antes mostravam Grupo.status) passou a contar
+       Usuario.licenca_status dos médicos, que é o que reflete de
+       verdade quem está pagando/trial/inadimplente. Ver resumo_licencas
+       em dono.dashboard (app/routes_dono.py). O resumo por Grupo
+       continua existindo, só que na aba "Grupos" (ver painel-grupos
+       abaixo), que é sobre clínicas mesmo, não sobre licença. #}
+    <h5 class="mb-3">Licenças de médico</h5>
     <div class="row g-3">
       <div class="col-md-3">
         <div class="card p-3">
-          <div class="text-muted small">Total de grupos</div>
-          <div class="fs-3 fw-bold">{{ resumo.total }}</div>
+          <div class="text-muted small">Total de médicos</div>
+          <div class="fs-3 fw-bold">{{ resumo_licencas.total }}</div>
         </div>
       </div>
       <div class="col-md-3">
         <div class="card p-3">
           <div class="text-muted small">Ativos</div>
-          <div class="fs-3 fw-bold text-success">{{ resumo.ativas }}</div>
+          <div class="fs-3 fw-bold text-success">{{ resumo_licencas.ativas }}</div>
         </div>
       </div>
       <div class="col-md-3">
         <div class="card p-3">
           <div class="text-muted small">Em trial</div>
-          <div class="fs-3 fw-bold text-info">{{ resumo.trial }}</div>
+          <div class="fs-3 fw-bold text-info">{{ resumo_licencas.trial }}</div>
         </div>
       </div>
       <div class="col-md-3">
         <div class="card p-3">
           <div class="text-muted small">Inadimplentes / Bloqueados</div>
-          <div class="fs-3 fw-bold text-danger">{{ resumo.inadimplentes + resumo.bloqueadas }}</div>
+          <div class="fs-3 fw-bold text-danger">{{ resumo_licencas.inadimplentes + resumo_licencas.bloqueadas }}</div>
         </div>
       </div>
     </div>

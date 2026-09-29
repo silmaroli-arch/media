@@ -1921,6 +1921,30 @@ Configurações (área do dono) para ligar/desligar essa checagem por dicionári
 inteligente (em vez de simplesmente desligá-la), uma opção futura é não contar como "desconhecida" uma
 palavra que bate com o nome de algum `Medicamento` já cadastrado, antes de consultar o dicionário.
 
+## Painel do dono: resumo de "Grupos" na Visão geral virou resumo de licença por médico (2026-09-29)
+
+Depois de gerar os médicos de teste de performance, o Silvan notou que os indicadores de "Grupos na
+plataforma" (Total/Ativos/Em trial/Inadimplentes-Bloqueados) na aba "Visão geral" não reagiam ao volume
+novo de médicos - o que é esperado: esses 4 números sempre contaram `Grupo.status` (clínicas), nunca
+médico. Ao explicar isso, o Silvan apontou o ponto de fundo: **a licença sempre é por médico (Fatia 8),
+nunca por clínica/Grupo** - então esse resumo baseado em Grupo nunca refletiu de verdade "quem está
+pagando/trial/inadimplente" nesta plataforma, com ou sem dado de teste.
+
+**Mudança**: os mesmos 4 cards (pedido explícito do Silvan: "usar os cards que já existem hoje", sem
+criar cards novos) passaram a contar `Usuario.licenca_status` dos médicos, em vez de `Grupo.status`:
+- `app/routes_dono.py` (rota `dono.dashboard`): novo `resumo_licencas`, contado direto no banco via
+  `GROUP BY` (`func.count`), sem carregar cada `Usuario` em Python - importante com potencialmente
+  milhares de médicos (ver a ferramenta de teste de performance, seção acima). De propósito, NÃO chama
+  `Usuario.verificar_vencimento_licenca()` aqui (isso já roda a cada acesso autenticado do próprio
+  médico, via `staff_required`) - repetir para cada médico só para exibir o dashboard do dono seria uma
+  consulta extra por médico, desnecessária aqui.
+- `app/templates/dono/dashboard.html`: o card antes chamado "Grupos na plataforma" (na aba Visão geral)
+  virou "Licenças de médico" ("Total de médicos"/"Ativos"/"Em trial"/"Inadimplentes / Bloqueados").
+
+**O que NÃO mudou**: a aba "Grupos" (lista completa de clínicas, com membros/médicos/status/vencimento
+de cada uma) continua exatamente como estava - ela é sobre Grupo mesmo, faz sentido continuar existindo
+separada. O card "Grupos de trabalho criados" no topo da Visão geral também não mudou.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

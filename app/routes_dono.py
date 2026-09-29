@@ -2,6 +2,7 @@ from datetime import datetime, date
 from functools import wraps
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, abort, current_app
+from sqlalchemy import func
 from flask_login import login_required, current_user
 
 from app.extensions import db
@@ -129,6 +130,34 @@ def dashboard():
 
     config = PlataformaConfig.obter()
 
+    # Pedido do Silvan (2026-09-29): a licença é sempre POR MÉDICO (Fatia
+    # 8), nunca por Grupo/clínica - então o resumo acima (baseado em
+    # Grupo.status) não reflete a realidade de quem cobra o quê. Este
+    # resumo por status de licença de médico é o que realmente importa
+    # (mesmos 4 números - total/ativas/trial/inadimplentes+bloqueadas -
+    # só que contando Usuario.licenca_status em vez de Grupo.status).
+    # Conta direto no banco (GROUP BY), sem carregar cada Usuario - com
+    # potencialmente milhares de médicos (ex.: teste de performance, ver
+    # app/performance_teste.py), carregar todo mundo em Python pra só
+    # contar seria um desperdício. De propósito, NÃO chama
+    # Usuario.verificar_vencimento_licenca() aqui (isso já roda a cada
+    # acesso autenticado do próprio médico, ver staff_required) - repetir
+    # isso pra cada médico só pra exibir o dashboard do dono adicionaria
+    # uma consulta extra por médico, o que aqui seria contraproducente.
+    contagem_licencas = dict(
+        db.session.query(Usuario.licenca_status, func.count(Usuario.id))
+        .filter(Usuario.tipo == "medico")
+        .group_by(Usuario.licenca_status)
+        .all()
+    )
+    resumo_licencas = {
+        "total": sum(contagem_licencas.values()),
+        "ativas": contagem_licencas.get("ativa", 0),
+        "trial": contagem_licencas.get("trial", 0),
+        "inadimplentes": contagem_licencas.get("inadimplente", 0),
+        "bloqueadas": contagem_licencas.get("bloqueada", 0),
+    }
+
     # Desde a Fatia 6, uma conta pode existir "solo" (sem Grupo nenhum) -
     # por isso os números de Grupo acima ficam zerados/baixos mesmo com
     # gente cadastrada de verdade e usando o sistema normalmente. Traz a
@@ -144,7 +173,8 @@ def dashboard():
     mensagens_suporte_novas = MensagemSuporte.query.filter_by(status="nova").count()
 
     return render_template(
-        "dono/dashboard.html", grupos=grupos, resumo=resumo, hoje=date.today(), config=config,
+        "dono/dashboard.html", grupos=grupos, resumo=resumo, resumo_licencas=resumo_licencas,
+        hoje=date.today(), config=config,
         linhas_usuarios=linhas_usuarios, custo_total_usuarios=custo_total_usuarios,
         mensagens_suporte_novas=mensagens_suporte_novas,
     )
