@@ -1,12 +1,21 @@
 {% extends "base.html" %}
 {% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
-{% block titulo %}Novo item da base de conhecimento{% endblock %}
+{% block titulo %}{{ "Editar item da base de conhecimento" if item else "Novo item da base de conhecimento" }}{% endblock %}
 {% block conteudo %}
-<h3 class="mb-3">Adicionar pergunta/resposta manualmente</h3>
+<h3 class="mb-3">{{ "Editar pergunta/resposta" if item else "Adicionar pergunta/resposta manualmente" }}</h3>
 <div class="card p-4">
-  <form method="post">
+  <form method="post" action="{{ url_for('medico.faq_editar', item_id=item.id) if item else url_for('medico.faq_novo') }}">
     {# Item vinculado a um exame nasce na filial daquele exame; item geral
-       (sem exame) precisa da filial escolhida aqui. #}
+       (sem exame) precisa da filial escolhida aqui. Ao EDITAR, o exame/
+       escopo do item não muda por aqui (só pergunta/resposta) - evita
+       reabrir toda a lógica de re-escopo (filial/Grupo) só pra corrigir um
+       texto; quem quiser mudar o exame de um item pode excluir e recriar. #}
+    {% if item %}
+    <div class="mb-3">
+      <label class="form-label">Exame relacionado</label>
+      <input type="text" class="form-control" value="{{ item.exame.nome if item.exame else 'Geral (qualquer exame)' }}" disabled>
+    </div>
+    {% else %}
     {% if current_user.tipo == "secretaria" %}
     {{ select_filial(ajuda="Usada quando o item for geral (sem exame). Se você escolher um exame abaixo, o item fica no local daquele exame.") }}
     {% endif %}
@@ -23,13 +32,14 @@
         {% endfor %}
       </select>
     </div>
+    {% endif %}
     <div class="mb-3">
       <label class="form-label">Pergunta</label>
-      <input type="text" name="pergunta" class="form-control" required>
+      <input type="text" name="pergunta" class="form-control" value="{{ item.pergunta if item else '' }}" required>
     </div>
     <div class="mb-3">
       <label class="form-label">Resposta</label>
-      <textarea name="resposta" class="form-control" rows="3" required></textarea>
+      <textarea name="resposta" class="form-control" rows="3" required>{{ item.resposta if item else '' }}</textarea>
     </div>
     <button type="submit" class="btn btn-primary">Salvar</button>
     <a href="{{ url_for('medico.faq_lista') }}" class="btn btn-link">Cancelar</a>

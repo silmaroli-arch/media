@@ -121,6 +121,26 @@ MARCADOR_SEM_SENTIDO = "SEM_SENTIDO_ENCAMINHAR"
 # coerente, mas sem nenhuma relação com exame médico nenhum.
 MARCADOR_FORA_DO_EXAME = "FORA_DO_EXAME_ENCAMINHAR"
 
+# Pedido do Silvan (2026-09-28, ver bug real: pergunta sobre nimesulida
+# foi respondida direto ao paciente sem passar pelo médico, porque a
+# aprovação geral estava desativada para aquele médico/Grupo -
+# `exige_aprovacao_pergunta`). Combinado com o Silvan: resposta do tipo
+# "medicamento identificado mas não cadastrado neste preparo" (ver a
+# regra correspondente no PROMPT_SISTEMA abaixo) SEMPRE precisa passar
+# pelo médico antes de chegar ao paciente, mesmo quando a aprovação geral
+# está desativada - porque, por definição, essa resposta não é uma
+# informação certa tirada do preparo cadastrado, é um complemento
+# genérico de conhecimento farmacológico. A IA é instruída a começar a
+# resposta com este marcador quando for este o caso (ver PROMPT_SISTEMA);
+# `_perguntar_claude`/`_perguntar_chatgpt`/`_perguntar_gemini` detectam o
+# marcador, removem ele do texto antes de guardar/mostrar a resposta, e
+# sinalizam isso pra `responder_com_ia` (que devolve em "exige_revisao_
+# medicamento") - de lá, app.routes_paciente.chat() e app.whatsapp_
+# conversa._responder_pergunta usam esse sinal pra forçar
+# status="aguardando_aprovacao" independente do valor de
+# `exige_aprovacao_pergunta()`.
+MARCADOR_MEDICAMENTO_NAO_CADASTRADO = "MEDICAMENTO_NAO_CADASTRADO_REVISAR"
+
 # Ver docstring do módulo ("Rede de segurança contra recusa disfarçada").
 # Primeiro grupo: a IA declarando que não tem a informação. Segundo grupo:
 # a IA recomendando falar com alguém da clínica. Só conta como recusa
@@ -195,7 +215,7 @@ Regras importantes:
 - Responda em português do Brasil, de forma direta, curta (no máximo 3-4 frases) e acolhedora.
 - Você pode (e deve) fazer um pequeno raciocínio sobre IDENTIDADE do que foi cadastrado — por exemplo, reconhecer que "gatorade" citado na pergunta é o mesmo item cadastrado como "Gatorade de cor clara", ou que uma fruta específica (ex.: laranja) está coberta por uma categoria genérica cadastrada (ex.: "Frutas"), ou que um medicamento citado pela marca corresponde a um item cadastrado por outro nome.
 - Preste atenção especial a essa identidade quando a pergunta for sobre um MEDICAMENTO citado por nome comercial/marca (ex.: "Ecasil", "Somalgin", "AAS", "Aspirina" são todos nomes comerciais de ácido acetilsalicílico no Brasil) — use seu conhecimento geral de farmácia para identificar o princípio ativo ou a classe do medicamento perguntado, e então verifique se esse princípio ativo/classe corresponde a algum item já cadastrado no preparo (pelo nome ou pela categoria informada), mesmo que o nome comercial citado pelo paciente seja diferente do nome cadastrado.
-- Quando a pergunta for sobre um MEDICAMENTO que você consegue identificar (nome, princípio ativo ou classe), mas que não corresponde a NENHUM item cadastrado neste preparo (nem pelo nome, nem pela categoria) — por exemplo, um anticoagulante que não está na lista —, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, escreva uma resposta curta que: (1) diga claramente que esse medicamento específico não está cadastrado no preparo deste exame; e (2) compartilhe, de forma genérica, o que normalmente se sabe sobre esse tipo de medicamento em relação a exames como este (ex.: "anticoagulantes geralmente precisam ser suspensos antes de exames com risco de sangramento, como colonoscopia"). NUNCA afirme um prazo de suspensão específico (em dias/horas) para um medicamento que não está cadastrado — isso continua proibido mesmo nesse tipo de resposta. Não é preciso terminar orientando o paciente a confirmar com a secretaria/médico — essa resposta já vai passar pela revisão e aprovação do médico antes de chegar ao paciente (ver o restante do fluxo), então essa recomendação final é redundante; o médico que revisa decide se quer complementar a resposta.
+- Quando a pergunta for sobre um MEDICAMENTO que você consegue identificar (nome, princípio ativo ou classe), mas que não corresponde a NENHUM item cadastrado neste preparo (nem pelo nome, nem pela categoria) — por exemplo, um anticoagulante que não está na lista —, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto MEDICAMENTO_NAO_CADASTRADO_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta que: (1) diga claramente que esse medicamento específico não está cadastrado no preparo deste exame; e (2) compartilhe, de forma genérica, o que normalmente se sabe sobre esse tipo de medicamento em relação a exames como este (ex.: "anticoagulantes geralmente precisam ser suspensos antes de exames com risco de sangramento, como colonoscopia"). NUNCA afirme um prazo de suspensão específico (em dias/horas) para um medicamento que não está cadastrado — isso continua proibido mesmo nesse tipo de resposta. Não é preciso terminar orientando o paciente a confirmar com a secretaria/médico — essa resposta sempre passa pela revisão e aprovação do médico antes de chegar ao paciente (o marcador MEDICAMENTO_NAO_CADASTRADO_REVISAR garante isso, mesmo quando a aprovação geral está desativada), então essa recomendação final é redundante; o médico que revisa decide se quer complementar a resposta. O marcador é removido automaticamente antes de qualquer exibição — nunca omita-o quando esta regra se aplicar, mesmo que pareça repetitivo.
 - NUNCA faça o raciocínio de identidade acima sobre uma CARACTERÍSTICA do produto que os dados não informam (ex.: qual é a cor de um sabor específico de bebida, se um alimento tem ou não determinado ingrediente). Isso é inventar informação, mesmo que pareça um "senso comum" — cores de sabores variam por marca/país e você pode errar. Nesses casos, explique a regra cadastrada (ex.: "só é permitido líquido de cor clara") e oriente o paciente a verificar essa característica específica por conta própria (observando a embalagem) ou perguntar à secretaria — nunca afirme se aquele sabor/produto específico atende ou não à regra quando isso não estiver explícito nos dados.
 - Quando o item tiver um prazo/data calculado nos dados fornecidos, cite esse prazo/data na resposta.
 - Reserve o texto NAO_SEI_ENCAMINHAR só para perguntas que genuinamente não têm nenhuma informação útil a dar (ex.: assunto totalmente fora do preparo, ou um item que você não consegue identificar de jeito nenhum) — nesse caso, responda EXATAMENTE com esse texto, nada mais, nenhuma outra palavra, nenhuma pontuação extra.
@@ -391,15 +411,37 @@ def _formatar_historico_conversa(historico):
     return "\n".join(linhas) + "\n\n"
 
 
+def _extrair_marcador_medicamento_nao_cadastrado(texto):
+    """Detecta o marcador MARCADOR_MEDICAMENTO_NAO_CADASTRADO no início do
+    texto (ver docstring dele e a regra correspondente em PROMPT_SISTEMA),
+    remove ele (e a quebra de linha/espaço que vier logo depois) e devolve
+    `(texto_sem_marcador, exige_revisao_bool)`. Usado pelas 3 funções
+    `_perguntar_*` abaixo - sempre o mesmo tratamento, então fica num só
+    lugar. Aceita o marcador em qualquer posição do começo do texto (a IA
+    às vezes deixa um espaço/quebra de linha antes por conta própria), por
+    isso usa `lstrip()` antes de checar."""
+    texto_lstrip = texto.lstrip()
+    if texto_lstrip.startswith(MARCADOR_MEDICAMENTO_NAO_CADASTRADO):
+        resto = texto_lstrip[len(MARCADOR_MEDICAMENTO_NAO_CADASTRADO):].lstrip("\n ")
+        return resto, True
+    return texto, False
+
+
 def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
-    """Devolve uma tupla `(texto_ou_None, chamada_ou_None, sem_sentido_bool)`
-    - `chamada` é o `ChamadaIA` já registrado (ver
-    app.custo_ia.registrar_chamada_ia), para quem chamou poder marcar
-    depois `.resposta_final_usada` assim que souber se esta resposta
-    específica "venceu" (só é sabido depois que a(s) outra(s) IA(s)
-    também já responderam - ver responder_com_ia). `sem_sentido_bool` é
-    True quando esta IA respondeu com o marcador MARCADOR_SEM_SENTIDO -
-    ver docstring do módulo ("Julgamento de 'isso faz sentido?'")."""
+    """Devolve uma tupla `(texto_ou_None, chamada_ou_None, sem_sentido_bool,
+    exige_revisao_medicamento_bool)` - `chamada` é o `ChamadaIA` já
+    registrado (ver app.custo_ia.registrar_chamada_ia), para quem chamou
+    poder marcar depois `.resposta_final_usada` assim que souber se esta
+    resposta específica "venceu" (só é sabido depois que a(s) outra(s)
+    IA(s) também já responderam - ver responder_com_ia). `sem_sentido_bool`
+    é True quando esta IA respondeu com o marcador MARCADOR_SEM_SENTIDO -
+    ver docstring do módulo ("Julgamento de 'isso faz sentido?'").
+    `exige_revisao_medicamento_bool` (pedido do Silvan, 2026-09-28) é True
+    quando esta IA usou o marcador MARCADOR_MEDICAMENTO_NAO_CADASTRADO
+    (já removido de `texto` neste ponto, ver
+    _extrair_marcador_medicamento_nao_cadastrado) - sinaliza pra
+    responder_com_ia que esta resposta específica precisa SEMPRE passar
+    pelo médico, mesmo com a aprovação geral desativada."""
     try:
         mensagem = cliente.messages.create(
             model=MODELO_PADRAO,
@@ -433,10 +475,11 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
     )
     texto = "".join(getattr(bloco, "text", "") for bloco in mensagem.content).strip()
     if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
-        return None, chamada, False
+        return None, chamada, False, False
     if MARCADOR_SEM_SENTIDO in texto:
-        return None, chamada, True
-    return texto, chamada, False
+        return None, chamada, True, False
+    texto, exige_revisao = _extrair_marcador_medicamento_nao_cadastrado(texto)
+    return texto, chamada, False, exige_revisao
 
 
 def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
@@ -469,10 +512,11 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
     )
     texto = (resposta.choices[0].message.content or "").strip()
     if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
-        return None, chamada, False
+        return None, chamada, False, False
     if MARCADOR_SEM_SENTIDO in texto:
-        return None, chamada, True
-    return texto, chamada, False
+        return None, chamada, True, False
+    texto, exige_revisao = _extrair_marcador_medicamento_nao_cadastrado(texto)
+    return texto, chamada, False, exige_revisao
 
 
 def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
@@ -508,10 +552,11 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
     )
     texto = (getattr(resposta, "text", None) or "").strip()
     if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
-        return None, chamada, False
+        return None, chamada, False, False
     if MARCADOR_SEM_SENTIDO in texto:
-        return None, chamada, True
-    return texto, chamada, False
+        return None, chamada, True, False
+    texto, exige_revisao = _extrair_marcador_medicamento_nao_cadastrado(texto)
+    return texto, chamada, False, exige_revisao
 
 
 def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=None):
@@ -632,19 +677,21 @@ CAMPO_RESPOSTA_BRUTA = {"Claude": "claude", "ChatGPT": "chatgpt", "Gemini": "gem
 def _tentar_provedor(nome_provedor, pergunta_usuario, contexto, paciente_id=None, historico=None):
     """Cria o cliente do provedor indicado (se a API key dele estiver
     configurada) e tenta obter uma resposta. Retorna
-    `(texto_ou_None, chamada_ou_None, tentou_bool, sem_sentido_bool)` -
-    `tentou_bool` distingue "provedor sem API key configurada" (False -
-    nem tentou) de "tinha API key e a chamada foi feita" (True, mesmo que
-    tenha falhado) - usado por responder_com_ia para decidir quando vale a
-    pena acionar a reserva (ver logo abaixo). `sem_sentido_bool` (ver
-    docstring do módulo, "Julgamento de 'isso faz sentido?'") só pode ser
-    True quando `tentou_bool` também é True."""
+    `(texto_ou_None, chamada_ou_None, tentou_bool, sem_sentido_bool,
+    exige_revisao_medicamento_bool)` - `tentou_bool` distingue "provedor
+    sem API key configurada" (False - nem tentou) de "tinha API key e a
+    chamada foi feita" (True, mesmo que tenha falhado) - usado por
+    responder_com_ia para decidir quando vale a pena acionar a reserva
+    (ver logo abaixo). `sem_sentido_bool` (ver docstring do módulo,
+    "Julgamento de 'isso faz sentido?'") e `exige_revisao_medicamento_bool`
+    (pedido do Silvan, 2026-09-28, ver MARCADOR_MEDICAMENTO_NAO_CADASTRADO)
+    só podem ser True quando `tentou_bool` também é True."""
     cliente_factory, perguntar = _PROVEDORES_CHAT[nome_provedor]
     cliente = cliente_factory()
     if not cliente:
-        return None, None, False, False
-    texto, chamada, sem_sentido = perguntar(cliente, pergunta_usuario, contexto, paciente_id, historico)
-    return texto, chamada, True, sem_sentido
+        return None, None, False, False, False
+    texto, chamada, sem_sentido, exige_revisao = perguntar(cliente, pergunta_usuario, contexto, paciente_id, historico)
+    return texto, chamada, True, sem_sentido, exige_revisao
 
 
 def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
@@ -689,7 +736,8 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     idêntico a antes desta funcionalidade existir.
 
     Retorna um dicionário {"final": ..., "por_provedor": {"Claude": ...,
-    "ChatGPT": ..., "Gemini": ...}, "falhas": [...], "sem_sentido": ...} —
+    "ChatGPT": ..., "Gemini": ...}, "falhas": [...], "sem_sentido": ...,
+    "exige_revisao_medicamento": ...} —
     "por_provedor" tem a resposta crua
     de cada IA consultada (None para a que não foi escolhida, ou não
     respondeu a esta pergunta), usado por app.routes_paciente e
@@ -750,7 +798,25 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     "não consegui entender essa mensagem" de sempre, SEM criar
     PerguntaPendente nem ChatMensagem - mesmo comportamento da checagem
     por regras fixas, só que pega casos mais sutis (palavras reais em
-    ordem sem sentido) que a checagem fixa não pega."""
+    ordem sem sentido) que a checagem fixa não pega.
+
+    "exige_revisao_medicamento" (pedido do Silvan, 2026-09-28 - bug real:
+    pergunta sobre nimesulida foi respondida direto ao paciente porque a
+    aprovação geral estava desativada para aquele médico/Grupo) é True
+    quando o rascunho final ("final") inclui uma resposta do tipo
+    "medicamento identificado mas não cadastrado neste preparo" (ver
+    MARCADOR_MEDICAMENTO_NAO_CADASTRADO e a regra correspondente em
+    PROMPT_SISTEMA) - nesse caso, quem chamou (app.routes_paciente.chat()
+    e app.whatsapp_conversa._responder_pergunta) DEVE tratar a pergunta
+    como "aguardando_aprovacao" e NUNCA chamar
+    aprovar_pergunta_automaticamente, mesmo quando
+    exige_aprovacao_pergunta() diz que a aprovação geral está desativada -
+    a lógica é: aprovação automática só vale para respostas tiradas com
+    confiança do preparo cadastrado; uma resposta que é, em parte,
+    conhecimento farmacológico genérico da IA (não o preparo em si)
+    sempre precisa do olhar do médico antes de chegar ao paciente. Falso
+    em todos os outros casos, incluindo quando "final" é None (não há
+    rascunho nenhum pra revisar)."""
     from app.models import PlataformaConfig
 
     config = PlataformaConfig.obter()
@@ -761,13 +827,13 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     respostas_por_provedor = {"Claude": None, "ChatGPT": None, "Gemini": None}
     contexto = _formatar_contexto_preparo(exame)
 
-    resposta_a, chamada_a, tentou_a, sem_sentido_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id, historico)
-    resposta_b, chamada_b, tentou_b, sem_sentido_b = _tentar_provedor(provedor_b, pergunta_usuario, contexto, paciente_id, historico)
+    resposta_a, chamada_a, tentou_a, sem_sentido_a, exige_revisao_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id, historico)
+    resposta_b, chamada_b, tentou_b, sem_sentido_b, exige_revisao_b = _tentar_provedor(provedor_b, pergunta_usuario, contexto, paciente_id, historico)
 
     if not tentou_a and not tentou_b:
         # Nenhuma das duas escolhidas tem API key configurada - não é
         # "falha", é "não configurada", não faz sentido acionar reserva.
-        return {"final": None, "por_provedor": respostas_por_provedor, "falhas": [], "sem_sentido": False}
+        return {"final": None, "por_provedor": respostas_por_provedor, "falhas": [], "sem_sentido": False, "exige_revisao_medicamento": False}
 
     nome_efetivo_a, nome_efetivo_b = provedor_a, provedor_b
 
@@ -797,16 +863,16 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
             "IA configurada (%s) falhou ao responder pergunta do paciente - tentando %s (não escolhida) como reserva",
             provedor_a if falhou_a else provedor_b, provedor_c,
         )
-        resposta_c, chamada_c, tentou_c, sem_sentido_c = _tentar_provedor(provedor_c, pergunta_usuario, contexto, paciente_id, historico)
+        resposta_c, chamada_c, tentou_c, sem_sentido_c, exige_revisao_c = _tentar_provedor(provedor_c, pergunta_usuario, contexto, paciente_id, historico)
         reserva_respondeu = tentou_c and (resposta_c is not None or chamada_c is not None)
         if tentou_c and not reserva_respondeu:
             # A reserva também falhou de verdade - registra pra aparecer
             # na tela do médico igual às outras.
             falhas.append(provedor_c)
         if reserva_respondeu and falhou_a:
-            resposta_a, chamada_a, nome_efetivo_a, sem_sentido_a = resposta_c, chamada_c, provedor_c, sem_sentido_c
+            resposta_a, chamada_a, nome_efetivo_a, sem_sentido_a, exige_revisao_a = resposta_c, chamada_c, provedor_c, sem_sentido_c, exige_revisao_c
         elif reserva_respondeu and falhou_b:
-            resposta_b, chamada_b, nome_efetivo_b, sem_sentido_b = resposta_c, chamada_c, provedor_c, sem_sentido_c
+            resposta_b, chamada_b, nome_efetivo_b, sem_sentido_b, exige_revisao_b = resposta_c, chamada_c, provedor_c, sem_sentido_c, exige_revisao_c
 
     respostas_por_provedor[nome_efetivo_a] = resposta_a
     respostas_por_provedor[nome_efetivo_b] = resposta_b
@@ -884,7 +950,30 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
             respondentes_sem_sentido.append(sem_sentido_b)
         sem_sentido = bool(respondentes_sem_sentido) and all(respondentes_sem_sentido)
 
-    return {"final": final, "por_provedor": respostas_por_provedor, "falhas": falhas, "sem_sentido": sem_sentido}
+    # Pedido do Silvan (2026-09-28, ver MARCADOR_MEDICAMENTO_NAO_CADASTRADO
+    # acima): True quando o rascunho final incorpora, no todo ou em parte,
+    # uma resposta que sinalizou "medicamento identificado mas não
+    # cadastrado neste preparo" - conservador na direção contrária ao
+    # "sem_sentido" acima (aqui, OU em vez de E): tanto quando só uma IA
+    # respondeu (final = resposta_a ou resposta_b) quanto quando as duas
+    # concordam (final = resposta_a) quanto quando divergem (final é a
+    # síntese ou as duas respostas lado a lado, ver acima) - em qualquer
+    # um desses casos, se uma das respostas que efetivamente compõe o
+    # rascunho final usou o marcador, o rascunho todo precisa de revisão
+    # do médico. Só considera a IA cuja resposta realmente contribuiu para
+    # `final` (resposta_a/resposta_b truthy) - uma IA que falhou ou não
+    # teve certeza (resposta None) não teve chance de usar o marcador.
+    exige_revisao_medicamento = bool(
+        (exige_revisao_a and resposta_a) or (exige_revisao_b and resposta_b)
+    )
+
+    return {
+        "final": final,
+        "por_provedor": respostas_por_provedor,
+        "falhas": falhas,
+        "sem_sentido": sem_sentido,
+        "exige_revisao_medicamento": exige_revisao_medicamento,
+    }
 
 
 # Ver docstring do módulo ("Validador de pergunta dedicado", 2026-09-24).

@@ -474,7 +474,15 @@ def chat():
                         ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
                     )
                     db.session.add(pendente)
-                    if exige_aprovacao:
+                    # Pedido do Silvan (2026-09-28 - ver docstring de
+                    # app.ia_preparo.responder_com_ia, "exige_revisao_
+                    # medicamento"): mesmo com a aprovação geral
+                    # desativada (exige_aprovacao=False), uma resposta que
+                    # sinalizou "medicamento não cadastrado neste preparo"
+                    # SEMPRE vai pra fila do médico - é conhecimento
+                    # farmacológico genérico da IA, não uma informação
+                    # certa tirada do preparo cadastrado.
+                    if exige_aprovacao or resultado_ia.get("exige_revisao_medicamento"):
                         db.session.commit()
                         notificar_equipe_nova_pergunta(pendente)
                         # Mesma mensagem de "aguarde" usada quando ninguém sabe

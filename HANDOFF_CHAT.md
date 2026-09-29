@@ -1525,6 +1525,170 @@ Pedido do Silvan, depois de ver a tela "Meu painel" (o toggle "Exigir minha apro
 
 Nos dias 25 e 28/09, esta seção (e um aviso anterior, já removido, achando que 4 seções tinham desaparecido) foi escrita e reescrita várias vezes por uma falha de sincronização entre a cópia usada para editar e o arquivo de verdade no computador do Silvan (confirmado via `git log`/`git show` direto no repositório - nunca foi um revert de verdade, as 4 seções sempre estiveram no commit `f4bf172`). A partir de agora, qualquer escrita neste arquivo é seguida de uma leitura de confirmação direto do disco (`device_bash` + `git log`/`cat`), não só da resposta de sucesso da ferramenta de commit.
 
+## Criação do ambiente de produção (media-prod) (2026-09-28)
+
+Pedido do Silvan: criar o ambiente de produção. Antes de tocar em infraestrutura, resolvemos as pendências que estavam em aberto (ver seções anteriores) e decidimos dois pontos-chave por pergunta direta ao Silvan: (1) o Render continua sendo a opção escolhida (pesquisa de preço já feita, ver seção "Custo do ambiente de produção" acima); (2) **produção passa a observar um branch separado, `main`, nunca o `dev` direto** - hoje tudo cai em `dev` o tempo todo (inclusive pelo auto-commit da máquina do Silvan), e deixar produção auto-deployando a partir dali levaria qualquer mudança incompleta direto pros clientes reais.
+
+### Branch `main` promovido para o estado atual do `dev`
+
+`main` existia no repositório mas estava parado desde 2026-08-17 (bem atrás do `dev`, 170+ arquivos de diferença). Criei um commit de merge (`git commit-tree`, duas branches-pai: `origin/main` e `origin/dev`) trazendo `main` para o mesmo conteúdo do `dev` de hoje - **sem apagar histórico nenhum** (é um merge de verdade, não um reset/force-push). Esse commit foi criado localmente no repositório do computador do Silvan, mas **não pôde ser enviado ao GitHub por mim** - o ambiente de nuvem onde eu trabalho não tem acesso de rede a `github.com` (mesma restrição de proxy já vista antes ao tentar instalar pacotes Python). **Pendência do Silvan**: rodar, uma única vez, num terminal comum (PowerShell/cmd, fora deste ambiente de sincronização) dentro de `C:\app\media\src`:
+```
+git push origin main
+```
+A partir daí, `main` = ponto de partida da produção, e toda promoção futura é: `git checkout main` → `git merge dev` → `git push origin main` (documentado como comentário no próprio `render.yaml`).
+
+### `render.yaml` atualizado com os recursos de produção
+
+O arquivo (que já descrevia `media-dev`/`media-dev-db`) ganhou dois recursos novos, para serem criados de uma vez via "Blueprint" no painel do Render (mesmo fluxo já usado para criar o `media-dev`):
+- **`media-prod`** (web service) - branch `main`, plano **Starter** (pago, ~US$7/mês), `autoDeploy: true` (mas só dispara com push em `main`, que só acontece quando o Silvan promove de propósito). Mesmo `buildCommand`/`startCommand` do `media-dev`.
+- **`media-prod-db`** (Postgres) - plano **Starter** (pago, ~US$19/mês, com backup automático - diferente do plano free do `media-dev-db`, que não tem backup e apaga sozinho em 30 dias).
+
+Comentários extensos foram deixados no próprio `render.yaml` (não repetidos aqui) cobrindo: (a) o aviso sobre a conta padrão do dono (`dono@plataforma.com`/`123456`) nascer automaticamente no primeiro deploy de um banco vazio (`app.models`/`migrar_banco.py`) - **trocar a senha imediatamente** depois do primeiro login em produção; (b) quais variáveis de ambiente podem ser reaproveitadas do `media-dev` (chaves de IA) e quais devem ser **próprias de produção**, nunca copiadas (WhatsApp Meta - número de telefone separado do número de teste; Mercado Pago - token de produção de verdade, não o sandbox bloqueado; VAPID - par de chaves novo, gerado com `gerar_chaves_vapid.py`); (c) o que falta configurar fora deste arquivo (domínio customizado `media.med.br` + registro DNS, no painel do Render).
+
+### Pendências para o Silvan (nesta ordem)
+
+1. `git push origin main` (ver acima - obrigatório antes de qualquer coisa no Render, senão o Blueprint não encontra o branch).
+2. No painel do Render: "New" → "Blueprint", apontar pro repositório - o Render deve propor os 4 recursos (2 já existentes, 2 novos: `media-prod`/`media-prod-db`). Confirmar os planos propostos batem com Starter (~US$26/mês somando os dois) antes de criar.
+3. Preencher as variáveis `sync: false` de `media-prod` no painel (ver lista detalhada no fim do `render.yaml`) - decidir antes se o WhatsApp de produção usa um número de telefone Meta separado do `media-dev` (recomendado) ou o mesmo (não recomendado, mistura teste com paciente real).
+4. Depois do primeiro deploy: trocar a senha da conta padrão do dono; configurar o domínio `media.med.br` (Settings → Custom Domains no `media-prod`) e o registro DNS correspondente.
+5. Mercado Pago (Checkout Pro/Pix) em produção depende de resolver o bloqueio de CSP já registrado (ou usar direto um token de produção real, sem sandbox) - combinado que isso fica pra depois (ver seção "Setup do Mercado Pago").
+
+## Bug real: resposta sobre medicamento não cadastrado foi direto ao paciente sem revisão do médico (2026-09-28)
+
+O Silvan mandou um print do WhatsApp: um paciente perguntou "Posso tomar nimesulida?" e recebeu a resposta da IA (nimesulida não está cadastrada neste preparo + uma orientação genérica sobre anti-inflamatórios) **direto**, sem passar pelo médico. Causa: a aprovação geral (`Grupo.aprovacao_perguntas_paciente`/`Usuario.aprovacao_perguntas_paciente`, ver seção "Parâmetro de aprovação configurável" acima) estava desativada para aquele médico/Grupo - e o código tratava TODA resposta da IA da mesma forma, sem distinguir uma resposta tirada com confiança do preparo cadastrado de uma que é, em parte, conhecimento farmacológico genérico complementar (o próprio `PROMPT_SISTEMA` em `app/ia_preparo.py` já dizia, desde antes, que esse tipo de resposta "já vai passar pela revisão e aprovação do médico" - mas isso nunca foi garantido em código, só presumido).
+
+Perguntei ao Silvan se a correção era simplesmente reativar aquele parâmetro geral. Resposta dele, que define a regra de verdade: **"O que combinamos é que se não achar uma resposta correta, deve ir ao médico para revisar a resposta"** - ou seja, não é sobre o parâmetro geral (que continua servindo pra tudo que É uma resposta confiável do preparo), é sobre esse tipo específico de resposta sempre precisar de revisão, **mesmo com o parâmetro geral desativado**.
+
+### Mecanismo implementado
+
+- Novo marcador em `app/ia_preparo.py`: `MARCADOR_MEDICAMENTO_NAO_CADASTRADO = "MEDICAMENTO_NAO_CADASTRADO_REVISAR"`. O `PROMPT_SISTEMA` foi ajustado para instruir a IA a começar a resposta com esse marcador (numa linha própria) sempre que a regra de "medicamento identificado mas não cadastrado neste preparo" se aplicar (regra que já existia, só ganhou o marcador).
+- Nova função `_extrair_marcador_medicamento_nao_cadastrado(texto)` detecta e remove o marcador do começo do texto, devolvendo `(texto_sem_marcador, exige_revisao_bool)`.
+- `_perguntar_claude`/`_perguntar_chatgpt`/`_perguntar_gemini` agora devolvem uma tupla de **4** elementos (antes eram 3) - o novo `exige_revisao_medicamento_bool` no final. `_tentar_provedor` repassa isso, agora com **5** elementos (antes 4).
+- `responder_com_ia` agrega o sinal: `resultado["exige_revisao_medicamento"]` é `True` quando a resposta que efetivamente compõe o rascunho final (`resultado["final"]`) veio de uma IA que usou o marcador - cobre o caso de uma só IA responder, as duas concordarem, ou divergirem (síntese ou lado a lado).
+- `app/routes_paciente.py` (`chat()`) e `app/whatsapp_conversa.py` (`_responder_pergunta`) foram alterados: onde antes só existia `if exige_aprovacao: ... else: aprovar_pergunta_automaticamente(...)`, agora é `if exige_aprovacao or resultado_ia.get("exige_revisao_medicamento"): ...` (chat web) / `if not exige_aprovacao and not resultado_ia.get("exige_revisao_medicamento"): ...` (WhatsApp, mesma lógica invertida) - uma resposta com o marcador NUNCA é aprovada automaticamente, independente do parâmetro geral do médico/Grupo.
+- Teste novo: `test_medicamento_nao_cadastrado_revisao.py` - cobre a função pura de extração do marcador, a detecção em `_perguntar_claude` (cliente fake, sem API de verdade), a agregação em `responder_com_ia` (mockando `_tentar_provedor`) e dois testes de ponta a ponta (chat web e WhatsApp) com a aprovação geral desativada, confirmando que a resposta com o marcador fica `aguardando_aprovacao` e uma resposta normal (sem marcador) continua indo direto, como sempre (regressão). `test_ia_sem_sentido.py` também foi ajustado (os mocks de `_tentar_provedor` e as chamadas a `_perguntar_claude`/`_perguntar_chatgpt` precisavam do novo elemento na tupla).
+
+Pendente (pedido do Silvan, "Sim, investigar"): a resposta real do print não trouxe a parte 2 da regra (orientação genérica sobre o medicamento) tão claramente quanto o `PROMPT_SISTEMA` pede - isso é uma questão de qualidade/aderência ao prompt da IA em si (não do mecanismo de aprovação, que já está corrigido), ainda não investigada nesta sessão.
+
+## Ambiente de produção (media-prod) - Blueprint criado no Render (2026-09-28, mais tarde)
+
+Silvan enviou prints confirmando que os passos que dependiam dele (ver seção "Criação do ambiente de produção" acima) avançaram: `git push origin main` foi feito (o commit `0bc4f6d` que criei via `git commit-tree` chegou ao GitHub - `main` agora aparece como `[origin/main]` no repositório), e o Blueprint `media-prod` foi criado no Render a partir do branch `main`, com sync `0bc4f6d` concluído com sucesso.
+
+**Ponto de atenção levantado nos prints, ainda não confirmado**: a tela de criação do Blueprint mostrou "Associate existing services" (pré-selecionado) e uma linha "Associate database media-dev-db with this Blueprint" - isso é esperado, porque o `render.yaml` no branch `main` (promovido do `dev` por completo, ver acima) contém **os 4 recursos** (`media-dev`, `media-dev-db`, `media-prod`, `media-prod-db`), não só os 2 de produção - então o Render, ao ler esse arquivo pelo branch `main`, viu que `media-dev`/`media-dev-db` já existem (donos do Blueprint `media`, no branch `dev`) e ofereceu associá-los também ao Blueprint novo. Pedi ao Silvan para confirmar, na aba "Resources" do Blueprint `media-prod`, se: (a) foi criado um `media-prod-db` de verdade, separado, e (b) o `media-dev`/`media-dev-db` não ficaram "compartilhados" entre os dois Blueprints de um jeito que possa causar conflito de sincronização mais adiante. Ainda sem resposta dele sobre isso - **não considerar o ambiente de produção 100% validado até essa confirmação**.
+
+## Correção do render.yaml do branch main (2026-09-28, mesma sessão) - evitado duplicar o media-dev
+
+Ver seção anterior ("Ambiente de produção (media-prod) - Blueprint criado no Render") - o ponto de atenção levantado se confirmou: o Silvan tentou "Create all as new services" no Blueprint `media-prod` (branch `main`) e o Render mostrou "Create web service **media-dev-s2kt**" - ou seja, `render.yaml` no branch `main` ainda só descrevia o `media-dev`/`media-dev-db` antigos (a adição do `media-prod`/`media-prod-db` só tinha sido feita no `render.yaml` do `dev`, DEPOIS que o `main` já tinha sido promovido via `git commit-tree` - nunca chegou no `main`). O deploy falhou por sorte (limite de "1 banco free por conta"), sem criar nada duplicado - confirmado depois olhando a aba Resources do Blueprint ("No resources managed by this Blueprint").
+
+Correção aplicada:
+- `render.yaml` no branch `dev` voltou a descrever SÓ `media-dev`/`media-dev-db` (removido o bloco de `media-prod`/`media-prod-db` que tinha sido adicionado ali por engano nesta mesma sessão, antes de eu perceber que deveria ir só no `main`).
+- Um NOVO `render.yaml`, exclusivo do branch `main`, foi criado descrevendo SÓ `media-prod`/`media-prod-db` - com um aviso extenso no topo do arquivo contando essa história, pra nunca mais misturar os dois blocos no mesmo arquivo (nem por engano numa promoção futura via merge).
+- Aplicado via `git commit-tree` direto no branch `main` (commit `1da138d`, pai `0bc4f6d`) - sem tocar no branch `dev` (que ficou só com a edição do `render.yaml` local, ainda não comitada nesta hora, esperando o auto-commit da máquina do Silvan).
+- **Pendência do Silvan**: rodar `git push origin main` de novo (mesma limitação de rede de sempre - este ambiente não alcança o GitHub) para essa correção chegar ao repositório remoto.
+- Depois do push: Silvan já tinha desconectado (Disconnect Blueprint) o `media-prod` que só apontava pro `media-dev`/`media-dev-db` antigos, então o próximo passo é recriar o Blueprint de novo (New → Blueprint → branch `main`) - com o `render.yaml` corrigido, a tela NÃO deve mais perguntar "associate/create" (nenhum recurso chamado `media-prod`/`media-prod-db` existe ainda), deve criar os dois direto.
+
+## Plano "starter" do Postgres não é mais aceito para banco novo (2026-09-28, mesma sessão) - corrigido para "basic-1gb"
+
+Depois da correção acima (`render.yaml` separado por branch, commit `1da138d`), o Silvan confirmou por print que `git push origin main` funcionou (`0bc4f6d..1da138d main -> main`, chegou no GitHub). Mas ao tentar criar o Blueprint de novo no Render, apareceu um erro NOVO e diferente, antes de qualquer recurso ser criado:
+
+> A Blueprint file was found, but there was an issue. databases[0].plan Legacy Postgres plans, including 'starter', are no longer supported for new databases. Update your database instance is a new plan in your render.yaml
+
+Ou seja: o valor `plan: starter` que usei em `databases[0]` (`media-prod-db`) é um nome de plano LEGADO do Postgres, que o Render não aceita mais para bancos **novos** (só continua valendo para bancos já existentes, como o `media-dev-db`, que foi criado antes dessa mudança - por isso ele nunca deu esse erro). Pesquisei a documentação/pricing atual do Render para confirmar o nome novo antes de aplicar:
+- Planos pagos atuais do Postgres: `basic-256mb` (US\$6/mês), `basic-1gb` (US\$19/mês, 0.5 CPU/1GB RAM), `basic-4gb` (US\$55/mês), `pro-4gb` em diante.
+- `basic-1gb` é o equivalente direto do antigo "starter" (mesmo preço, ~US\$19/mês) - é esse o valor correto para o `media-prod-db`.
+- **Importante**: esse problema é só no plano do BANCO (`databases[].plan`). O plano do web service `media-prod` (`services[].plan: starter`) é outra coisa (planos de web service não mudaram de nome) e continua `starter` sem problema.
+
+Correção aplicada (mesma técnica de sempre - `git commit-tree` direto no branch `main`, sem tocar no `dev`):
+- `databases[0].plan` no `render.yaml` do `main` mudou de `starter` para `basic-1gb`.
+- Commit `4f9cc6f` (pai `1da138d`) aplicado direto no branch `main` via git plumbing (`GIT_INDEX_FILE` + `read-tree`/`hash-object`/`update-index`/`write-tree`/`commit-tree`/`branch -f`). Confirmado com `git show main:render.yaml` que o `main` agora tem `plan: basic-1gb` na linha do banco. Branch `dev` (checked out, com as edições pendentes de sempre) não foi tocado - confirmado com `git branch --show-current` (continua `dev`) e `git status --short`.
+- **Pendência do Silvan**: rodar `git push origin main` de novo (este ambiente não alcança o GitHub) para essa correção chegar ao repositório remoto, e então tentar criar o Blueprint `media-prod` de novo (New → Blueprint → branch `main`). Se aparecer qualquer outro erro de validação do `render.yaml`, mandar o print antes de clicar em qualquer botão de criar/confirmar.
+
+## Primeiro deploy do media-prod falhou: INSERT do dono sem aprovacao_perguntas_paciente/ciclo_licenca (2026-09-28, mesma sessão)
+
+Depois da correção do plano do Postgres (`basic-1gb`, commit `4f9cc6f`), o Blueprint `media-prod` finalmente criou os recursos como novos e separados (confirmado por print da tela "Specified configurations": `Create database media-prod-db (Basic-1gb)` e `Create web service media-prod (Starter)`, sem nenhuma menção a `media-dev`). Mas o deploy do serviço `media-prod` falhou (`Failed`, ver print dos Logs) com:
+
+```
+psycopg.errors.NotNullViolation: null value in column "aprovacao_perguntas_paciente" of relation "usuarios" violates not-null constraint
+```
+
+**Causa**: mesmo bug que já tinha sido corrigido antes para `licenca_status` (ver comentário original em `migrar_banco.py`, 2026-09-04) - o trecho que recria a conta padrão do dono (`dono@plataforma.com` / `123456`, só roda quando a base não tem NENHUM usuário tipo `dono`) faz um INSERT em SQL puro, que não passa pelo SQLAlchemy/ORM. Colunas `NOT NULL` cujo valor padrão só existe do lado do Python (`default=...` no `db.Column`, sem `server_default`) não recebem esse valor automaticamente nesse INSERT. Isso só se manifesta na primeira vez que esse trecho roda contra um banco **novo e vazio** (é exatamente o caso do `media-prod-db`, recém-criado - o `media-dev-db` nunca passou por isso porque a conta do dono já existia lá de antes dessas colunas terem sido adicionadas).
+
+Corrigido em `migrar_banco.py` (INSERT do dono): adicionadas as colunas que faltavam, com o valor equivalente ao default do Python:
+- `aprovacao_perguntas_paciente` → `TRUE` (era a que estava causando a falha).
+- `ciclo_licenca` → `'mensal'` - revisei o modelo `Usuario` inteiro procurando outras colunas no mesmo caso (NOT NULL + default só em Python) e encontrei essa segunda, que ainda não tinha dado erro por sorte (ordem das colunas/momento em que foi adicionada), mas ia quebrar do mesmo jeito na próxima vez que esse INSERT rodasse contra um banco vazio. Corrigida na mesma passada.
+
+Aplicado:
+- No branch `dev`: edição direta no working tree (arquivo `migrar_banco.py`) - vai para o próximo auto-commit da sua máquina, igual às outras edições pendentes.
+- No branch `main`: commit `d9adfd4` (pai `4f9cc6f`) aplicado via git plumbing, sem tocar no `dev`.
+- **Pendência do Silvan**: `git push origin main` de novo, depois no Render: abra o serviço `media-prod` → "Deploys" → "Manual Deploy" (ou "Redeploy" no deploy mais recente) apontando pro commit `d9adfd4` assim que ele chegar no GitHub. Não precisa recriar o Blueprint - os recursos (`media-prod`/`media-prod-db`) já existem, só o deploy do app falhou.
+- Se o deploy passar dessa vez mas falhar em outro ponto (ex.: outra coluna NOT NULL nesse mesmo INSERT, ou variável de ambiente faltando), mandar o print do Log de novo antes de tentar de novo.
+- **Confirmado (2026-09-28, mesma sessão)**: o commit `d9adfd4` chegou no GitHub via Auto-Deploy e o deploy do `media-prod` teve sucesso ("Deploy succeeded", print da tela de Deploys). Ambiente de produção está no ar por baixo (https://media-prod.onrender.com).
+- **Domínio customizado media.med.br configurado (2026-09-28, mesma sessão)**: no Cloudflare (DNS do domínio media.med.br), havia registros CNAME antigos de uma infraestrutura anterior em Elastic Beanstalk (`www.media.med.br` -> `media-prod.eba-d7jsjrna.sa-east-1.elasticbeanstalk.com`) - editados para apontar pro Render (`media-prod.onrender.com`), e criado um novo registro CNAME pra raiz (`media.med.br` -> `media-prod.onrender.com`), ambos com Proxy status "DNS only" (nuvem cinza - proxy do Cloudflare desligado, pra não interferir na emissão do certificado SSL automático do Render). Note: `qa.media.med.br` ainda aponta pro Elastic Beanstalk antigo (`media-qa.eba-...`) - não foi tocado, é outro ambiente, fora do escopo desta sessão. No painel do Render (media-prod > Settings > Custom Domains), os dois domínios (`media.med.br` e `www.media.med.br`, que redireciona pro primeiro) aparecem como "Verified" e "Certificate Issued" - domínio customizado 100% funcional.
+- Gerado também um par de chaves VAPID NOVO e exclusivo de produção (não reaproveitado do media-dev, conforme já estava planejado) - como o pacote `py_vapid` não pôde ser instalado no ambiente usado nesta sessão (sem acesso à internet), gerei o par equivalente diretamente com a biblioteca `cryptography` (mesma curva EC P-256/ES256 e mesma codificação base64url que `gerar_chaves_vapid.py` produziria) - funcionalmente idêntico pro `pywebpush`/navegador.
+- `VAPID_CLAIM_EMAIL` já foi definido pelo Silvan direto no painel do Render (2026-09-28): `mailto:silmaroli@gmail.com`.
+- **WhatsApp de produção ativado, reaproveitando o mesmo App/número do media-dev (2026-09-28, decisão explícita do Silvan)**: Silvan não tem outro número de telefone disponível agora, então decidiu (por ora) usar o MESMO App Meta e MESMO número que o media-dev usa, entendendo o trade-off - o webhook é configurado por App (Meta), não por número, então só uma URL de callback pode estar ativa por vez. Escolhido deixar ativo só em produção. Alterado em developers.facebook.com > App "Media" > Casos de uso > Conectar no WhatsApp > Configuração básica > Ferramentas > Configurar webhooks: URL de callback trocada de `https://media-dev.onrender.com/whatsapp/webhook` para `https://media.med.br/whatsapp/webhook` (mesmo Verify Token de sempre, reutilizado). Verificação passou ("Configurar webhooks" com check verde) e o campo `messages" continua "Assinado" (confirmado por print). **Efeito colateral esperado**: o media-dev PAROU de receber mensagens de WhatsApp a partir de agora (o número físico dele é o mesmo, mas o webhook não aponta mais pra lá) - isso é esperado e aceito pelo Silvan, não é bug. Quando ele comprar/conseguir um número de telefone dedicado pro dev, aí sim vale criar um App Meta separado pro dev (ver seção anterior "Vamos mudar o número do WhatsApp para produção" desta mesma sessão, no chat, pra detalhes do motivo de precisar de App separado) - inclusive a Meta oferece um número de teste GRÁTIS automaticamente dentro de um App novo (limitado a 5 destinatários verificados manualmente), útil pra esse caso futuro.
+- Ainda faltam, antes de considerar 100% pronto para uso real: as demais variáveis `sync: false` que ainda não foram preenchidas (Silvan disse que já fez as chaves de IA; confirmar quais do WHATSAPP_META_*/MERCADOPAGO_*/APP_URL_PUBLICA continuam iguais ao media-dev - decisão consciente por ora, ver riscos discutidos no chat: Mercado Pago compartilhado entre dev/prod tem o mesmo problema de webhook único, e importa saber se o token é de sandbox ou de produção real), e trocar a senha padrão do dono (dono@plataforma.com / 123456) assim que fizer o primeiro login.
+
+## Removida a opção "Usar IA para extrair" do popup de importar PDF (2026-09-29, decisão do Silvan)
+
+Pedido do Silvan: a extração de modelo de preparo a partir de PDF deve **sempre** usar IA, sem a opção de desmarcar e extrair localmente no navegador (via pdfjs, sem custo) que existia no popup "Importar de um PDF" (`app/templates/medico/_importar_preparo_pdf.html`, reaproveitado tanto na tela do médico no computador quanto no menu reduzido do celular).
+
+Removido:
+- O checkbox "Usar IA para extrair (recomendado — entende melhor o texto)" e o texto de ajuda embaixo dele.
+- O campo oculto `texto_extraido_cliente` e toda a lógica JS que dependia dele (carregamento do pdf.js via CDN, extração de texto do PDF no navegador, toggle de visibilidade do checkbox por extensão de arquivo).
+- Simplificado o `submit` do formulário: agora sempre manda o PDF puro pro servidor, sempre com `mostrar_progresso_ia=1` (streaming mostrando qual provedor de IA - Gemini/ChatGPT/Claude - está sendo tentado).
+
+Não removido (server-side, `app/routes_medico.py`, rota `preparo_modelos_importar_xlsx`): o código que lê `request.form.get("texto_extraido_cliente")` e, se vier preenchido, pula a IA e usa extração heurística direto - ficou como código morto inofensivo, porque o formulário nunca mais envia esse campo. Não removi esse trecho do servidor agora (só o caminho que o levava a ser usado, no frontend) - decisão de não tocar em código server-side sem necessidade nesta rodada; pode ser limpo numa próxima passada se quiser.
+
+Também não afetado: o fallback automático e silencioso que já existia no servidor para quando a IA falha ou não está configurada (`extrair_sugestao_de_pdf`, heurística por regex sobre o PDF original) - esse continua ativo como rede de segurança, só não é mais uma opção que a pessoa escolhe manualmente na tela.
+
+Nenhum teste automatizado referenciava o checkbox removido ou o campo `texto_extraido_cliente` (`grep` não achou nada em `test_*.py`), então nenhum teste precisou ser ajustado.
+
+Aplicado no `dev` (working tree, aguardando auto-commit do Silvan) E promovido pro `main` (commit `7429506`, pai `d9adfd4`, aplicado via git plumbing sem tocar no `dev`) a pedido do Silvan, na mesma sessão - já vale pro `media-prod` assim que ele der `git push origin main` de novo.
+
+## Bug do medicamento não cadastrado (Task A) reproduzido em PRODUÇÃO - correção nunca tinha chegado no main (2026-09-29)
+
+Silvan reportou (print do WhatsApp) que o MESMO bug documentado antes ("Bug real: resposta sobre medicamento não cadastrado foi direto ao paciente sem revisão do médico", 2026-09-28) aconteceu de novo, agora no `media-prod`: pergunta sobre anti-inflamatórios (medicamento/classe não cadastrada no preparo) recebeu resposta genérica da IA direto no paciente, sem passar pelo médico.
+
+**Causa raiz**: a correção original (marcador `MEDICAMENTO_NAO_CADASTRADO_REVISAR` + campo `exige_revisao_medicamento`, commit `792b9b6` "Ultimas atualizacoes" no `dev`) nunca tinha sido promovida pro `main` - o `main` foi criado (commit `0bc4f6d`) a partir de uma foto do `dev` de ANTES desse commit, e nenhuma promoção de código de app/ aconteceu depois disso (só correções de infraestrutura - render.yaml, migrar_banco.py, importar PDF). Ou seja, o `media-prod` roda sem essa proteção desde que foi criado.
+
+**Corrigido**: confirmado com `git log main..dev -- app/ia_preparo.py app/routes_paciente.py app/whatsapp_conversa.py` que existe exatamente UM commit de diferença (`792b9b6`) pra esses 3 arquivos, e o diff inteiro é só essa correção (nada mais misturado) - promovido pro `main` via git plumbing (mesmo padrão de sempre: `GIT_INDEX_FILE`, sem tocar no `dev`), commit `d206a66` (pai `7429506`).
+
+**Pendência do Silvan**: `git push origin main` de novo. Depois disso, o `media-prod` vai fazer o deploy automático com a correção - reteste a mesma pergunta (algo sobre um medicamento/classe não cadastrada no preparo específico) pra confirmar que agora vai pra fila de aprovação do médico mesmo com a aprovação geral desativada.
+
+**Alerta pra próximas promoções**: como o `main` foi criado a partir de uma foto antiga do `dev` e desde então só recebeu patches pontuais (não merges completos), é fácil outras correções feitas há mais tempo no `dev` também estarem faltando no `main` sem ninguém notar - **antes de considerar qualquer funcionalidade "certamente funcionando" em produção, vale checar com \`git log main..dev -- <arquivo>\` se o arquivo relevante realmente foi promovido**. Fica como lição desta sessão: talvez valha a pena, numa próxima janela de manutenção, fazer uma promoção completa e deliberada de todo o \`app/\`, \`templates/\` etc. de \`dev\` pra \`main\` (nunca do \`render.yaml\`), pra eliminar esse tipo de gap de uma vez, em vez de ir promovendo arquivo por arquivo conforme os bugs aparecem.
+
+## Edição e exclusão em "Base de conhecimento" e "Últimas respondidas" (2026-09-29, pedido do Silvan)
+
+Pedido do Silvan: "As telas de base de conhecimento e últimas respondidas devem permitir editar e excluir uma resposta." Nenhuma das duas telas tinha esses botões antes (só criação manual, no caso da base de conhecimento).
+
+**Base de conhecimento (`app/routes_medico.py`, `app/templates/medico/faq_lista.html`/`faq_form.html`)**:
+- Novas rotas `medico.faq_editar` (`GET`/`POST /faq/<id>/editar`) e `medico.faq_excluir` (`POST /faq/<id>/excluir`).
+- Nova função auxiliar `_faq_query_do_usuario_atual()` reaproveitando o filtro de escopo (`filtro_escopo_atual`) já usado em outras rotas, e restringindo médico a itens dos seus próprios exames (via join com `Exame`, mesma lógica de `medico_id`/`medicos_extra` usada em outros pontos do arquivo) - secretária/dono continuam vendo tudo do escopo normal.
+- `faq_form.html` agora serve tanto criação quanto edição (variável opcional `item`): ao editar, o campo Exame/filial fica travado (somente leitura) - decisão deliberada pra não reabrir a lógica de re-escopo só pra corrigir texto; quem precisar trocar o exame de um item tem que excluir e recriar.
+- `faq_lista.html`: nova coluna "Ações" com botão Editar e botão Excluir (com `confirm()` de JS antes de excluir).
+
+**Últimas respondidas (`app/routes_medico.py`, `app/templates/medico/perguntas_respondidas.html`, novo `pergunta_respondida_form.html`)**:
+- Novas rotas `medico.pergunta_respondida_editar` (`GET`/`POST /perguntas/respondidas/<id>/editar`) e `medico.pergunta_respondida_excluir` (`POST /perguntas/respondidas/<id>/excluir`), restritas a perguntas com `status == "respondida"`.
+- Nova função auxiliar `_pergunta_respondida_da_permissao(pergunta_id)`: aplica o mesmo filtro de escopo e a mesma checagem de permissão já usada em `perguntas_responder()` (médico só pode agir sobre pergunta do seu próprio exame, ou pergunta geral se tiver `perm_pacientes`).
+- **Decisão de design importante**: como toda resposta manual de pergunta pendente também cria automaticamente um item na base de conhecimento da IA (`FaqItem`, pra reaproveitar a resposta em perguntas idênticas futuras - ver `perguntas_responder()`/`aprovar_pergunta_automaticamente`), editar ou excluir uma "respondida" aqui também sincroniza (atualiza ou remove) o `FaqItem` correspondente (mesma pergunta + exame + grupo + criado_por) via nova função `_sincronizar_faq_da_pergunta_respondida()`. Isso evita que uma correção fique só cosmética no histórico enquanto a IA continua servindo a resposta errada pra próxima pessoa que perguntar a mesma coisa.
+- `perguntas_respondidas.html`: nova coluna "Ações" com Editar/Excluir (mesmo padrão visual da base de conhecimento), `colspan` do "Nenhuma respondida ainda." ajustado de 6/7 pra 7/8.
+- Novo template `pergunta_respondida_form.html`: mostra paciente/exame/data como somente leitura, e pergunta/resposta como editáveis.
+
+Todas as rotas/funções novas verificadas com `python3 -c "import ast; ast.parse(...)"` (sintaxe OK) e todos os 4 arquivos de template/rota relidos do disco pra confirmar que as edições foram aplicadas como esperado.
+
+Aplicado só no `dev` (working tree, aguardando auto-commit do Silvan) - **ainda NÃO promovido pro `main`/`media-prod`**, aguardando confirmação do Silvan (mesmo padrão das últimas mudanças desta sessão: só promover depois de um "pode aplicar" explícito).
+
+## Mudança de processo: promoção pro main agora é via Pull Request (2026-09-29, decisão do Silvan)
+
+A partir de agora, o fluxo de trabalho muda:
+
+- **Eu (assistente) só comito na branch `dev`** - nunca mais direto na `main` via as manobras de git plumbing usadas antes nesta sessão (commits `4f9cc6f`, `d9adfd4`, `7429506`, `d206a66` foram os últimos feitos assim; esse padrão está descontinuado a partir de agora).
+- **A passagem `dev` → `main` passa a ser via pull request no GitHub**, comparando a branch `dev` inteira contra a `main` (não branches de promoção seletiva/cherry-pick) - decisão explícita do Silvan diante das duas opções apresentadas.
+- **Motivo técnico pra eu não poder abrir esse PR nem dar `push` sozinho**: nem o sandbox de nuvem nem a ponte com o computador do Silvan (`device_bash`) têm acesso ao GitHub (`git push`/`git ls-remote` retornam 403 do proxy) - confirmado nesta sessão. Então quem precisa dar `git push` e abrir o PR no GitHub é o próprio Silvan.
+- Isso também esclarece de vez a separação de responsabilidades no `dev`: o `dev` nunca é comitado por mim OU pelo assistente diretamente - só é editado (working tree) e o `auto_commit_push.bat` (rodando periodicamente pelo Agendador de Tarefas do Windows na máquina do Silvan) é quem comita e publica de fato, sempre na branch `dev`, nunca na `main`/`qualidade` (ver comentários do próprio script).
+- **Atenção pra próxima sessão/assistente**: não usar mais o padrão de `GIT_INDEX_FILE`/`commit-tree`/`branch -f main` documentado em sessões anteriores para alterar a `main` diretamente. Qualquer mudança destinada à `main` deve ficar pronta e comitada só no `dev`, e a promoção em si (`git push` + abrir o PR no GitHub) é responsabilidade do Silvan.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

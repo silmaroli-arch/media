@@ -527,7 +527,15 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     direto pro paciente, sem passar pela fila do médico. O padrão (True)
     continua sendo o comportamento histórico, sem mudança nenhuma pra quem
     não tocar nesse parâmetro. A FAQ nunca passa por essa decisão - já é
-    sempre direta, com ou sem esse parâmetro."""
+    sempre direta, com ou sem esse parâmetro.
+
+    Exceção a essa desativação (pedido do Silvan, 2026-09-28 - ver
+    docstring de app.ia_preparo.responder_com_ia, "exige_revisao_
+    medicamento"): quando a resposta da IA sinaliza "medicamento
+    identificado mas não cadastrado neste preparo", ela SEMPRE vai pra
+    fila do médico, mesmo com esse parâmetro desativado - é conhecimento
+    farmacológico genérico complementar, não uma informação certa tirada
+    do preparo cadastrado."""
     exame = agendamento.exame if agendamento else None
     grupo_id_ancora, criado_por_id_ancora = _resolver_ancora(paciente, exame, agendamento)
     exige_aprovacao = exige_aprovacao_pergunta(grupo_id_ancora, criado_por_id_ancora)
@@ -638,7 +646,14 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 telefone_whatsapp=telefone,
             )
             db.session.add(pergunta_pendente_criada)
-            if not exige_aprovacao:
+            # Pedido do Silvan (2026-09-28 - ver docstring de
+            # app.ia_preparo.responder_com_ia, "exige_revisao_
+            # medicamento"): mesmo com a aprovação geral desativada
+            # (exige_aprovacao=False), uma resposta que sinalizou
+            # "medicamento não cadastrado neste preparo" SEMPRE vai pra
+            # fila do médico - é conhecimento farmacológico genérico da
+            # IA, não uma informação certa tirada do preparo cadastrado.
+            if not exige_aprovacao and not resultado_ia.get("exige_revisao_medicamento"):
                 # Pedido do Silvan (2026-09-13): aprovação desativada para
                 # este Grupo/médico.
                 aprovar_pergunta_automaticamente(pergunta_pendente_criada, resultado_ia["final"])

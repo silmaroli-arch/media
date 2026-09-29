@@ -7,7 +7,7 @@
   <a href="{{ url_for('medico.faq_novo') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Adicionar manualmente</a>
 </div>
 <table class="table table-hover">
-  <thead><tr><th>Exame</th>{{ th_filial() }}<th>Pergunta</th><th>Resposta</th><th>Usada</th><th>Origem</th></tr></thead>
+  <thead><tr><th>Exame</th>{{ th_filial() }}<th>Pergunta</th><th>Resposta</th><th>Usada</th><th>Origem</th><th>Ações</th></tr></thead>
   <tbody>
     {% for i in itens %}
     <tr>
@@ -17,9 +17,15 @@
       <td>{{ i.resposta }}</td>
       <td>{{ i.vezes_utilizada }}x</td>
       <td>{{ i.criado_por or '-' }}</td>
+      <td class="text-nowrap">
+        <a href="{{ url_for('medico.faq_editar', item_id=i.id) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
+        <form method="post" action="{{ url_for('medico.faq_excluir', item_id=i.id) }}" class="d-inline" onsubmit="return confirm('Excluir este item da base de conhecimento? A IA deixa de reaproveitar essa resposta.');">
+          <button type="submit" class="btn btn-sm btn-outline-danger">Excluir</button>
+        </form>
+      </td>
     </tr>
     {% else %}
-    <tr><td colspan="{{ 6 if mostrar_filial else 5 }}" class="text-muted text-center">Base vazia.</td></tr>
+    <tr><td colspan="{{ 7 if mostrar_filial else 6 }}" class="text-muted text-center">Base vazia.</td></tr>
     {% endfor %}
   </tbody>
 </table>
