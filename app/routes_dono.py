@@ -1027,6 +1027,7 @@ def base_conhecimento_config():
     config = PlataformaConfig.obter()
     mudou_provedor = config.base_busca_provedor != provedor
     config.base_conhecimento_ativa = request.form.get("base_conhecimento_ativa") == "on"
+    config.base_aprendizado_ativo = request.form.get("base_aprendizado_ativo") == "on"
     config.base_busca_provedor = provedor
     db.session.commit()
     flash(

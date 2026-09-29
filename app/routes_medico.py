@@ -3619,6 +3619,23 @@ def perguntas_responder(pergunta_id):
         flash("Digite uma resposta antes de salvar.", "danger")
         return redirect(url_for(destino))
 
+    # Aprendizado da base de conhecimento compartilhada (fatia 4, ver
+    # app.base_aprendizado): decidido ANTES de sobrescrever o status. Só
+    # respostas de MÉDICO, e só quando há algo a aprender - resposta manual
+    # a uma pergunta que a IA não soube responder ("pendente"), ou rascunho
+    # da IA/base revisado pelo médico. Rascunho AUTOMÁTICO do preparo
+    # cadastrado (sem nenhuma IA) é específico da clínica e não entra.
+    aprender = None
+    if eh_medico():
+        veio_de_ia = bool(
+            pergunta.resposta_bruta_claude or pergunta.resposta_bruta_chatgpt
+            or pergunta.resposta_bruta_gemini or pergunta.resposta_bruta_base
+        )
+        if pergunta.status == "pendente":
+            aprender = {"editou": True}
+        elif pergunta.status == "aguardando_aprovacao" and veio_de_ia:
+            aprender = {"editou": " ".join(resposta.lower().split()) != " ".join((pergunta.resposta_sugerida_ia or "").lower().split())}
+
     pergunta.resposta = resposta
     pergunta.status = "respondida"
     pergunta.respondida_por = current_user.nome
@@ -3660,6 +3677,11 @@ def perguntas_responder(pergunta_id):
             f"Sobre sua pergunta \"{pergunta.pergunta}\":\n\n{resposta}",
             content_variables=[pergunta.pergunta, resposta],
         )
+
+    if aprender is not None:
+        from app.base_aprendizado import agendar_aprendizado
+
+        agendar_aprendizado(pergunta.id, resposta, current_user.id, aprender["editou"])
 
     flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
     return redirect(url_for(destino))

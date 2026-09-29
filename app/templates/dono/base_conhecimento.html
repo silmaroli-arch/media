@@ -21,6 +21,11 @@
           <label class="form-check-label" for="base_ativa">Usar a base de conhecimento como terceira IA</label>
         </div>
         <div class="form-text">Desligada, o chat funciona exatamente como antes.</div>
+        <div class="form-check form-switch mt-2">
+          <input class="form-check-input" type="checkbox" role="switch" id="base_aprendizado" name="base_aprendizado_ativo" {% if config.base_aprendizado_ativo %}checked{% endif %}>
+          <label class="form-check-label" for="base_aprendizado">Aprender com as respostas dos médicos</label>
+        </div>
+        <div class="form-text">Cria itens novos (não revisados) e atualiza os existentes quando o médico edita uma resposta muito diferente. Cada aprendizado usa a IA para tirar dados pessoais do texto.</div>
       </div>
       <div class="col-md-5">
         <label class="form-label mb-1">Como a base acha a pergunta parecida</label>

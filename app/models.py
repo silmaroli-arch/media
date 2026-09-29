@@ -55,6 +55,11 @@ class PlataformaConfig(db.Model):
     # (embeddings - busca por sentido, custo mínimo por chamada).
     base_conhecimento_ativa = db.Column(db.Boolean, nullable=False, default=False)
     base_busca_provedor = db.Column(db.String(20), nullable=False, default="palavra_chave")
+    # Aprendizado (fatia 4): quando ligado, as respostas dos MÉDICOS alimentam
+    # a base (ver app.base_aprendizado). Independente do interruptor acima
+    # (que liga o USO da base nas respostas) - o dono pode deixar a base
+    # aprender sem ainda usá-la, ou o contrário. Padrão: desligado.
+    base_aprendizado_ativo = db.Column(db.Boolean, nullable=False, default=False)
 
     # Limite diário de mensagens que um paciente pode mandar sobre um MESMO
     # exame, por WhatsApp (pedido do Silvan, 2026-09-24) - configurável
