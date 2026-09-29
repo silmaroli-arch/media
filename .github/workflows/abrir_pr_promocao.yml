@@ -1,0 +1,62 @@
+name: Abrir PR de promoção (dev -> main)
+
+# Workflow manual (pedido do Silvan, 2026-09-29): substitui a navegação
+# manual pela tela de "Compare changes" do GitHub (que já causou confusão
+# de base/compare invertidos e dificuldade de achar o botão de criar o
+# PR, numa promoção anterior) por um botão único em Actions.
+#
+# Só ABRE (ou reaproveita, se já existir) o pull request comparando
+# main <- dev - nunca mescla sozinho. A decisão de quando promover, a
+# resolução de conflitos (em especial no render.yaml - cada branch tem o
+# seu próprio, nunca devem se misturar, ver comentário no render.yaml da
+# branch main) e o clique final em "Merge pull request" continuam sendo
+# manuais, do Silvan, no PR que este workflow cria.
+#
+# Como usar: aba "Actions" do repositório > "Abrir PR de promoção (dev ->
+# main)" na lista à esquerda > botão "Run workflow" > (deixar o branch
+# como está, "dev") > "Run workflow" de novo para confirmar.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  abrir-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Garantir que main e dev estão disponíveis localmente
+        run: git fetch origin main dev
+
+      - name: Criar (ou reaproveitar) o PR dev -> main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+
+          if git diff --quiet origin/main origin/dev -- . ':!render.yaml'; then
+            echo "Não há mudanças de dev para promover para main (fora do render.yaml, que nunca é promovido) - nada a fazer."
+            exit 0
+          fi
+
+          PR_EXISTENTE=$(gh pr list --base main --head dev --state open --json number --jq '.[0].number // empty')
+
+          if [ -n "$PR_EXISTENTE" ]; then
+            echo "Já existe um PR aberto para essa promoção: #$PR_EXISTENTE"
+            gh pr view "$PR_EXISTENTE" --json url --jq '"URL: " + .url'
+            exit 0
+          fi
+
+          CORPO=$'PR aberto automaticamente pelo workflow "Abrir PR de promo\xc3\xa7\xc3\xa3o (dev -> main)".\n\nAntes de mesclar:\n- Revise a aba "Files changed".\n- Se der conflito em `render.yaml`, resolva mantendo a vers\xc3\xa3o que j\xc3\xa1 est\xc3\xa1 na `main` (cada branch tem seu pr\xc3\xb3prio arquivo, descrevendo s\xc3\xb3 o pr\xc3\xb3prio ambiente - nunca misturar os dois, ver coment\xc3\xa1rio no topo do arquivo).\n- O deploy do media-prod (Render) acontece automaticamente, sozinho, assim que o merge cair na `main`.'
+
+          gh pr create \
+            --base main \
+            --head dev \
+            --title "Promoção dev -> main ($(date -u +%Y-%m-%d))" \
+            --body "$CORPO"
