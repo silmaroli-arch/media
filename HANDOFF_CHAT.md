@@ -1817,6 +1817,24 @@ Os nomes de cada template precisam ser IDÊNTICOS aos já configurados nas vari�
 **Pendência**: confirmar, depois de um tempo, se os 4 templates mudaram de "Em análise" para "Ativo"/aprovado na conta de teste - se algum for rejeitado, o motivo aparece na própria lista de modelos (coluna "Principal motivo do..."), e o texto pode precisar de ajuste (as políticas da Meta para templates variam por categoria - "Marketing" tem regras mais estritas que "Utilidade").
 
 
+## Ajuste de comportamento: paciente de teste órfão agora é reaproveitado automaticamente (2026-09-29, pedido do Silvan)
+
+Silvan cadastrou um novo médico no `dev` e reparou que o paciente de teste automático (ver `_paciente_teste_do_medico` em `app/routes_medico.py`) não foi criado - "Meus pacientes" veio vazio. Ao investigar pela tela "Novo paciente > Importar paciente pelo CPF", o próprio CPF do médico já existia na plataforma como um Paciente separado ("Silvan Oliveira", provavelmente sobra de um médico de teste excluído durante as correções desta sessão - excluir médico só desvincula o paciente que ele cadastrou, nunca apaga, ver `app/exclusao_usuario.py`).
+
+Comportamento até então (decisão original do Silvan, 2026-09-10, documentada na própria função): SEMPRE que o CPF do médico já pertence a outro Paciente, a criação do paciente de teste é recusada (`PacienteMedicoConflitanteError`) e pulada em silêncio - de propósito, pra nunca arriscar sobrescrever/misturar dados de outra pessoa sozinho.
+
+Silvan pediu: "ele deveria associar automático, mesmo nessa situação". Como isso reabre exatamente o risco que a proteção original evitava (se o conflito for com um paciente de OUTRA pessoa/clínica ainda ativa, associar sozinho misturaria dados de gente diferente), a implementação ficou mais específica em vez de remover a proteção:
+
+- Nova função `_paciente_esta_orfao(paciente)`: True quando o Paciente conflitante não tem NENHUM dono - nem pessoal (`cadastrado_por_id` nulo) nem de clínica (nenhuma linha em `GrupoPaciente`).
+- Na criação do paciente de teste: se o CPF conflitante pertence a um paciente ÓRFÃO, o registro é reaproveitado automaticamente (atualiza nome/data de nascimento/telefone e associa `cadastrado_por_id` ao médico atual) em vez de levantar a exceção - já manda a mensagem de boas-vindas normalmente, como se fosse criação nova.
+- Na atualização do paciente de teste já existente (caso o médico mude o próprio CPF depois, em "Meus dados"): mesma lógica - se o conflito for órfão, o registro órfão é APAGADO (não reaproveitado, já que o médico já tem seu próprio paciente de teste; só limpa a duplicata) em vez de bloquear a atualização.
+- Se o conflito NÃO for órfão (tem dono ativo - outro médico, outra clínica, ou paciente de verdade), o comportamento de sempre continua: recusa e cabe a quem chamou decidir manualmente.
+
+Docstring de `_paciente_teste_do_medico` atualizada explicando a exceção. Verificado com `python3 -c "import ast; ast.parse(...)"` (sintaxe OK).
+
+Aplicado só no `dev` (aguardando auto-commit do Silvan) - ele vai testar de novo criando outro médico (ou usando "Importar para esta clínica" manualmente pra resolver o caso já existente) após o deploy.
+
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

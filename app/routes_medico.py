@@ -3091,6 +3091,23 @@ class PacienteMedicoConflitanteError(Exception):
     sozinho."""
 
 
+def _paciente_esta_orfao(paciente):
+    """True quando este Paciente não tem mais dono nenhum: nem dono
+    pessoal (`cadastrado_por_id` nulo - caso comum depois que o médico/
+    secretária que o cadastrou é excluído, ver app.exclusao_usuario, que
+    só desvincula, nunca apaga o cadastro do paciente) nem vínculo a
+    nenhuma clínica (nenhuma linha em GrupoPaciente). Usado por
+    _paciente_teste_do_medico (pedido do Silvan, 2026-09-29) para
+    distinguir um CPF "sobrando de teste antigo" - seguro de reaproveitar
+    automaticamente - de um CPF que já pertence a uma pessoa/clínica de
+    verdade ainda ativa, onde reaproveitar sozinho arriscaria misturar
+    dados de gente diferente (ver docstring de _paciente_teste_do_medico
+    sobre a decisão original de não resolver isso sozinho)."""
+    if paciente.cadastrado_por_id is not None:
+        return False
+    return GrupoPaciente.query.filter_by(paciente_id=paciente.id).first() is None
+
+
 def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
     """Get-or-create do Paciente do próprio médico - um por médico, criado
     sob demanda na primeira vez que ele testa a IA (ou já no cadastro
@@ -3139,15 +3156,22 @@ def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
     próprio CPF). Só na CRIAÇÃO de um paciente novo para este médico, se o
     CPF dele já pertencer a um Paciente com outro cadastrado_por_id (ex.:
     o médico é paciente de verdade em outra clínica, ou dois médicos
-    diferentes compartilhando famnília/erro de digitação de CPF), a
+    diferentes compartilhando família/erro de digitação de CPF), a
     criação é RECUSADA (levanta PacienteMedicoConflitanteError) em vez de
-    tentar resolver sozinha - diferente do mecanismo antigo (quando este
-    cadastro ainda era "de teste"), que sobrescrevia CPFs de órfãos
-    automaticamente porque sabia que eram descartáveis; agora que o
-    registro é um paciente real com histórico potencial de
-    agendamentos/mensagens, sobrescrever um CPF sozinho arriscaria misturar
-    ou perder dados de outra pessoa. Cabe a quem chamou decidir manualmente
+    tentar resolver sozinha - registro real, com histórico potencial de
+    agendamentos/mensagens, então reassociar sozinho arriscaria misturar ou
+    perder dados de outra pessoa. Cabe a quem chamou decidir manualmente
     (ex.: avisar o Silvan/dono para investigar o CPF duplicado).
+
+    EXCEÇÃO (pedido do Silvan, 2026-09-29) - conflito ÓRFÃO: se o Paciente
+    conflitante não tem mais dono nenhum (`cadastrado_por_id` nulo E sem
+    nenhuma linha em GrupoPaciente - ver `_paciente_esta_orfao` acima),
+    é seguro assumir que é sobra de um médico/secretária de teste já
+    excluído (a exclusão de conta só desvincula o paciente, nunca apaga -
+    ver app.exclusao_usuario) - nesse caso, o registro é reaproveitado e
+    associado ao médico atual automaticamente, SEM levantar a exceção. A
+    proteção contra reassociar sozinho continua valendo, sem exceção,
+    para qualquer conflito com dono ativo (outra pessoa ou clínica).
 
     Médico SEM CPF cadastrado: `Paciente.cpf` é NOT NULL no banco (embora
     `Usuario.cpf` seja opcional, para não quebrar contas antigas de antes
@@ -3167,12 +3191,17 @@ def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
             conflito = Paciente.query.filter(
                 Paciente.cpf == cpf_desejado, Paciente.id != paciente.id
             ).first()
-            if conflito:
+            if conflito and not _paciente_esta_orfao(conflito):
                 raise PacienteMedicoConflitanteError(
                     f"O CPF {cpf_desejado} já pertence a outro paciente cadastrado "
                     f"(id {conflito.id}, cadastrado por usuário {conflito.cadastrado_por_id}) - "
                     "não é possível atualizar automaticamente."
                 )
+            # Conflito órfão (sobra de teste antigo, sem dono nem clínica -
+            # ver _paciente_esta_orfao) - descartado em favor do cadastro
+            # ATUAL do médico, que é o que continua em uso.
+            if conflito:
+                db.session.delete(conflito)
             paciente.cpf = cpf_desejado
         paciente.nome = medico.nome
         paciente.data_nascimento = medico.data_nascimento
@@ -3181,12 +3210,23 @@ def _paciente_teste_do_medico(medico, enviar_boas_vindas=True):
         return paciente
 
     conflito = Paciente.query.filter_by(cpf=cpf_desejado).first()
-    if conflito:
+    if conflito and not _paciente_esta_orfao(conflito):
         raise PacienteMedicoConflitanteError(
             f"O CPF {cpf_desejado} já pertence a outro paciente cadastrado "
             f"(id {conflito.id}, cadastrado por usuário {conflito.cadastrado_por_id}) - "
             "não é possível criar o cadastro deste médico como paciente."
         )
+    if conflito:
+        # Órfão (sobra de teste antigo, sem dono nem clínica) - reaproveita
+        # o registro em vez de criar um novo, associando ao médico atual.
+        conflito.nome = medico.nome
+        conflito.data_nascimento = medico.data_nascimento
+        conflito.telefone = medico.telefone
+        conflito.cadastrado_por_id = medico.id
+        db.session.commit()
+        if enviar_boas_vindas:
+            enviar_boas_vindas_whatsapp(conflito)
+        return conflito
 
     paciente = Paciente(
         nome=medico.nome,
