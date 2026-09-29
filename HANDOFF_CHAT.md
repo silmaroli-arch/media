@@ -1767,17 +1767,22 @@ Pedido do Silvan: "Vamos montar o app do whatsapp para o ambiente dev. Lembrando
 
 ## Bug corrigido: erro 500 ao excluir médico/secretária (IntegrityError) (2026-09-29)
 
-Silvan reportou "Internal Server Error" ao tentar excluir a conta de um médico na área do dono (`dev.media.med.br`), rota `POST /dono/usuarios/<id>/excluir`. Log do Render mostrou um `IntegrityError` do SQLAlchemy (link `sqlalche.me/e/21/gkpj`, confirmado como violação de chave estrangeira).
+Silvan reportou "Internal Server Error" ao tentar excluir a conta de um médico na área do dono (`dev.media.med.br`), rota `POST /dono/usuarios/<id>/excluir`. Log do Render mostrou um `IntegrityError` do SQLAlchemy.
 
-**Causa raiz**: `app/exclusao_usuario.py` (`excluir_usuario_e_dados()`) apaga/desvincula manualmente cada tabela que referencia `usuarios.id` antes de apagar a própria conta - mas dois modelos criados depois da última atualização dessa função nunca foram incluídos: `MensagemSuporte` ("Fale com a gente", 2026-09-25) e `Notificacao`. Ambos têm `usuario_id` como `nullable=False` apontando para `usuarios.id`. Se a pessoa excluída tivesse qualquer mensagem de suporte ou notificação, o `DELETE` da própria conta batia na constraint de chave estrangeira dessas duas tabelas.
+**Duas causas raiz distintas encontradas** (a segunda só apareceu depois de corrigir a primeira e testar de novo - o traceback completo do Render, obtido depois, apontou pra ela):
+
+1. `app/exclusao_usuario.py` (`excluir_usuario_e_dados()`) apaga/desvincula manualmente cada tabela que referencia `usuarios.id` antes de apagar a própria conta - mas dois modelos criados depois da última atualização dessa função nunca foram incluídos: `MensagemSuporte` ("Fale com a gente", 2026-09-25) e `Notificacao`. Ambos têm `usuario_id` como `nullable=False` apontando para `usuarios.id`.
+
+2. **Causa real do erro que o Silvan reproduziu**: traceback completo do Render mostrou `psycopg2.errors.ForeignKeyViolation: update or delete on table "agendamentos" violates foreign key constraint "chat_mensagens_agendamento_id_fkey" on table "chat_mensagens"` - `ChatMensagem` e `ConversaWhatsapp` têm uma coluna `agendamento_id` (separada de `exame_id`, que já era desvinculada) apontando pra um agendamento específico. Ao apagar os agendamentos do médico (passos 4 e 6 da função), essas duas tabelas nunca eram desvinculadas primeiro, travando a exclusão sempre que o médico tivesse algum agendamento com mensagem de chat/WhatsApp associada.
 
 **Correção** em `app/exclusao_usuario.py`:
-- Import de `MensagemSuporte` e `Notificacao` adicionado.
-- No passo 1 ("Histórico puramente pessoal, sem nada mais dependendo dele"), adicionadas duas linhas apagando `MensagemSuporte.query.filter_by(usuario_id=uid)` e `Notificacao.query.filter_by(usuario_id=uid)` - apagadas de vez (não dá pra só desvincular, já que a coluna é obrigatória), mesmo padrão do `PushSubscription`/`LicencaPagamento` já existentes ali.
+- Import de `MensagemSuporte`, `Notificacao` e `ConversaWhatsapp` adicionado.
+- Passo 1 ("Histórico puramente pessoal"): apaga `MensagemSuporte` e `Notificacao` do usuário (não dá pra só desvincular, coluna é obrigatória nos dois).
+- Passos 4 e 6 (exclusão de agendamentos): antes de cada `db.session.delete(agendamento)`, agora desvincula `ChatMensagem.agendamento_id` e `ConversaWhatsapp.agendamento_id` dos agendamentos que vão ser apagados. Mantido o `db.session.delete()` por objeto (não um `.delete()` em massa) de propósito - o cascade que apaga o `ResultadoExame` junto é feito pelo ORM do SQLAlchemy (`cascade="all, delete-orphan"` na relação `Agendamento.resultado`), não por uma constraint `ON DELETE CASCADE` do próprio banco, então um `.delete()` em massa (que ignora o ORM) quebraria essa limpeza e geraria o mesmo tipo de erro só que na tabela `resultados_exame`.
 
-Verificado com `python3 -c "import ast; ast.parse(...)"` (sintaxe OK) e releitura do arquivo do disco confirmando as linhas novas.
+Verificado com `python3 -c "import ast; ast.parse(...)"` (sintaxe OK) e releitura do arquivo do disco confirmando as linhas novas, incluindo a checagem específica de que o cascade do `ResultadoExame` continuou usando `db.session.delete()` por objeto.
 
-Aplicado só no `dev` (aguardando auto-commit do Silvan) - Silvan vai testar de novo após o deploy. Vale lembrar pra próxima vez que um novo modelo ganhar uma FK obrigatória pra `usuarios.id`: já checar se `exclusao_usuario.py` precisa saber dele.
+Aplicado só no `dev` (aguardando auto-commit do Silvan) - Silvan vai testar de novo após o deploy. Vale lembrar pra próxima vez que um novo modelo ganhar uma FK obrigatória pra `usuarios.id` OU pra `agendamentos.id`: já checar se `exclusao_usuario.py` precisa saber dele.
 
 
 ## Como continuar
