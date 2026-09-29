@@ -1689,6 +1689,43 @@ A partir de agora, o fluxo de trabalho muda:
 - Isso também esclarece de vez a separação de responsabilidades no `dev`: o `dev` nunca é comitado por mim OU pelo assistente diretamente - só é editado (working tree) e o `auto_commit_push.bat` (rodando periodicamente pelo Agendador de Tarefas do Windows na máquina do Silvan) é quem comita e publica de fato, sempre na branch `dev`, nunca na `main`/`qualidade` (ver comentários do próprio script).
 - **Atenção pra próxima sessão/assistente**: não usar mais o padrão de `GIT_INDEX_FILE`/`commit-tree`/`branch -f main` documentado em sessões anteriores para alterar a `main` diretamente. Qualquer mudança destinada à `main` deve ficar pronta e comitada só no `dev`, e a promoção em si (`git push` + abrir o PR no GitHub) é responsabilidade do Silvan.
 
+## Primeiro pull request dev -> main aberto e mesclado com sucesso (2026-09-29)
+
+Depois da mudança de processo (ver seção anterior), o Silvan abriu e mesclou o primeiro PR seguindo o novo fluxo: **PR #5 "Correcoes da dev"**, comparando `main` (base) `<- dev` (compare), no GitHub (`github.com/silmaroli-arch/media/pull/5`).
+
+- Continha os 2 commits que só existiam no `dev` até então (`792b9b6` "Ultimas atualizacoes" e `9484c88` "Auto-commit: sincronizacao automatica" - esse último já trazia a funcionalidade de editar/excluir na base de conhecimento e nas últimas respondidas, documentada na seção anterior).
+- Deu conflito, como esperado, só no `render.yaml` - motivo: a partir de 2026-09-28 os `render.yaml` de `dev` e `main` descrevem ambientes totalmente separados e não devem se misturar nunca (`dev` só descreve media-dev/media-dev-db; `main` só media-prod/media-prod-db). Resolvido substituindo o conteúdo do arquivo, no editor de conflito do próprio GitHub, pelo texto exato que já estava na `main` (nada mudou nesse arquivo específico) - confirmado visualmente pelo Silvan na aba "Files changed" antes de mesclar.
+- O merge criou primeiro um commit de resolução na branch `dev` (`890edb4`, "Merge branch 'main' into dev" - fluxo padrão do editor de conflitos do GitHub), e depois o merge de verdade pra `main` (commit `6287158`).
+- **Atenção**: depois de mesclar, o GitHub ofereceu o botão "Delete branch" (dev) - isso é o comportamento padrão do GitHub para qualquer PR mesclado, mas NÃO se aplica aqui - o `dev` é o branch de trabalho permanente (recebe o auto-commit da máquina do Silvan o tempo todo) e nunca deve ser apagado. O Silvan foi avisado e não clicou.
+
+A partir de agora, esse é o fluxo oficial de promoção: assistente só comita/edita no `dev` -> Silvan abre PR (base: main, compare: dev) no GitHub -> resolve conflito em `render.yaml` (sempre mantendo a versão da própria `main`, nunca misturando) -> mescla.
+
+## Elastic Beanstalk abandonado de vez - workflow do GitHub Actions removido (2026-09-29)
+
+Depois do primeiro deploy de produção via Render (PR #5), reparamos que o workflow antigo `.github/workflows/deploy.yml` ("Deploy no Elastic Beanstalk") continuava disparando a cada push em `main`/`qualidade` e falhando (X vermelho no GitHub Actions) - ele tentava publicar num ambiente EB de produção separado (também chamado "media-prod", mas na AWS, não no Render) e num ambiente "qualidade"/QA.
+
+Confirmado com o Silvan: **o ambiente `qa`/`qualidade` não vai mais existir**, e **o ambiente de produção antigo no Elastic Beanstalk também está abandonado** - a produção real agora é o `media-prod` do Render (DNS de `media.med.br` já aponta pra lá desde a seção "Domínio customizado" mais acima). Ou seja, o Elastic Beanstalk não serve mais nada em nenhum dos dois branches que esse workflow observava.
+
+**Removido** o arquivo `.github/workflows/deploy.yml` inteiro (working tree do `dev`, aguardando auto-commit) - sem esse arquivo, o GitHub Actions simplesmente não dispara mais nada em nenhum branch, parando de gerar erro cosmético a cada push. Isso ainda precisa ser promovido pro `main` no próximo PR (`dev` → `main`), do jeito já estabelecido - até lá, pushes em `main` ainda vão mostrar a falha antiga no Actions (inofensiva, só ruído) até esse PR acontecer.
+
+Nada relacionado ao Render (nem `media-dev` nem `media-prod`) é afetado por essa remoção - o Render nunca dependeu desse workflow, ele observa o repositório diretamente.
+
+## Workflow do GitHub Actions para abrir o PR de promoção (2026-09-29, pedido do Silvan)
+
+Depois da dificuldade encontrada pra abrir manualmente o primeiro PR dev→main (base/compare invertidos, botão "Create pull request" difícil de achar no navegador do celular), o Silvan pediu um jeito mais simples de abrir esse PR daqui pra frente.
+
+Criado `.github/workflows/abrir_pr_promocao.yml` (working tree do `dev`, aguardando auto-commit). Características:
+
+- **Disparo manual apenas** (`workflow_dispatch`) - decisão explícita do Silvan entre isso e disparo automático a cada push no `dev`. Ele decide quando promover; o workflow só facilita a abertura do PR.
+- Fica na aba **Actions** do GitHub > "Abrir PR de promoção (dev -> main)" > botão **"Run workflow"**.
+- **Só abre (ou reaproveita, se já existir) o PR comparando `main` (base) <- `dev` (compare)** - nunca mescla sozinho. A revisão, a resolução de conflito no `render.yaml` (sempre mantendo a versão da própria `main` - ver aviso de sempre) e o clique final em "Merge pull request" continuam manuais.
+- Se não houver nenhuma diferença real entre `dev` e `main` (fora do `render.yaml`, que nunca deve ser promovido), o workflow não faz nada, evitando abrir um PR vazio.
+- Se já existir um PR aberto dessa promoção, só informa o número/URL dele em vez de duplicar.
+
+Verificado antes de comitar: YAML validado com `python3 -c "import yaml; yaml.safe_load(...)"`, e o script de shell dentro do `run:` validado à parte com `bash -n` (sintaxe OK) - havia um bug real na primeira versão (uma string de várias linhas dentro do `--body` quebrou a indentação do bloco YAML e virou uma chave solta no arquivo), corrigido reescrevendo o corpo do PR como uma única linha com `$'...\n...'` (aspas ANSI-C do bash, que interpretam `\n` como quebra de linha de verdade sem quebrar a estrutura do YAML).
+
+**Pendência**: como o `workflow_dispatch` só aparece no botão "Run workflow" da aba Actions quando o arquivo do workflow existe no branch padrão do repositório, pode ser necessário que esse arquivo também chegue à `main` (no próximo PR de promoção) para o botão aparecer de forma confiável - se não aparecer assim que o auto-commit subir isso pro `dev`, avisar para investigarmos.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
