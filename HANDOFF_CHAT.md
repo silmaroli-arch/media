@@ -1887,6 +1887,39 @@ dia isso for cogitado, vale ou removê-la antes, ou adicionar uma proteção ext
 quando uma variável de ambiente `AMBIENTE=dev` estiver definida) para não correr o risco de alguém
 gerar dados sintéticos em produção por engano.
 
+## Bug reportado + toggle novo: checagem de dicionário rejeitando perguntas legítimas (2026-09-29)
+
+Reportado pelo Silvan com prints do WhatsApp: perguntas normais do paciente ("Paracetamol e dipirona
+estão liberados?", "Se eu tiver dor ou febre durante o preparo, qual medicamento posso usar?") estavam
+sendo recusadas com "Não consegui entender essa mensagem".
+
+**Causa**: `_eh_mensagem_com_muitas_palavras_desconhecidas` (`app/whatsapp_conversa.py`, pedido do
+Silvan de 2026-09-24) passou a valer de verdade depois que o `pyspellchecker` foi instalado no deploy
+mais recente (antes disso era um no-op silencioso). Essa checagem marca a mensagem como "sem sentido"
+quando 2+ palavras (3+ letras) não estão no dicionário genérico de português do pacote - que não conhece
+nome de medicamento ("paracetamol", "dipirona") nem, aparentemente, algumas conjugações menos comuns
+("tiver"). Resultado: justamente perguntas sobre medicamento (o tipo mais comum nesse contexto) caem
+nesse filtro.
+
+**Pedido do Silvan**: em vez de resolver isso "escondido" no código, colocar um parâmetro em
+Configurações (área do dono) para ligar/desligar essa checagem por dicionário à vontade.
+
+**Implementado**:
+- `PlataformaConfig.verificar_dicionario_chat` (novo campo booleano, `app/models.py`) - nasce `True`
+  (mesmo comportamento que já estava valendo). Migração correspondente em `migrar_banco.py`
+  (`ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS verificar_dicionario_chat BOOLEAN NOT NULL
+  DEFAULT TRUE;`).
+- `app/whatsapp_conversa.py`: `_eh_mensagem_com_muitas_palavras_desconhecidas` agora devolve `False` sem
+  fazer nada quando `PlataformaConfig.obter().verificar_dicionario_chat` é `False`.
+- Nova rota `POST /dono/configuracoes/dicionario-chat` (`app/routes_dono.py`) e um novo card em
+  Configurações (`app/templates/dono/dashboard.html`, aba "Configurações") com um switch "Rejeitar
+  mensagens com palavras desconhecidas pelo dicionário".
+
+**Pendência**: essa checagem por si só continua sem saber diferenciar "paciente mandando lixo" de
+"paciente perguntando sobre remédio" - se o Silvan preferir manter a checagem ligada só que mais
+inteligente (em vez de simplesmente desligá-la), uma opção futura é não contar como "desconhecida" uma
+palavra que bate com o nome de algum `Medicamento` já cadastrado, antes de consultar o dicionário.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

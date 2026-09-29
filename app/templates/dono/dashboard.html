@@ -395,6 +395,27 @@
         <button type="submit" class="btn btn-primary">Salvar</button>
       </form>
     </div>
+
+    <div class="card p-3 mb-4">
+      <h5 class="mb-1">Checagem de dicionário no chat de WhatsApp</h5>
+      <p class="text-muted small mb-3">
+        Além da checagem de "isso faz sentido?" pela IA, o chat do paciente também rejeita mensagens
+        com 2+ palavras que não estão num dicionário genérico de português ("Não consegui entender essa
+        mensagem"). Esse dicionário não conhece nome de medicamento (ex.: "paracetamol", "dipirona"), o
+        que pode fazer uma pergunta legítima do paciente ser recusada por engano. Desligue aqui se isso
+        estiver incomodando mais do que ajudando.
+      </p>
+      <form method="post" action="{{ url_for('dono.configuracoes_dicionario_chat') }}">
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" role="switch" id="verificar_dicionario_chat"
+                 name="verificar_dicionario_chat" {% if config.verificar_dicionario_chat %}checked{% endif %}>
+          <label class="form-check-label" for="verificar_dicionario_chat">
+            Rejeitar mensagens com palavras desconhecidas pelo dicionário
+          </label>
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </form>
+    </div>
   </div>
 
   {# Zona de risco (pedido do Silvan, 2026-09-10): apaga TODOS os dados

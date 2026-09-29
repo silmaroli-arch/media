@@ -298,6 +298,28 @@ def configuracoes_limite_perguntas():
     return redirect(url_for("dono.dashboard"))
 
 
+@dono_bp.route("/configuracoes/dicionario-chat", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_dicionario_chat():
+    """Liga/desliga a checagem de "duas ou mais palavras desconhecidas
+    pelo dicionário de português" no chat de WhatsApp (pedido do Silvan,
+    2026-09-29 - ver PlataformaConfig.verificar_dicionario_chat e
+    app.whatsapp_conversa._eh_mensagem_com_muitas_palavras_desconhecidas).
+    Criada depois de constatar que o dicionário genérico não conhece nome
+    de medicamento (ex.: "paracetamol", "dipirona"), fazendo perguntas de
+    paciente legítimas serem recusadas como "não consegui entender"."""
+    config = PlataformaConfig.obter()
+    config.verificar_dicionario_chat = bool(request.form.get("verificar_dicionario_chat"))
+    db.session.commit()
+    flash(
+        "Checagem de dicionário no chat de WhatsApp "
+        + ("ativada." if config.verificar_dicionario_chat else "desativada."),
+        "success",
+    )
+    return redirect(url_for("dono.dashboard"))
+
+
 @dono_bp.route("/grupos/<int:grupo_id>")
 @login_required
 @dono_required
