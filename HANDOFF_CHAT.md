@@ -1744,9 +1744,9 @@ Pedido do Silvan: "Vamos montar o app do whatsapp para o ambiente dev. Lembrando
 
 **Task #6 concluída**: as 4 variáveis de ambiente do serviço `media-dev` no Render foram atualizadas com os valores do novo app/número de dev: `WHATSAPP_META_ACCESS_TOKEN` (token permanente do usuário do sistema, escopado ao app `media-dev`), `WHATSAPP_META_APP_SECRET` (do app `media-dev`), `WHATSAPP_META_PHONE_NUMBER_ID` (`1267356273137404`) e `WHATSAPP_META_VERIFY_TOKEN` (valor escolhido: `media_dev_wh_2026`). As variáveis `WHATSAPP_META_TEMPLATE_*` não foram alteradas.
 
-**Próximos passos (tasks #5 e #7, ainda não iniciados)**:
-- Configurar o webhook do `media-dev` no Meta (App `media-dev` > WhatsApp > Configuração > Webhook): URL `https://media-dev.onrender.com/whatsapp/webhook`, Verify Token `media_dev_wh_2026` (mesmo valor já salvo no Render), inscrever pelo menos o campo `messages`.
-- Teste ponta a ponta no ambiente dev (enviar/receber mensagem real via `media-dev`, não mais o número/App de produção).
+**Task #5 concluída**: webhook do `media-dev` configurado no Meta (App `media-dev` > WhatsApp > Configuração básica > Etapa 2) - URL de callback `https://media-dev.onrender.com/whatsapp/webhook`, Verify Token `media_dev_wh_2026` (mesmo valor salvo no Render). Primeira tentativa de verificação falhou ("Não foi possível validar a URL de callback") porque o deploy do Render com as novas variáveis ainda não tinha concluído / o serviço free tier estava dormindo - após aguardar o deploy ficar "Live" e acessar a URL raiz pra acordar o serviço, a verificação passou na segunda tentativa. Campo de webhook `messages` inscrito.
+
+**Próximo passo (task #7, ainda não iniciado)**: teste ponta a ponta no ambiente dev (enviar/receber mensagem real via `media-dev`, usando o número de teste `+1 (555) 176-8599` e o destinatário verificado `+55 27 99876-6702`, não mais o número/App de produção).
 
 
 ## Como continuar
