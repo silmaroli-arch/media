@@ -25,9 +25,11 @@
 </p>
 <p class="text-muted small">
   <i class="bi bi-info-circle"></i> "Gerar cobranças do ano para todos" cria o link de pagamento (Mercado Pago)
-  dos meses que faltam neste ano civil, a partir do mês seguinte ao atual, só pra quem está no ciclo mensal -
-  quem já pagou aquele mês na mão, ou já tem cobrança gerada, não é afetado; médico em ciclo anual continua
-  usando o próprio botão de cobrança anual, na tela de pagamentos dele.
+  dos meses que faltam neste ano civil, a partir do mês seguinte ao atual, só pra médico com licença ATIVA ou
+  INADIMPLENTE, no ciclo mensal - médico ainda em trial não é cobrado, quem já pagou aquele mês na mão ou já
+  tem cobrança gerada não é afetado, e médico em ciclo anual continua usando o próprio botão de cobrança
+  anual, na tela de pagamentos dele. Processa no máximo 100 médicos por clique (evita travar a requisição com
+  uma base grande) - se sobrar mais gente elegível, é só clicar de novo.
 </p>
 
 {% set em_alerta = linhas|selectattr("em_alerta_inadimplencia")|list %}

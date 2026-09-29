@@ -744,18 +744,35 @@ def usuarios():
     return render_template("dono/usuarios.html", linhas=_usuarios_com_custo())
 
 
+# Pedido do Silvan (2026-09-29, depois do 502 causado por gerar cobrança
+# pra 1000 médicos de teste de uma vez só - ver app/performance_teste.py):
+# processa no máximo esta quantidade de médicos por clique. Cada médico
+# elegível pode disparar até ~6 chamadas de rede reais ao Mercado Pago
+# (link + Pix, para até uns 3 meses restantes do ano) DENTRO da mesma
+# requisição HTTP - sem esse limite, uma base grande o suficiente de
+# médicos travava a requisição até o Render matar o worker (502 Bad
+# Gateway), bem antes do Mercado Pago sequer terminar de responder tudo.
+# Pra gerar mais que isso, é só clicar de novo (mesmo padrão já usado na
+# ferramenta de teste de performance).
+LIMITE_MEDICOS_POR_CLIQUE_COBRANCA_ANO = 100
+
+
 @dono_bp.route("/usuarios/gerar-cobrancas-ano", methods=["POST"])
 @login_required
 @dono_required
 def licencas_gerar_cobrancas_ano():
     """Gera, de uma vez só, a cobrança Mercado Pago dos meses que FALTAM
     neste ano civil (do mês seguinte ao atual até dezembro, inclusive)
-    pra todo médico em ciclo MENSAL (pedido do Silvan, 2026-09-25 - antes
-    só dava pra gerar usuário por usuário/mês por mês, na tela de
-    pagamentos de cada um). Médico em ciclo ANUAL fica de fora - ele usa o
-    próprio fluxo de "cobrar anual" (ver usuario_licenca_pagamento_cobrar_
-    anual), que já cobre o ano inteiro num pagamento único; gerar cobrança
-    mensal pra ele aqui cobraria em duplicado.
+    pra médico em ciclo MENSAL e com licença já ATIVA ou INADIMPLENTE
+    (pedido do Silvan, 2026-09-25 - antes só dava pra gerar usuário por
+    usuário/mês por mês, na tela de pagamentos de cada um). Médico em
+    ciclo ANUAL fica de fora - ele usa o próprio fluxo de "cobrar anual"
+    (ver usuario_licenca_pagamento_cobrar_anual), que já cobre o ano
+    inteiro num pagamento único; gerar cobrança mensal pra ele aqui
+    cobraria em duplicado. Médico ainda em TRIAL também fica de fora
+    (correção de 2026-09-29, ver abaixo) - ele ainda não está sendo
+    cobrado, gerar uma cobrança de licença pra quem está no período
+    gratuito não faz sentido.
 
     Critérios (decididos com o Silvan): só os meses AINDA NÃO PAGOS, e só
     onde ainda NÃO existe cobrança gerada (não substitui/duplica um link
@@ -769,7 +786,21 @@ def licencas_gerar_cobrancas_ano():
     exemplo se essa função rodou antes de o Pix existir), cada uma só
     pula o que JÁ tem, e uma falha na geração do Pix não desfaz o link já
     gerado com sucesso (e vice-versa) - contadas e avisadas separadamente
-    no resumo final."""
+    no resumo final.
+
+    Correção de 2026-09-29 (bug real, reportado pelo Silvan: 502 Bad
+    Gateway ao clicar, depois de gerar 1000 médicos de teste de
+    performance - ver app/performance_teste.py): esta rota SEMPRE incluiu
+    todo médico em ciclo mensal, mesmo os ainda em trial (que não
+    deveriam ser cobrados ainda) - com uma base grande o suficiente de
+    médicos, isso significa centenas/milhares de chamadas de rede reais
+    ao Mercado Pago (link + Pix, por mês restante) DENTRO de uma única
+    requisição HTTP, travando o worker do Render até ele matar a
+    requisição. Duas mudanças: (1) filtra só licença ativa/inadimplente
+    (trial nunca deveria entrar aqui, de qualquer forma - correção de
+    comportamento, não só de performance); (2) processa no máximo
+    `LIMITE_MEDICOS_POR_CLIQUE_COBRANCA_ANO` médicos por clique, avisando
+    quando sobrar mais pra gerar (é só clicar de novo)."""
     hoje = date.today()
     if hoje.month == 12:
         flash("Já estamos em dezembro - não há mais meses restantes neste ano civil pra gerar.", "warning")
@@ -777,7 +808,13 @@ def licencas_gerar_cobrancas_ano():
     mes_inicio = date(hoje.year, hoje.month + 1, 1)
     mes_fim = date(hoje.year, 12, 1)
 
-    medicos = Usuario.query.filter_by(tipo="medico", ciclo_licenca="mensal").all()
+    query_elegiveis = Usuario.query.filter(
+        Usuario.tipo == "medico",
+        Usuario.ciclo_licenca == "mensal",
+        Usuario.licenca_status.in_(["ativa", "inadimplente"]),
+    ).order_by(Usuario.id)
+    total_elegiveis = query_elegiveis.count()
+    medicos = query_elegiveis.limit(LIMITE_MEDICOS_POR_CLIQUE_COBRANCA_ANO).all()
 
     geradas = 0
     ja_tinham = 0
@@ -861,6 +898,9 @@ def licencas_gerar_cobrancas_ano():
     if pix_falhas:
         exibidas_pix = ", ".join(pix_falhas[:5])
         partes.append(f"{len(pix_falhas)} Pix falharam: {exibidas_pix}{' ...' if len(pix_falhas) > 5 else ''}")
+    if total_elegiveis > len(medicos):
+        restantes = total_elegiveis - len(medicos)
+        partes.append(f"ainda restam {restantes} médico(s) elegível(is) - clique em \"Gerar cobranças do ano para todos\" de novo para continuar")
     flash(" · ".join(partes) + ".", "success" if not falhas and not pix_falhas else "warning")
     return redirect(url_for("dono.usuarios"))
 

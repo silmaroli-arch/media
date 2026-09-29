@@ -1975,6 +1975,37 @@ chegar ao paciente, então "confirme com seu médico" é redundante/confuso. Ped
 Testado manualmente (fora da suite automatizada) com os 3 textos exatos dos prints do Silvan - nos 3
 casos a frase problemática foi removida corretamente, sem quebrar o restante da resposta.
 
+## Bug corrigido: 502 Bad Gateway em "Gerar cobranças do ano para todos" (2026-09-29)
+
+Reportado pelo Silvan com print (502 Bad Gateway do Render) ao clicar em "Gerar cobranças do ano para
+todos" (`dono.licencas_gerar_cobrancas_ano`), depois de gerar os 1000 médicos de teste de performance
+(ver seção acima, `app/performance_teste.py`).
+
+**Causa**: a rota SEMPRE incluiu todo médico em ciclo mensal, mesmo os ainda em TRIAL (que não deveriam
+ser cobrados ainda de qualquer forma - isso já era um problema de comportamento, não só de
+performance). Para cada médico elegível e cada mês restante do ano (até ~3 neste caso: out/nov/dez), a
+rota faz até 2 chamadas de rede REAIS ao Mercado Pago (link de pagamento + Pix) - tudo síncrono, dentro
+de uma única requisição HTTP. Com 1000 médicos de teste (todos em trial, então antes deste fix TODOS
+entravam), isso significava até ~6000 chamadas de rede numa única requisição - o worker do Render
+travava e acabava sendo encerrado bem antes de terminar, resultando no 502.
+
+**Corrigido em `app/routes_dono.py`**:
+- Filtro agora exige `licenca_status in ("ativa", "inadimplente")` - médico em trial nunca entra nesta
+  rota (correção de comportamento: ele ainda não está sendo cobrado, gerar cobrança de licença pra quem
+  está no período gratuito não fazia sentido, com ou sem dado de teste).
+- Processa no máximo `LIMITE_MEDICOS_POR_CLIQUE_COBRANCA_ANO = 100` médicos por clique (mesmo padrão já
+  usado na ferramenta de teste de performance) - se sobrar mais gente elegível, a mensagem de resumo
+  avisa e basta clicar de novo. Isso é uma rede de segurança pensada para o crescimento real da base, não
+  só para o cenário de teste.
+- Texto de ajuda em `app/templates/dono/usuarios.html` atualizado para refletir os dois critérios novos.
+
+**Nota**: os 1000 médicos de teste de performance nascem em trial (ver `app/performance_teste.py`) -
+antes do fix, a rota incluía TODO médico em ciclo mensal, trial ou não, então os 1000 entravam de
+qualquer jeito, e foi exatamente isso que causou o 502. Depois do fix, esse mesmo lote de teste nem
+chegaria a entrar na rota (todos em trial) - mas o limite de 100 por clique continua valendo pra
+proteger contra o cenário real de a base crescer o suficiente para ter, ela mesma, mais de 100 médicos
+elegíveis (ativa/inadimplente) de uma vez.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
