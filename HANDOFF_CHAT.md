@@ -2044,7 +2044,7 @@ Problema reportado com prints: o Silvan definiu o valor mensal padrão (R$ 150,0
 
 ### Ordem das fatias
 1. **[FEITA, ver abaixo]** Tipos de exame + campo no preparo + tela do dono.
-2. Base de conhecimento (tabela + tela do dono + interruptor + provedor de busca).
+2. **[FEITA, ver abaixo]** Base de conhecimento (tabela + tela do dono + interruptor + provedor de busca).
 3. Integração na resposta (4ª coluna, árbitro, aprovação só quando divergir).
 4. Auto-alimentação e atualização por edição do médico (com generalização e prazo ignorado).
 5. Especialidade do médico + sugestões de alteração aprovadas pelo dono.
@@ -2058,6 +2058,17 @@ Problema reportado com prints: o Silvan definiu o valor mensal padrão (R$ 150,0
 - **Área do dono**: nova aba "Tipos de exame" (`/dono/tipos-exame`): adicionar, renomear/ajustar especialidades, ativar/inativar, com contagem de preparos por tipo e aviso de preparos sem tipo. Rotas `dono.tipos_exame*` em `app/routes_dono.py`, template `dono/tipos_exame.html`, item no `_menu.html`.
 - **Teste**: `test_tipos_exame.py` (novo). **NÃO executado** nesta sessão (sem Flask no ambiente do assistente): conferidos só a sintaxe Python e a renderização Jinja. Rodar no terminal: `DATABASE_URL=sqlite:///teste_tipos_exame.db python test_tipos_exame.py` e, de regressão, `test_preparo_form_abas_importar.py` e `test_dono_conteudo_clinico.py` (criam preparos pelo formulário).
 - **Pendência do Silvan**: revisar a lista inicial de 66 tipos (aba "Tipos de exame" depois do deploy) e ajustar o que quiser. Preparos já cadastrados ficam "sem tipo" até o médico escolher ao editar.
+
+### Fatia 2 - Base de conhecimento, interruptor e provedor de busca (implementada, 2026-09-29)
+- **`app/models.py`**: `BaseConhecimentoItem` (`base_conhecimento`: tipo de exame, pergunta, resposta, fonte, `origem` internet/medico/dono, `status` ativo/inativo, `revisado`, autoria `autor_usuario_id` (FK `ON DELETE SET NULL`) + `autor_nome` como texto, `embedding` JSON + `embedding_modelo`, `vezes_utilizada`) e `BaseConhecimentoHistorico` (versão anterior a cada mudança de texto, permite desfazer). `PlataformaConfig.base_conhecimento_ativa` (interruptor, padrão DESLIGADO) e `base_busca_provedor` (`palavra_chave`/`openai`/`gemini`, padrão `palavra_chave`).
+- **`app/base_conhecimento.py`** (novo): `gerar_embedding` (OpenAI `text-embedding-3-small` ou Gemini `gemini-embedding-001`, modelos trocáveis por env `OPENAI_EMBEDDING_MODEL`/`GEMINI_EMBEDDING_MODEL`, nunca levanta exceção), `atualizar_embedding_do_item`, `buscar_na_base(pergunta, tipo_exame_id, limite)`: só itens ATIVOS do tipo dado, em modo embeddings só compara vetores do MESMO modelo e cai para palavra-chave se a API falhar. Reaproveita `palavras_chave` do `faq_engine`. Limiares iniciais `LIMIAR_PALAVRA_CHAVE=0.6` e `LIMIAR_EMBEDDING=0.70` são CHUTES a calibrar com a tela "Testar busca". Simulação offline: palavra-chave acerta perguntas com vocabulário parecido ("posso dirigir depois" -> 1.00) mas falha em paráfrases ("remédio para limpar o intestino não funcionou" -> 0.20), que é o motivo de existir o modo embeddings.
+- **`app/base_conhecimento_padrao.py`** (novo): carga inicial de 15 perguntas de COLONOSCOPIA, reescritas com palavras próprias, com fonte, SEM prazos/horas/doses e sem "confirme com seu médico". Entram como `origem=internet`, `revisado=False`. Só insere o que falta, nunca altera item que o dono editou. Chamada no `migrar_banco.py` logo após semear os tipos de exame. **Só colonoscopia por enquanto** - os demais tipos precisam de pesquisa própria e revisão.
+- **`migrar_banco.py`**: `ALTER TABLE plataforma_config` para as 2 colunas novas + semeadura da base.
+- **`app/exclusao_usuario.py`**: ao excluir um médico, os itens dele na base NÃO são apagados, só perdem o vínculo (`autor_usuario_id` = NULL), o nome fica em `autor_nome`.
+- **Área do dono** (nova aba "Base de conhecimento", `/dono/base-conhecimento`, rotas `dono.base_conhecimento*`, template `dono/base_conhecimento.html`): interruptor + provedor de busca, adicionar/editar (guarda histórico, marca revisado)/inativar/desfazer/marcar revisado, filtros, aviso de itens não revisados, "Calcular vetores de busca" (limite de 40 por clique, cada item é uma chamada de rede: mesma lição do 502) e "Testar busca" para calibrar antes de ligar.
+- **Ainda NÃO integrado ao chat**: com a base ligada ou desligada, o comportamento do paciente/médico é idêntico ao de antes. A integração é a fatia 3.
+- **Não verificado**: as chamadas reais às APIs de embeddings (OpenAI/Gemini) não foram testadas contra a API de verdade, só simuladas. O custo dos embeddings NÃO é registrado em `ChamadaIA` (avaliar na fatia 3).
+- **Teste**: `test_base_conhecimento.py` (novo, provedor de embeddings simulado, sem rede). **NÃO executado** (sem Flask no ambiente do assistente): conferidos só a sintaxe e a renderização Jinja. Rodar: `DATABASE_URL=sqlite:///teste_base_conhecimento.db python test_base_conhecimento.py`, mais `test_tipos_exame.py`.
 
 ## Como continuar
 
