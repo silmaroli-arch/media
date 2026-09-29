@@ -1689,6 +1689,17 @@ A partir de agora, o fluxo de trabalho muda:
 - Isso também esclarece de vez a separação de responsabilidades no `dev`: o `dev` nunca é comitado por mim OU pelo assistente diretamente - só é editado (working tree) e o `auto_commit_push.bat` (rodando periodicamente pelo Agendador de Tarefas do Windows na máquina do Silvan) é quem comita e publica de fato, sempre na branch `dev`, nunca na `main`/`qualidade` (ver comentários do próprio script).
 - **Atenção pra próxima sessão/assistente**: não usar mais o padrão de `GIT_INDEX_FILE`/`commit-tree`/`branch -f main` documentado em sessões anteriores para alterar a `main` diretamente. Qualquer mudança destinada à `main` deve ficar pronta e comitada só no `dev`, e a promoção em si (`git push` + abrir o PR no GitHub) é responsabilidade do Silvan.
 
+## Primeiro pull request dev -> main aberto e mesclado com sucesso (2026-09-29)
+
+Depois da mudança de processo (ver seção anterior), o Silvan abriu e mesclou o primeiro PR seguindo o novo fluxo: **PR #5 "Correcoes da dev"**, comparando `main` (base) `<- dev` (compare), no GitHub (`github.com/silmaroli-arch/media/pull/5`).
+
+- Continha os 2 commits que só existiam no `dev` até então (`792b9b6` "Ultimas atualizacoes" e `9484c88` "Auto-commit: sincronizacao automatica" - esse último já trazia a funcionalidade de editar/excluir na base de conhecimento e nas últimas respondidas, documentada na seção anterior).
+- Deu conflito, como esperado, só no `render.yaml` - motivo: a partir de 2026-09-28 os `render.yaml` de `dev` e `main` descrevem ambientes totalmente separados e não devem se misturar nunca (`dev` só descreve media-dev/media-dev-db; `main` só media-prod/media-prod-db). Resolvido substituindo o conteúdo do arquivo, no editor de conflito do próprio GitHub, pelo texto exato que já estava na `main` (nada mudou nesse arquivo específico) - confirmado visualmente pelo Silvan na aba "Files changed" antes de mesclar.
+- O merge criou primeiro um commit de resolução na branch `dev` (`890edb4`, "Merge branch 'main' into dev" - fluxo padrão do editor de conflitos do GitHub), e depois o merge de verdade pra `main` (commit `6287158`).
+- **Atenção**: depois de mesclar, o GitHub ofereceu o botão "Delete branch" (dev) - isso é o comportamento padrão do GitHub para qualquer PR mesclado, mas NÃO se aplica aqui - o `dev` é o branch de trabalho permanente (recebe o auto-commit da máquina do Silvan o tempo todo) e nunca deve ser apagado. O Silvan foi avisado e não clicou.
+
+A partir de agora, esse é o fluxo oficial de promoção: assistente só comita/edita no `dev` -> Silvan abre PR (base: main, compare: dev) no GitHub -> resolve conflito em `render.yaml` (sempre mantendo a versão da própria `main`, nunca misturando) -> mescla.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
