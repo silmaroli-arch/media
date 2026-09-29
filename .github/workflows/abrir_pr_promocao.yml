@@ -53,7 +53,7 @@ jobs:
             exit 0
           fi
 
-          CORPO=$'PR aberto automaticamente pelo workflow "Abrir PR de promo\xc3\xa7\xc3\xa3o (dev -> main)".\n\nAntes de mesclar:\n- Revise a aba "Files changed".\n- Se der conflito em `render.yaml`, resolva mantendo a vers\xc3\xa3o que j\xc3\xa1 est\xc3\xa1 na `main` (cada branch tem seu pr\xc3\xb3prio arquivo, descrevendo s\xc3\xb3 o pr\xc3\xb3prio ambiente - nunca misturar os dois, ver coment\xc3\xa1rio no topo do arquivo).\n- O deploy do media-prod (Render) acontece automaticamente, sozinho, assim que o merge cair na `main`.'
+          CORPO=$'PR aberto automaticamente pelo workflow "Abrir PR de promoção (dev -> main)".\n\nAntes de mesclar:\n- Revise a aba "Files changed".\n- Se der conflito em `render.yaml`, resolva mantendo a versão que já está na `main` (cada branch tem seu próprio arquivo, descrevendo só o próprio ambiente - nunca misturar os dois, ver comentário no topo do arquivo).\n- O deploy do media-prod (Render) acontece automaticamente, sozinho, assim que o merge cair na `main`.'
 
           gh pr create \
             --base main \
