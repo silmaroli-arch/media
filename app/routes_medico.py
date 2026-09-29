@@ -27,7 +27,8 @@ from app.models import (
     cep_incompleto, telefone_incompleto,
 )
 from app.mercadopago_integration import (
-    criar_preferencia_pagamento_anual, criar_cobranca_pix, MercadoPagoNaoConfigurado,
+    criar_preferencia_pagamento, criar_preferencia_pagamento_anual, criar_cobranca_pix,
+    MercadoPagoNaoConfigurado,
 )
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
@@ -3081,6 +3082,86 @@ def minha_licenca_gerar_pix(pagamento_id):
 
     db.session.commit()
     flash(f"Pix gerado para o mês {pagamento.mes.strftime('%m/%Y')} - escaneie ou copie o código abaixo.", "success")
+    return redirect(url_for("medico.minha_licenca"))
+
+
+@medico_bp.route("/minha-licenca/pagamentos/<int:pagamento_id>/link", methods=["POST"])
+@login_required
+@staff_required
+def minha_licenca_gerar_link(pagamento_id):
+    """Pedido do Silvan (2026-09-29): autoatendimento do LINK de pagamento
+    (Checkout Pro) - mesma ideia de minha_licenca_gerar_pix acima, só que
+    pro link "Pagar agora". Antes, esse link só existia se o dono tivesse
+    gerado em /dono/usuarios (ver dono.usuario_licenca_pagamento_cobrar,
+    que continua existindo do jeito que estava); agora o próprio médico
+    gera, mês a mês, direto no calendário de "Minha licença".
+
+    Ciclo ANUAL: o único mês que pode ser cobrado é o mês-âncora (o mês
+    vigente) e a cobrança é o valor anual de uma vez (mesmo fluxo de
+    medico.licenca_escolher_ciclo) - gerar uma cobrança MENSAL avulsa pra
+    quem está no anual duplicaria a cobrança, então é recusado.
+
+    Cada clique gera uma preferência NOVA (sobrescreve mp_init_point) -
+    útil se o link anterior tiver dado problema; o webhook confirma pelo
+    external_reference, que é o mesmo pro mesmo mês."""
+    if not eh_medico():
+        flash("Essa tela é só para contas de médico.", "warning")
+        return redirect(url_for("medico.dashboard"))
+
+    pagamento = LicencaPagamento.query.get_or_404(pagamento_id)
+    if pagamento.usuario_id != current_user.id:
+        abort(404)
+    if pagamento.pago:
+        flash("Este mês já está pago.", "warning")
+        return redirect(url_for("medico.minha_licenca"))
+
+    try:
+        if current_user.ciclo_licenca == "anual":
+            if pagamento.mes != _primeiro_dia_do_mes_licenca(date.today()):
+                flash(
+                    "No ciclo anual, o pagamento é feito de uma vez pelo mês vigente - "
+                    "não é possível gerar cobrança avulsa para este mês.",
+                    "warning",
+                )
+                return redirect(url_for("medico.minha_licenca"))
+            valor_anual = current_user.valor_licenca_anual or PlataformaConfig.obter().valor_licenca_anual_padrao
+            if not valor_anual:
+                flash(
+                    "Ainda não há um valor de licença anual configurado - fale com o administrador "
+                    "da plataforma.",
+                    "danger",
+                )
+                return redirect(url_for("medico.minha_licenca"))
+            criar_preferencia_pagamento_anual(pagamento, valor_anual)
+        else:
+            criar_preferencia_pagamento(pagamento)
+    except MercadoPagoNaoConfigurado:
+        flash(
+            "O pagamento online ainda não está disponível nesta instalação - fale com o "
+            "administrador da plataforma.",
+            "danger",
+        )
+        return redirect(url_for("medico.minha_licenca"))
+    except ValueError:
+        flash(
+            "Ainda não há um valor de licença definido para a sua conta - fale com o "
+            "administrador da plataforma.",
+            "danger",
+        )
+        return redirect(url_for("medico.minha_licenca"))
+    except Exception:
+        current_app.logger.exception(
+            "Falha ao gerar link de pagamento no Mercado Pago para o pagamento %s.", pagamento.id
+        )
+        flash("Não foi possível gerar o link de pagamento agora - tente novamente em instantes.", "danger")
+        return redirect(url_for("medico.minha_licenca"))
+
+    db.session.commit()
+    flash(
+        f"Link de pagamento gerado para o mês {pagamento.mes.strftime('%m/%Y')} - "
+        "clique em \"Pagar agora\" para concluir.",
+        "success",
+    )
     return redirect(url_for("medico.minha_licenca"))
 
 
