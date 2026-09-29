@@ -1700,6 +1700,16 @@ Depois da mudança de processo (ver seção anterior), o Silvan abriu e mesclou 
 
 A partir de agora, esse é o fluxo oficial de promoção: assistente só comita/edita no `dev` -> Silvan abre PR (base: main, compare: dev) no GitHub -> resolve conflito em `render.yaml` (sempre mantendo a versão da própria `main`, nunca misturando) -> mescla.
 
+## Elastic Beanstalk abandonado de vez - workflow do GitHub Actions removido (2026-09-29)
+
+Depois do primeiro deploy de produção via Render (PR #5), reparamos que o workflow antigo `.github/workflows/deploy.yml` ("Deploy no Elastic Beanstalk") continuava disparando a cada push em `main`/`qualidade` e falhando (X vermelho no GitHub Actions) - ele tentava publicar num ambiente EB de produção separado (também chamado "media-prod", mas na AWS, não no Render) e num ambiente "qualidade"/QA.
+
+Confirmado com o Silvan: **o ambiente `qa`/`qualidade` não vai mais existir**, e **o ambiente de produção antigo no Elastic Beanstalk também está abandonado** - a produção real agora é o `media-prod` do Render (DNS de `media.med.br` já aponta pra lá desde a seção "Domínio customizado" mais acima). Ou seja, o Elastic Beanstalk não serve mais nada em nenhum dos dois branches que esse workflow observava.
+
+**Removido** o arquivo `.github/workflows/deploy.yml` inteiro (working tree do `dev`, aguardando auto-commit) - sem esse arquivo, o GitHub Actions simplesmente não dispara mais nada em nenhum branch, parando de gerar erro cosmético a cada push. Isso ainda precisa ser promovido pro `main` no próximo PR (`dev` → `main`), do jeito já estabelecido - até lá, pushes em `main` ainda vão mostrar a falha antiga no Actions (inofensiva, só ruído) até esse PR acontecer.
+
+Nada relacionado ao Render (nem `media-dev` nem `media-prod`) é afetado por essa remoção - o Render nunca dependeu desse workflow, ele observa o repositório diretamente.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
