@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block titulo %}Tipos de exame{% endblock %}
+{% block conteudo %}
+{% set aba_ativa = 'tipos-exame' %}
+{% include "dono/_menu.html" %}
+
+<h3 class="mb-2">Tipos de exame que exigem preparo</h3>
+<p class="text-muted small">
+  Lista usada no campo "Tipo de exame" do cadastro de preparo do médico. As <strong>especialidades</strong>
+  (separadas por vírgula) definem, nas próximas etapas, qual médico enxerga a base de conhecimento de cada
+  tipo. Inativar um tipo só o tira do dropdown de preparos novos - os preparos que já o usam continuam com ele.
+</p>
+
+{% if sem_tipo %}
+<div class="alert alert-warning py-2 small">
+  {{ sem_tipo }} preparo(s) cadastrado(s) ainda estão sem tipo de exame - o médico escolhe ao editar o preparo.
+</div>
+{% endif %}
+
+<div class="card mb-4">
+  <div class="card-body">
+    <h6 class="card-title">Adicionar tipo</h6>
+    <form method="post" action="{{ url_for('dono.tipos_exame_novo') }}" class="row g-2">
+      <div class="col-md-5">
+        <input type="text" name="nome" class="form-control" placeholder="Nome (ex.: Colonoscopia)" required>
+      </div>
+      <div class="col-md-5">
+        <input type="text" name="especialidades" class="form-control" placeholder="Especialidades (ex.: Gastroenterologia, Coloproctologia)">
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary w-100">Adicionar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead>
+        <tr><th>Tipo de exame</th><th>Especialidades</th><th class="text-center">Preparos</th><th>Situação</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for t in tipos %}
+        <tr class="{{ '' if t.ativo else 'text-muted' }}">
+          <td><form method="post" action="{{ url_for('dono.tipos_exame_editar', tipo_id=t.id) }}" id="editar-{{ t.id }}"></form><input form="editar-{{ t.id }}" type="text" name="nome" class="form-control form-control-sm" value="{{ t.nome }}" required></td>
+          <td><input form="editar-{{ t.id }}" type="text" name="especialidades" class="form-control form-control-sm" value="{{ t.especialidades }}"></td>
+          <td class="text-center">{{ uso.get(t.id, 0) }}</td>
+          <td>
+            {% if t.ativo %}<span class="badge bg-success">Ativo</span>{% else %}<span class="badge bg-secondary">Inativo</span>{% endif %}
+          </td>
+          <td class="text-nowrap">
+            <button form="editar-{{ t.id }}" type="submit" class="btn btn-sm btn-outline-primary">Salvar</button>
+            <form method="post" action="{{ url_for('dono.tipos_exame_alternar', tipo_id=t.id) }}" class="d-inline">
+              <button type="submit" class="btn btn-sm btn-outline-secondary">{{ 'Inativar' if t.ativo else 'Ativar' }}</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-muted text-center">Nenhum tipo cadastrado ainda. A lista inicial é inserida automaticamente no próximo deploy.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

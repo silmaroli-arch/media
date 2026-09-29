@@ -6,7 +6,7 @@ from sqlalchemy import func
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 from app.mercadopago_integration import (
@@ -871,6 +871,81 @@ def licencas_gerar_cobrancas_ano():
     else:
         flash(f"Nenhum item novo - os {len(medicos)} médico(s) elegível(is) já tinham todos os meses deste ano gerados.", "success")
     return redirect(url_for("dono.usuarios"))
+
+
+# ---------- Tipos de exame (lista do dropdown do cadastro de preparo) ----------
+
+@dono_bp.route("/tipos-exame")
+@login_required
+@dono_required
+def tipos_exame():
+    """Pedido do Silvan (2026-09-29): o dono mantém a lista de tipos de
+    exame que exigem preparo (ver app.models.TipoExame e
+    app.tipos_exame_padrao para a lista inicial). Mostra também quantos
+    preparos usam cada tipo, para não inativar/renomear às cegas."""
+    tipos = TipoExame.query.order_by(TipoExame.ordem, TipoExame.nome).all()
+    uso = dict(
+        db.session.query(PreparoModelo.tipo_exame_id, func.count(PreparoModelo.id))
+        .filter(PreparoModelo.tipo_exame_id.isnot(None))
+        .group_by(PreparoModelo.tipo_exame_id)
+        .all()
+    )
+    sem_tipo = PreparoModelo.query.filter(PreparoModelo.tipo_exame_id.is_(None)).count()
+    return render_template("dono/tipos_exame.html", tipos=tipos, uso=uso, sem_tipo=sem_tipo)
+
+
+@dono_bp.route("/tipos-exame/novo", methods=["POST"])
+@login_required
+@dono_required
+def tipos_exame_novo():
+    nome = request.form.get("nome", "").strip()
+    especialidades = request.form.get("especialidades", "").strip()
+    if not nome:
+        flash("Informe o nome do tipo de exame.", "danger")
+        return redirect(url_for("dono.tipos_exame"))
+    if TipoExame.query.filter(func.lower(TipoExame.nome) == nome.lower()).first():
+        flash("Já existe um tipo de exame com esse nome.", "danger")
+        return redirect(url_for("dono.tipos_exame"))
+    ultima_ordem = db.session.query(func.max(TipoExame.ordem)).scalar() or 0
+    db.session.add(TipoExame(nome=nome, especialidades=especialidades, ativo=True, ordem=ultima_ordem + 1))
+    db.session.commit()
+    flash(f"Tipo de exame \"{nome}\" adicionado.", "success")
+    return redirect(url_for("dono.tipos_exame"))
+
+
+@dono_bp.route("/tipos-exame/<int:tipo_id>/editar", methods=["POST"])
+@login_required
+@dono_required
+def tipos_exame_editar(tipo_id):
+    """Renomeia e/ou ajusta as especialidades (texto separado por vírgula)
+    de um tipo. Renomear é seguro: os preparos apontam pelo id."""
+    tipo = TipoExame.query.get_or_404(tipo_id)
+    nome = request.form.get("nome", "").strip()
+    if not nome:
+        flash("Informe o nome do tipo de exame.", "danger")
+        return redirect(url_for("dono.tipos_exame"))
+    outro = TipoExame.query.filter(func.lower(TipoExame.nome) == nome.lower(), TipoExame.id != tipo.id).first()
+    if outro:
+        flash("Já existe outro tipo de exame com esse nome.", "danger")
+        return redirect(url_for("dono.tipos_exame"))
+    tipo.nome = nome
+    tipo.especialidades = request.form.get("especialidades", "").strip()
+    db.session.commit()
+    flash("Tipo de exame atualizado.", "success")
+    return redirect(url_for("dono.tipos_exame"))
+
+
+@dono_bp.route("/tipos-exame/<int:tipo_id>/alternar", methods=["POST"])
+@login_required
+@dono_required
+def tipos_exame_alternar(tipo_id):
+    """Ativa/inativa um tipo. Inativo some do dropdown de novos preparos,
+    mas os preparos que já o usam continuam com ele (nada é apagado)."""
+    tipo = TipoExame.query.get_or_404(tipo_id)
+    tipo.ativo = not tipo.ativo
+    db.session.commit()
+    flash(f"Tipo \"{tipo.nome}\" {'ativado' if tipo.ativo else 'inativado'}.", "success")
+    return redirect(url_for("dono.tipos_exame"))
 
 
 @dono_bp.route("/custo-ia")
