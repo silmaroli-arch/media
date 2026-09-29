@@ -83,6 +83,19 @@
      cadastro - nome/CPF/e-mail/telefone/endereço - protegido por
      confirmação de senha). Disponível pra qualquer conta com senha, não
      só o dono, mas o link fica aqui no painel dele por conveniência. #}
+  {# Idem - link direto pra dono.ferramentas_performance (pedido do
+     Silvan, 2026-09-29): ferramenta pra gerar/apagar médicos e pacientes
+     sintéticos em massa, usada pra testar como a aplicação se comporta
+     com uma base de dados bem maior (ver app/performance_teste.py).
+     Antes só era acessível digitando a URL direto - o Silvan pediu pra
+     ela aparecer no menu do painel também. Continua exigindo senha do
+     dono em toda ação (gerar/apagar), então o link em si não é um risco
+     extra mesmo aparecendo aqui. #}
+  <li class="nav-item" role="presentation">
+    <a class="nav-link" href="{{ url_for('dono.ferramentas_performance') }}">
+      <i class="bi bi-speedometer me-1"></i>Ferramentas
+    </a>
+  </li>
   <li class="nav-item" role="presentation">
     <a class="nav-link" href="{{ url_for('auth.meus_dados') }}">
       <i class="bi bi-person-circle me-1"></i>Meus dados
