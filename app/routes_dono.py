@@ -1047,8 +1047,9 @@ def ferramentas_performance():
     ver app/performance_teste.py) - gera médicos e pacientes sintéticos
     em massa direto no banco, pra observar como a aplicação se comporta
     com uma base bem maior do que a atual. Pensada só para o ambiente de
-    teste (media-dev) - por isso não tem link nenhum no menu do painel,
-    só é acessível digitando esta URL direto."""
+    teste (media-dev) - link no menu do painel ("Ferramentas", pedido do
+    Silvan, 2026-09-29), mas com toda ação (gerar/apagar) exigindo a
+    senha do próprio dono, mesmo padrão de dono.limpar_dados_banco."""
     qtd_medicos, qtd_pacientes = contar_dados_teste()
     return render_template(
         "dono/ferramentas_performance.html",

@@ -1878,9 +1878,10 @@ ação, mesmo padrão de `dono.limpar_dados`):
 - `POST /dono/ferramentas/performance/limpar` - apaga TODOS os médicos/pacientes de teste (só eles,
   identificados pelo mesmo prefixo).
 
-De propósito, **sem link nenhum no menu do painel do dono** - só acessível digitando a URL direto
-(`https://media-dev.onrender.com/dono/ferramentas/performance` ou `https://dev.media.med.br/dono/ferramentas/performance`),
-já que é uma ferramenta pensada só para o ambiente de teste, não para aparecer no dia a dia.
+**Atualização (2026-09-29, mesmo dia)**: a pedido do Silvan, ganhou um link de verdade no menu do
+painel do dono ("Ferramentas", ao lado de "Meus dados") - deixou de ser só acessível digitando a URL
+direto. Continua exigindo a senha do dono em toda ação (gerar/apagar), então o link em si não é um
+risco extra.
 
 **Pendência/recomendação**: esta ferramenta não deveria ser promovida para `main`/produção - se algum
 dia isso for cogitado, vale ou removê-la antes, ou adicionar uma proteção extra (ex.: só funcionar
