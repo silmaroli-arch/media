@@ -2006,6 +2006,17 @@ chegaria a entrar na rota (todos em trial) - mas o limite de 100 por clique cont
 proteger contra o cenário real de a base crescer o suficiente para ter, ela mesma, mais de 100 médicos
 elegíveis (ativa/inadimplente) de uma vez.
 
+## Botão "Gerar link de pagamento" em "Minha licença" do médico (2026-09-29, pedido do Silvan)
+
+Antes, o link "Pagar agora" (Checkout Pro) de um mês só existia se o dono tivesse gerado em `/dono/usuarios` (`dono.usuario_licenca_pagamento_cobrar`, que continua igual). Agora o próprio médico gera, mês a mês, no calendário de "Minha licença" - decisão do Silvan: botão POR MÊS EM ABERTO (não um botão único de "todos os meses"), ao lado do "Gerar Pix" que já existia.
+
+- **`app/routes_medico.py`**: nova rota `medico.minha_licenca_gerar_link` (POST `/equipe/minha-licenca/pagamentos/<id>/link`), mesmo padrão de `minha_licenca_gerar_pix`: só médico, 404 se o pagamento é de outro médico, recusa mês já pago, trata `MercadoPagoNaoConfigurado`/`ValueError` (sem valor definido)/erro genérico com mensagem clara. Import de `criar_preferencia_pagamento` adicionado.
+- **Ciclo mensal**: chama `criar_preferencia_pagamento(pagamento)` (`external_reference` = `licenca_pagamento:<id>`, o mesmo formato que o webhook já entende - nenhuma mudança no webhook).
+- **Ciclo anual**: só o mês vigente (mês-âncora) pode gerar, e a cobrança é a anual (`criar_preferencia_pagamento_anual`, `licenca_anual:<id>`); mês futuro é recusado pra não duplicar cobrança.
+- **`app/templates/medico/minha_licenca.html`**: novo macro `link_bloco(p)`. O botão só aparece enquanto o mês não tem `mp_init_point`; depois vira "Pagar agora". Também aparece no card de "Pagamento anual pendente" quando ainda não há link.
+- **Teste**: `test_licenca_gerar_link_medico.py` (novo, mock de `requests.post`, sem rede) - botão visível, sem credenciais, geração com credenciais + "Pagar agora", sem valor definido, isolamento entre médicos, mês pago, ciclo anual.
+- **Verificação feita**: sintaxe Python dos arquivos e renderização Jinja do template (3 cenários) conferidas. **A suíte NÃO foi executada** nesta sessão (sem Flask/PyPI acessível no ambiente) - rodar `DATABASE_URL=sqlite:///teste_licenca_gerar_link.db python test_licenca_gerar_link_medico.py` e também `test_pix_licenca.py`/`test_licenca_pagamento_valor_e_gateway.py` (regressão) antes de promover pro `main`.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
