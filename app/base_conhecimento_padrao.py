@@ -22,6 +22,13 @@ FONTE_PESTANA = ("Dr. Roberto Pestana - Tire suas dúvidas sobre o exame de colo
 FONTE_OKAZAKI = ("Clínica Okazaki - Preparo para Colonoscopia",
                  "https://www.clinicaokazaki.com/preparo-colonoscopia")
 
+FONTE_EDA_DIB = ("Instituto Victor Dib - Preparo para endoscopia: jejum, sedação e o dia do exame",
+                 "https://institutovictordib.com.br/artigos/preparo-para-endoscopia")
+FONTE_EDA_SEDIG = ("Sedig - Perguntas frequentes sobre endoscopia digestiva",
+                   "https://sedig.med.br/faq-sedig/")
+FONTE_EDA_DASA = ("Nav (Dasa) - Endoscopia digestiva alta: tudo sobre o exame",
+                  "https://nav.dasa.com.br/blog/endoscopia")
+
 # (nome do tipo de exame, pergunta, resposta, (fonte_nome, fonte_url))
 ITENS_PADRAO = [
     ("Colonoscopia", "A colonoscopia dói?",
@@ -78,6 +85,55 @@ ITENS_PADRAO = [
     ("Colonoscopia", "Tomei um gole de água sem querer durante o jejum, o exame é cancelado?",
      "Um gole acidental geralmente não cancela o exame, mas avise a equipe da clínica para que ela decida.",
      FONTE_OKAZAKI),
+    # ---- Endoscopia digestiva alta (carga 2, 2026-09-29) ----
+    ("Endoscopia digestiva alta", "A endoscopia dói?",
+     "O exame é feito com anestésico em spray na garganta e, em geral, sedação leve, então costuma ser bem tolerado. "
+     "Você pode sentir um pouco de pressão ou vontade de engasgar, mas não dor forte.",
+     FONTE_EDA_SEDIG),
+    ("Endoscopia digestiva alta", "Preciso estar em jejum para a endoscopia?",
+     "Sim. O estômago precisa estar vazio para o médico enxergar bem e para a sedação ser segura. "
+     "Siga o tempo de jejum indicado no seu preparo, sem comer nem tomar nada além do que ele permitir.",
+     FONTE_EDA_DIB),
+    ("Endoscopia digestiva alta", "Posso tomar água antes da endoscopia?",
+     "Depende da regra do seu preparo. Algumas clínicas permitem pequenos goles de água até perto do exame e outras pedem jejum total. "
+     "Siga exatamente o que está no seu preparo.",
+     FONTE_EDA_DASA),
+    ("Endoscopia digestiva alta", "Posso tomar meus remédios de rotina no dia da endoscopia?",
+     "Muitos remédios de uso contínuo são mantidos com um pequeno gole de água, mas alguns precisam de ajuste. "
+     "Siga a lista do seu preparo e nunca suspenda um remédio por conta própria.",
+     FONTE_EDA_DIB),
+    ("Endoscopia digestiva alta", "Sou diabético, como faço com o jejum e os remédios?",
+     "O jejum muda a necessidade de insulina e de outros remédios para diabetes, por isso eles costumam precisar de ajuste. "
+     "Avise no agendamento que você é diabético e siga a orientação do seu preparo.",
+     FONTE_EDA_DIB),
+    ("Endoscopia digestiva alta", "Uso anticoagulante, preciso parar antes da endoscopia?",
+     "Anticoagulantes e antiplaquetários podem precisar de ajuste, principalmente se houver chance de biópsia. "
+     "Só suspenda se o seu preparo ou quem prescreveu o remédio mandar, nunca por conta própria.",
+     FONTE_EDA_DIB),
+    ("Endoscopia digestiva alta", "Preciso de acompanhante para a endoscopia?",
+     "Sim, se o exame for feito com sedação. Você precisa de um adulto para levar você de volta para casa.",
+     FONTE_EDA_DASA),
+    ("Endoscopia digestiva alta", "Posso dirigir depois da endoscopia?",
+     "Não no mesmo dia, porque a sedação deixa os reflexos mais lentos. Também evite operar máquinas ou tomar decisões importantes até a sedação passar completamente.",
+     FONTE_EDA_SEDIG),
+    ("Endoscopia digestiva alta", "Quando posso comer depois da endoscopia?",
+     "Depois que o efeito do anestésico da garganta passar e você estiver bem acordado, a alimentação costuma ser liberada, começando por algo leve. "
+     "Se foi feita biópsia ou outro procedimento, siga a orientação que a equipe der.",
+     FONTE_EDA_SEDIG),
+    ("Endoscopia digestiva alta", "Posso mascar chiclete, fumar ou chupar bala antes da endoscopia?",
+     "Não. Chiclete, balas e cigarro estimulam o estômago e contam como quebra do jejum do preparo.",
+     FONTE_EDA_DIB),
+    ("Endoscopia digestiva alta", "Posso usar dentadura ou prótese dentária na endoscopia?",
+     "Próteses removíveis, dentaduras, óculos e adereços costumam precisar ser retirados antes do exame. "
+     "Avise a equipe se você usa qualquer um deles.",
+     FONTE_EDA_DASA),
+    ("Endoscopia digestiva alta", "É normal sentir a garganta estranha ou sono depois da endoscopia?",
+     "Sim. Garganta anestesiada ou levemente irritada, sensação de barriga inchada, gases e sonolência são comuns e melhoram ao longo do dia.",
+     FONTE_EDA_DIB),
+    ("Endoscopia digestiva alta", "Quais sintomas depois da endoscopia exigem contato com a equipe?",
+     "Dor forte na barriga ou no peito, vômito com sangue, fezes muito escuras, febre ou dificuldade para engolir ou respirar "
+     "são sinais de alerta. Procure a equipe ou um pronto atendimento imediatamente.",
+     FONTE_EDA_DIB),
 ]
 
 

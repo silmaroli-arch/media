@@ -2092,6 +2092,21 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - **Teste**: `test_base_aprendizado.py` (generalização e árbitro simulados). **NÃO executado** (sem Flask no ambiente do assistente): só sintaxe conferida. Precisa de seed: `DATABASE_URL=sqlite:///teste_base_aprendizado.db python seed.py` e depois o teste. Rodar também a regressão `test_perguntas_medico_so_do_proprio_exame.py` e `test_whatsapp_pergunta.py`.
 - **Não verificado**: a chamada real à Claude para generalizar (formato JSON, qualidade do texto). Ligar em dev e conferir os itens criados na tela do dono antes de ligar em prod.
 
+### Fatia 5 - Especialidade, base por especialidade e sugestões dos médicos (implementada, 2026-09-29)
+- **Especialidade**: `Usuario.especialidade` (String 80, `ALTER TABLE` em `migrar_banco.py`). Dropdown em `app/especialidades.py` (nomes iguais aos de `tipos_exame_padrao.py`), no cadastro (só médico) e em "Meus dados". OPCIONAL de propósito (não quebra cadastros/testes antigos); valor fora da lista é ignorado. Lista via `app_context_processor` de `routes_auth`.
+- **Tela do médico** "Base compartilhada" (`medico.base_compartilhada`, menu lateral só para médico): somente leitura, itens ATIVOS dos tipos de exame cuja lista de especialidades contém a dele (sem diferenciar maiúsculas) OU que não têm especialidade definida. Sem especialidade no cadastro: aviso com link para Meus dados.
+- **Sugestões** (`BaseConhecimentoSugestao`, tabela nova via `create_all`): médico sugere alteração de um item ou item novo (só em tipos da sua especialidade); reenviar para o mesmo item substitui a pendente. A base NÃO muda até o dono aprovar.
+- **Dono**: `dono.base_sugestoes` (fila, link/contador na aba Base de conhecimento). Aprovar (pode ajustar o texto): alteração -> versão anterior no histórico, item vira revisado, embedding recalculado; item novo -> entra ativo, revisado, origem "medico", autor = médico. Rejeitar com recado opcional. O médico recebe `Notificacao` (tipo `sugestao_base`) nas duas decisões.
+- **Excluir médico**: itens e sugestões ficam (autoria vira só texto).
+- **Teste**: `test_base_sugestoes.py` (banco recriado, sem seed). **NÃO executado** (sem Flask no ambiente do assistente): só sintaxe e parse Jinja. Rodar também regressão de cadastro/Meus dados (`test_*cadastro*`, `test_meus_dados*` se existirem).
+- **Fica para depois**: sugestão de EXCLUSÃO/inativação de item pelo médico; conteúdo de outros exames além de colonoscopia.
+
+### Carga 2 da base - Endoscopia digestiva alta (2026-09-29)
+- `app/base_conhecimento_padrao.py` ganhou 13 itens de "Endoscopia digestiva alta" (jejum, água, remédios, diabetes, anticoagulante, acompanhante, dirigir, alimentação depois, chiclete/cigarro, dentadura, sintomas normais, sinais de alerta), reescritos com palavras próprias a partir de Instituto Victor Dib, Sedig e Nav (Dasa), com a fonte em cada item. Sem prazos/horas/doses e sem "confirme com o médico" (o teste confere). Entram como origem "internet", não revisados; a carga é insert-only (roda no `migrar_banco.py` no próximo deploy).
+- **Cuidado editorial**: as fontes divergem em prazos (jejum, tempo sem dirigir), por isso os itens mandam seguir o preparo cadastrado em vez de citar números.
+- `test_base_conhecimento.py` ajustado: a checagem "respeita o tipo de exame" e a do item inativo deixaram de assumir que endoscopia não tem itens parecidos. Continua **NÃO executado** (sem Flask no ambiente do assistente).
+- Próximos tipos sugeridos por volume de dúvida: ressonância magnética, tomografia com contraste, ultrassonografia abdominal, exames de sangue (jejum).
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
