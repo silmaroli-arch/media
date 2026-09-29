@@ -1849,6 +1849,44 @@ Causa: `app/templates/medico/dashboard.html` (linha do link) usava
 
 Corrigido trocando o `url_for` do link para `medico.portal_atendimento`.
 
+## Ferramenta de teste de performance (2026-09-29, pedido do Silvan)
+
+Pedido: gerar um número considerável de médicos e pacientes sintéticos no `media-dev`, para observar
+como a aplicação responde com uma base de dados bem maior. Como este ambiente (sandbox de nuvem) não
+tem `flask`/`psycopg2` nem acesso de rede para instalá-los, e o `device_bash` (máquina do Silvan) tem
+Python mas sem acesso de rede para instalar pacotes nem ao Postgres direto, e o plano Free do Render
+não tem Shell - não havia como rodar um script Python "avulso" (`python script.py`) diretamente contra
+o banco do dev. Solução: em vez de um script avulso, virou uma ferramenta dentro da própria aplicação
+(reaproveita a conexão com o banco que o Render já mantém).
+
+**Novo módulo `app/performance_teste.py`**: gera (`gerar_medicos_teste`/`gerar_pacientes_teste`) e apaga
+(`apagar_dados_teste`) médicos/pacientes sintéticos via `bulk_insert_mappings` (rápido, sem passar pelas
+rotas normais de cadastro nem pelas cascatas do ORM). Cada médico é solo (sem Grupo), com todas as
+permissões administrativas e licença em trial; cada paciente tem `cadastrado_por_id` apontando pra um
+desses médicos, em rodízio. Todos claramente identificáveis (e-mail com prefixo `medico.perfteste`, nome
+de paciente com prefixo `Paciente PerfTeste`) e usam faixas de CPF/telefone bem distintas das reais
+(`99.000.000.000+` para médico, `88.000.000.000+` para paciente), para nunca colidir com dado de verdade
+nem ser confundido com ele.
+
+**Novas rotas em `app/routes_dono.py`** (só o dono acessa, senha de confirmação obrigatória em toda
+ação, mesmo padrão de `dono.limpar_dados`):
+- `GET /dono/ferramentas/performance` - mostra quantos médicos/pacientes de teste já existem e os
+  formulários de gerar/apagar (`app/templates/dono/ferramentas_performance.html`).
+- `POST /dono/ferramentas/performance/gerar` - gera até 2.000 médicos e/ou 10.000 pacientes por clique
+  (limite de segurança, pra não travar a requisição/worker do Render gerando um volume enorme de uma vez
+  só - para um lote maior, é só clicar de novo).
+- `POST /dono/ferramentas/performance/limpar` - apaga TODOS os médicos/pacientes de teste (só eles,
+  identificados pelo mesmo prefixo).
+
+De propósito, **sem link nenhum no menu do painel do dono** - só acessível digitando a URL direto
+(`https://media-dev.onrender.com/dono/ferramentas/performance` ou `https://dev.media.med.br/dono/ferramentas/performance`),
+já que é uma ferramenta pensada só para o ambiente de teste, não para aparecer no dia a dia.
+
+**Pendência/recomendação**: esta ferramenta não deveria ser promovida para `main`/produção - se algum
+dia isso for cogitado, vale ou removê-la antes, ou adicionar uma proteção extra (ex.: só funcionar
+quando uma variável de ambiente `AMBIENTE=dev` estiver definida) para não correr o risco de alguém
+gerar dados sintéticos em produção por engano.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

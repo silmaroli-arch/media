@@ -14,6 +14,9 @@ from app.mercadopago_integration import (
 )
 from app.exclusao_usuario import verificar_bloqueios_exclusao, excluir_usuario_e_dados
 from app.limpar_dados import apagar_todos_os_dados
+from app.performance_teste import (
+    contar_dados_teste, gerar_medicos_teste, gerar_pacientes_teste, apagar_dados_teste,
+)
 
 dono_bp = Blueprint("dono", __name__, url_prefix="/dono")
 
@@ -1011,3 +1014,74 @@ def anuncio_enviar():
         "success",
     )
     return redirect(url_for("dono.anuncios"))
+
+
+
+@dono_bp.route("/ferramentas/performance")
+@login_required
+@dono_required
+def ferramentas_performance():
+    """Ferramenta de teste de performance (pedido do Silvan, 2026-09-29,
+    ver app/performance_teste.py) - gera médicos e pacientes sintéticos
+    em massa direto no banco, pra observar como a aplicação se comporta
+    com uma base bem maior do que a atual. Pensada só para o ambiente de
+    teste (media-dev) - por isso não tem link nenhum no menu do painel,
+    só é acessível digitando esta URL direto."""
+    qtd_medicos, qtd_pacientes = contar_dados_teste()
+    return render_template(
+        "dono/ferramentas_performance.html",
+        qtd_medicos=qtd_medicos, qtd_pacientes=qtd_pacientes,
+    )
+
+
+@dono_bp.route("/ferramentas/performance/gerar", methods=["POST"])
+@login_required
+@dono_required
+def ferramentas_performance_gerar():
+    senha_confirmacao = request.form.get("senha_confirmacao", "")
+    if not current_user.checar_senha(senha_confirmacao):
+        flash("Senha incorreta - nada foi gerado.", "danger")
+        return redirect(url_for("dono.ferramentas_performance"))
+
+    try:
+        qtd_medicos = int(request.form.get("qtd_medicos", "0"))
+        qtd_pacientes = int(request.form.get("qtd_pacientes", "0"))
+    except ValueError:
+        flash("Quantidade inválida.", "danger")
+        return redirect(url_for("dono.ferramentas_performance"))
+
+    # Limite por clique (pedido de segurança, não do Silvan): evita travar
+    # a requisição/worker do Render gerando um volume enorme de uma vez só
+    # - para um lote grande, é só clicar mais de uma vez.
+    qtd_medicos = max(0, min(qtd_medicos, 2000))
+    qtd_pacientes = max(0, min(qtd_pacientes, 10000))
+
+    criados_medicos = gerar_medicos_teste(qtd_medicos) if qtd_medicos else 0
+    criados_pacientes = gerar_pacientes_teste(qtd_pacientes) if qtd_pacientes else 0
+
+    if not criados_medicos and not criados_pacientes:
+        flash("Nada gerado - informe uma quantidade de médicos e/ou pacientes maior que zero.", "warning")
+    else:
+        flash(
+            f"Gerados {criados_medicos} médico(s) e {criados_pacientes} paciente(s) de teste.",
+            "success",
+        )
+    return redirect(url_for("dono.ferramentas_performance"))
+
+
+@dono_bp.route("/ferramentas/performance/limpar", methods=["POST"])
+@login_required
+@dono_required
+def ferramentas_performance_limpar():
+    senha_confirmacao = request.form.get("senha_confirmacao", "")
+    if not current_user.checar_senha(senha_confirmacao):
+        flash("Senha incorreta - nada foi apagado.", "danger")
+        return redirect(url_for("dono.ferramentas_performance"))
+
+    qtd_medicos, qtd_pacientes = apagar_dados_teste()
+    db.session.commit()
+    flash(
+        f"Removidos {qtd_medicos} médico(s) e {qtd_pacientes} paciente(s) de teste.",
+        "success",
+    )
+    return redirect(url_for("dono.ferramentas_performance"))
