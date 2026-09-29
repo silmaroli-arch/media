@@ -1167,6 +1167,29 @@ class Medicamento(db.Model):
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class TipoExame(db.Model):
+    """Tipo de exame que exige preparo (colonoscopia, endoscopia, ressonância
+    com contraste...) - lista GLOBAL da plataforma, mantida pelo dono em
+    /dono/tipos-exame (pedido do Silvan, 2026-09-29). Cada preparo
+    (PreparoModelo) aponta para um tipo. É o que liga o preparo de uma
+    clínica à base de conhecimento compartilhada (nas fatias seguintes) e o
+    que define, pela especialidade, qual médico enxerga qual parte dessa
+    base. `especialidades` é texto separado por vírgula (nomes de
+    especialidade médica) - simples de propósito, sem tabela extra."""
+    __tablename__ = "tipos_exame"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(200), nullable=False, unique=True)
+    especialidades = db.Column(db.Text, nullable=False, default="")
+    ativo = db.Column(db.Boolean, nullable=False, default=True)
+    ordem = db.Column(db.Integer, nullable=False, default=0)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def lista_especialidades(self):
+        return [e.strip() for e in (self.especialidades or "").split(",") if e.strip()]
+
+
 class PreparoModelo(db.Model):
     """Um modelo de preparo reaproveitável, pertencente a uma filial. Pode
     ser usado por vários exames ao mesmo tempo (ex.: os 3 substratos do
@@ -1196,10 +1219,14 @@ class PreparoModelo(db.Model):
     # Observações sobre medicamentos que NÃO precisam ser suspensos (ex.:
     # "não é necessário suspender o AAS, Somalgin, Aspirina").
     observacoes_medicamentos = db.Column(db.Text)
+    # Tipo de exame (ver TipoExame) - escolhido pelo médico ao cadastrar o
+    # preparo. Nullable: preparos antigos ficam sem tipo até alguém escolher.
+    tipo_exame_id = db.Column(db.Integer, db.ForeignKey("tipos_exame.id"), nullable=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
+    tipo_exame = db.relationship("TipoExame", foreign_keys=[tipo_exame_id])
     exames = db.relationship("Exame", back_populates="preparo_modelo")
     cortes = db.relationship(
         "PreparoCorte", back_populates="preparo_modelo", cascade="all, delete-orphan",

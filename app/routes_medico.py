@@ -22,7 +22,7 @@ from app.models import (
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, PushSubscription, LicencaPagamento, garantir_meses_licenca,
-    PlataformaConfig, MensagemSuporte, Notificacao,
+    PlataformaConfig, MensagemSuporte, Notificacao, TipoExame,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto,
 )
@@ -1667,6 +1667,36 @@ def _salvar_cortes_e_medicamentos(modelo, form):
         ))
 
 
+def _tipos_exame_ativos():
+    """Tipos de exame ativos (dropdown "Tipo de exame" do cadastro de
+    preparo) na ordem definida pelo dono - ver app.models.TipoExame."""
+    return TipoExame.query.filter_by(ativo=True).order_by(TipoExame.ordem, TipoExame.nome).all()
+
+
+def _ler_tipo_exame(form, obrigatorio, tipo_atual_id=None):
+    """Lê e valida o campo "tipo_exame_id" do formulário de preparo. Devolve
+    (tipo_exame_id, mensagem_de_erro) - a mensagem é None quando está tudo
+    certo. É obrigatório escolher um tipo só quando `obrigatorio` E existe
+    pelo menos um tipo ativo cadastrado (ambiente sem a lista, como o banco
+    de testes, não fica travado). O tipo que o preparo JÁ tem continua
+    válido mesmo se o dono o inativou depois (não obriga a trocar)."""
+    bruto = (form.get("tipo_exame_id") or "").strip()
+    ativos = _tipos_exame_ativos()
+    if not bruto:
+        if obrigatorio and ativos:
+            return None, "Escolha o tipo de exame do preparo."
+        return None, None
+    try:
+        tipo_id = int(bruto)
+    except ValueError:
+        return None, "Tipo de exame inválido."
+    if tipo_id == tipo_atual_id:
+        return tipo_id, None
+    if not any(t.id == tipo_id for t in ativos):
+        return None, "Tipo de exame inválido."
+    return tipo_id, None
+
+
 @medico_bp.route("/preparo-modelos/novo", methods=["GET", "POST"])
 @login_required
 @staff_required
@@ -1699,6 +1729,7 @@ def preparo_modelos_novo():
             "medico/preparo_modelo_form.html", modelo=None, sugestao=None,
             medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
             wizard=wizard, medicos=medicos, eh_medico_logado=eh_medico(),
+            tipos_exame=_tipos_exame_ativos(),
         )
 
     if request.method == "POST":
@@ -1722,6 +1753,11 @@ def preparo_modelos_novo():
 
         if not nome or not instrucoes:
             flash("Nome do modelo e instruções são obrigatórios.", "danger")
+            return _rerender_novo()
+
+        tipo_exame_id, erro_tipo = _ler_tipo_exame(request.form, obrigatorio=True)
+        if erro_tipo:
+            flash(erro_tipo, "danger")
             return _rerender_novo()
 
         if PreparoModelo.query.filter(
@@ -1770,6 +1806,7 @@ def preparo_modelos_novo():
             grupo_id=filial.id if filial else None,
             nome=nome, instrucoes=instrucoes,
             observacoes_medicamentos=observacoes_medicamentos or None,
+            tipo_exame_id=tipo_exame_id,
             # DONO do modelo: quem criou. Se for um médico, só ele
             # edita/remove (ver PreparoModelo.pode_ser_editado_por).
             criado_por_id=current_user.id,
@@ -1813,6 +1850,7 @@ def preparo_modelos_novo():
         "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
         medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
         wizard=wizard, medicos=medicos, eh_medico_logado=eh_medico(),
+        tipos_exame=_tipos_exame_ativos(),
     )
 
 
@@ -1852,12 +1890,23 @@ def preparo_modelos_editar(modelo_id):
             medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
             medicos=medicos, exame_vinculado=exame_vinculado,
             varios_exames_vinculados=varios_exames_vinculados, eh_medico_logado=eh_medico(),
+            tipos_exame=_tipos_exame_ativos(),
         )
 
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
         if not nome:
             flash("Informe o nome do modelo.", "danger")
+            return _rerender_editar()
+
+        # Preparo antigo (sem tipo) não é obrigado a escolher agora - só
+        # não pode "escolher e depois esvaziar" um tipo que já tinha.
+        tipo_exame_id, erro_tipo = _ler_tipo_exame(
+            request.form, obrigatorio=modelo.tipo_exame_id is not None,
+            tipo_atual_id=modelo.tipo_exame_id,
+        )
+        if erro_tipo:
+            flash(erro_tipo, "danger")
             return _rerender_editar()
 
         duracao_minutos = request.form.get("duracao_minutos", type=int)
@@ -1905,6 +1954,7 @@ def preparo_modelos_editar(modelo_id):
                 return _rerender_editar()
 
         modelo.nome = nome
+        modelo.tipo_exame_id = tipo_exame_id
         modelo.instrucoes = request.form.get("instrucoes", "").strip()
         modelo.observacoes_medicamentos = request.form.get("observacoes_medicamentos", "").strip() or None
         _salvar_cortes_e_medicamentos(modelo, request.form)

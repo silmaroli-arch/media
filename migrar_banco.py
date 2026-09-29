@@ -51,6 +51,12 @@ from app import create_app, db  # import tardio - só depois de já ter validado
 _app_para_create_all = create_app()
 with _app_para_create_all.app_context():
     db.create_all()
+    # Lista inicial de tipos de exame (app/tipos_exame_padrao.py) - so
+    # insere os que faltam, nunca altera os que o dono ja mexeu.
+    from app.models import TipoExame
+    from app.tipos_exame_padrao import semear_tipos_exame
+    _novos_tipos = semear_tipos_exame(db, TipoExame)
+    print(f"Tipos de exame: {_novos_tipos} novo(s) inserido(s) na lista padrao.")
 print("Schema de tabelas OK - seguindo para os ajustes de coluna (ALTER TABLE).")
 
 SQL = """
@@ -478,6 +484,9 @@ ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_qr_code TEXT;
 ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_qr_code_base64 TEXT;
 ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_payment_id VARCHAR(80);
 ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_expira_em TIMESTAMP;
+
+-- Tipo de exame do preparo (lista global tipos_exame, criada pelo db.create_all()).
+ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS tipo_exame_id INTEGER REFERENCES tipos_exame(id);
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

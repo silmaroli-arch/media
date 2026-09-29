@@ -74,6 +74,28 @@
       </div>
     </div>
 
+    {# Pedido do Silvan (2026-09-29): tipo de exame (lista global mantida pelo
+       dono, ver app.models.TipoExame). Liga este preparo à base de
+       conhecimento compartilhada. Obrigatório em preparo novo. #}
+    {% if tipos_exame %}
+    <div class="mb-3">
+      <label class="form-label">Tipo de exame</label>
+      <select name="tipo_exame_id" class="form-select" {% if not modelo or modelo.tipo_exame_id %}required{% endif %}>
+        <option value="">Selecione o tipo de exame...</option>
+        {% for t in tipos_exame %}
+        <option value="{{ t.id }}" {% if modelo and modelo.tipo_exame_id == t.id %}selected{% endif %}>{{ t.nome }}</option>
+        {% endfor %}
+        {% if modelo and modelo.tipo_exame and modelo.tipo_exame not in tipos_exame %}
+        <option value="{{ modelo.tipo_exame.id }}" selected>{{ modelo.tipo_exame.nome }} (inativo)</option>
+        {% endif %}
+      </select>
+      <div class="form-text">
+        Ajuda o sistema a responder as dúvidas dos pacientes com base no que já se sabe sobre esse tipo de
+        exame. O preparo que você cadastra aqui sempre tem prioridade.
+      </div>
+    </div>
+    {% endif %}
+
     {% if not varios_exames_vinculados %}
     {# Restruturação de 2026-09 (pedido do Silvan): os dados do exame
        associado (antes numa tela separada) são preenchidos direto aqui -
