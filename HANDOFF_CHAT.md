@@ -1740,7 +1740,7 @@ Pedido do Silvan: "Vamos montar o app do whatsapp para o ambiente dev. Lembrando
   - À conta **Test WhatsApp Business Account** (via "Contas do WhatsApp" > selecionar a conta > "Atribuir pessoas" > marcar "Acesso total > Tudo" > "Atribuir").
   Isso evita criar um segundo usuário do sistema só pra dev - o mesmo usuário agora gerencia produção e dev sem conflito, já que os ativos (App e WABA) são completamente separados entre os dois ambientes.
 
-**Ainda faltando (task #4 da lista em andamento)**: gerar o **token de acesso permanente** a partir da própria página do usuário do sistema "API_integracao_whatsapp" (botão "Gerar novo token", selecionando o app `media-dev` e as permissões `whatsapp_business_messaging` + `whatsapp_business_management`, sem expiração) - até agora só existe o token temporário de 24h gerado durante o teste rápido.
+**Task #4 concluída**: token de acesso permanente gerado a partir da página do usuário do sistema "API_integracao_whatsapp" (botão "Gerar token", app `media-dev`, permissões `whatsapp_business_messaging` + `whatsapp_business_management`). Valor do token não compartilhado no chat, por política de privacidade - o Silvan guardou por conta própria. Nesse ponto, o `media-dev` já tem todos os 4 dados necessários: Phone Number ID (`1267356273137404`), WABA ID (`1626458592554109`), App Secret e Access Token permanente.
 
 **Próximos passos (tasks #5-7, ainda não iniciados)**:
 - Configurar o webhook do `media-dev` (`https://media-dev.onrender.com/whatsapp/webhook`) com um **Verify Token novo**, diferente do de produção.
