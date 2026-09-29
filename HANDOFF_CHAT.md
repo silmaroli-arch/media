@@ -1945,6 +1945,36 @@ criar cards novos) passaram a contar `Usuario.licenca_status` dos médicos, em v
 de cada uma) continua exatamente como estava - ela é sobre Grupo mesmo, faz sentido continuar existindo
 separada. O card "Grupos de trabalho criados" no topo da Visão geral também não mudou.
 
+## Bug corrigido: resposta da IA recomendando "confirme com seu médico" (2026-09-29)
+
+Reportado pelo Silvan com print da tela de aprovação ("Rascunho final"): a resposta sugerida pela IA
+para "Paracetamol e dipirona estão liberados?" terminava com "...seria importante confirmar com seu
+médico antes de tomar, especialmente se você já usa outros medicamentos." - texto sem sentido neste
+produto: esta MESMA pergunta já está passando pela revisão do médico (fila de aprovação) antes de
+chegar ao paciente, então "confirme com seu médico" é redundante/confuso. Pedido do Silvan: essa frase
+(ou parecida) nunca deve sobrar no rascunho enviado ao paciente, em nenhum merge/síntese de resposta.
+
+**Implementado em `app/ia_preparo.py`**:
+- Nova função `_remover_recomendacao_de_consultar_medico(texto)`: remove, por regex, qualquer FRASE
+  inteira (delimitada por ponto/exclamação/interrogação) que mencione "médico(a)" junto com um verbo de
+  "buscar confirmação" (confirmar/consultar/conversar/falar/perguntar/verificar/checar). Remove a frase
+  toda (não só o trecho específico) para nunca devolver algo gramaticalmente quebrado - se a frase
+  também trazia informação útil, prefere perder essa informação a manter a recomendação sem sentido.
+  Não afeta menção a "secretaria/equipe" (escalar pra equipe ainda faz sentido em alguns casos, ver
+  NAO_SEI_ENCAMINHAR). Se a remoção zerasse a resposta por completo, devolve o texto original sem
+  alterar nada (mais seguro que mandar uma resposta vazia).
+- Aplicada num ÚNICO ponto dentro de `responder_com_ia`, logo depois que `final` é decidido - cobre os
+  4 caminhos que podem preenchê-lo (síntese de duas respostas divergentes, as duas coladas lado a lado
+  quando não dá pra sintetizar, concordância entre as duas, ou resposta de uma IA só).
+- Reforço no próprio `PROMPT_SISTEMA`: nova regra proibindo explicitamente a IA de recomendar "confirme/
+  consulte/converse/fale com o médico" em qualquer resposta - mas o filtro por código acima é o que
+  garante isso de fato (a instrução no prompt já existia de forma mais restrita para o caso
+  MEDICAMENTO_NAO_CADASTRADO_REVISAR e mesmo assim vazou nesse caso reportado - depender só da IA seguir
+  a instrução não é confiável o bastante).
+
+Testado manualmente (fora da suite automatizada) com os 3 textos exatos dos prints do Silvan - nos 3
+casos a frase problemática foi removida corretamente, sem quebrar o restante da resposta.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
