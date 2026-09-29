@@ -1789,6 +1789,19 @@ Corrigido: import de `ContagemPerguntasDia` adicionado; antes do `Exame.query.fi
 Aplicado só no `dev` (aguardando auto-commit do Silvan) - Silvan vai testar de novo após o deploy. Vale lembrar pra próxima vez que um novo modelo ganhar uma FK obrigatória pra `usuarios.id`, `agendamentos.id` OU `exames.id`: já checar se `exclusao_usuario.py` precisa saber dele - esse arquivo já causou 3 rodadas de erro 500 diferentes na mesma tentativa de exclusão, então vale considerar, numa próxima sessão, escrever um teste automatizado que crie um médico com pelo menos uma linha em CADA tabela que referencia `usuarios.id`/`agendamentos.id`/`exames.id` e confirme que a exclusão completa sem erro - mais confiável que ir descobrindo tabela por tabela via traceback de produção/dev.
 
 
+## Bug corrigido: checkbox "exigir aprovação" do cadastro era ignorado (2026-09-29)
+
+Silvan testou o cadastro público (`auth/cadastro`) desmarcando o checkbox "Exigir minha aprovação antes de responder o paciente" (ou seja, escolhendo que a IA responda direto, sem esperar aprovação) - mas depois de criar a conta, o painel mostrava a aprovação como EXIGIDA (toggle ligado), o oposto do que ele escolheu.
+
+**Causa raiz**: a rota `cadastro()` em `app/routes_auth.py` nunca lia o campo `aprovacao_perguntas_paciente` do formulário - simplesmente não existia nenhuma linha `request.form.get("aprovacao_perguntas_paciente")` nessa função. Toda conta nova nascia com o valor padrão do próprio modelo (`Usuario.aprovacao_perguntas_paciente`, `default=True`), ignorando completamente a escolha feita na tela de cadastro.
+
+**Correção**: adicionada a linha `usuario.aprovacao_perguntas_paciente = bool(request.form.get("aprovacao_perguntas_paciente"))` logo depois de setar `crm_numero`/`crm_uf`/`data_nascimento`. Funciona porque checkbox HTML desmarcado simplesmente não é enviado no POST - `bool(None)` vira `False` (não exigir aprovação), e `bool("1")` (valor do checkbox marcado, ver template) vira `True` (exigir aprovação) - coerente com o comportamento padrão de checkbox em formulário HTML.
+
+Verificado com `python3 -c "import ast; ast.parse(...)"` (sintaxe OK) e releitura do arquivo confirmando a linha nova.
+
+Aplicado só no `dev` (aguardando auto-commit do Silvan) - ele vai criar uma conta de teste nova depois do deploy pra confirmar que a escolha do checkbox agora é respeitada.
+
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
