@@ -2130,6 +2130,9 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Arquivos antigos/originais dos agentes foram movidos para `_to_delete/` (sem permissão de apagar): pode excluir a pasta. Não commitar.
 - Não executado com Flask; conferidos import, unicidade e regras de conteúdo.
 
+### Correção de menu (2026-09-30)
+- As abas "Tipos de exame" e "Base de conhecimento" só tinham sido adicionadas em `dono/_menu.html` (telas soltas). O painel principal (`dono/dashboard.html`) tem a própria lista de abas e não aparecia nada. Adicionados os dois links lá, antes de "Ferramentas". Lição: ao criar tela nova do dono, incluir nos DOIS lugares (`_menu.html` e a lista de abas do `dashboard.html`).
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
