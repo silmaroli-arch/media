@@ -278,6 +278,12 @@ def meus_dados():
             flash("CPF inválido — confira os números digitados.", "danger")
             return render_template("auth/meus_dados.html", confirmado=True)
 
+        # Telefone é obrigatório para o MÉDICO (2026-09-30): é por ele que a
+        # plataforma manda a mensagem de boas-vindas e os avisos por WhatsApp.
+        if current_user.tipo == "medico" and not re.sub(r"\D", "", request.form.get("telefone", "")):
+            flash("O telefone é obrigatório para médicos.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=True)
+
         if telefone_incompleto(request.form.get("telefone", "")):
             flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
             return render_template("auth/meus_dados.html", confirmado=True)

@@ -42,7 +42,7 @@
           </div>
           <div class="col-md-6">
             <label class="form-label">Telefone</label>
-            <input type="text" inputmode="numeric" name="telefone" id="telefone" class="form-control" placeholder="(27) 99999-9999" value="{{ current_user.telefone or '' }}">
+            <input type="text" inputmode="numeric" name="telefone" id="telefone" class="form-control" placeholder="(27) 99999-9999" value="{{ current_user.telefone or '' }}"{% if current_user.tipo == 'medico' %} required{% endif %}>
             <div class="invalid-feedback" id="telefone_status"></div>
           </div>
           {% if current_user.tipo == "medico" %}
