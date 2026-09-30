@@ -2123,6 +2123,13 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 ### Roteiro de validação (2026-09-29)
 - Criado `ROTEIRO_VALIDACAO_BASE.md` na pasta do projeto: ordem dos testes, conferência em dev, calibração da busca, como ligar os interruptores aos poucos, checklist de produção e passos do PR `dev` -> `main` (manter o `render.yaml` da main).
 
+### Carga 5 da base - ampliação parcial (2026-09-30)
+- Pedido do Silvan: trazer o máximo possível de perguntas por exame. Onze agentes pesquisaram em paralelo (`app/base_conhecimento_padrao_g7.py` a `_g17.py`), mas **bateram no limite de uso da sessão e foram cortados no meio**. Os arquivos ficaram sem o `]` final: recuperei o que estava escrito (cortando no último item completo), filtrei pelas regras do projeto (tipo existente, sem dígitos/"horas"/"dias"/ponto e vírgula/"consulte o médico", sem duplicata) e integrei `_g7`, `_g8`, `_g9`, `_g10`, `_g11`, `_g12`, `_g13`, `_g15`, `_g16` no fim de `base_conhecimento_padrao.py`.
+- Resultado: base foi de 331 para **806 itens** (colonoscopia de 15 para 40). Foram descartados 10 itens que violavam as regras ou repetiam pergunta.
+- **Lacunas**: `_g14` (sangue, curva glicêmica, hormônios, PSA, urina 24h) e `_g17` (espirometria, polissonografia, EEG, retina, audiometria, nasofibro) NÃO foram gerados. Nos demais grupos, só os primeiros tipos de cada arquivo foram escritos antes do corte: vários tipos seguem com poucos itens (ex.: pHmetria, manometria anorretal, angiotomografia, cateterismo, colposcopia, broncoscopia). Refazer só esses tipos numa próxima rodada, em lotes menores.
+- Arquivos antigos/originais dos agentes foram movidos para `_to_delete/` (sem permissão de apagar): pode excluir a pasta. Não commitar.
+- Não executado com Flask; conferidos import, unicidade e regras de conteúdo.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

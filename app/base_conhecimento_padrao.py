@@ -217,6 +217,19 @@ from app.base_conhecimento_padrao_g5 import ITENS as _G5  # laboratório
 from app.base_conhecimento_padrao_g6 import ITENS as _G6  # ginecologia, urologia, pneumologia e outros
 
 ITENS_PADRAO = ITENS_PADRAO + _G1 + _G2 + _G3 + _G4 + _G5 + _G6
+# Ampliação (carga 5): agentes pesquisaram mais dúvidas por exame. Grupos 14 e 17 (sangue/urina e
+# espirometria/polissonografia/EEG/retina/audiometria/nasofibro) ficaram sem ampliação por limite de uso.
+from app.base_conhecimento_padrao_g7 import ITENS as _G7
+from app.base_conhecimento_padrao_g8 import ITENS as _G8
+from app.base_conhecimento_padrao_g9 import ITENS as _G9
+from app.base_conhecimento_padrao_g10 import ITENS as _G10
+from app.base_conhecimento_padrao_g11 import ITENS as _G11
+from app.base_conhecimento_padrao_g12 import ITENS as _G12
+from app.base_conhecimento_padrao_g13 import ITENS as _G13
+from app.base_conhecimento_padrao_g15 import ITENS as _G15
+from app.base_conhecimento_padrao_g16 import ITENS as _G16
+
+ITENS_PADRAO = ITENS_PADRAO + _G7 + _G8 + _G9 + _G10 + _G11 + _G12 + _G13 + _G15 + _G16
 
 
 def semear_base_conhecimento(db):
