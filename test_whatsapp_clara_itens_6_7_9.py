@@ -35,20 +35,20 @@ with app.app_context():
     # ---------------------------------------------------------------
     telefone_item7 = "+5527900007777"
 
-    processar_mensagem(telefone_item7, "111.111.111-11")  # CPF que não existe
+    processar_mensagem(telefone_item7, "529.982.247-25")  # CPF que não existe
     resposta = processar_mensagem(telefone_item7, "01/01/2000")  # 1ª falha
     checar("1ª falha de identificação: mensagem normal de não encontrado", "Não encontramos" in resposta)
     conversa7 = ConversaWhatsapp.query.filter_by(telefone=telefone_item7).first()
     checar("1ª falha: contou 1 tentativa", conversa7.tentativas_identificacao == 1)
     checar("1ª falha: ainda não bloqueou", conversa7.bloqueada is False)
 
-    processar_mensagem(telefone_item7, "111.111.111-11")
+    processar_mensagem(telefone_item7, "529.982.247-25")
     resposta = processar_mensagem(telefone_item7, "01/01/2000")  # 2ª falha
     conversa7 = ConversaWhatsapp.query.filter_by(telefone=telefone_item7).first()
     checar("2ª falha: contou 2 tentativas", conversa7.tentativas_identificacao == 2)
     checar("2ª falha: ainda não bloqueou (mensagem normal de novo)", "Não encontramos" in resposta)
 
-    processar_mensagem(telefone_item7, "111.111.111-11")
+    processar_mensagem(telefone_item7, "529.982.247-25")
     resposta = processar_mensagem(telefone_item7, "01/01/2000")  # 3ª falha: bloqueia
     checar("3ª falha: mensagem de bloqueio por tentativas esgotadas", "Não conseguimos confirmar" in resposta)
     conversa7 = ConversaWhatsapp.query.filter_by(telefone=telefone_item7).first()

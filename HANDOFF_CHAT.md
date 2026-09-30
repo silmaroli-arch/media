@@ -2154,6 +2154,13 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - **Teste**: `test_tipo_exame_nao_encontrado.py` (novo, sem seed). NÃO executado (sem Flask no ambiente do assistente).
 - **ATENÇÃO - testes antigos**: o cadastro (`/cadastro`) hoje exige telefone, CEP/endereço completo e confirmação de senha. Vários testes antigos do repositório (ex.: `test_licenca_medico.py`) postam cadastro sem esses campos e provavelmente já falham. Nos testes novos que escrevi (`test_licenca_gerar_link_medico`, `test_tipos_exame`, `test_base_conhecimento`, `test_base_sugestoes`) acrescentei um `EXTRA_CADASTRO` com esses campos. Vale conferir a regressão dos antigos.
 
+## WhatsApp: valida o dígito verificador do CPF na hora
+
+- `app/whatsapp_conversa.py`: ao receber o CPF, se o dígito verificador não confere (`validar_cpf`), responde `MENSAGEM_CPF_DIGITO_INVALIDO` e não pede a data. Não consulta o banco para dizer se o CPF existe (sem vazar cadastros).
+- Exceção: CPF inválido que já esteja salvo em algum paciente antigo (`_cpf_ja_cadastrado`) segue o fluxo normal, para não trancar ninguém.
+- Não conta como tentativa de identificação (o limite de 3 continua só para CPF+data que não batem).
+- Testes: `test_whatsapp_identificacao.py` (novo caso com dígito errado) e `test_whatsapp_clara_itens_6_7_9.py` passaram a usar o CPF válido inexistente 529.982.247-25 no lugar de 111.111.111-11. Não executados (sem Flask aqui).
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

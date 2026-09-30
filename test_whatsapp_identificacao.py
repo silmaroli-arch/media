@@ -59,13 +59,18 @@ with app.app_context():
     checar("Texto que não é CPF avisa e pede de novo", "CPF" in resposta)
     checar("Ainda não pede data de nascimento (CPF não veio)", "data de nascimento" not in resposta.lower())
 
+    # 2-0) CPF com dígito verificador errado: avisa na hora, sem pedir data.
+    resposta = processar_mensagem(telefone_joao, "529.982.247-26")
+    checar("CPF com dígito errado avisa na hora", "não parece válido" in resposta)
+    checar("Não pede a data com CPF inválido", "data de nascimento" not in resposta.lower())
+
     # 2) CPF que não bate com nenhum cadastro: aceita o formato, guarda
     # como pendente e passa a pedir a data de nascimento.
-    resposta = processar_mensagem(telefone_joao, "111.111.111-11")
+    resposta = processar_mensagem(telefone_joao, "529.982.247-25")
     checar("CPF em formato válido: passa a pedir a data de nascimento", "data de nascimento" in resposta.lower())
     checar(
         "CPF pendente foi guardado na conversa",
-        ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first().cpf_pendente == "11111111111",
+        ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first().cpf_pendente == "52998224725",
     )
 
     # 2a) Data que não bate com o CPF informado: mensagem genérica de não
