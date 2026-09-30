@@ -78,22 +78,93 @@
        dono, ver app.models.TipoExame). Liga este preparo à base de
        conhecimento compartilhada. Obrigatório em preparo novo. #}
     {% if tipos_exame %}
+    {# Especialidade (do próprio médico) filtra a lista de tipos abaixo
+       (2026-09-30). Escolher aqui atualiza o cadastro dele. Secretária não vê. #}
+    {% if current_user.tipo == 'medico' %}
+    <div class="mb-3">
+      <label class="form-label">Sua especialidade</label>
+      <select name="especialidade" id="select-especialidade" class="form-select">
+        <option value="">Selecione a especialidade...</option>
+        {% for e in ESPECIALIDADES %}
+        <option value="{{ e }}" {% if current_user.especialidade == e %}selected{% endif %}>{{ e }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text">Mostramos abaixo só os exames da sua especialidade. Ao salvar, ela também é atualizada no seu cadastro.</div>
+    </div>
+    {% endif %}
     <div class="mb-3">
       <label class="form-label">Tipo de exame</label>
-      <select name="tipo_exame_id" class="form-select" {% if not modelo or modelo.tipo_exame_id %}required{% endif %}>
+      <select name="tipo_exame_id" id="select-tipo-exame" class="form-select" {% if not modelo or modelo.tipo_exame_id %}required{% endif %}>
         <option value="">Selecione o tipo de exame...</option>
         {% for t in tipos_exame %}
-        <option value="{{ t.id }}" {% if modelo and modelo.tipo_exame_id == t.id %}selected{% endif %}>{{ t.nome }}</option>
+        <option value="{{ t.id }}" data-esp="{{ t.lista_especialidades|join('|')|lower }}" {% if modelo and modelo.tipo_exame_id == t.id %}selected{% endif %}>{{ t.nome }}</option>
         {% endfor %}
         {% if modelo and modelo.tipo_exame and modelo.tipo_exame not in tipos_exame %}
-        <option value="{{ modelo.tipo_exame.id }}" selected>{{ modelo.tipo_exame.nome }} (inativo)</option>
+        <option value="{{ modelo.tipo_exame.id }}" data-esp="" selected>{{ modelo.tipo_exame.nome }} (inativo)</option>
         {% endif %}
+        <option value="outro" data-esp="" {% if modelo and modelo.tipo_exame_sugestao_id %}selected{% endif %}>Não encontrei o meu exame na lista</option>
       </select>
+      {% if current_user.tipo == 'medico' %}
+      <div class="form-check mt-1">
+        <input class="form-check-input" type="checkbox" id="check-todos-tipos">
+        <label class="form-check-label small" for="check-todos-tipos">Mostrar exames de todas as especialidades</label>
+      </div>
+      {% endif %}
+      <div id="campo-tipo-outro" class="mt-2 {% if not (modelo and modelo.tipo_exame_sugestao_id) %}d-none{% endif %}">
+        <input type="text" name="tipo_exame_outro" id="input-tipo-outro" class="form-control" maxlength="150"
+               placeholder="Qual é o exame? (ex.: Colonoscopia com biópsia)"
+               value="{{ modelo.tipo_exame_sugestao.nome if modelo and modelo.tipo_exame_sugestao else (request.form.get('tipo_exame_outro', '') if request.method == 'POST' else '') }}">
+        <div class="form-text">
+          O preparo é salvo normalmente. O administrador vai analisar e incluir esse exame na lista. Até lá, o preparo fica
+          sem tipo e a base de conhecimento ainda não é usada nele.
+        </div>
+      </div>
       <div class="form-text">
         Ajuda o sistema a responder as dúvidas dos pacientes com base no que já se sabe sobre esse tipo de
         exame. O preparo que você cadastra aqui sempre tem prioridade.
       </div>
     </div>
+    <script>
+    (function () {
+      var selEsp = document.getElementById('select-especialidade');
+      var selTipo = document.getElementById('select-tipo-exame');
+      var chkTodos = document.getElementById('check-todos-tipos');
+      var campoOutro = document.getElementById('campo-tipo-outro');
+      var inputOutro = document.getElementById('input-tipo-outro');
+      if (!selTipo) return;
+      function normalizar(t) { return (t || '').toLowerCase(); }
+      function filtrar() {
+        var esp = selEsp ? normalizar(selEsp.value) : '';
+        var todos = chkTodos ? chkTodos.checked : true;
+        var semFiltro = todos || !esp;
+        Array.prototype.forEach.call(selTipo.options, function (op) {
+          if (!op.value || op.value === 'outro') { op.hidden = false; op.disabled = false; return; }
+          var lista = (op.getAttribute('data-esp') || '').split('|').filter(Boolean);
+          var visivel = semFiltro || lista.length === 0 || lista.indexOf(esp) !== -1 || op.selected;
+          op.hidden = !visivel;
+          op.disabled = !visivel;
+        });
+      }
+      function alternarOutro() {
+        var outro = selTipo.value === 'outro';
+        if (campoOutro) campoOutro.classList.toggle('d-none', !outro);
+        if (inputOutro) inputOutro.required = outro;
+      }
+      function casa(op) {
+        var esp = selEsp ? normalizar(selEsp.value) : '';
+        var lista = (op.getAttribute('data-esp') || '').split('|').filter(Boolean);
+        return !esp || lista.length === 0 || lista.indexOf(esp) !== -1;
+      }
+      if (selEsp) selEsp.addEventListener('change', function () {
+        var op = selTipo.selectedOptions[0];
+        if (op && op.value && op.value !== 'outro' && !(chkTodos && chkTodos.checked) && !casa(op)) selTipo.value = '';
+        filtrar(); alternarOutro();
+      });
+      if (chkTodos) chkTodos.addEventListener('change', filtrar);
+      selTipo.addEventListener('change', alternarOutro);
+      filtrar(); alternarOutro();
+    })();
+    </script>
     {% endif %}
 
     {% if not varios_exames_vinculados %}

@@ -23,10 +23,11 @@ from app.models import (
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, PushSubscription, LicencaPagamento, garantir_meses_licenca,
     PlataformaConfig, MensagemSuporte, Notificacao, TipoExame, BaseConhecimentoItem, BaseConhecimentoSugestao,
-    tipos_exame_ordenados,
+    tipos_exame_ordenados, TipoExameSugestao,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto,
 )
+from app.especialidades import ESPECIALIDADES, especialidade_valida
 from app.mercadopago_integration import (
     criar_preferencia_pagamento, criar_preferencia_pagamento_anual, criar_cobranca_pix,
     MercadoPagoNaoConfigurado,
@@ -1683,6 +1684,13 @@ def _ler_tipo_exame(form, obrigatorio, tipo_atual_id=None):
     válido mesmo se o dono o inativou depois (não obriga a trocar)."""
     bruto = (form.get("tipo_exame_id") or "").strip()
     ativos = _tipos_exame_ativos()
+    if bruto == "outro":
+        # "Não encontrei o meu exame": o preparo fica sem tipo por enquanto e
+        # o nome digitado vira uma sugestão para o dono (ver
+        # _registrar_sugestao_tipo). O nome é obrigatório.
+        if not (form.get("tipo_exame_outro") or "").strip():
+            return None, "Informe o nome do exame que você não encontrou na lista."
+        return None, None
     if not bruto:
         if obrigatorio and ativos:
             return None, "Escolha o tipo de exame do preparo."
@@ -1696,6 +1704,41 @@ def _ler_tipo_exame(form, obrigatorio, tipo_atual_id=None):
     if not any(t.id == tipo_id for t in ativos):
         return None, "Tipo de exame inválido."
     return tipo_id, None
+
+
+def _atualizar_especialidade_do_medico(form):
+    """O campo "Especialidade" do cadastro de preparo é a do PRÓPRIO médico
+    logado: se ele escolheu outra (ou preencheu pela 1ª vez), atualiza o
+    cadastro dele. Só vale para médico e só para valores da lista."""
+    if not eh_medico() or "especialidade" not in form:
+        return
+    nova = especialidade_valida(form.get("especialidade"))
+    if nova and nova != current_user.especialidade:
+        current_user.especialidade = nova
+
+
+def _registrar_sugestao_tipo(form, modelo):
+    """Se o médico escolheu "Não encontrei o meu exame", grava (ou reaproveita
+    a pendente de mesmo nome) a sugestão para o dono e liga o preparo a ela.
+    Escolhendo um tipo da lista, desfaz qualquer ligação anterior."""
+    if (form.get("tipo_exame_id") or "").strip() != "outro":
+        modelo.tipo_exame_sugestao_id = None
+        return
+    nome = " ".join((form.get("tipo_exame_outro") or "").split())[:150]
+    if not nome:
+        return
+    sugestao = TipoExameSugestao.query.filter(
+        func.lower(TipoExameSugestao.nome) == nome.lower(), TipoExameSugestao.status == "pendente"
+    ).first()
+    if not sugestao:
+        sugestao = TipoExameSugestao(
+            nome=nome, especialidade=current_user.especialidade or None,
+            autor_usuario_id=current_user.id, autor_nome=current_user.nome, status="pendente",
+        )
+        db.session.add(sugestao)
+        db.session.flush()
+    modelo.tipo_exame_sugestao_id = sugestao.id
+    modelo.tipo_exame_id = None
 
 
 @medico_bp.route("/preparo-modelos/novo", methods=["GET", "POST"])
@@ -1814,6 +1857,8 @@ def preparo_modelos_novo():
         )
         db.session.add(modelo)
         db.session.flush()
+        _registrar_sugestao_tipo(request.form, modelo)
+        _atualizar_especialidade_do_medico(request.form)
         _salvar_cortes_e_medicamentos(modelo, request.form)
 
         # Exame gêmeo do modelo: nasce já ASSOCIADO de verdade (não existe
@@ -1956,6 +2001,8 @@ def preparo_modelos_editar(modelo_id):
 
         modelo.nome = nome
         modelo.tipo_exame_id = tipo_exame_id
+        _registrar_sugestao_tipo(request.form, modelo)
+        _atualizar_especialidade_do_medico(request.form)
         modelo.instrucoes = request.form.get("instrucoes", "").strip()
         modelo.observacoes_medicamentos = request.form.get("observacoes_medicamentos", "").strip() or None
         _salvar_cortes_e_medicamentos(modelo, request.form)

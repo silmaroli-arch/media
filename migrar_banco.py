@@ -497,6 +497,7 @@ ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS base_conhecimento_ativa B
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS base_busca_provedor VARCHAR(20) NOT NULL DEFAULT 'palavra_chave';
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS base_aprendizado_ativo BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS especialidade VARCHAR(80);
+ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS tipo_exame_sugestao_id INTEGER REFERENCES tipos_exame_sugestoes(id) ON DELETE SET NULL;
 
 -- Terceira IA na fila de aprovacao: resposta da base, item usado e se divergiu das IAs.
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_base TEXT;

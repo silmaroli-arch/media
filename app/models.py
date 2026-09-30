@@ -1225,6 +1225,27 @@ def tipos_exame_ordenados(apenas_ativos=False):
     return sorted(consulta.all(), key=chave)
 
 
+class TipoExameSugestao(db.Model):
+    """Exame que o MÉDICO não encontrou na lista de tipos de exame ao
+    cadastrar um preparo ("Não encontrei o meu exame", 2026-09-30). Fica na
+    fila do dono, que cria o tipo (com a especialidade do médico), vincula a
+    um tipo que já existia ou rejeita. Os preparos ligados a ela ficam sem
+    tipo até a decisão e passam a apontar para o tipo escolhido depois."""
+    __tablename__ = "tipos_exame_sugestoes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(150), nullable=False)
+    especialidade = db.Column(db.String(80))
+    autor_usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    autor_nome = db.Column(db.String(150))
+    status = db.Column(db.String(12), nullable=False, default="pendente")  # pendente|aprovada|vinculada|rejeitada
+    tipo_exame_id = db.Column(db.Integer, db.ForeignKey("tipos_exame.id"), nullable=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    decidido_em = db.Column(db.DateTime)
+
+    tipo_exame = db.relationship("TipoExame", foreign_keys=[tipo_exame_id])
+
+
 class BaseConhecimentoItem(db.Model):
     """Pergunta e resposta da base de conhecimento COMPARTILHADA da
     plataforma (a "terceira IA", pedido do Silvan, 2026-09-29) - global,
@@ -1341,11 +1362,15 @@ class PreparoModelo(db.Model):
     # Tipo de exame (ver TipoExame) - escolhido pelo médico ao cadastrar o
     # preparo. Nullable: preparos antigos ficam sem tipo até alguém escolher.
     tipo_exame_id = db.Column(db.Integer, db.ForeignKey("tipos_exame.id"), nullable=True)
+    # "Não encontrei o meu exame": enquanto o dono não decide, o preparo fica
+    # sem tipo e aponta para esta sugestão (ver TipoExameSugestao).
+    tipo_exame_sugestao_id = db.Column(db.Integer, db.ForeignKey("tipos_exame_sugestoes.id", ondelete="SET NULL"), nullable=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     tipo_exame = db.relationship("TipoExame", foreign_keys=[tipo_exame_id])
+    tipo_exame_sugestao = db.relationship("TipoExameSugestao", foreign_keys=[tipo_exame_sugestao_id])
     exames = db.relationship("Exame", back_populates="preparo_modelo")
     cortes = db.relationship(
         "PreparoCorte", back_populates="preparo_modelo", cascade="all, delete-orphan",

@@ -27,6 +27,7 @@ from app.models import (
     Agendamento,
     BaseConhecimentoItem,
     BaseConhecimentoSugestao,
+    TipoExameSugestao,
     ChamadaIA,
     ChatMensagem,
     ContagemPerguntasDia,
@@ -103,6 +104,9 @@ def excluir_usuario_e_dados(usuario):
         {"autor_usuario_id": None}, synchronize_session=False
     )
     BaseConhecimentoSugestao.query.filter_by(autor_usuario_id=uid).update(
+        {"autor_usuario_id": None}, synchronize_session=False
+    )
+    TipoExameSugestao.query.filter_by(autor_usuario_id=uid).update(
         {"autor_usuario_id": None}, synchronize_session=False
     )
     # "Fale com a gente" e notificações — dados pessoais da conta, sem
