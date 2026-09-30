@@ -1208,6 +1208,23 @@ class TipoExame(db.Model):
         return [e.strip() for e in (self.especialidades or "").split(",") if e.strip()]
 
 
+def tipos_exame_ordenados(apenas_ativos=False):
+    """Tipos de exame em ORDEM ALFABÉTICA (pedido do Silvan, 2026-09-30),
+    ignorando acentos e maiúsculas - usado em todos os dropdowns e listas
+    (dono e médico). A coluna `ordem` deixou de definir a exibição."""
+    import unicodedata
+
+    consulta = TipoExame.query
+    if apenas_ativos:
+        consulta = consulta.filter_by(ativo=True)
+
+    def chave(tipo):
+        base = unicodedata.normalize("NFKD", tipo.nome or "")
+        return "".join(c for c in base if not unicodedata.combining(c)).lower()
+
+    return sorted(consulta.all(), key=chave)
+
+
 class BaseConhecimentoItem(db.Model):
     """Pergunta e resposta da base de conhecimento COMPARTILHADA da
     plataforma (a "terceira IA", pedido do Silvan, 2026-09-29) - global,

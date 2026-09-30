@@ -2133,6 +2133,9 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 ### Correção de menu (2026-09-30)
 - As abas "Tipos de exame" e "Base de conhecimento" só tinham sido adicionadas em `dono/_menu.html` (telas soltas). O painel principal (`dono/dashboard.html`) tem a própria lista de abas e não aparecia nada. Adicionados os dois links lá, antes de "Ferramentas". Lição: ao criar tela nova do dono, incluir nos DOIS lugares (`_menu.html` e a lista de abas do `dashboard.html`).
 
+### Tipos de exame em ordem alfabética (2026-09-30)
+- Pedido do Silvan: sempre em ordem alfabética, na área do dono e do médico. Novo helper `tipos_exame_ordenados(apenas_ativos=False)` em `app/models.py` (ignora acentos/maiúsculas) usado em `routes_dono` (lista de tipos e filtros/dropdowns da base), `routes_medico` (`_tipos_exame_ativos` do cadastro de preparo e `_tipos_exame_da_especialidade` da Base compartilhada). A coluna `TipoExame.ordem` segue existindo mas não define mais a exibição. Sempre usar o helper em listas novas.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

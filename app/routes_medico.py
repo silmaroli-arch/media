@@ -23,6 +23,7 @@ from app.models import (
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, PushSubscription, LicencaPagamento, garantir_meses_licenca,
     PlataformaConfig, MensagemSuporte, Notificacao, TipoExame, BaseConhecimentoItem, BaseConhecimentoSugestao,
+    tipos_exame_ordenados,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto,
 )
@@ -1670,7 +1671,7 @@ def _salvar_cortes_e_medicamentos(modelo, form):
 def _tipos_exame_ativos():
     """Tipos de exame ativos (dropdown "Tipo de exame" do cadastro de
     preparo) na ordem definida pelo dono - ver app.models.TipoExame."""
-    return TipoExame.query.filter_by(ativo=True).order_by(TipoExame.ordem, TipoExame.nome).all()
+    return tipos_exame_ordenados(apenas_ativos=True)
 
 
 def _ler_tipo_exame(form, obrigatorio, tipo_atual_id=None):
@@ -2938,7 +2939,7 @@ def _tipos_exame_da_especialidade():
     if not esp:
         return []
     visiveis = []
-    for tipo in TipoExame.query.filter_by(ativo=True).order_by(TipoExame.ordem, TipoExame.nome).all():
+    for tipo in tipos_exame_ordenados(apenas_ativos=True):
         lista = [e.lower() for e in tipo.lista_especialidades]
         if not lista or esp in lista:
             visiveis.append(tipo)

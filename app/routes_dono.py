@@ -6,7 +6,7 @@ from sqlalchemy import func
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico, BaseConhecimentoSugestao
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico, BaseConhecimentoSugestao, tipos_exame_ordenados
 from app.base_conhecimento import (
     PROVEDORES_BUSCA, PROVEDOR_PALAVRA_CHAVE, provedor_configurado, atualizar_embedding_do_item, buscar_na_base,
     LIMIAR_PALAVRA_CHAVE, LIMIAR_EMBEDDING,
@@ -887,7 +887,7 @@ def tipos_exame():
     exame que exigem preparo (ver app.models.TipoExame e
     app.tipos_exame_padrao para a lista inicial). Mostra também quantos
     preparos usam cada tipo, para não inativar/renomear às cegas."""
-    tipos = TipoExame.query.order_by(TipoExame.ordem, TipoExame.nome).all()
+    tipos = tipos_exame_ordenados()
     uso = dict(
         db.session.query(PreparoModelo.tipo_exame_id, func.count(PreparoModelo.id))
         .filter(PreparoModelo.tipo_exame_id.isnot(None))
@@ -1001,7 +1001,7 @@ def base_conhecimento():
     provedor = provedor_configurado()
     return render_template(
         "dono/base_conhecimento.html", config=config, itens=itens, total=total,
-        tipos=TipoExame.query.order_by(TipoExame.ordem, TipoExame.nome).all(),
+        tipos=tipos_exame_ordenados(),
         filtro_tipo=tipo_id, filtro_texto=texto, filtro_status=status,
         provedores=PROVEDORES_BUSCA, provedor_atual=provedor,
         sem_embedding=BaseConhecimentoItem.query.filter(
