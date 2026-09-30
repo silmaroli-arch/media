@@ -18,6 +18,17 @@ auth_bp = Blueprint("auth", __name__)
 
 
 @auth_bp.app_context_processor
+def _injetar_popup_boas_vindas():
+    """Se o cadastro acabou de acontecer, entrega o texto do popup UMA vez
+    (o marcador da sessão é consumido na primeira página renderizada)."""
+    if session.pop("mostrar_boas_vindas", False) and current_user.is_authenticated:
+        from app.boas_vindas import titulo_boas_vindas, texto_boas_vindas
+
+        return {"popup_boas_vindas": {"titulo": titulo_boas_vindas(), "texto": texto_boas_vindas(current_user.nome)}}
+    return {}
+
+
+@auth_bp.app_context_processor
 def _injetar_especialidades():
     """Lista do dropdown de especialidade (cadastro e Meus dados)."""
     return {"ESPECIALIDADES": ESPECIALIDADES}
@@ -574,10 +585,24 @@ def cadastro():
                 # dono/suporte).
                 pass
 
-        flash(
-            f"Conta criada com sucesso, {usuario.nome}! Bem-vindo(a) ao MedIA.",
-            "success",
-        )
+        if papel == "medico":
+            # Popup de boas-vindas no primeiro acesso + as mesmas mensagens no
+            # sininho (pedido do Silvan, 2026-09-30 - ver app.boas_vindas).
+            # Falha aqui nunca derruba o cadastro (a conta já foi commitada).
+            try:
+                from app.boas_vindas import criar_notificacoes_boas_vindas
+
+                criar_notificacoes_boas_vindas(usuario)
+                db.session.commit()
+                session["mostrar_boas_vindas"] = True
+            except Exception:
+                db.session.rollback()
+                flash(f"Conta criada com sucesso, {usuario.nome}! Bem-vindo(a) ao MedIA.", "success")
+        else:
+            flash(
+                f"Conta criada com sucesso, {usuario.nome}! Bem-vindo(a) ao MedIA.",
+                "success",
+            )
         # O passo a passo de atalho/modelo de preparo/exame deixou de ser
         # forçado logo após o cadastro - agora é um item de menu
         # ("Primeiros passos", ver medico.primeiros_passos em

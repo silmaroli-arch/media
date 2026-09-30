@@ -2139,6 +2139,13 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 ### Telefone obrigatório para médico (2026-09-30)
 - Pedido do Silvan. No cadastro público (`auth.cadastro`) o telefone JÁ era obrigatório (front `required` e back-end), para todos os papéis - o comentário antigo "campo opcional" em `routes_auth.py` está desatualizado. A lacuna era **Meus dados**: dava para apagar o telefone. Agora `auth.meus_dados` recusa telefone vazio quando a conta é de médico e o campo tem `required` no HTML para médico. Dono e secretária continuam podendo deixar em branco ali. Médicos antigos sem telefone só são cobrados quando forem salvar Meus dados. Sem teste novo (não executado).
 
+### Boas-vindas do médico: popup + sininho (2026-09-30)
+- Pedido do Silvan: ao concluir o cadastro do MÉDICO, aparece um popup de boas-vindas (modal Bootstrap em `base.html`, uma única vez) e as mesmas mensagens ficam no sininho. O texto diz que as instruções do sistema estão no sininho.
+- Novo `app/boas_vindas.py` (título, texto, passo a passo e `criar_notificacoes_boas_vindas`). `auth.cadastro`: só para `papel == "medico"` cria 2 `Notificacao` (tipo `boas_vindas`: "Bem-vindo(a) ao MedIA!" -> dashboard, e "Primeiros passos no MedIA" -> `medico.primeiros_passos`, com o passo a passo) e marca `session["mostrar_boas_vindas"]`; um context processor de `routes_auth` consome o marcador e entrega `popup_boas_vindas` ao template. Falha nessa parte nunca derruba o cadastro (cai no flash antigo). Secretária continua com o flash "Conta criada com sucesso".
+- A mensagem de WhatsApp de boas-vindas (fluxo existente) não mudou.
+- **Teste**: `test_boas_vindas_medico.py` (sem seed). NÃO executado (sem Flask no ambiente do assistente). Atenção: o teste assume a rota `/equipe/` (dashboard) e os campos de endereço do cadastro, ajustar se algo divergir.
+- No sininho a mensagem aparece truncada em uma linha: o passo a passo completo abre ao clicar (leva a Primeiros passos).
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
