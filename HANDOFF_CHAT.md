@@ -2161,6 +2161,11 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Não conta como tentativa de identificação (o limite de 3 continua só para CPF+data que não batem).
 - Testes: `test_whatsapp_identificacao.py` (novo caso com dígito errado) e `test_whatsapp_clara_itens_6_7_9.py` passaram a usar o CPF válido inexistente 529.982.247-25 no lugar de 111.111.111-11. Não executados (sem Flask aqui).
 
+## Correção: especialidade e tipo de exame não apareciam após importar PDF
+
+- A tela de revisão da importação de PDF (`preparo_modelos_importar_xlsx`, render direto em `routes_medico.py`) não passava `tipos_exame` ao template, então o bloco inteiro (especialidade, tipo, "Não encontrei") sumia. Agora passa `tipos_exame=_tipos_exame_ativos()`. As outras três telas (novo, erro de POST, editar) já passavam.
+- Se mesmo assim não aparecer em dev, conferir se há tipos de exame ativos cadastrados (`/dono/tipos-exame`).
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

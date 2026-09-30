@@ -2153,6 +2153,7 @@ def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None):
         "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
         medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
         medicos=medicos_das_filiais(_filiais_da_empresa()), eh_medico_logado=eh_medico(),
+        tipos_exame=_tipos_exame_ativos(),
     )
 
 
