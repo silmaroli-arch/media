@@ -29,6 +29,12 @@ import app.mercadopago_integration as mp_integration
 app = create_app()
 client = app.test_client()
 
+# Campos que o cadastro exige hoje (telefone, endereco e confirmacao de senha).
+EXTRA_CADASTRO = {
+    "senha_confirmacao": "123456", "telefone": "(27) 99999-1234", "cep": "29010-000", "rua": "Rua A",
+    "numero": "1", "bairro": "Centro", "cidade": "Vitoria", "uf": "ES",
+}
+
 with app.app_context():
     resetar_banco(db)
     PlataformaConfig.obter().valor_licenca_padrao = 220.00
@@ -55,7 +61,7 @@ class RespostaFalsa:
 
 
 def cadastrar_medico(nome, email, cpf, crm):
-    r = client.post("/cadastro", data={
+    r = client.post("/cadastro", data={**EXTRA_CADASTRO,
         "nome": nome, "papel": "medico", "cpf": cpf, "crm_numero": crm, "crm_uf": "ES",
         "data_nascimento": "10/05/1980", "email": email, "senha": "123456",
     }, follow_redirects=True)

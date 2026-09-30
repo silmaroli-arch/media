@@ -95,7 +95,7 @@
      terceira IA: tipos de exame e a base compartilhada (2026-09-30). #}
   <li class="nav-item" role="presentation">
     <a class="nav-link" href="{{ url_for('dono.tipos_exame') }}">
-      <i class="bi bi-clipboard2-pulse me-1"></i>Tipos de exame
+      <i class="bi bi-clipboard2-pulse me-1"></i>Tipos de exame{% if tipos_sugeridos_pendentes %} <span class="badge bg-warning text-dark">{{ tipos_sugeridos_pendentes }}</span>{% endif %}
     </a>
   </li>
   <li class="nav-item" role="presentation">

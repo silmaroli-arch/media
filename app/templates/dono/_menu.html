@@ -45,7 +45,7 @@
   </li>
   <li class="nav-item">
     <a class="nav-link {{ 'active' if aba_ativa == 'tipos-exame' }}" href="{{ url_for('dono.tipos_exame') }}">
-      <i class="bi bi-clipboard2-pulse me-1"></i>Tipos de exame
+      <i class="bi bi-clipboard2-pulse me-1"></i>Tipos de exame{% if tipos_sugeridos_pendentes %} <span class="badge bg-warning text-dark">{{ tipos_sugeridos_pendentes }}</span>{% endif %}
     </a>
   </li>
   <li class="nav-item">

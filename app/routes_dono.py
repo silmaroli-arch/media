@@ -6,7 +6,7 @@ from sqlalchemy import func
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico, BaseConhecimentoSugestao, tipos_exame_ordenados
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico, BaseConhecimentoSugestao, tipos_exame_ordenados, TipoExameSugestao
 from app.base_conhecimento import (
     PROVEDORES_BUSCA, PROVEDOR_PALAVRA_CHAVE, provedor_configurado, atualizar_embedding_do_item, buscar_na_base,
     LIMIAR_PALAVRA_CHAVE, LIMIAR_EMBEDDING,
@@ -895,7 +895,93 @@ def tipos_exame():
         .all()
     )
     sem_tipo = PreparoModelo.query.filter(PreparoModelo.tipo_exame_id.is_(None)).count()
-    return render_template("dono/tipos_exame.html", tipos=tipos, uso=uso, sem_tipo=sem_tipo)
+    pendentes = TipoExameSugestao.query.filter_by(status="pendente").order_by(TipoExameSugestao.criado_em).all()
+    preparos_por_sugestao = dict(
+        db.session.query(PreparoModelo.tipo_exame_sugestao_id, func.count(PreparoModelo.id))
+        .filter(PreparoModelo.tipo_exame_sugestao_id.isnot(None))
+        .group_by(PreparoModelo.tipo_exame_sugestao_id)
+        .all()
+    )
+    return render_template(
+        "dono/tipos_exame.html", tipos=tipos, uso=uso, sem_tipo=sem_tipo,
+        sugestoes=pendentes, preparos_por_sugestao=preparos_por_sugestao,
+    )
+
+
+@dono_bp.app_context_processor
+def _injetar_sugestoes_tipos_exame():
+    """Contador de exames sugeridos por médicos ("Não encontrei o meu exame")
+    para o selo da aba "Tipos de exame" do painel do dono."""
+    if current_user.is_authenticated and getattr(current_user, "tipo", None) == "dono":
+        try:
+            return {"tipos_sugeridos_pendentes": TipoExameSugestao.query.filter_by(status="pendente").count()}
+        except Exception:
+            db.session.rollback()
+    return {}
+
+
+def _vincular_preparos_ao_tipo(sugestao, tipo):
+    for preparo in PreparoModelo.query.filter_by(tipo_exame_sugestao_id=sugestao.id).all():
+        preparo.tipo_exame_id = tipo.id
+        preparo.tipo_exame_sugestao_id = None
+    sugestao.tipo_exame_id = tipo.id
+    sugestao.decidido_em = datetime.utcnow()
+
+
+@dono_bp.route("/tipos-exame/sugestoes/<int:sug_id>/criar", methods=["POST"])
+@login_required
+@dono_required
+def tipo_sugestao_criar(sug_id):
+    """Cria o tipo de exame sugerido (com as especialidades informadas) e
+    liga a ele os preparos que estavam esperando."""
+    sug = TipoExameSugestao.query.get_or_404(sug_id)
+    if sug.status != "pendente":
+        flash("Esta sugestão já foi analisada.", "info")
+        return redirect(url_for("dono.tipos_exame"))
+    nome = " ".join(request.form.get("nome", "").split()) or sug.nome
+    especialidades = request.form.get("especialidades", "").strip()
+    tipo = TipoExame.query.filter(func.lower(TipoExame.nome) == nome.lower()).first()
+    if not tipo:
+        ultima_ordem = db.session.query(func.max(TipoExame.ordem)).scalar() or 0
+        tipo = TipoExame(nome=nome, especialidades=especialidades, ativo=True, ordem=ultima_ordem + 1)
+        db.session.add(tipo)
+        db.session.flush()
+    sug.status = "aprovada"
+    _vincular_preparos_ao_tipo(sug, tipo)
+    db.session.commit()
+    flash(f"Tipo de exame \"{tipo.nome}\" criado e ligado aos preparos do médico.", "success")
+    return redirect(url_for("dono.tipos_exame"))
+
+
+@dono_bp.route("/tipos-exame/sugestoes/<int:sug_id>/vincular", methods=["POST"])
+@login_required
+@dono_required
+def tipo_sugestao_vincular(sug_id):
+    """A sugestão é um exame que já existe na lista com outro nome: liga os
+    preparos ao tipo escolhido, sem criar nada."""
+    sug = TipoExameSugestao.query.get_or_404(sug_id)
+    tipo = TipoExame.query.get(request.form.get("tipo_exame_id", type=int) or 0)
+    if sug.status != "pendente" or not tipo:
+        flash("Escolha um tipo de exame existente.", "danger")
+        return redirect(url_for("dono.tipos_exame"))
+    sug.status = "vinculada"
+    _vincular_preparos_ao_tipo(sug, tipo)
+    db.session.commit()
+    flash(f"Preparos ligados ao tipo \"{tipo.nome}\".", "success")
+    return redirect(url_for("dono.tipos_exame"))
+
+
+@dono_bp.route("/tipos-exame/sugestoes/<int:sug_id>/rejeitar", methods=["POST"])
+@login_required
+@dono_required
+def tipo_sugestao_rejeitar(sug_id):
+    sug = TipoExameSugestao.query.get_or_404(sug_id)
+    if sug.status == "pendente":
+        sug.status = "rejeitada"
+        sug.decidido_em = datetime.utcnow()
+        db.session.commit()
+        flash("Sugestão rejeitada. Os preparos continuam sem tipo.", "success")
+    return redirect(url_for("dono.tipos_exame"))
 
 
 @dono_bp.route("/tipos-exame/novo", methods=["POST"])

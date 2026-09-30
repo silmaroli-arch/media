@@ -11,6 +11,37 @@
   tipo. Inativar um tipo só o tira do dropdown de preparos novos - os preparos que já o usam continuam com ele.
 </p>
 
+{% if sugestoes %}
+<div class="card border-warning mb-4">
+  <div class="card-body">
+    <h6 class="card-title"><i class="bi bi-inbox me-1"></i>Exames que médicos não encontraram na lista ({{ sugestoes|length }})</h6>
+    {% for s in sugestoes %}
+    <div class="border rounded p-2 mb-2">
+      <div class="small text-muted mb-1">
+        Por {{ s.autor_nome or 'médico removido' }}{% if s.especialidade %} ({{ s.especialidade }}){% endif %}
+        - {{ preparos_por_sugestao.get(s.id, 0) }} preparo(s) aguardando
+      </div>
+      <form method="post" action="{{ url_for('dono.tipo_sugestao_criar', sug_id=s.id) }}" class="row g-2 mb-2">
+        <div class="col-md-5"><input type="text" name="nome" class="form-control form-control-sm" value="{{ s.nome }}" required></div>
+        <div class="col-md-5"><input type="text" name="especialidades" class="form-control form-control-sm" value="{{ s.especialidade or '' }}" placeholder="Especialidades (separadas por vírgula)"></div>
+        <div class="col-md-2"><button class="btn btn-sm btn-success w-100">Criar tipo</button></div>
+      </form>
+      <form method="post" action="{{ url_for('dono.tipo_sugestao_vincular', sug_id=s.id) }}" class="row g-2">
+        <div class="col-md-8">
+          <select name="tipo_exame_id" class="form-select form-select-sm" required>
+            <option value="">Ou ligar a um tipo que já existe...</option>
+            {% for t in tipos if t.ativo %}<option value="{{ t.id }}">{{ t.nome }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100">Ligar</button></div>
+        <div class="col-md-2"><button class="btn btn-sm btn-outline-danger w-100" formaction="{{ url_for('dono.tipo_sugestao_rejeitar', sug_id=s.id) }}">Rejeitar</button></div>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% if sem_tipo %}
 <div class="alert alert-warning py-2 small">
   {{ sem_tipo }} preparo(s) cadastrado(s) ainda estão sem tipo de exame - o médico escolhe ao editar o preparo.

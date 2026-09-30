@@ -24,6 +24,12 @@ from app.tipos_exame_padrao import semear_tipos_exame, TIPOS_EXAME_PADRAO
 app = create_app()
 client = app.test_client()
 
+# Campos que o cadastro exige hoje (telefone, endereco e confirmacao de senha).
+EXTRA_CADASTRO = {
+    "senha_confirmacao": "123456", "telefone": "(27) 99999-1234", "cep": "29010-000", "rua": "Rua A",
+    "numero": "1", "bairro": "Centro", "cidade": "Vitoria", "uf": "ES",
+}
+
 with app.app_context():
     resetar_banco(db)
     db.session.commit()
@@ -35,7 +41,7 @@ def checar(nome, condicao):
 
 
 # ---------- Setup: um medico e o dono ----------
-r = client.post("/cadastro", data={
+r = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Dr. Tipo Teste", "papel": "medico", "cpf": "111.222.333-97", "crm_numero": "77777",
     "crm_uf": "ES", "data_nascimento": "10/05/1980", "email": "tipo.medico@example.com", "senha": "123456",
 }, follow_redirects=True)

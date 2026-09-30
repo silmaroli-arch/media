@@ -27,6 +27,12 @@ from app.exclusao_usuario import excluir_usuario_e_dados
 app = create_app()
 client = app.test_client()
 
+# Campos que o cadastro exige hoje (telefone, endereco e confirmacao de senha).
+EXTRA_CADASTRO = {
+    "senha_confirmacao": "123456", "telefone": "(27) 99999-1234", "cep": "29010-000", "rua": "Rua A",
+    "numero": "1", "bairro": "Centro", "cidade": "Vitoria", "uf": "ES",
+}
+
 with app.app_context():
     resetar_banco(db)
     db.session.commit()
@@ -37,7 +43,7 @@ def checar(nome, condicao):
     assert condicao, nome
 
 
-r = client.post("/cadastro", data={
+r = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Dr. Base Teste", "papel": "medico", "cpf": "111.222.333-97", "crm_numero": "88888",
     "crm_uf": "ES", "data_nascimento": "10/05/1980", "email": "base.medico@example.com", "senha": "123456",
 }, follow_redirects=True)
