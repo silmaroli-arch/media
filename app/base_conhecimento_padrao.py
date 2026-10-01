@@ -228,8 +228,10 @@ from app.base_conhecimento_padrao_g12 import ITENS as _G12
 from app.base_conhecimento_padrao_g13 import ITENS as _G13
 from app.base_conhecimento_padrao_g15 import ITENS as _G15
 from app.base_conhecimento_padrao_g16 import ITENS as _G16
+from app.base_conhecimento_padrao_g18 import ITENS as _G18  # colonoscopia: carga 6 (2026-10-01)
 
 ITENS_PADRAO = ITENS_PADRAO + _G7 + _G8 + _G9 + _G10 + _G11 + _G12 + _G13 + _G15 + _G16
+ITENS_PADRAO = ITENS_PADRAO + _G18
 
 
 def semear_base_conhecimento(db):
