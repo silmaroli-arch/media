@@ -117,7 +117,12 @@
        incondicionalmente. As rotas em si não mudam nem ficam bloqueadas
        - dá pra chegar nelas por link direto se precisar, só não aparecem
        no menu do celular do médico. #}
-    {% set oculto_no_celular_do_medico = "d-none d-md-block" if current_user.tipo == "medico" else "" %}
+    {# 2026-10-01 (pedido do Silvan): o menu do celular do médico passou a ser
+       IGUAL ao do sistema web (mesmos itens, mesma ordem) - por isso nenhum item
+       fica mais oculto no celular. A variável continua existindo (vazia) só para
+       não precisar mexer em cada item. A única exceção é "Exames & preparo", que
+       no celular leva à tela de aviso/importar PDF (ver mais abaixo). #}
+    {% set oculto_no_celular_do_medico = "" %}
     <ul class="nav nav-pills flex-column">
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint == 'medico.dashboard' %}active{% endif %}" href="{{ url_for('medico.dashboard') }}">
@@ -162,11 +167,21 @@
       </li>
       {% endif %}
 
-      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+      <li class="nav-item mb-1 {% if current_user.tipo == 'medico' %}d-none d-md-block{% endif %}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">
           <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
         </a>
       </li>
+      {% if current_user.tipo == 'medico' %}
+      {# Cópia do celular (mesma posição do menu): no celular o cadastro manual
+         completo é feito pela versão web, então leva a uma tela que explica isso
+         e permite importar um PDF (ver medico.preparo_modelos_aviso_mobile). #}
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'medico.preparo_modelos_aviso_mobile' %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_aviso_mobile') }}">
+          <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
+        </a>
+      </li>
+      {% endif %}
 
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">
@@ -276,50 +291,9 @@
       </li>
 
       {% if current_user.tipo == "medico" %}
-      {# Versões mobile de "Meus dados", "Pacientes" e "Agendar exame"
-         (pedido do Silvan, 2026-09-10): esses 3 itens ficam ocultos no
-         menu reduzido do celular do médico (ver oculto_no_celular_do_medico
-         nos itens "completos" mais acima), então precisam desta cópia,
-         mesmo padrão já usado para "Portal de atendimento" e "Testar IA"
-         logo abaixo - só aparecem em telas pequenas (d-md-none). #}
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint == 'auth.meus_dados' %}active{% endif %}" href="{{ url_for('auth.meus_dados') }}">
-          <i class="bi bi-person-circle me-2"></i>Meus dados
-        </a>
-      </li>
-
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint == 'medico.primeiros_passos' %}active{% endif %}" href="{{ url_for('medico.primeiros_passos') }}">
-          <i class="bi bi-list-check me-2"></i>Primeiros passos
-        </a>
-      </li>
-
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">
-          <i class="bi bi-journal-plus me-2"></i>Pacientes
-        </a>
-      </li>
-
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint == 'medico.agenda_novo' %}active{% endif %}" href="{{ url_for('medico.agenda_novo') }}">
-          <i class="bi bi-calendar-plus me-2"></i>Agendar exame
-        </a>
-      </li>
-
-      {# "Exames & preparo" no celular (pedido do Silvan, 2026-09-10): NÃO
-         leva direto para a tela de cadastro/edição (medico.preparo_
-         modelos_lista, usada em tablet/desktop dentro do item "completo"
-         mais acima) - leva para uma tela que explica que o cadastro
-         manual completo deve ser feito pela versão web (mais delicado,
-         o médico poderia se perder ali), mas que já permite importar um
-         PDF direto por ali (pedido do Silvan, 2026-09-11 - ver
-         medico.preparo_modelos_aviso_mobile). #}
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint == 'medico.preparo_modelos_aviso_mobile' %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_aviso_mobile') }}">
-          <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
-        </a>
-      </li>
-
+      {# As cópias mobile de "Meus dados", "Primeiros passos", "Pacientes" e
+         "Agendar exame" foram removidas em 2026-10-01: o menu do celular agora
+         é igual ao do web (ver comentário no topo do menu). #}
       {# A versão mobile do link "Portal de atendimento rápido" que existia
          aqui foi removida em 2026-09-11: o item agora é direto no menu
          (logo abaixo de "Meus exames agendados", fora do submenu "Médico
