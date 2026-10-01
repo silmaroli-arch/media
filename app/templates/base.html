@@ -137,10 +137,15 @@
         </a>
       </li>
 
-      {# Pedido do Silvan (2026-09-10, revisado com a nova ordem de menu):
-         "Primeiros passos" saiu do menu lateral (o checklist/atalho em si
-         continua existindo em medico.primeiros_passos, só não tem mais
-         link fixo aqui). #}
+      {# "Primeiros passos" voltou ao menu lateral (pedido do Silvan,
+         2026-10-01), logo abaixo de "Meus dados", para quem sair da tela
+         conseguir voltar ao checklist (antes, 2026-09-10, tinha saído do
+         menu). Médico no celular usa a cópia d-md-none mais abaixo. #}
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint == 'medico.primeiros_passos' %}active{% endif %}" href="{{ url_for('medico.primeiros_passos') }}">
+          <i class="bi bi-list-check me-2"></i>Primeiros passos
+        </a>
+      </li>
 
       {# Reorganização de menus (pedido do Silvan, 2026-09-10, ajustada em
          2026-09-11): ordem fixa Painel / Meus dados / Exames & preparo /
@@ -280,6 +285,12 @@
       <li class="nav-item mb-1 d-md-none">
         <a class="nav-link {% if request.endpoint == 'auth.meus_dados' %}active{% endif %}" href="{{ url_for('auth.meus_dados') }}">
           <i class="bi bi-person-circle me-2"></i>Meus dados
+        </a>
+      </li>
+
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'medico.primeiros_passos' %}active{% endif %}" href="{{ url_for('medico.primeiros_passos') }}">
+          <i class="bi bi-list-check me-2"></i>Primeiros passos
         </a>
       </li>
 

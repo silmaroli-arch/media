@@ -2210,6 +2210,9 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Compila e o Jinja passa. **Não executado** (sem Flask no ambiente do assistente). Sem teste automatizado novo.
 - Observação: o agendamento sintético que a tela "Testar IA" / o WhatsApp de teste cria para o médico também conta como "feito" no checklist, pois não há marcador que o distinga de um agendamento real.
 
+### "Primeiros passos" de volta ao menu lateral (2026-10-01, pedido do Silvan)
+- Para o usuário conseguir voltar ao checklist depois de sair da tela. `app/templates/base.html`: item "Primeiros passos" (`medico.primeiros_passos`, ícone `bi-list-check`) logo abaixo de "Meus dados". Desktop/tablet usa a classe `oculto_no_celular_do_medico` (secretária vê sempre) e há uma cópia `d-md-none` para o menu reduzido do celular do médico, logo abaixo da cópia mobile de "Meus dados". Isso reverte a decisão de 2026-09-10/11 que o havia tirado do menu (a ordem do menu definida na planilha do Silvan agora tem esse item na 3ª posição). Jinja parseia, **não executado** no navegador.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
