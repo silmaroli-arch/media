@@ -22,6 +22,11 @@ from app.db_utils import resetar_banco
 from app.models import Usuario, LicencaPagamento, PlataformaConfig, garantir_meses_licenca
 
 app = create_app()
+EXTRA_CADASTRO = {
+    "senha_confirmacao": "123456", "telefone": "(27) 99999-1234", "cep": "29010-000", "rua": "Rua A",
+    "numero": "1", "bairro": "Centro", "cidade": "Vitoria", "uf": "ES",
+}
+
 client = app.test_client()
 
 with app.app_context():
@@ -35,7 +40,7 @@ def checar(nome, condicao):
 
 
 def cadastrar(nome, email, cpf, crm):
-    r = client.post("/cadastro", data={
+    r = client.post("/cadastro", data={**EXTRA_CADASTRO,
         "nome": nome, "papel": "medico", "cpf": cpf, "crm_numero": crm, "crm_uf": "ES",
         "data_nascimento": "10/05/1980", "email": email, "senha": "123456",
     }, follow_redirects=True)

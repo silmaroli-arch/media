@@ -32,6 +32,11 @@ from app.models import Usuario, LicencaPagamento, PlataformaConfig
 import app.mercadopago_integration as mp_integration
 
 app = create_app()
+EXTRA_CADASTRO = {
+    "senha_confirmacao": "123456", "telefone": "(27) 99999-1234", "cep": "29010-000", "rua": "Rua A",
+    "numero": "1", "bairro": "Centro", "cidade": "Vitoria", "uf": "ES",
+}
+
 client = app.test_client()
 
 with app.app_context():
@@ -70,7 +75,7 @@ DADOS_PIX_FALSO = {
 }
 
 # ---------- Setup: médico com valor mensal definido ----------
-r = client.post("/cadastro", data={
+r = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Dr. Pix Teste",
     "papel": "medico",
     "cpf": "111.222.333-97", "crm_numero": "33333", "crm_uf": "ES",

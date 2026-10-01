@@ -37,6 +37,11 @@ from app.db_utils import resetar_banco
 from app.models import Usuario, PlataformaConfig, LicencaPagamento, meses_consecutivos_sem_pagar, _mes_anterior, garantir_meses_licenca
 
 app = create_app()
+EXTRA_CADASTRO = {
+    "senha_confirmacao": "123456", "telefone": "(27) 99999-1234", "cep": "29010-000", "rua": "Rua A",
+    "numero": "1", "bairro": "Centro", "cidade": "Vitoria", "uf": "ES",
+}
+
 client = app.test_client()
 
 with app.app_context():
@@ -54,7 +59,7 @@ with app.app_context():
     PlataformaConfig.obter().valor_licenca_padrao = 190.00
     db.session.commit()
 
-r = client.post("/cadastro", data={
+r = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Dra. Licença Teste",
     "papel": "medico",
     "cpf": "123.456.789-09", "crm_numero": "11111", "crm_uf": "ES",
@@ -78,7 +83,7 @@ with app.app_context():
 
 # ---------- Cadastro de secretária NÃO recebe licença individual ----------
 client.get("/logout")
-r_sec = client.post("/cadastro", data={
+r_sec = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Secretária Teste",
     "papel": "secretaria",
     "cpf": "987.654.321-00",
