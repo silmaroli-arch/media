@@ -388,7 +388,18 @@ def primeiros_passos():
         tem_preparo = PreparoModelo.query.filter(
             filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
         ).first() is not None
-    return render_template("medico/primeiros_passos.html", tem_preparo=tem_preparo)
+    # Próximo passo depois do preparo (pedido do Silvan, 2026-10-01): criar um
+    # agendamento para o paciente de teste. Feito = o médico já tem algum
+    # agendamento próprio no escopo atual.
+    tem_agendamento = False
+    if eh_medico():
+        tem_agendamento = Agendamento.query.filter(
+            filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
+            Agendamento.medico_id == current_user.id,
+        ).first() is not None
+    return render_template(
+        "medico/primeiros_passos.html", tem_preparo=tem_preparo, tem_agendamento=tem_agendamento,
+    )
 
 
 @medico_bp.route("/primeiros-passos/atalhos", methods=["GET", "POST"])
@@ -1886,6 +1897,22 @@ def preparo_modelos_novo():
         # essa mensagem pro médico sem ele ter feito nada agora.
         if eh_medico():
             enviar_preparo_cadastrado_whatsapp(current_user)
+            # Pedido do Silvan (2026-10-01): o mesmo aviso (próximo passo)
+            # também no sininho, para quem não recebe/não vê o WhatsApp.
+            # Falha aqui nunca derruba o cadastro do preparo.
+            try:
+                db.session.add(Notificacao(
+                    usuario_id=current_user.id, tipo="preparo_cadastrado",
+                    titulo="Modelo de preparo cadastrado",
+                    mensagem=(
+                        "Seu modelo de preparo foi cadastrado. Próximo passo: crie um agendamento "
+                        "para o seu paciente de teste (criado com o seu nome) e continue os testes."
+                    ),
+                    link_endpoint="medico.agenda_novo",
+                ))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
 
         flash("Modelo de preparo cadastrado com sucesso — o exame correspondente também foi criado.", "success")
         if wizard:

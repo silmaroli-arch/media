@@ -2202,6 +2202,14 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Correção: antes de apagar os usuários de teste, apaga (ou desvincula) o que aponta para eles, por subconsulta de ids: `PushSubscription`, `LicencaPagamento`, `MensagemSuporte`, `Notificacao` (delete) e `ChamadaIA.usuario_id` (vira NULL). Imports ajustados no topo do arquivo. Compila. **Não executado**: sem Flask no ambiente do assistente e sem teste automatizado dessa função. Validar no `media-dev` depois do deploy (o app é Postgres, onde a FK é aplicada de verdade).
 - Observação: a transação anterior falhou no meio, então nenhum dado foi apagado parcialmente (a rota só faz commit depois da função). Se aparecer outra FK diferente no log, a lista de dependentes a estender é a de `app/exclusao_usuario.py`.
 
+## Sininho + "Primeiros passos": próximo passo depois de cadastrar o preparo (2026-10-01, pedido do Silvan)
+
+- Antes só havia o aviso por WhatsApp (`enviar_preparo_cadastrado_whatsapp`, depende do template Meta `WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO` estar aprovado e configurado - sem ele o envio é pulado em silêncio). O sininho não recebia nada nesse momento.
+- `app/routes_medico.py` (`preparo_modelos_novo`): depois do WhatsApp, e só quando quem cadastra é o PRÓPRIO médico, cria uma `Notificacao` tipo `preparo_cadastrado` ("Modelo de preparo cadastrado - próximo passo: crie um agendamento para o seu paciente de teste"), com link para `medico.agenda_novo`. Envolvida em try/except com rollback: falha ali nunca derruba o cadastro do preparo.
+- `primeiros_passos()` + `medico/primeiros_passos.html`: novo item de checklist (só médico) "Agendar exame para o paciente de teste". Marcado como feito quando o médico já tem algum `Agendamento` próprio no escopo atual (`medico_id` = ele). Botão "Agendar agora"/"Agendar outro" -> `medico.agenda_novo`.
+- Compila e o Jinja passa. **Não executado** (sem Flask no ambiente do assistente). Sem teste automatizado novo.
+- Observação: o agendamento sintético que a tela "Testar IA" / o WhatsApp de teste cria para o médico também conta como "feito" no checklist, pois não há marcador que o distinga de um agendamento real.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
