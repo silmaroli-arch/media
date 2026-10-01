@@ -1195,7 +1195,7 @@ def base_sugestoes():
 def _notificar_autor_sugestao(sug, texto):
     if sug.autor_usuario_id:
         db.session.add(Notificacao(
-            usuario_id=sug.autor_usuario_id, tipo="sugestao_base", titulo="Sua sugestão para a base compartilhada",
+            usuario_id=sug.autor_usuario_id, tipo="sugestao_base", titulo="Sua sugestão para o FAQ do MedIA",
             mensagem=texto, link_endpoint="medico.base_compartilhada",
         ))
 
@@ -1228,7 +1228,7 @@ def base_sugestao_aprovar(sug_id):
     sug.status = "aprovada"
     sug.decidido_em = datetime.utcnow()
     sug.resposta_dono = request.form.get("resposta_dono", "").strip() or None
-    _notificar_autor_sugestao(sug, "Sua sugestão foi aprovada e já está na base compartilhada.")
+    _notificar_autor_sugestao(sug, "Sua sugestão foi aprovada e já está no FAQ do MedIA.")
     db.session.commit()
     flash("Sugestão aprovada e aplicada à base.", "success")
     return redirect(url_for("dono.base_sugestoes"))

@@ -3030,7 +3030,7 @@ def base_compartilhada():
     leitura) e sugere alterações ou itens novos - quem aprova é o dono
     (ver dono.base_sugestoes)."""
     if not eh_medico():
-        flash("A base compartilhada é exclusiva para médicos.", "info")
+        flash("O FAQ do MedIA é exclusivo para médicos.", "info")
         return redirect(url_for("medico.dashboard"))
     tipos = _tipos_exame_da_especialidade()
     tipo_id = request.args.get("tipo", type=int)

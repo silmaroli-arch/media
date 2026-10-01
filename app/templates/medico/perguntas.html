@@ -22,7 +22,7 @@
   <div class="alert alert-success">Nenhuma pergunta pendente sem resposta. 🎉</div>
 {% endif %}
 
-<p class="text-muted">Toda pergunta do paciente é respondida primeiro pela base de conhecimento já aprovada antes (FAQ) — o restante (IA, ou uma resposta automática a partir do preparo cadastrado, quando é sobre um alimento ou medicamento específico) vira uma sugestão que só chega ao paciente depois da sua aprovação, por segurança. Revise (e edite se precisar) as sugestões abaixo antes de liberá-las. Perguntas sem nenhuma sugestão pronta aparecem na lista de baixo, aguardando você escrever a resposta do zero.</p>
+<p class="text-muted">Toda pergunta do paciente é respondida primeiro pelo seu FAQ já aprovado antes — o restante (IA, ou uma resposta automática a partir do preparo cadastrado, quando é sobre um alimento ou medicamento específico) vira uma sugestão que só chega ao paciente depois da sua aprovação, por segurança. Revise (e edite se precisar) as sugestões abaixo antes de liberá-las. Perguntas sem nenhuma sugestão pronta aparecem na lista de baixo, aguardando você escrever a resposta do zero.</p>
 
 {% if aguardando %}
   <div class="card border-warning mb-4">
@@ -45,8 +45,8 @@
               {% if not eh_ia %}<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle me-2">Automática (preparo cadastrado)</span>{% endif %}
               {{ badge_filial(p) }}
               {% if p.base_divergiu %}
-              <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-2" title="A base de conhecimento diverge das IAs (ou respondeu sozinha) - revise com atenção">
-                <i class="bi bi-journal-medical"></i> Base diverge
+              <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-2" title="O FAQ do MedIA diverge das IAs (ou respondeu sozinha) - revise com atenção">
+                <i class="bi bi-journal-medical"></i> FAQ do MedIA diverge
               </span>
               {% endif %}
               {% if p.ias_com_erro %}
@@ -71,9 +71,9 @@
               <div class="alert alert-warning py-2 small mb-3">
                 <i class="bi bi-journal-medical"></i>
                 {% if not (p.resposta_bruta_claude or p.resposta_bruta_chatgpt or p.resposta_bruta_gemini) %}
-                  Nenhuma IA soube responder com base no preparo - o rascunho abaixo veio da <strong>base de conhecimento</strong> da plataforma. Revise com atenção.
+                  Nenhuma IA soube responder com base no preparo - o rascunho abaixo veio do <strong>FAQ do MedIA</strong>. Revise com atenção.
                 {% else %}
-                  A resposta da <strong>base de conhecimento</strong> da plataforma é bem diferente da resposta das IAs (diferenças só de prazo não contam). Compare e revise com atenção.
+                  A resposta do <strong>FAQ do MedIA</strong> é bem diferente da resposta das IAs (diferenças só de prazo não contam). Compare e revise com atenção.
                 {% endif %}
               </div>
               {% endif %}
@@ -104,7 +104,7 @@
                   {% endif %}
                   {% if p.resposta_bruta_base %}
                   <div class="{{ col }}">
-                    <label class="form-label small text-muted mb-1 fw-semibold"><i class="bi bi-journal-medical"></i> Base de conhecimento</label>
+                    <label class="form-label small text-muted mb-1 fw-semibold"><i class="bi bi-journal-medical"></i> FAQ do MedIA</label>
                     <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_base }}
 {% if p.base_item and (p.base_item.fonte_nome or p.base_item.fonte_url) %}<div class="text-muted mt-1" style="white-space: normal;">Fonte: {% if p.base_item.fonte_url %}<a href="{{ p.base_item.fonte_url }}" target="_blank" rel="noopener">{{ p.base_item.fonte_nome or p.base_item.fonte_url }}</a>{% else %}{{ p.base_item.fonte_nome }}{% endif %}</div>{% endif %}</div>
                   </div>

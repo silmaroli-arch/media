@@ -211,7 +211,7 @@ with app.app_context():
 client.post("/login", data={"email": "medico@clinicavitoria.com", "senha": "123456"}, follow_redirects=True)
 client.post("/equipe/clinica", data={"clinica_id": str(clinica_id)}, follow_redirects=True)
 html = client.get("/equipe/perguntas").get_data(as_text=True)
-checar("Tela mostra a coluna da base com o texto", "Base de conhecimento" in html and "Texto vindo da base" in html)
+checar("Tela mostra a coluna da base com o texto", "FAQ do MedIA" in html and "Texto vindo da base" in html)
 checar("Tela mostra a fonte com link", "https://exemplo.test/fonte" in html and "Fonte Teste" in html)
 checar("Tela mostra o aviso de divergencia", "Base diverge" in html)
 checar("A pergunta sem base continua aparecendo normalmente", "Pergunta sem base" in html and "Rascunho simples" in html)

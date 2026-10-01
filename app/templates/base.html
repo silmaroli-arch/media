@@ -162,7 +162,7 @@
       {% if current_user.tipo == 'medico' %}
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.base_compartilhada') %}active{% endif %}" href="{{ url_for('medico.base_compartilhada') }}">
-          <i class="bi bi-journal-medical me-2"></i>Base compartilhada
+          <i class="bi bi-journal-medical me-2"></i>FAQ do MedIA
         </a>
       </li>
       {% endif %}
@@ -253,7 +253,7 @@
 
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">
-          <i class="bi bi-journal-text me-2"></i>Base de conhecimento
+          <i class="bi bi-journal-text me-2"></i>Meu FAQ
         </a>
       </li>
 
