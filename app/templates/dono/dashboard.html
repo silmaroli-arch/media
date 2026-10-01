@@ -21,6 +21,13 @@
    dados" a partir de outra tela do painel não perder a referência de
    onde está (achado do Silvan: essas telas ficavam "soltas", sem menu
    nenhum de volta pro resto do painel). #}
+{% if tipos_sugeridos_pendentes %}
+<div class="alert alert-warning d-flex justify-content-between align-items-center">
+  <span><i class="bi bi-inbox me-1"></i><strong>{{ tipos_sugeridos_pendentes }}</strong> exame(s) que médicos não encontraram na lista aguardam sua decisão e a carga de perguntas e respostas.</span>
+  <a href="{{ url_for('dono.tipos_exame') }}" class="btn btn-sm btn-warning">Ver pendências</a>
+</div>
+{% endif %}
+
 <ul class="nav nav-tabs mb-4" id="donoTabs" role="tablist">
   <li class="nav-item" role="presentation">
     <button class="nav-link active" id="tab-visao-geral" data-bs-toggle="tab" data-bs-target="#painel-visao-geral" type="button" role="tab" aria-controls="painel-visao-geral" aria-selected="true">

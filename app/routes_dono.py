@@ -908,6 +908,34 @@ def tipos_exame():
     )
 
 
+@dono_bp.route("/tipos-exame/pendencias.txt")
+@login_required
+@dono_required
+def tipos_exame_pendencias_txt():
+    """Texto simples com os exames que médicos não encontraram na lista, para
+    o dono copiar e levar à sessão com o assistente, que pesquisa as perguntas
+    e respostas desses exames (fluxo combinado em 2026-10-01). Só leitura."""
+    from flask import Response
+    pendentes = TipoExameSugestao.query.filter_by(status="pendente").order_by(TipoExameSugestao.criado_em).all()
+    preparos = dict(
+        db.session.query(PreparoModelo.tipo_exame_sugestao_id, func.count(PreparoModelo.id))
+        .filter(PreparoModelo.tipo_exame_sugestao_id.isnot(None))
+        .group_by(PreparoModelo.tipo_exame_sugestao_id)
+        .all()
+    )
+    linhas = ["Exames que médicos não encontraram na lista (pendentes):", ""]
+    if not pendentes:
+        linhas.append("Nenhuma pendência no momento.")
+    for s in pendentes:
+        linhas.append(
+            "- %s | especialidade: %s | preparos aguardando: %s | pedido em %s" % (
+                s.nome, s.especialidade or "não informada", preparos.get(s.id, 0),
+                s.criado_em.strftime("%d/%m/%Y") if s.criado_em else "-",
+            )
+        )
+    return Response("\n".join(linhas) + "\n", mimetype="text/plain; charset=utf-8")
+
+
 @dono_bp.app_context_processor
 def _injetar_sugestoes_tipos_exame():
     """Contador de exames sugeridos por médicos ("Não encontrei o meu exame")
