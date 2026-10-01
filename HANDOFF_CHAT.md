@@ -2223,6 +2223,8 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Só texto exibido mudou (rotas, endpoints, tabelas e nomes de arquivo intactos): `base.html` (itens do menu), `medico/base_compartilhada.html` e `medico/faq_lista.html` (título e cabeçalho), `medico/perguntas.html` (coluna, alertas, badge "FAQ do MedIA diverge" e a frase sobre o "seu FAQ"), `dono/_menu.html` e `dono/dashboard.html` (nome da aba), mensagens em `routes_medico.py` (flash) e `routes_dono.py` (título e texto da notificação de sugestão).
 - Deixado como estava de propósito: o cabeçalho da tela do dono continua "Base de conhecimento (terceira IA)" (um teste confere esse texto em `test_base_conhecimento.py`). `test_base_integracao_chat.py` foi ajustado para procurar "FAQ do MedIA" na tela de perguntas. Notificações antigas já gravadas mantêm o texto antigo. Compila e Jinja parseia, **não executado**.
 
+- Ordem do menu ajustada (mesmo dia): "FAQ do MedIA" (só médico) agora fica logo ABAIXO de "Meu FAQ" (antes ficava depois de "Primeiros passos"). Ordem atual: Painel, Meus dados, Primeiros passos, Exames & preparo, Pacientes, Agendar exame, Meus exames agendados, Portal de atendimento rápido, Últimas respondidas, Meu FAQ, FAQ do MedIA, Grupos de trabalho, Fale com a gente, Minha licença.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
