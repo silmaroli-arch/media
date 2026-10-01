@@ -21,7 +21,10 @@ from datetime import date, datetime, timedelta
 from werkzeug.security import generate_password_hash
 
 from app.extensions import db
-from app.models import Usuario, Paciente, PlataformaConfig
+from app.models import (
+    Usuario, Paciente, PlataformaConfig, LicencaPagamento, PushSubscription,
+    MensagemSuporte, Notificacao, ChamadaIA,
+)
 
 PREFIXO_EMAIL_MEDICO = "medico.perfteste"
 PREFIXO_NOME_PACIENTE = "Paciente PerfTeste "
@@ -182,5 +185,18 @@ def apagar_dados_teste():
     massa aqui é seguro. Devolve (qtd_medicos_apagados,
     qtd_pacientes_apagados)."""
     qtd_pacientes = Paciente.query.filter(Paciente.nome.like(f"{PREFIXO_NOME_PACIENTE}%")).delete(synchronize_session=False)
+    # Dependentes dos médicos de teste (achado 2026-10-01: o DELETE em massa
+    # falhava com ForeignKeyViolation em licenca_pagamentos_usuario_id_fkey).
+    # Os médicos nascem por bulk insert, mas a tela de licença do dono/médico
+    # chama garantir_meses_licenca e cria LicencaPagamento para eles depois -
+    # então a premissa "nenhum histórico" não vale mais. Apaga (ou desvincula)
+    # tudo que aponta para esses usuários ANTES de apagá-los, com uma subconsulta
+    # de ids (uma ida ao banco por tabela, sem carregar milhares de linhas).
+    ids_medicos = db.session.query(Usuario.id).filter(Usuario.email.like(f"{PREFIXO_EMAIL_MEDICO}%"))
+    PushSubscription.query.filter(PushSubscription.usuario_id.in_(ids_medicos)).delete(synchronize_session=False)
+    LicencaPagamento.query.filter(LicencaPagamento.usuario_id.in_(ids_medicos)).delete(synchronize_session=False)
+    MensagemSuporte.query.filter(MensagemSuporte.usuario_id.in_(ids_medicos)).delete(synchronize_session=False)
+    Notificacao.query.filter(Notificacao.usuario_id.in_(ids_medicos)).delete(synchronize_session=False)
+    ChamadaIA.query.filter(ChamadaIA.usuario_id.in_(ids_medicos)).update({"usuario_id": None}, synchronize_session=False)
     qtd_medicos = Usuario.query.filter(Usuario.email.like(f"{PREFIXO_EMAIL_MEDICO}%")).delete(synchronize_session=False)
     return qtd_medicos, qtd_pacientes

@@ -2195,6 +2195,13 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 ### Backups
 - Cópias dos arquivos alterados (testes, `routes_dono.py`, templates, `base_conhecimento_padrao.py`, este handoff) ficaram fora do projeto, na pasta `bkp_testes` do usuário do shell da máquina.
 
+## Bug corrigido: erro 500 ao apagar dados de teste de performance (2026-10-01)
+
+- Sintoma (prints do Silvan, `media-dev`): `POST /dono/ferramentas/performance/limpar` -> "Internal Server Error". Log do Render: `psycopg.errors.ForeignKeyViolation: update or delete on table "usuarios" violates foreign key constraint "licenca_pagamentos_usuario_id_fkey" on table "licenca_pagamentos"` (Key id=19 ainda referenciada).
+- Causa: `apagar_dados_teste` (`app/performance_teste.py`) apagava os médicos `perfteste` com um DELETE em massa, assumindo que eles não tinham histórico. Só que a tela de licença (dono ou médico) chama `garantir_meses_licenca` e cria `LicencaPagamento` para eles, então a premissa deixou de valer (mesmo tipo de FK do bug de excluir médico de 2026-09-29).
+- Correção: antes de apagar os usuários de teste, apaga (ou desvincula) o que aponta para eles, por subconsulta de ids: `PushSubscription`, `LicencaPagamento`, `MensagemSuporte`, `Notificacao` (delete) e `ChamadaIA.usuario_id` (vira NULL). Imports ajustados no topo do arquivo. Compila. **Não executado**: sem Flask no ambiente do assistente e sem teste automatizado dessa função. Validar no `media-dev` depois do deploy (o app é Postgres, onde a FK é aplicada de verdade).
+- Observação: a transação anterior falhou no meio, então nenhum dado foi apagado parcialmente (a rota só faz commit depois da função). Se aparecer outra FK diferente no log, a lista de dependentes a estender é a de `app/exclusao_usuario.py`.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
