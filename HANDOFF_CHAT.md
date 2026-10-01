@@ -2166,6 +2166,35 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - A tela de revisão da importação de PDF (`preparo_modelos_importar_xlsx`, render direto em `routes_medico.py`) não passava `tipos_exame` ao template, então o bloco inteiro (especialidade, tipo, "Não encontrei") sumia. Agora passa `tipos_exame=_tipos_exame_ativos()`. As outras três telas (novo, erro de POST, editar) já passavam.
 - Se mesmo assim não aparecer em dev, conferir se há tipos de exame ativos cadastrados (`/dono/tipos-exame`).
 
+## Sessão de 2026-10-01 (pelo celular): revisão estática, testes de cadastro, aviso de exames pendentes e carga 6 de colonoscopia
+
+### Ambiente de trabalho desta sessão
+- `device_bash` funcionou (shell Linux com a pasta `C:\app\media\src` montada), mas **sem Flask e sem acesso ao PyPI** (proxy 403). Nenhum teste `test_*.py` foi executado. Só foram feitas checagens estáticas: `py_compile` de todos os `.py` (ok), conferência de imports `from app.x import y` (nenhum quebrado), parse Jinja das telas alteradas (ok). **Rodar `.\rodar_testes.ps1` no PowerShell continua pendente.**
+
+### Testes antigos de cadastro atualizados (6 arquivos)
+- O cadastro público exige telefone, CEP/endereço e `senha_confirmacao`. Seis testes postavam `/cadastro` sem esses campos: `test_licenca_medico.py`, `test_licenca_pagamento_valor_e_gateway.py`, `test_licencas_aplicar_valor_padrao.py`, `test_medico_independente.py`, `test_painel_agenda_do_medico.py`, `test_pix_licenca.py`.
+- Cada um ganhou o bloco `EXTRA_CADASTRO` (igual ao dos testes novos) e as chamadas `client.post("/cadastro", data={**EXTRA_CADASTRO, ...` . Verificações não mudaram. A chamada de `test_medico_independente.py` que testa cadastro vazio foi deixada como estava de propósito.
+- Os outros arquivos da lista inicial de 14 usam `/cadastro-paciente` ou a decisão de cadastro da equipe e não precisavam de mudança. Todos compilam. **Não executados.**
+
+### Aviso de exames pendentes no painel do dono + exportação
+- Fluxo combinado com o Silvan: quando o médico cadastra um preparo com "Não encontrei o meu exame", o dono é avisado e as perguntas e respostas desse exame são pesquisadas numa sessão com o assistente.
+- **O sininho só existe para médico/secretária** (`current_user.is_staff` em `base.html`), então o aviso ficou como **faixa amarela no topo do `dono/dashboard.html`** (usa `tipos_sugeridos_pendentes`, já existente) com botão "Ver pendências".
+- Nova rota `dono.tipos_exame_pendencias_txt` (`GET /dono/tipos-exame/pendencias.txt`, só dono, só leitura): texto simples com nome, especialidade, preparos aguardando e data. Botão "Exportar pendências (texto para copiar)" no cartão de `dono/tipos_exame.html`.
+- Arquivos: `app/routes_dono.py`, `app/templates/dono/dashboard.html`, `app/templates/dono/tipos_exame.html`.
+- **Pendente (decisão do Silvan)**: fila para tipos que EXISTEM mas têm base fraca. Recomendação do assistente: mínimo de **10 itens por tipo** (hoje não há tipo entre 7 e 17 itens, então qualquer corte nessa faixa dá o mesmo resultado), aviso uma vez por tipo, valor num único ponto do código. Ainda não implementado.
+
+### Carga 6 da base: colonoscopia chegou a 100 itens
+- Novo `app/base_conhecimento_padrao_g18.py` (60 itens) importado em `base_conhecimento_padrao.py` (`_G18`). Colonoscopia: 40 -> 100. Base total: 806 -> 866 itens. Entram no próximo deploy via `migrar_banco.py`, como origem "internet", **não revisados**, ativos.
+- Pesquisa por 4 agentes em paralelo, cada item conferido em página aberta com URL exata. Cortados 10 de cerca de 70: regras de hospital específico apresentadas como gerais, conduta de medicamento sem fonte forte e itens de menor valor. Três itens usavam "dias" e foram reescritos. Validado: sem dígitos, ";", "horas", "dias", "R$", "consulte o médico" nem pergunta repetida; compila.
+- **Revisão humana prioritária**: três itens de sinais de alerta pós-exame (febre, dor persistente, sangramento) vêm do blog Saúde Américas, a fonte mais fraca. Fontes como MD.Saúde, Dr. Derival, Berrini, Gastrocor e Progastro são de clínicas ou portais. Não foram confirmados em fonte aceitável: hemorroida, crianças, aparelho auditivo/lentes, dieta vegetariana, diarreia crônica.
+- Esclarecimento: `revisado` NÃO é usado pela busca (ela filtra só status ativo e tipo). Um item não revisado e ativo já pode alimentar o rascunho assim que o interruptor da base estiver ligado. O Silvan decidiu NÃO criar a regra "só itens revisados".
+
+### Planilha descartada
+- `faq_colonoscopia_220_itens.xlsx` (enviada pelo Silvan) foi analisada e descartada por decisão dele: 120 dos 220 itens eram cópias com "(Aspecto 2/3)", só 5 fontes em rodízio com link de página inicial, 146 itens com números ou prazos. Nada foi importado.
+
+### Backups
+- Cópias dos arquivos alterados (testes, `routes_dono.py`, templates, `base_conhecimento_padrao.py`, este handoff) ficaram fora do projeto, na pasta `bkp_testes` do usuário do shell da máquina.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
