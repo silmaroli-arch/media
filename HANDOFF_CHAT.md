@@ -2225,6 +2225,13 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 
 - Ordem do menu ajustada (mesmo dia): "FAQ do MedIA" (só médico) agora fica logo ABAIXO de "Meu FAQ" (antes ficava depois de "Primeiros passos"). Ordem atual: Painel, Meus dados, Primeiros passos, Exames & preparo, Pacientes, Agendar exame, Meus exames agendados, Portal de atendimento rápido, Últimas respondidas, Meu FAQ, FAQ do MedIA, Grupos de trabalho, Fale com a gente, Minha licença.
 
+### Menu do dono nos moldes do médico: barra lateral (2026-10-01, pedido do Silvan)
+- Antes o dono navegava por abas horizontais (`dono/_menu.html` nas telas soltas e a `nav-tabs #donoTabs` do `dono/dashboard.html`). Agora tem a MESMA barra lateral em gaveta do médico (botão hambúrguer no cabeçalho).
+- `app/templates/base.html`: nova variável `mostrar_sidebar` (staff OU dono) controla a barra, o botão e o script da gaveta; dentro da barra, `{% if current_user.is_dono %}` renderiza a lista do dono e `{% else %}` mantém a do médico/secretária intacta. Itens do dono: Visão geral, Usuários, Grupos, Licenças, Mensagens (badge de novas), Anúncios, Tipos de exame (badge de pendentes), FAQ do MedIA, Custo de IA, Configurações, Ferramentas, Meus dados.
+- Visão geral, Usuários, Grupos, Custo de IA e Configurações continuam sendo abas da própria `dono/dashboard.html`: os links da barra levam a `dono.dashboard#painel-...`. A barra de abas do dashboard ficou escondida (`d-none`, mantida porque o script usa os botões) e o script ganhou o evento `hashchange` (clicar em outro item estando no dashboard troca a aba, marca o item ativo e fecha a gaveta). `dono/_menu.html` agora não renderiza nada (continua incluído pelas telas soltas).
+- `app/routes_dono.py`: o context processor `_injetar_sugestoes_tipos_exame` passou a fornecer também `mensagens_suporte_novas` em todas as telas do dono (antes só o dashboard passava).
+- Compila e Jinja parseia, nenhum teste existente confere o texto das abas. **Não verificado no navegador**: conferir gaveta no celular e no desktop, o item ativo nas telas soltas e a troca de aba pelo menu.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
