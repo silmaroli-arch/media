@@ -90,8 +90,10 @@
 </head>
 <body>
 {% set eh_staff_logado = current_user.is_authenticated and current_user.is_staff %}
+{# 2026-10-01: o dono também passa a ter a barra lateral (mesmo molde do médico). #}
+{% set mostrar_sidebar = current_user.is_authenticated and (current_user.is_staff or current_user.is_dono) %}
 <div class="d-flex">
-  {% if eh_staff_logado %}
+  {% if mostrar_sidebar %}
   {# Restruturação de 2026-09 (pedido do Silvan): "Exames", "Exames &
      Preparo" e "Associar exames entre filiais" viraram uma única tela
      ("Modelos de preparo" - ver medico.preparo_modelos_novo). As rotas
@@ -123,6 +125,76 @@
        não precisar mexer em cada item. A única exceção é "Exames & preparo", que
        no celular leva à tela de aviso/importar PDF (ver mais abaixo). #}
     {% set oculto_no_celular_do_medico = "" %}
+    {% if current_user.is_dono %}
+    {# Menu do DONO (2026-10-01, pedido do Silvan): mesmo molde do menu do médico
+       (barra lateral em gaveta). As seções que são abas de dono/dashboard.html
+       levam uma âncora (#painel-...) que a própria tela abre. #}
+    <ul class="nav nav-pills flex-column">
+      {% set ep_dono = request.endpoint or '' %}
+      {% set hash_dono = '' %}
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono == 'dono.dashboard' %}active{% endif %}" href="{{ url_for('dono.dashboard') }}#painel-visao-geral" data-painel="#painel-visao-geral">
+          <i class="bi bi-speedometer2 me-2"></i>Visão geral
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link" href="{{ url_for('dono.dashboard') }}#painel-usuarios" data-painel="#painel-usuarios">
+          <i class="bi bi-people me-2"></i>Usuários
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link" href="{{ url_for('dono.dashboard') }}#painel-grupos" data-painel="#painel-grupos">
+          <i class="bi bi-diagram-3 me-2"></i>Grupos
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono == 'dono.usuarios' or ep_dono.startswith('dono.usuario_licenca') %}active{% endif %}" href="{{ url_for('dono.usuarios') }}">
+          <i class="bi bi-cash-coin me-2"></i>Licenças
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.mensagens_suporte') %}active{% endif %}" href="{{ url_for('dono.mensagens_suporte') }}">
+          <i class="bi bi-chat-dots me-2"></i>Mensagens
+          {% if mensagens_suporte_novas %}<span class="badge bg-danger rounded-pill ms-1">{{ mensagens_suporte_novas }}</span>{% endif %}
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.anuncio') %}active{% endif %}" href="{{ url_for('dono.anuncios') }}">
+          <i class="bi bi-megaphone me-2"></i>Anúncios
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.tipos_exame') or ep_dono.startswith('dono.tipo_') %}active{% endif %}" href="{{ url_for('dono.tipos_exame') }}">
+          <i class="bi bi-clipboard2-pulse me-2"></i>Tipos de exame{% if tipos_sugeridos_pendentes %} <span class="badge bg-warning text-dark">{{ tipos_sugeridos_pendentes }}</span>{% endif %}
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.base_') %}active{% endif %}" href="{{ url_for('dono.base_conhecimento') }}">
+          <i class="bi bi-journal-medical me-2"></i>FAQ do MedIA
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link" href="{{ url_for('dono.dashboard') }}#painel-custo-ia" data-painel="#painel-custo-ia">
+          <i class="bi bi-robot me-2"></i>Custo de IA
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link" href="{{ url_for('dono.dashboard') }}#painel-config" data-painel="#painel-config">
+          <i class="bi bi-sliders me-2"></i>Configurações
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.ferramentas') %}active{% endif %}" href="{{ url_for('dono.ferramentas_performance') }}">
+          <i class="bi bi-speedometer me-2"></i>Ferramentas
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono == 'auth.meus_dados' %}active{% endif %}" href="{{ url_for('auth.meus_dados') }}">
+          <i class="bi bi-person-circle me-2"></i>Meus dados
+        </a>
+      </li>
+    </ul>
+    {% else %}
     <ul class="nav nav-pills flex-column">
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint == 'medico.dashboard' %}active{% endif %}" href="{{ url_for('medico.dashboard') }}">
@@ -320,6 +392,7 @@
          as rotas (relatorios.index/agenda/pacientes/desempenho_medico)
          continuam existindo, só sem link no menu. #}
     </ul>
+    {% endif %}
   </nav>
   {# Fundo escurecido atrás da gaveta do menu - toque nele fecha o menu
      (ver CSS/JS: só aparece quando body tem a classe "sidebar-open"). #}
@@ -330,7 +403,7 @@
     {% if current_user.is_authenticated %}
     <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom bg-white no-print">
       <div class="d-flex align-items-center">
-        {% if eh_staff_logado %}
+        {% if mostrar_sidebar %}
         <button type="button" id="sidebarToggleBtn" class="btn btn-sm btn-outline-secondary sidebar-toggle-btn me-2"
                 title="Abrir/fechar o menu">
           <i class="bi bi-list"></i>
@@ -508,7 +581,7 @@ window.addEventListener('load', function () {
 });
 </script>
 {% endif %}
-{% if eh_staff_logado %}
+{% if mostrar_sidebar %}
 <script>
   // Menu lateral em gaveta (off-canvas), em qualquer tamanho de tela: fica
   // escondido por padrão a cada carregamento de página e abre por cima do

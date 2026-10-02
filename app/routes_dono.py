@@ -942,7 +942,11 @@ def _injetar_sugestoes_tipos_exame():
     para o selo da aba "Tipos de exame" do painel do dono."""
     if current_user.is_authenticated and getattr(current_user, "tipo", None) == "dono":
         try:
-            return {"tipos_sugeridos_pendentes": TipoExameSugestao.query.filter_by(status="pendente").count()}
+            return {
+                "tipos_sugeridos_pendentes": TipoExameSugestao.query.filter_by(status="pendente").count(),
+                # Badge de "Mensagens" na barra lateral do dono (2026-10-01), em todas as telas.
+                "mensagens_suporte_novas": MensagemSuporte.query.filter_by(status="nova").count(),
+            }
         except Exception:
             db.session.rollback()
     return {}

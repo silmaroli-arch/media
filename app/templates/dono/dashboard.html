@@ -28,7 +28,7 @@
 </div>
 {% endif %}
 
-<ul class="nav nav-tabs mb-4" id="donoTabs" role="tablist">
+<ul class="nav nav-tabs mb-4 d-none" id="donoTabs" role="tablist">
   <li class="nav-item" role="presentation">
     <button class="nav-link active" id="tab-visao-geral" data-bs-toggle="tab" data-bs-target="#painel-visao-geral" type="button" role="tab" aria-controls="painel-visao-geral" aria-selected="true">
       <i class="bi bi-speedometer2 me-1"></i>Visão geral
@@ -540,10 +540,21 @@
 // de outra tela do painel - ver dono/_menu.html), abre a aba
 // correspondente em vez de sempre cair em "Visão geral".
 (function () {
-  var alvo = window.location.hash;
-  if (!alvo) return;
-  var botao = document.querySelector('#donoTabs [data-bs-target="' + alvo + '"]');
-  if (botao) new bootstrap.Tab(botao).show();
+  function abrirPelaAncora() {
+    var alvo = window.location.hash;
+    if (!alvo) return;
+    var botao = document.querySelector('#donoTabs [data-bs-target="' + alvo + '"]');
+    if (botao) {
+      new bootstrap.Tab(botao).show();
+      // Barra lateral do dono: marca o item da seção aberta e fecha a gaveta.
+      document.querySelectorAll('.app-sidebar a[data-painel]').forEach(function (a) {
+        a.classList.toggle('active', a.getAttribute('data-painel') === alvo);
+      });
+      document.body.classList.remove('sidebar-open');
+    }
+  }
+  abrirPelaAncora();
+  window.addEventListener('hashchange', abrirPelaAncora);
 })();
 </script>
 {% endblock %}
