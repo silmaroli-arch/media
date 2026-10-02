@@ -1,6 +1,6 @@
 # Handoff — Continuação do chat com Claude sobre o projeto Media/MedIA
 
-> Atualizado em 2026-09-11 (6ª rodada — ver seção "6ª rodada" perto do final). Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
+> Atualizado em 2026-10-02 (última sessão: "Sessão de 2026-10-01", logo antes de "Como continuar" - lá estão as mudanças mais recentes e o checklist de validação). Rodadas anteriores: ver "6ª rodada" perto do final. Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
 >
 > **A partir da 6ª rodada, toda alteração de código feita numa sessão precisa ser documentada aqui** (pedido explícito do Silvan) - não só ao final da sessão.
 >
@@ -2231,6 +2231,21 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Visão geral, Usuários, Grupos, Custo de IA e Configurações continuam sendo abas da própria `dono/dashboard.html`: os links da barra levam a `dono.dashboard#painel-...`. A barra de abas do dashboard ficou escondida (`d-none`, mantida porque o script usa os botões) e o script ganhou o evento `hashchange` (clicar em outro item estando no dashboard troca a aba, marca o item ativo e fecha a gaveta). `dono/_menu.html` agora não renderiza nada (continua incluído pelas telas soltas).
 - `app/routes_dono.py`: o context processor `_injetar_sugestoes_tipos_exame` passou a fornecer também `mensagens_suporte_novas` em todas as telas do dono (antes só o dashboard passava).
 - Compila e Jinja parseia, nenhum teste existente confere o texto das abas. **Não verificado no navegador**: conferir gaveta no celular e no desktop, o item ativo nas telas soltas e a troca de aba pelo menu.
+
+### Checklist de validação da sessão de 2026-10-01 (nada abaixo foi executado - sem Flask no ambiente do assistente)
+1. No PowerShell, `.\rodar_testes.ps1` (suíte inteira) e conferir principalmente: os 6 testes de cadastro editados, `test_base_integracao_chat.py` (texto "FAQ do MedIA"), `test_base_conhecimento.py` (cabeçalho "Base de conhecimento (terceira IA)" mantido), e os testes novos da base (`test_tipos_exame`, `test_base_*`, `test_tipo_exame_nao_encontrado`, `test_boas_vindas_medico`).
+2. Depois do deploy no `media-dev` (se a versão antiga persistir, Manual Deploy com limpeza de cache de build): apagar dados de teste em Ferramentas > Performance (fix da FK de `licenca_pagamentos`); cadastrar um preparo como médico e ver a notificação no sininho e o item novo em "Primeiros passos"; conferir o menu do médico (desktop e celular) e a barra lateral do dono (gaveta, item ativo, troca de aba, contadores); ver a faixa amarela e o botão "Exportar pendências" para o dono.
+3. Revisar na tela do dono ("FAQ do MedIA") os itens novos de colonoscopia, principalmente os 3 de sinais de alerta pós-exame (fonte mais fraca).
+4. Conferir se `WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO` está aprovado e configurado no Render (sem ele o aviso por WhatsApp é pulado em silêncio).
+
+### Pendências abertas (decisões ou trabalho futuro)
+- Fila de tipos de exame com base fraca (mínimo sugerido de 10 itens por tipo, aviso uma vez por tipo) - aguardando o Silvan confirmar.
+- Cargas pendentes da base: `_g14` (sangue, curva glicêmica, hormônios, PSA, urina de 24 horas) e `_g17` (espirometria, polissonografia, EEG, retina, audiometria, nasofibro), e tipos com poucos itens. O fluxo combinado agora é por demanda: o dono vê a faixa de pendências, exporta a lista e traz para uma sessão do assistente, que pesquisa com fontes reais e entrega em módulo `_gNN`.
+- Sininho para o dono (hoje só médico/secretária têm) - não feito, mudaria o cabeçalho de todas as telas.
+- Diagnóstico do push no iPhone (Fatia 8 do PWA) segue sem resolução; Fatia 6 (desacoplar conta de Grupo) segue em andamento.
+
+### Backups desta sessão
+- Cópias dos arquivos antes de cada edição ficaram na pasta `bkp_testes` do usuário do shell da máquina (subpastas `ren` e `dono` para as rodadas de renomeação e do menu do dono). Não fazem parte do repositório.
 
 ## Como continuar
 
