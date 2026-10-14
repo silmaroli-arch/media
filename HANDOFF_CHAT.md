@@ -2247,7 +2247,7 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 ### Backups desta sessão
 - Cópias dos arquivos antes de cada edição ficaram na pasta `bkp_testes` do usuário do shell da máquina (subpastas `ren` e `dono` para as rodadas de renomeação e do menu do dono). Não fazem parte do repositório.
 
-## Sessão de 2026-10-14 (Claude Code na nuvem): suíte de testes executada pela primeira vez - 79/80 passando
+## Sessão de 2026-10-14 (Claude Code na nuvem): suíte de testes executada pela primeira vez - 79/79 passando
 
 ### Ambiente
 - Pela primeira vez o ambiente do assistente conseguiu instalar o `requirements.txt` (PyPI liberado) e rodar a suíte inteira de verdade, com SQLite descartável por arquivo (mesmo esquema do `rodar_testes.ps1`).
@@ -2265,12 +2265,13 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Quem tem vínculo com mais de um grupo (Dr. Carlos, secretária do Grupo Saúde) precisa escolher o grupo em `/equipe/clinica` antes de usar a área de equipe - vários testes não faziam isso e o pedido nunca chegava na rota.
 - Regras novas refletidas nos testes: FAQ consultada antes da IA (2026-09-11); "Oi" é conversa social (2026-09-24); gatilho "1" removido (2026-09-14); geração em massa de cobranças só cria as linhas, sem link nem Pix, e ignora médico em trial (2026-09-29); importação de preparo só por PDF; menu na ordem de 2026-10-01; badge "FAQ do MedIA diverge"; funções da IA com 4 valores de retorno.
 - Telas que agora repetem a pergunta do paciente (balão do chat/histórico): as checagens de "a resposta não aparece" passaram a ignorar o texto da própria pergunta.
-- `test_smoke_final.py` era uma cópia antiga do `test_smoke.py` (com as regras de antes de 2026-09-11) - agora é idêntico a ele. **Decisão pendente**: apagar um dos dois.
+- `test_smoke_final.py` era uma cópia antiga do `test_smoke.py` (com as regras de antes de 2026-09-11) - apagado (ver decisões abaixo).
 - Outros ajustes só de teste: objetos SQLAlchemy usados fora do `app_context` (ids guardados antes), mock de busca devolvendo item de outra sessão, vetor falso de embedding perto demais do limiar 0,70, "na hora" (= imediatamente) confundido com prazo na checagem de texto da base.
 
-### Pendências para o Silvan
-1. **`test_base_conhecimento.py` continua falhando (de propósito, aguardando decisão)**: a pergunta "posso dirigir depois do **exame**" não acha "Posso dirigir depois da colonoscopia?" na busca por palavra-chave do FAQ do MedIA. "depois" está nas STOPWORDS de `app/faq_engine.py`, sobra só {dirigir, exame}, e "exame" nunca casa com o nome do exame (1 de 2 = 0,5, abaixo do limiar 0,6). Proposta: na busca da base com tipo de exame definido, ignorar a palavra genérica "exame" (o tipo já restringe a busca). Não implementado sem confirmação.
-2. **Falso positivo na resposta pronta de medicamento** (`buscar_resposta_medicamento` em `app/faq_engine.py`): a CATEGORIA do medicamento entra como sinônimo, então qualquer pergunta com a palavra "medicamento" casa com "medicamento antiplaquetário" (Clopidogrel, no seed) com nota 0,5 = exatamente o limiar. Ex.: "Posso tomar esse medicamento nimesulida?" recebe a resposta pronta sobre suspender Clopidogrel - e, com a aprovação geral desligada, ela vai direto ao paciente. Apareceu em 4 testes (corrigidos trocando "medicamento" por "remédio" no texto da pergunta de teste); o sistema em si não foi mexido.
+### Decisões do Silvan na mesma sessão (implementadas) - suíte: 79/79 passando
+1. **Busca do FAQ do MedIA ignora a palavra "exame" quando o tipo de exame já está definido** (`app/base_conhecimento.py`, `_PALAVRAS_GENERICAS_EXAME`): "posso dirigir depois do **exame**" agora acha "Posso dirigir depois da colonoscopia?". Antes, "depois" é STOPWORD em `app/faq_engine.py`, sobrava {dirigir, exame}, e "exame" nunca casava com o nome do exame (0,5, abaixo do limiar 0,6). Sem tipo de exame, nada muda.
+2. **Resposta pronta de medicamento não casa mais por palavra genérica** (`app/faq_engine.py`, `_PALAVRAS_GENERICAS_MEDICAMENTO` = medicamento/remédio/medicação, removidas do nome e da categoria antes de comparar): antes "Posso tomar esse medicamento nimesulida?" recebia a resposta pronta sobre suspender o Clopidogrel (categoria "medicamento antiplaquetário", nota 0,5 = limiar) - e, com a aprovação geral desligada, ia direto ao paciente. Continuam funcionando: "meu antiplaquetário?" -> Clopidogrel, "o remédio Xarelto?" -> Xarelto. Checagens novas no fim de `test_medicamento_nao_cadastrado_revisao.py`.
+3. **`test_smoke_final.py` apagado** (era idêntico ao `test_smoke.py`). As menções a ele nas seções antigas deste documento ficam como registro histórico.
 
 ## Como continuar
 

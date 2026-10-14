@@ -112,8 +112,17 @@ def _cosseno(a, b):
     return produto / (norma_a * norma_b)
 
 
-def _buscar_por_palavra_chave(pergunta, itens, limite):
+# Com o tipo de exame já definido, "exame" na pergunta do paciente quer
+# dizer ESTE exame - a palavra nunca casa com o nome dele no item ("posso
+# dirigir depois do exame" x "Posso dirigir depois da colonoscopia?") e só
+# baixava a nota abaixo do limiar. Decisão do Silvan, 2026-10-14.
+_PALAVRAS_GENERICAS_EXAME = {"exame"}
+
+
+def _buscar_por_palavra_chave(pergunta, itens, limite, ignorar_genericas=False):
     kw_pergunta = palavras_chave(pergunta)
+    if ignorar_genericas:
+        kw_pergunta = kw_pergunta - _PALAVRAS_GENERICAS_EXAME
     if not kw_pergunta:
         return []
     resultados = []
@@ -163,4 +172,4 @@ def buscar_na_base(pergunta, tipo_exame_id=None, limite=3, provedor=None):
             resultados.sort(key=lambda r: r["score"], reverse=True)
             return resultados[:limite]
 
-    return _buscar_por_palavra_chave(pergunta, itens, limite)
+    return _buscar_por_palavra_chave(pergunta, itens, limite, ignorar_genericas=bool(tipo_exame_id))

@@ -340,4 +340,27 @@ with app.app_context():
         clinica_vitoria.aprovacao_perguntas_paciente = valor_original_aprovacao_zap
         db.session.commit()
 
+# ---------- Palavra genérica "medicamento" não casa com a categoria ----------
+# Caso real (2026-10-14): "Posso tomar esse medicamento nimesulida?" recebia
+# a resposta pronta sobre suspender o Clopidogrel, porque a categoria dele no
+# seed.py é "medicamento antiplaquetário" (ver
+# app.faq_engine._PALAVRAS_GENERICAS_MEDICAMENTO).
+from app.faq_engine import buscar_resposta_medicamento
+
+with app.app_context():
+    clinica_vitoria = Grupo.query.filter_by(nome="Clínica Vitória").first()
+    colonoscopia = Exame.query.filter_by(grupo_id=clinica_vitoria.id, nome="Colonoscopia").first()
+    checar(
+        "Pergunta sobre medicamento NÃO cadastrado, só com a palavra 'medicamento', não recebe resposta pronta",
+        buscar_resposta_medicamento("Posso tomar esse medicamento nimesulida?", colonoscopia) is None,
+    )
+    checar(
+        "'Posso tomar meu medicamento?' (genérico demais) não recebe resposta pronta",
+        buscar_resposta_medicamento("Posso tomar meu medicamento?", colonoscopia) is None,
+    )
+    resposta_categoria = buscar_resposta_medicamento("Posso tomar meu antiplaquetário?", colonoscopia) or ""
+    checar("A categoria específica continua sendo reconhecida (antiplaquetário -> Clopidogrel)", "Clopidogrel" in resposta_categoria)
+    resposta_marca = buscar_resposta_medicamento("Posso tomar o remédio Xarelto?", colonoscopia) or ""
+    checar("A marca continua sendo reconhecida mesmo com 'remédio' na frase", "Xarelto" in resposta_marca)
+
 print("\nTodos os testes da revisão obrigatória para medicamento não cadastrado passaram.")
