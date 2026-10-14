@@ -58,7 +58,7 @@ checar(
 r1 = client.post("/cadastro", data={
     **DADOS_BASE,
     "nome": "Dr. Aprovação Padrão",
-    "cpf": "111.222.333-99",
+    "cpf": "111.222.334-77",
     "email": "aprovacao.padrao@example.com",
     "aprovacao_perguntas_paciente": "1",
 }, follow_redirects=True)
@@ -74,7 +74,7 @@ dados_sem_aprovacao = dict(DADOS_BASE)
 r2 = client.post("/cadastro", data={
     **dados_sem_aprovacao,
     "nome": "Dr. Aprovação Desativada",
-    "cpf": "111.222.333-27",
+    "cpf": "111.222.335-58",
     "email": "aprovacao.desativada@example.com",
     # aprovacao_perguntas_paciente OMITIDO de propósito - simula o switch desmarcado
 }, follow_redirects=True)

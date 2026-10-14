@@ -28,8 +28,17 @@ foreach ($arquivo in $pastaTestes) {
     if (Test-Path $dbFile) { Remove-Item $dbFile -Force }
 
     $env:DATABASE_URL = "sqlite:///$dbFile"
-    $saida = python $arquivo 2>&1
-    $codigoSaida = $LASTEXITCODE
+    # Os testes contam com os dados de demonstracao do seed.py (Joao,
+    # Clinica Vitoria, Dr. Carlos...) - sem isso quase todos falham.
+    # Os poucos que precisam de banco vazio zeram o banco sozinhos.
+    $saidaSeed = python seed.py 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $saida = @("seed.py falhou:") + $saidaSeed
+        $codigoSaida = $LASTEXITCODE
+    } else {
+        $saida = python $arquivo 2>&1
+        $codigoSaida = $LASTEXITCODE
+    }
 
     if ($codigoSaida -eq 0) {
         Write-Host "   OK`n" -ForegroundColor Green

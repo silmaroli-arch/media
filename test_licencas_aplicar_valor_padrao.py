@@ -50,7 +50,7 @@ def cadastrar(nome, email, cpf, crm):
         return Usuario.query.filter_by(email=email).first().id
 
 
-sem_valor = cadastrar("Dr. Sem Valor", "semvalor@example.com", "111.222.333-97", "11111")
+sem_valor = cadastrar("Dr. Sem Valor", "semvalor@example.com", "111.222.333-96", "11111")
 com_valor = cadastrar("Dr. Com Valor", "comvalor@example.com", "529.982.247-25", "22222")
 anual = cadastrar("Dra. Anual", "anual@example.com", "390.533.447-05", "33333")
 

@@ -84,18 +84,21 @@ with app.app_context():
     # A: ciclo mensal, com valor, sem nada gerado ainda -> deve GERAR.
     medico_a = Usuario(nome="Dr. A Gerar", email="medico.a.gerar@example.com", tipo="medico", ativo=True)
     medico_a.set_senha("123456")
+    medico_a.licenca_status = "ativa"  # médico em trial não entra na geração em massa (fix de 2026-09-29)
     medico_a.valor_licenca_mensal = 200.00
     medico_a.ciclo_licenca = "mensal"
 
     # B: ciclo ANUAL -> não deve ser tocado (fica de fora do critério).
     medico_b = Usuario(nome="Dra. B Anual", email="medico.b.anual@example.com", tipo="medico", ativo=True)
     medico_b.set_senha("123456")
+    medico_b.licenca_status = "ativa"  # médico em trial não entra na geração em massa (fix de 2026-09-29)
     medico_b.valor_licenca_mensal = 300.00
     medico_b.ciclo_licenca = "anual"
 
     # C: ciclo mensal, SEM valor definido -> deve pular (ValueError).
     medico_c = Usuario(nome="Dr. C Sem Valor", email="medico.c.sem-valor@example.com", tipo="medico", ativo=True)
     medico_c.set_senha("123456")
+    medico_c.licenca_status = "ativa"  # médico em trial não entra na geração em massa (fix de 2026-09-29)
     medico_c.ciclo_licenca = "mensal"
     medico_c.valor_licenca_mensal = None
 
@@ -111,6 +114,7 @@ with app.app_context():
     # que já tem cobrança gerada - nenhum dos dois deve ser tocado.
     medico_d = Usuario(nome="Dra. D Casos Especiais", email="medico.d.especial@example.com", tipo="medico", ativo=True)
     medico_d.set_senha("123456")
+    medico_d.licenca_status = "ativa"  # médico em trial não entra na geração em massa (fix de 2026-09-29)
     medico_d.valor_licenca_mensal = 250.00
     medico_d.ciclo_licenca = "mensal"
     db.session.add(medico_d)
@@ -162,21 +166,29 @@ else:
     checar("Mensagem de resumo aparece (cobranças geradas)", "cobrança" in html)
 
     with app.app_context():
-        # A: cada mês restante ganhou mp_init_point.
+        # A: cada mês restante foi CRIADO - mas sem link: desde 2026-09-29
+        # (fix do 502) a rota só cria as linhas, sem chamada de rede; o link
+        # ou o Pix de cada mês é gerado um a um, na hora de cobrar.
         pagamentos_a = LicencaPagamento.query.filter(
             LicencaPagamento.usuario_id == medico_a_id,
             LicencaPagamento.mes >= mes_inicio,
             LicencaPagamento.mes <= mes_fim,
         ).all()
         checar("Médico A teve os meses restantes criados", len(pagamentos_a) == _qtd_meses(mes_inicio, mes_fim))
-        checar("Todos os meses do médico A ganharam link de pagamento", all(p.mp_init_point for p in pagamentos_a))
+        checar("Nenhum mês do médico A ganhou link (a geração em massa não chama o Mercado Pago)",
+               all(not p.mp_init_point for p in pagamentos_a))
         checar("Nenhum mês do médico A foi marcado como pago (só a cobrança foi gerada)", all(not p.pago for p in pagamentos_a))
 
         # B (ciclo anual): não deve ter NENHUM LicencaPagamento criado pela
         # rota em massa (ela nem chama garantir_meses_licenca pra ele).
         checar(
             "Médico B (ciclo anual) não foi afetado pela geração em massa",
-            LicencaPagamento.query.filter_by(usuario_id=medico_b_id).count() == 0,
+            # só os meses FUTUROS (a janela da rota em massa): a lista de
+            # usuários do dono, aberta pelo redirect, garante o mês ATUAL de
+            # todo médico (garantir_meses_licenca), anual ou não
+            LicencaPagamento.query.filter(
+                LicencaPagamento.usuario_id == medico_b_id, LicencaPagamento.mes >= mes_inicio,
+            ).count() == 0,
         )
 
         # C (sem valor): meses foram criados (garantir_meses_licenca roda

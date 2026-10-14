@@ -31,6 +31,8 @@ from app.models import (
 )
 from app.exclusao_usuario import verificar_bloqueios_exclusao, excluir_usuario_e_dados
 
+from app.db_utils import resetar_banco
+
 app = create_app()
 app.config["WTF_CSRF_ENABLED"] = False
 client = app.test_client()
@@ -43,7 +45,9 @@ def checar(nome, condicao):
 
 
 with app.app_context():
-    db.create_all()
+    # Banco vazio de propósito (o cenário cria o próprio dono da plataforma) -
+    # zera tudo, inclusive dados do seed.py, se houver.
+    resetar_banco(db)
 
     dono_plataforma = Usuario(nome="Dono da Plataforma", email="dono@plataforma.com", tipo="dono")
     dono_plataforma.set_senha("senha-dono-123")

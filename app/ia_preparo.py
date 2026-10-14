@@ -518,7 +518,7 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
         # comportamento (a pergunta continua caindo pros outros
         # caminhos de sempre).
         current_app.logger.exception("Falha ao consultar a Claude para responder pergunta do paciente")
-        return None, None, False
+        return None, None, False, False
     uso = getattr(mensagem, "usage", None)
     chamada = registrar_chamada_ia(
         "chat_duvida_paciente", "Claude", getattr(mensagem, "model", MODELO_PADRAO),
@@ -536,7 +536,8 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
 
 def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
     """Ver docstring de `_perguntar_claude` acima - mesmo contrato de
-    retorno `(texto_ou_None, chamada_ou_None, sem_sentido_bool)`."""
+    retorno `(texto_ou_None, chamada_ou_None, sem_sentido_bool,
+    exige_revisao_medicamento_bool)`."""
     try:
         resposta = cliente.chat.completions.create(
             model=MODELO_OPENAI_PADRAO,
@@ -555,7 +556,7 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
         )
     except Exception:
         current_app.logger.exception("Falha ao consultar o ChatGPT para responder pergunta do paciente")
-        return None, None, False
+        return None, None, False, False
     uso = getattr(resposta, "usage", None)
     chamada = registrar_chamada_ia(
         "chat_duvida_paciente", "ChatGPT", getattr(resposta, "model", MODELO_OPENAI_PADRAO),
@@ -573,7 +574,8 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
 
 def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
     """Ver docstring de `_perguntar_claude` acima - mesmo contrato de
-    retorno `(texto_ou_None, chamada_ou_None, sem_sentido_bool)`. Mesma lib/cliente do
+    retorno `(texto_ou_None, chamada_ou_None, sem_sentido_bool,
+    exige_revisao_medicamento_bool)`. Mesma lib/cliente do
     import de PDF (ver app.ia_pdf_preparo), mas aqui a chamada é bem mais
     simples (só texto, sem PDF em anexo, sem retry de sobrecarga - o
     volume de perguntas do chat é baixo, e um erro passageiro aqui
@@ -595,7 +597,7 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
         )
     except Exception:
         current_app.logger.exception("Falha ao consultar o Gemini para responder pergunta do paciente")
-        return None, None, False
+        return None, None, False, False
     uso = getattr(resposta, "usage_metadata", None)
     chamada = registrar_chamada_ia(
         "chat_duvida_paciente", "Gemini", getattr(resposta, "model_version", None) or MODELO_GEMINI_PADRAO,

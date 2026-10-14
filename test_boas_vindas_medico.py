@@ -23,7 +23,7 @@ def checar(nome, condicao):
 
 
 dados = {
-    "nome": "Dra. Boas Vindas", "papel": "medico", "cpf": "111.222.333-97", "crm_numero": "12345", "crm_uf": "ES",
+    "nome": "Dra. Boas Vindas", "papel": "medico", "cpf": "111.222.333-96", "crm_numero": "12345", "crm_uf": "ES",
     "data_nascimento": "10/05/1980", "email": "boasvindas@example.com", "senha": "123456", "senha_confirmacao": "123456",
     "telefone": "(27) 99999-1234", "cep": "29010-000", "rua": "Rua A", "numero": "1", "bairro": "Centro",
     "cidade": "Vitoria", "uf": "ES",

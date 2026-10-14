@@ -42,7 +42,7 @@ def checar(nome, condicao):
 
 # ---------- Setup: um medico e o dono ----------
 r = client.post("/cadastro", data={**EXTRA_CADASTRO,
-    "nome": "Dr. Tipo Teste", "papel": "medico", "cpf": "111.222.333-97", "crm_numero": "77777",
+    "nome": "Dr. Tipo Teste", "papel": "medico", "cpf": "111.222.333-96", "crm_numero": "77777",
     "crm_uf": "ES", "data_nascimento": "10/05/1980", "email": "tipo.medico@example.com", "senha": "123456",
 }, follow_redirects=True)
 client.get("/logout")

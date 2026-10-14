@@ -71,7 +71,7 @@
       <div class="col-md-4">
         <select name="teste_tipo" class="form-select">
           <option value="">Qualquer tipo de exame</option>
-          {% for t in tipos %}<option value="{{ t.id }}" {% if request.args.get('teste_tipo', type=int) == t.id %}selected{% endif %}>{{ t.nome }}</option>{% endfor %}
+          {% for t in tipos %}<option value="{{ t.id }}" {% if request.args.get('teste_tipo', '') == t.id|string %}selected{% endif %}>{{ t.nome }}</option>{% endfor %}
         </select>
       </div>
       <div class="col-md-2"><button type="submit" class="btn btn-outline-primary w-100">Buscar</button></div>

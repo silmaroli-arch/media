@@ -71,7 +71,7 @@ def cadastrar_medico(nome, email, cpf, crm):
         return Usuario.query.filter_by(email=email).first().id
 
 
-medico_id = cadastrar_medico("Dr. Link Teste", "link.medico@example.com", "111.222.333-97", "44444")
+medico_id = cadastrar_medico("Dr. Link Teste", "link.medico@example.com", "111.222.333-96", "44444")
 outro_id = cadastrar_medico("Dra. Outra", "link.outra@example.com", "529.982.247-25", "55555")
 
 with app.app_context():

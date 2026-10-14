@@ -33,7 +33,7 @@ def login(email):
 
 
 client.post("/cadastro", data={**EXTRA_CADASTRO,
-    "nome": "Dr. Outro Exame", "papel": "medico", "cpf": "111.222.333-97", "crm_numero": "70707", "crm_uf": "ES",
+    "nome": "Dr. Outro Exame", "papel": "medico", "cpf": "111.222.333-96", "crm_numero": "70707", "crm_uf": "ES",
     "data_nascimento": "10/05/1980", "email": "outro.exame@example.com", "senha": "123456",
     "especialidade": "Gastroenterologia"}, follow_redirects=True)
 client.get("/logout")

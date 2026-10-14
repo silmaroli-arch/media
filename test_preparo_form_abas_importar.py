@@ -41,10 +41,13 @@ checar("Lista continua com o botão de novo modelo", "Novo modelo" in html_lista
 
 r = client.get("/equipe/preparo-modelos/novo")
 html_form = r.get_data(as_text=True)
-checar("Formulário NÃO tem mais o botão de importar PDF (virou tela própria)", "Importar de um PDF" not in html_form)
-checar("Formulário tem o botão de importar Excel", "Importar de um Excel" in html_form)
-checar("O botão abre um popup (modal) com o campo de arquivo",
-       'id="modal-importar-xlsx"' in html_form and 'name="arquivo_xlsx"' in html_form)
+# Pedido do Silvan (2026-09): a tela oferece só "Importar de um PDF" - o
+# Excel saiu da tela (o backend ainda aceita .xlsx, ver HANDOFF_CHAT.md).
+checar("Formulário tem o botão de importar PDF", "Importar de um PDF" in html_form)
+checar("Formulário NÃO oferece mais importar Excel", "Importar de um Excel" not in html_form)
+checar("O botão abre um popup (modal) com o campo de arquivo, só para PDF",
+       'id="modal-importar-xlsx"' in html_form and 'name="arquivo_xlsx"' in html_form
+       and 'accept=".pdf"' in html_form)
 
 # ---------- Abas por tópico ----------
 

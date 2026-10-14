@@ -143,7 +143,7 @@ with app.app_context():
     # rascunho final (dela) precisa de revisão.
     def side_effect_uma_ia_medicamento(nome_provedor, *args, **kwargs):
         if nome_provedor == "Claude":
-            return (resposta_medicamento_texto, "chamada-fake", True, False, True)
+            return (resposta_medicamento_texto, SimpleNamespace(), True, False, True)
         return (None, None, False, False, False)
 
     with patch("app.ia_preparo._tentar_provedor", side_effect=side_effect_uma_ia_medicamento):
@@ -156,7 +156,7 @@ with app.app_context():
     # não muda).
     def side_effect_duas_ias_normal(nome_provedor, *args, **kwargs):
         if nome_provedor in ("Claude", "ChatGPT"):
-            return ("Água pura é permitida durante o jejum.", "chamada-fake", True, False, False)
+            return ("Água pura é permitida durante o jejum.", SimpleNamespace(), True, False, False)
         return (None, None, False, False, False)
 
     with patch("app.ia_preparo._tentar_provedor", side_effect=side_effect_duas_ias_normal):
@@ -195,7 +195,10 @@ with app.app_context():
     try:
         login_paciente("123.456.789-00", "1985-04-12")
 
-        pergunta_medicamento_web = "[teste-medicamento-web] Posso tomar nimesulida antes do exame?"
+        # A marca do teste NÃO pode conter "medicamento": essa palavra casa
+        # com a categoria "medicamento antiplaquetário" do Clopidogrel (seed.py)
+        # e a resposta pronta do preparo responderia antes da IA.
+        pergunta_medicamento_web = "[teste-mnc-web] Posso tomar nimesulida antes do exame?"
         resultado_ia_medicamento = {
             "final": resposta_medicamento_texto,
             "por_provedor": {"Claude": resposta_medicamento_texto, "ChatGPT": None, "Gemini": None},
@@ -211,7 +214,8 @@ with app.app_context():
             ).get_data(as_text=True)
         checar(
             "Web, aprovação geral desativada, resposta com marcador -> NÃO vai direto ao paciente",
-            "nimesulida" not in resposta_web.lower(),
+            # a tela repete a própria pergunta do paciente - só a resposta não pode citar o remédio
+            "nimesulida" not in resposta_web.lower().replace(pergunta_medicamento_web.lower(), ""),
         )
         pendente_medicamento = (
             PerguntaPendente.query.filter_by(paciente_id=joao.id, pergunta=pergunta_medicamento_web)
@@ -228,7 +232,7 @@ with app.app_context():
 
         # Regressão: resposta normal (sem o marcador), mesma aprovação
         # geral desativada -> continua indo direto, como sempre.
-        pergunta_normal_web = "[teste-medicamento-web] Esta pergunta não tem nada a ver com medicamento não cadastrado"
+        pergunta_normal_web = "[teste-mnc-web] Esta pergunta não tem nada a ver com remédio fora do cadastro"
         resultado_ia_normal = {
             "final": "Resposta normal da IA, sem nenhum problema de cadastro.",
             "por_provedor": {"Claude": "Resposta normal da IA, sem nenhum problema de cadastro.", "ChatGPT": None, "Gemini": None},
@@ -327,7 +331,7 @@ with app.app_context():
             "exige_revisao_medicamento": False,
         }
         with patch("app.whatsapp_conversa.responder_com_ia", return_value=resultado_ia_normal_zap):
-            resposta_zap_normal = processar_mensagem(telefone_medicamento, "Outra pergunta qualquer, sem relação com medicamento não cadastrado")
+            resposta_zap_normal = processar_mensagem(telefone_medicamento, "Outra pergunta qualquer, sem relação com remédio fora do cadastro")
         checar(
             "WhatsApp, aprovação geral desativada, resposta SEM marcador -> vai direto ao paciente (regressão)",
             "resposta normal da ia" in resposta_zap_normal.lower(),

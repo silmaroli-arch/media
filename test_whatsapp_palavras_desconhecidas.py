@@ -62,7 +62,12 @@ class _VerificadorFake:
 
 _CONHECIDAS = {"posso", "comer", "batata", "frita", "exame", "jejum", "agua", "durante", "beber"}
 
-with patch(
+# _eh_mensagem_com_muitas_palavras_desconhecidas consulta o interruptor
+# PlataformaConfig.verificar_dicionario_chat (2026-09-29), então precisa de
+# contexto de aplicação mesmo nesta parte "pura".
+from app import create_app as _create_app
+
+with _create_app().app_context(), patch(
     "app.whatsapp_conversa._obter_verificador_ortografico",
     return_value=_VerificadorFake(_CONHECIDAS),
 ):

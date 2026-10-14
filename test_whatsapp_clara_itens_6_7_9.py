@@ -117,8 +117,13 @@ with app.app_context():
 
     # Depois do aviso, a conversa continua normal - o paciente ainda
     # consegue fazer uma pergunta de preparo em seguida.
-    resposta = processar_mensagem(telefone_item9, "1")
-    checar("Depois do pedido de remarcação, ainda dá pra digitar \"1\" e perguntar normalmente", "Pode digitar sua pergunta" in resposta)
+    # (Sem o gatilho "1", removido em 2026-09-14: a pergunta vai direto.)
+    resposta = processar_mensagem(telefone_item9, "Posso comer amendoim antes do exame?")
+    checar(
+        "Depois do pedido de remarcação, ainda dá pra perguntar normalmente",
+        "Avisamos a equipe" not in resposta
+        and PerguntaPendente.query.count() == total_perguntas_antes + 1,
+    )
 
     print(
         "\nTodos os testes dos itens 6, 7 e 9 do documento Clara "

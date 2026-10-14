@@ -180,7 +180,14 @@ client.get("/logout")
 # a ter um Grupo de verdade se a pessoa decidir criar um (ver
 # routes_grupo.py:novo()).
 
-r = client.post("/cadastro", data={
+# Campos obrigatórios do cadastro público desde 2026-09-10 (telefone,
+# CEP, endereço e confirmação de senha - ver routes_auth.cadastro).
+EXTRA_CADASTRO = {
+    "senha_confirmacao": "senha123", "telefone": "(27) 99999-1234", "cep": "29010-000", "rua": "Rua A",
+    "numero": "1", "bairro": "Centro", "cidade": "Vitoria", "uf": "ES",
+}
+
+r = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Fulano Teste",
     "cpf": "168.995.350-09",
     "email": "fulano@clinicateste.com",
@@ -203,7 +210,7 @@ client.get("/logout")
 # ---------- Cadastro público escolhendo "médico": conta solo recebe ----------
 # ---------- todas as permissões administrativas mesmo sem Grupo/secretária ----------
 
-r = client.post("/cadastro", data={
+r = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Dr. Ricardo Alves",
     "cpf": "111.444.777-35",
     "crm_numero": "88899", "crm_uf": "ES",
@@ -634,7 +641,10 @@ checar("Paciente vê a lista de alimentos sugeridos para consumo", "Água de coc
 r = client.post("/paciente/chat", data={"pergunta": "posso tomar água de coco?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
 checar("Chat NÃO responde direto sobre água de coco - a resposta calculada espera aprovação do médico",
-       "água de coco" not in texto.lower() and "revisada pelo médico" in texto.lower())
+       # a tela repete a pergunta do paciente (balão do chat e histórico),
+       # então "água de coco" só não pode aparecer FORA da pergunta
+       "água de coco" not in texto.lower().replace("posso tomar água de coco?", "")
+       and "revisada pelo médico" in texto.lower())
 
 r = client.post("/paciente/chat", data={"pergunta": "posso comer leite e derivados antes do exame?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
@@ -892,12 +902,11 @@ checar("Depois da aprovação, o paciente vê a resposta final (já editada pelo
        resposta_editada_pelo_medico.lower() in texto.lower())
 client.get("/logout")
 
-# A IA é SEMPRE consultada primeiro (mesmo quando já existe uma FAQ igual
-# aprendida antes) — a base de conhecimento só é usada quando a IA não
-# responde (sem chave configurada, erro, ou sem confiança). Simulando a IA
-# respondendo de novo, de forma DIFERENTE da FAQ já aprendida acima para a
-# mesmíssima pergunta, o rascunho novo da IA deve prevalecer — prova de que
-# a base de conhecimento não é consultada primeiro.
+# A base de conhecimento (FAQ) é consultada ANTES da IA (pedido do Silvan,
+# 2026-09-11 - ver HANDOFF_CHAT.md, "pergunta repetida ... ia pra IA de
+# novo"): repetindo a mesmíssima pergunta já aprovada acima, a resposta da
+# FAQ volta direto pro paciente e a IA nem é chamada - mesmo que ela, se
+# chamada, respondesse algo diferente.
 login_paciente("123.456.789-00", "1985-04-12")
 with patch.object(routes_paciente_mod, "responder_com_ia", return_value={
     "final": "Atualização: esse gatorade específico teve a fórmula alterada e não é mais recomendado.",
@@ -905,20 +914,23 @@ with patch.object(routes_paciente_mod, "responder_com_ia", return_value={
         "Claude": "Atualização: esse gatorade específico teve a fórmula alterada e não é mais recomendado.",
         "ChatGPT": None, "Gemini": None,
     },
-}):
-    client.post(
+}) as ia_mock:
+    r = client.post(
         "/paciente/chat",
         data={"pergunta": "Esse gatorade de uva conta como líquido claro?", "exame_id": str(colonoscopia_vitoria_id)},
         follow_redirects=True,
     )
+texto = r.get_data(as_text=True)
 client.get("/logout")
 with app.app_context():
     novo_rascunho = PerguntaPendente.query.filter_by(
         grupo_id=clinica_vitoria_id, pergunta="Esse gatorade de uva conta como líquido claro?",
         status="aguardando_aprovacao",
-    ).order_by(PerguntaPendente.criado_em.desc()).first()
-    checar("A IA é consultada de novo mesmo com uma FAQ idêntica já aprovada antes, e seu rascunho novo prevalece sobre o antigo",
-           novo_rascunho is not None and "fórmula alterada" in novo_rascunho.resposta_sugerida_ia.lower())
+    ).first()
+    checar("Pergunta idêntica a uma FAQ já aprovada: a IA NÃO é consultada de novo e nenhum rascunho novo fica esperando aprovação",
+           not ia_mock.called and novo_rascunho is None)
+    checar("... e o paciente recebe direto a resposta da FAQ (a editada pelo médico)",
+           resposta_editada_pelo_medico.lower() in texto.lower())
 
 # Bug real reportado (e corrigido em 2026-09-11): uma FAQ aprendida da IA
 # sobre um sabor específico (uva) não pode ser reaproveitada para uma
@@ -947,7 +959,9 @@ with patch.object(routes_paciente_mod, "responder_com_ia", return_value=None):
     )
 texto = r.get_data(as_text=True)
 checar("FAQ aprendida sobre um sabor (uva) NÃO é reaproveitada para uma pergunta sobre outro sabor (limão) - agora que buscar_resposta() só casa por igualdade exata",
-       "gatorade de cor clara" not in texto.lower()
+       # só a área da resposta, acima de "Suas perguntas anteriores" - o
+       # histórico logo abaixo mostra (corretamente) a resposta antiga sobre uva
+       "gatorade de cor clara" not in texto.lower().split("suas perguntas anteriores")[0]
        and ("encaminhei" in texto.lower() or "pendente" in texto.lower()))
 
 # Quando a IA está configurada mas sinaliza que não sabe responder (fora do
@@ -1347,7 +1361,9 @@ with app.app_context():
     clinica_vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
     medico_carlos = Usuario.query.filter_by(email="medico@clinicavitoria.com").first()
     medico_carlos_id = medico_carlos.id
-    colonoscopia = Exame.query.filter_by(grupo_id=clinica_vitoria_id, nome="Colonoscopia").first()
+    # Pelo id (não pelo nome): a edição do modelo de preparo lá em cima
+    # renomeia junto o exame vinculado a ele (routes_medico.preparo_modelos_editar)
+    colonoscopia = db.session.get(Exame, colonoscopia_vitoria_id)
     colonoscopia_id = colonoscopia.id
     joao_id = Paciente.query.filter_by(nome="João Pereira").first().id  # paciente é da empresa agora, não da filial
 

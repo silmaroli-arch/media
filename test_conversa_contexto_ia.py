@@ -131,7 +131,7 @@ with app.app_context():
     # -------------------------------------------------------------
     login_paciente("123.456.789-00", "1985-04-12")
 
-    pergunta_web_1 = "[teste-conversa-web] Esta pergunta não bate com nenhuma FAQ/alimento/medicamento cadastrado, parte 1"
+    pergunta_web_1 = "[teste-conversa-web] Esta pergunta não bate com nenhuma FAQ/alimento/remédio cadastrado, parte 1"
     pergunta_web_2 = "[teste-conversa-web] E aqui a parte 2 desta mesma dúvida, também sem correspondência cadastrada?"
 
     esperado_antes_1 = _historico_recente_chat(joao.id, exame_id)
@@ -187,8 +187,11 @@ with app.app_context():
     resposta_identificacao = processar_mensagem(telefone_conversa, "15/06/1990")
     checar("WhatsApp: paciente novo, com um único exame ativo, foca direto (sem lista de escolha)", "Pode escrever sua pergunta" in resposta_identificacao)
 
-    pergunta_zap_1 = "[teste-conversa-zap] Esta pergunta não bate com nenhuma FAQ/alimento/medicamento cadastrado, parte 1"
-    pergunta_zap_2 = "[teste-conversa-zap] E aqui a parte 2 desta mesma dúvida, também sem correspondência cadastrada?"
+    # Textos "de verdade" (sem marcador entre colchetes nem sigla): pelo
+    # WhatsApp a checagem de dicionário (2026-09-29) descarta como sem
+    # sentido uma mensagem com 2+ palavras desconhecidas, e aí a IA nem é chamada.
+    pergunta_zap_1 = "Posso usar meu creme hidratante no rosto no dia do exame?"
+    pergunta_zap_2 = "E o protetor solar, também posso passar no mesmo dia?"
 
     esperado_antes_zap_1 = _historico_recente_chat(paciente_zap.id, exame_id)
     with patch("app.whatsapp_conversa.responder_com_ia", return_value=None) as ia_mock_zap:

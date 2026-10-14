@@ -52,7 +52,7 @@ with app.app_context():
             )
         )
     )
-    texto, chamada, sem_sentido = _perguntar_claude(cliente_claude_fake, "kljhsdf asdas mesa amanhã", "contexto")
+    texto, chamada, sem_sentido, _ = _perguntar_claude(cliente_claude_fake, "kljhsdf asdas mesa amanhã", "contexto")
     checar("_perguntar_claude reconhece MARCADOR_SEM_SENTIDO e devolve texto=None", texto is None)
     checar("_perguntar_claude registra a ChamadaIA mesmo quando é sem sentido (custo real houve)", chamada is not None)
     checar("_perguntar_claude sinaliza sem_sentido=True", sem_sentido is True)
@@ -66,7 +66,7 @@ with app.app_context():
             )
         )
     )
-    texto2, chamada2, sem_sentido2 = _perguntar_claude(cliente_claude_normal, "Posso beber água?", "contexto")
+    texto2, chamada2, sem_sentido2, _ = _perguntar_claude(cliente_claude_normal, "Posso beber água?", "contexto")
     checar("_perguntar_claude com resposta normal devolve o texto de verdade", texto2 == "Água pura é permitida durante o jejum.")
     checar("_perguntar_claude com resposta normal NÃO sinaliza sem_sentido", sem_sentido2 is False)
 
@@ -81,7 +81,7 @@ with app.app_context():
             )
         )
     )
-    texto3, chamada3, sem_sentido3 = _perguntar_chatgpt(cliente_chatgpt_fake, "asdkj qwe mesa vidro", "contexto")
+    texto3, chamada3, sem_sentido3, _ = _perguntar_chatgpt(cliente_chatgpt_fake, "asdkj qwe mesa vidro", "contexto")
     checar("_perguntar_chatgpt reconhece MARCADOR_SEM_SENTIDO", texto3 is None and sem_sentido3 is True)
 
     # NAO_SEI_ENCAMINHAR continua sendo um caminho diferente (não deve
@@ -99,8 +99,19 @@ with app.app_context():
             )
         )
     )
-    texto4, chamada4, sem_sentido4 = _perguntar_chatgpt(cliente_nao_sei, "Isso está fora do preparo", "contexto")
+    texto4, chamada4, sem_sentido4, _ = _perguntar_chatgpt(cliente_nao_sei, "Isso está fora do preparo", "contexto")
     checar("MARCADOR_NAO_SEI continua devolvendo texto=None mas sem_sentido=False (marcadores não se confundem)", texto4 is None and sem_sentido4 is False)
+
+    # Falha da API (rede, timeout): devolve a MESMA tupla de 4 posições dos
+    # outros caminhos - antes devolvia só 3, e _tentar_provedor quebrava com
+    # ValueError em vez de seguir para a IA reserva.
+    def _api_fora_do_ar(**kwargs):
+        raise TimeoutError("rede caiu")
+
+    cliente_quebrado = SimpleNamespace(messages=SimpleNamespace(create=_api_fora_do_ar))
+    resultado_falha = _perguntar_claude(cliente_quebrado, "Posso beber água?", "contexto")
+    checar("Falha da API devolve (None, None, False, False) - 4 posições, como os outros caminhos",
+           resultado_falha == (None, None, False, False))
 
 
 # --- Agregação em responder_com_ia (mockando _tentar_provedor direto) ---
@@ -118,7 +129,7 @@ with app.app_context():
     # Caso 1: as duas IAs escolhidas concordam que não faz sentido.
     def side_effect_ambas_sem_sentido(nome_provedor, *args, **kwargs):
         if nome_provedor in ("Claude", "ChatGPT"):
-            return (None, "chamada-fake", True, True, False)
+            return (None, SimpleNamespace(), True, True, False)
         return (None, None, False, False, False)
 
     with patch("app.ia_preparo._tentar_provedor", side_effect=side_effect_ambas_sem_sentido):
@@ -131,9 +142,9 @@ with app.app_context():
     # de verdade por causa da outra IA ter discordado).
     def side_effect_uma_discorda(nome_provedor, *args, **kwargs):
         if nome_provedor == "Claude":
-            return (None, "chamada-fake", True, True, False)
+            return (None, SimpleNamespace(), True, True, False)
         if nome_provedor == "ChatGPT":
-            return ("Água pura é permitida durante o jejum.", "chamada-fake", True, False, False)
+            return ("Água pura é permitida durante o jejum.", SimpleNamespace(), True, False, False)
         return (None, None, False, False, False)
 
     with patch("app.ia_preparo._tentar_provedor", side_effect=side_effect_uma_discorda):
@@ -160,7 +171,7 @@ with app.app_context():
         if nome_provedor in ("Claude", "ChatGPT"):
             return (None, None, True, False, False)  # tentou, mas falhou de verdade (chamada=None)
         if nome_provedor == "Gemini":
-            return (None, "chamada-fake", True, True, False)
+            return (None, SimpleNamespace(), True, True, False)
         return (None, None, False, False, False)
 
     with patch("app.ia_preparo._tentar_provedor", side_effect=side_effect_reserva_sem_sentido):

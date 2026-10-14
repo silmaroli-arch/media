@@ -51,7 +51,6 @@ with app.app_context():
     # --- Com o padrão de fábrica (aprovação ativada): comportamento igual
     # a sempre, já coberto em detalhe por test_whatsapp_pergunta.py - aqui
     # só confirma que a EXISTÊNCIA do novo campo não mudou nada por si só. ---
-    processar_mensagem(telefone, "1")
     resposta = processar_mensagem(telefone, "Posso comer amendoim antes do exame?")
     checar(
         "Com aprovação ativada, pergunta sobre alimento NÃO devolve a resposta direto",
@@ -72,7 +71,6 @@ with app.app_context():
     pendentes_antes = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
     faqs_antes = FaqItem.query.filter_by(grupo_id=grupo_joao.id).count()
 
-    processar_mensagem(telefone, "1")
     resposta = processar_mensagem(telefone, "Posso comer amendoim antes do exame?")
     checar(
         "Com aprovação DESATIVADA, a resposta sobre o alimento já vem direto pelo WhatsApp",
@@ -103,12 +101,13 @@ with app.app_context():
     )
 
     # Como a pergunta já ficou "respondida" (mesmo que automaticamente), a
-    # conversa não trava esperando o médico - a próxima mensagem já mostra
-    # o convite normal pra perguntar de novo.
-    resposta_convite = processar_mensagem(telefone, "1")
+    # conversa não trava esperando o médico - a próxima mensagem recebe a
+    # resposta normal, não o aviso de "aguardando resposta". (O gatilho "1"
+    # foi removido em 2026-09-14 - qualquer mensagem já é tratada direto.)
+    resposta_seguinte = processar_mensagem(telefone, "Oi")
     checar(
-        'Depois da aprovação automática, o próximo "1" já convida a perguntar de novo (não trava em "aguardando resposta")',
-        "Pode digitar sua pergunta" in resposta_convite,
+        'Depois da aprovação automática, a conversa não trava em "aguardando resposta"',
+        "ainda está sendo respondida" not in resposta_seguinte,
     )
 
     # --- Reativa a aprovação no Grupo do João, para não deixar efeito

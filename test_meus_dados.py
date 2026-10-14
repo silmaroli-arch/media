@@ -36,6 +36,8 @@ from app import create_app
 from app.extensions import db
 from app.models import Usuario
 
+from app.db_utils import resetar_banco
+
 app = create_app()
 app.config["WTF_CSRF_ENABLED"] = False
 client = app.test_client()
@@ -48,7 +50,9 @@ def checar(nome, condicao):
 
 
 with app.app_context():
-    db.create_all()
+    # Banco vazio de propósito (o cenário cria o próprio dono da plataforma) -
+    # zera tudo, inclusive dados do seed.py, se houver.
+    resetar_banco(db)
 
     dono = Usuario(nome="Dono Original", email="dono@plataforma.com", tipo="dono", cpf="52998224725")
     dono.set_senha("senha-dono-123")

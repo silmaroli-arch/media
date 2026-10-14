@@ -71,8 +71,18 @@ cenario = {"geral": {"pergunta": "Posso mascar chiclete no preparo?", "resposta"
 chamadas_arbitro = []
 originais = (ba.generalizar_com_ia, bc.buscar_na_base, ia._respostas_divergem, ia._cliente_anthropic)
 ba.generalizar_com_ia = lambda p, r, usuario_id=None: cenario["geral"]
-bc.buscar_na_base = lambda pergunta, tipo_exame_id=None, limite=3, provedor=None: (
-    [cenario["achado"]] if cenario["achado"] else [])
+
+
+def busca_falsa(pergunta, tipo_exame_id=None, limite=3, provedor=None):
+    # Recarrega o item na sessão ATUAL (a do request): um objeto carregado
+    # em outro app_context fica "desanexado" e as alterações feitas nele
+    # pelo aprendizado nunca chegariam ao banco.
+    if not cenario["achado"]:
+        return []
+    return [{**cenario["achado"], "item": db.session.get(BaseConhecimentoItem, cenario["achado"]["item_id"])}]
+
+
+bc.buscar_na_base = busca_falsa
 
 
 def arbitro_falso(cliente, a, b, paciente_id=None, ignorar_prazos=False):
@@ -99,6 +109,9 @@ def nova_pergunta(exame_id, status="pendente", ia_rascunho=False):
 def login(email):
     client.get("/logout")
     client.post("/login", data={"identificador": email, "senha": "123456"})
+    # Dr. Carlos atua em mais de um grupo: escolhe a Clínica Vitória (onde
+    # as perguntas deste teste são criadas) antes de usar a área de equipe.
+    client.post("/equipe/clinica", data={"clinica_id": str(clinica_id)})
 
 
 def responder(pergunta_id, texto):
@@ -143,7 +156,7 @@ try:
     # ---------- 5. Rascunho aprovado sem editar ----------
     cenario["achado"] = None
     with app.app_context():
-        cenario["achado"] = {"item": BaseConhecimentoItem.query.get(novo_id), "score": 0.95, "metodo": "palavra_chave"}
+        cenario["achado"] = {"item_id": novo_id, "score": 0.95, "metodo": "palavra_chave"}
     responder(nova_pergunta(ex_tipo_id, "aguardando_aprovacao", ia_rascunho=True), "Rascunho da IA.")
     with app.app_context():
         checar("Aprovar sem editar nao sobrescreve", BaseConhecimentoItem.query.get(novo_id).resposta == "Não, chiclete quebra a restrição do preparo."

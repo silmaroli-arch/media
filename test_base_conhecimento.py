@@ -44,7 +44,7 @@ def checar(nome, condicao):
 
 
 r = client.post("/cadastro", data={**EXTRA_CADASTRO,
-    "nome": "Dr. Base Teste", "papel": "medico", "cpf": "111.222.333-97", "crm_numero": "88888",
+    "nome": "Dr. Base Teste", "papel": "medico", "cpf": "111.222.333-96", "crm_numero": "88888",
     "crm_uf": "ES", "data_nascimento": "10/05/1980", "email": "base.medico@example.com", "senha": "123456",
 }, follow_redirects=True)
 client.get("/logout")
@@ -79,7 +79,9 @@ with app.app_context():
     colono_id = TipoExame.query.filter_by(nome="Colonoscopia").first().id
     endo_id = TipoExame.query.filter_by(nome="Endoscopia digestiva alta").first().id
     checar("Nenhum texto da carga tem prazo em horas ou dias", not any(
-        any(t in (i[1] + i[2]).lower() for t in (" horas", " hora ", " dias", " dia antes")) for i in ITENS_PADRAO
+        # "na hora" = "imediatamente" (ex.: "o resultado não sai na hora"), não é prazo
+        any(t in (i[1] + i[2]).lower().replace(" na hora", " imediatamente")
+            for t in (" horas", " hora ", " dias", " dia antes")) for i in ITENS_PADRAO
     ))
 
 # ---------- 7. Medico comum ----------
@@ -153,7 +155,8 @@ VETORES = {
     "Posso dirigir depois da colonoscopia?": [0.0, 1.0, 0.0],
     "O laxante não fez efeito, o que eu faço?": [0.0, 0.0, 1.0],
     "o remedio para limpar o intestino nao funcionou": [0.05, 0.05, 0.99],
-    "pergunta sem parecido": [0.7, 0.7, 0.0],
+    # cosseno ~0,577 com cada vetor acima - bem abaixo de LIMIAR_EMBEDDING (0,70)
+    "pergunta sem parecido": [0.5, 0.5, 0.5],
 }
 falhar = {"ligado": False}
 original = bc.gerar_embedding
