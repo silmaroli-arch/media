@@ -193,7 +193,7 @@ from app.ia_preparo import responder_com_ia, validar_pergunta
 from app.preparo_publico import montar_link_preparo
 from app.models import (
     Agendamento, ChatMensagem, ContagemPerguntasDia, ConversaWhatsapp, Paciente,
-    PerguntaPendente, PlataformaConfig, normalizar_telefone,
+    PerguntaPendente, PlataformaConfig, normalizar_telefone, validar_cpf,
 )
 from app.push_notificacoes import (
     notificar_equipe_nova_pergunta,
@@ -273,6 +273,16 @@ def _localizar_paciente(cpf_digitos, data_nascimento):
     return None
 
 
+def _cpf_ja_cadastrado(cpf_digitos):
+    """True se algum paciente guardou esse CPF (comparando só os dígitos).
+    Só é usado quando o dígito verificador NÃO confere, para não trancar
+    do lado de fora um cadastro antigo salvo com CPF inconsistente."""
+    for paciente in Paciente.query.filter(Paciente.cpf.isnot(None)).all():
+        if _cpf_digitos(paciente.cpf) == cpf_digitos:
+            return True
+    return False
+
+
 def _agendamentos_ativos(paciente):
     return (
         Agendamento.query.filter_by(paciente_id=paciente.id)
@@ -339,6 +349,10 @@ MENSAGEM_PEDIR_CPF = (
 MENSAGEM_CPF_INVALIDO = (
     "Não reconheci um CPF. Envie só o CPF, com 11 números, com ou sem "
     "pontuação (ex.: 000.000.000-00)."
+)
+MENSAGEM_CPF_DIGITO_INVALIDO = (
+    "Esse CPF não parece válido (algum número deve estar errado). "
+    "Confira e me envie de novo."
 )
 MENSAGEM_PEDIR_NASCIMENTO = "Certo! Agora me envie sua data de nascimento, assim: 01/01/1990"
 MENSAGEM_NASCIMENTO_INVALIDA = (
@@ -638,6 +652,9 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
                 resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
                 resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
+                resposta_bruta_base=resultado_ia["por_provedor"].get("Base"),
+                base_item_id=(resultado_ia.get("base") or {}).get("item_id"),
+                base_divergiu=(resultado_ia.get("base") or {}).get("divergiu"),
                 # Nomes das IAs que deram erro de chamada nesta pergunta (ver
                 # app.ia_preparo.responder_com_ia) - mostrado como aviso na
                 # tela de aprovação, mesmo quando a reserva "tapou o buraco"
@@ -653,7 +670,14 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             # "medicamento não cadastrado neste preparo" SEMPRE vai pra
             # fila do médico - é conhecimento farmacológico genérico da
             # IA, não uma informação certa tirada do preparo cadastrado.
-            if not exige_aprovacao and not resultado_ia.get("exige_revisao_medicamento"):
+            # Terceira IA (base de conhecimento, 2026-09-29): idem - base que
+            # diverge das IAs (ou preenche uma lacuna) sempre passa pelo
+            # médico (ver app.ia_preparo.responder_com_ia).
+            if (
+                not exige_aprovacao
+                and not resultado_ia.get("exige_revisao_medicamento")
+                and not resultado_ia.get("exige_revisao_base")
+            ):
                 # Pedido do Silvan (2026-09-13): aprovação desativada para
                 # este Grupo/médico.
                 aprovar_pergunta_automaticamente(pergunta_pendente_criada, resultado_ia["final"])
@@ -1107,6 +1131,12 @@ def processar_mensagem(telefone, corpo_mensagem):
             if not cpf_digitos:
                 db.session.commit()
                 return MENSAGEM_PEDIR_CPF if primeira_mensagem else MENSAGEM_CPF_INVALIDO
+            # Erro de digitação: o dígito verificador não confere. Avisa
+            # já, sem consultar se o CPF existe (não revela cadastros),
+            # exceto para CPF antigo salvo assim (ver _cpf_ja_cadastrado).
+            if not validar_cpf(cpf_digitos) and not _cpf_ja_cadastrado(cpf_digitos):
+                db.session.commit()
+                return MENSAGEM_CPF_DIGITO_INVALIDO
             conversa.cpf_pendente = cpf_digitos
             db.session.commit()
             return MENSAGEM_PEDIR_NASCIMENTO

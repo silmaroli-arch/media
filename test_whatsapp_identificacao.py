@@ -24,7 +24,7 @@ test_whatsapp_pergunta.py - aqui só confirma o convite direto."""
 from datetime import datetime, timedelta
 
 from app import create_app, db
-from app.models import Agendamento, ConversaWhatsapp, Paciente
+from app.models import Agendamento, ConversaWhatsapp, Paciente, PerguntaPendente
 from app.whatsapp_conversa import normalizar_telefone_whatsapp, processar_mensagem
 
 app = create_app()
@@ -59,13 +59,18 @@ with app.app_context():
     checar("Texto que não é CPF avisa e pede de novo", "CPF" in resposta)
     checar("Ainda não pede data de nascimento (CPF não veio)", "data de nascimento" not in resposta.lower())
 
+    # 2-0) CPF com dígito verificador errado: avisa na hora, sem pedir data.
+    resposta = processar_mensagem(telefone_joao, "529.982.247-26")
+    checar("CPF com dígito errado avisa na hora", "não parece válido" in resposta)
+    checar("Não pede a data com CPF inválido", "data de nascimento" not in resposta.lower())
+
     # 2) CPF que não bate com nenhum cadastro: aceita o formato, guarda
     # como pendente e passa a pedir a data de nascimento.
-    resposta = processar_mensagem(telefone_joao, "111.111.111-11")
+    resposta = processar_mensagem(telefone_joao, "529.982.247-25")
     checar("CPF em formato válido: passa a pedir a data de nascimento", "data de nascimento" in resposta.lower())
     checar(
         "CPF pendente foi guardado na conversa",
-        ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first().cpf_pendente == "11111111111",
+        ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first().cpf_pendente == "52998224725",
     )
 
     # 2a) Data que não bate com o CPF informado: mensagem genérica de não
@@ -103,25 +108,16 @@ with app.app_context():
     resposta = processar_mensagem(telefone_joao, "")
     checar("Mensagem vazia avisa que não recebeu nenhum texto", "Não recebi nenhum texto" in resposta)
 
-    # 4a) Regressão deliberada (pedido do Silvan, 2026-09-14 - "Vamos tirar
-    # o digite 1 para fazer uma pergunta"): sem o gatilho "1" (removido de
-    # novo), uma saudação solta como "Oi" volta a ser tratada como uma
-    # pergunta nova e encaminhada pra equipe (mesmo comportamento que
-    # existia antes da correção de 2026-09-11 - ver docstring do módulo).
-    # Não é um bug: é o tradeoff explícito aceito pelo Silvan ao pedir a
-    # remoção da barreira.
+    # 4a) Saudação solta ("Oi") é só conversa social (pedido do Silvan,
+    # 2026-09-24 - ver test_whatsapp_conversa_social.py): recebe uma
+    # resposta simpática e NÃO vira pergunta encaminhada pra equipe. Isso
+    # substitui o tradeoff de 2026-09-14 (sem o gatilho "1", "Oi" virava
+    # PerguntaPendente).
     pendentes_antes_saudacao = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
     resposta = processar_mensagem(telefone_joao, "Oi")
-    checar("Saudação solta agora É tratada direto como pergunta (sem gatilho \"1\")", "encaminhada" in resposta.lower())
+    checar("Saudação solta NÃO é encaminhada como pergunta (conversa social)", "encaminhada" not in resposta.lower())
     pendentes_depois_saudacao = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
-    checar("Saudação solta cria uma PerguntaPendente (tradeoff aceito pelo Silvan)", pendentes_depois_saudacao == pendentes_antes_saudacao + 1)
-
-    # Libera essa pendência (simula o médico já tendo respondido) só para
-    # poder continuar testando os próximos cenários nesta mesma conversa,
-    # sem o aviso de "aguardando resposta" no meio.
-    pendente_saudacao = PerguntaPendente.query.filter_by(paciente_id=joao.id).order_by(PerguntaPendente.id.desc()).first()
-    pendente_saudacao.status = "respondida"
-    db.session.commit()
+    checar("Saudação solta NÃO cria PerguntaPendente", pendentes_depois_saudacao == pendentes_antes_saudacao)
 
     # 4c) Correção do bug relatado pelo Silvan (2026-09-11, com print da
     # conversa e do painel do médico): um segundo exame passa a existir

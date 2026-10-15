@@ -34,8 +34,9 @@ checar("O menu lateral NÃO tem mais o item separado 'Gerar Excel a partir de PD
        "Gerar Excel a partir de PDF" not in r.get_data(as_text=True))
 
 html_novo = client.get("/equipe/preparo-modelos/novo").get_data(as_text=True)
-checar("A tela de novo modelo tem o botão unificado de importar Excel/PDF",
-       "Importar de um Excel ou PDF" in html_novo)
+# (desde 2026-09 o botão oferece só PDF - pedido do Silvan)
+checar("A tela de novo modelo tem o botão de importar PDF",
+       "Importar de um PDF" in html_novo)
 
 html_importar = client.get("/equipe/preparo-modelos/importar-xlsx").get_data(as_text=True)
 checar("A tela de importar aceita PDF no campo de arquivo", 'accept=".xlsx' in html_importar and ".pdf" in html_importar)

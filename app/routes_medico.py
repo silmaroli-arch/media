@@ -22,10 +22,12 @@ from app.models import (
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, PushSubscription, LicencaPagamento, garantir_meses_licenca,
-    PlataformaConfig, MensagemSuporte, Notificacao,
+    PlataformaConfig, MensagemSuporte, Notificacao, TipoExame, BaseConhecimentoItem, BaseConhecimentoSugestao,
+    tipos_exame_ordenados, TipoExameSugestao,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     cep_incompleto, telefone_incompleto,
 )
+from app.especialidades import ESPECIALIDADES, especialidade_valida
 from app.mercadopago_integration import (
     criar_preferencia_pagamento, criar_preferencia_pagamento_anual, criar_cobranca_pix,
     MercadoPagoNaoConfigurado,
@@ -386,7 +388,18 @@ def primeiros_passos():
         tem_preparo = PreparoModelo.query.filter(
             filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
         ).first() is not None
-    return render_template("medico/primeiros_passos.html", tem_preparo=tem_preparo)
+    # Próximo passo depois do preparo (pedido do Silvan, 2026-10-01): criar um
+    # agendamento para o paciente de teste. Feito = o médico já tem algum
+    # agendamento próprio no escopo atual.
+    tem_agendamento = False
+    if eh_medico():
+        tem_agendamento = Agendamento.query.filter(
+            filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
+            Agendamento.medico_id == current_user.id,
+        ).first() is not None
+    return render_template(
+        "medico/primeiros_passos.html", tem_preparo=tem_preparo, tem_agendamento=tem_agendamento,
+    )
 
 
 @medico_bp.route("/primeiros-passos/atalhos", methods=["GET", "POST"])
@@ -1667,6 +1680,78 @@ def _salvar_cortes_e_medicamentos(modelo, form):
         ))
 
 
+def _tipos_exame_ativos():
+    """Tipos de exame ativos (dropdown "Tipo de exame" do cadastro de
+    preparo) na ordem definida pelo dono - ver app.models.TipoExame."""
+    return tipos_exame_ordenados(apenas_ativos=True)
+
+
+def _ler_tipo_exame(form, obrigatorio, tipo_atual_id=None):
+    """Lê e valida o campo "tipo_exame_id" do formulário de preparo. Devolve
+    (tipo_exame_id, mensagem_de_erro) - a mensagem é None quando está tudo
+    certo. É obrigatório escolher um tipo só quando `obrigatorio` E existe
+    pelo menos um tipo ativo cadastrado (ambiente sem a lista, como o banco
+    de testes, não fica travado). O tipo que o preparo JÁ tem continua
+    válido mesmo se o dono o inativou depois (não obriga a trocar)."""
+    bruto = (form.get("tipo_exame_id") or "").strip()
+    ativos = _tipos_exame_ativos()
+    if bruto == "outro":
+        # "Não encontrei o meu exame": o preparo fica sem tipo por enquanto e
+        # o nome digitado vira uma sugestão para o dono (ver
+        # _registrar_sugestao_tipo). O nome é obrigatório.
+        if not (form.get("tipo_exame_outro") or "").strip():
+            return None, "Informe o nome do exame que você não encontrou na lista."
+        return None, None
+    if not bruto:
+        if obrigatorio and ativos:
+            return None, "Escolha o tipo de exame do preparo."
+        return None, None
+    try:
+        tipo_id = int(bruto)
+    except ValueError:
+        return None, "Tipo de exame inválido."
+    if tipo_id == tipo_atual_id:
+        return tipo_id, None
+    if not any(t.id == tipo_id for t in ativos):
+        return None, "Tipo de exame inválido."
+    return tipo_id, None
+
+
+def _atualizar_especialidade_do_medico(form):
+    """O campo "Especialidade" do cadastro de preparo é a do PRÓPRIO médico
+    logado: se ele escolheu outra (ou preencheu pela 1ª vez), atualiza o
+    cadastro dele. Só vale para médico e só para valores da lista."""
+    if not eh_medico() or "especialidade" not in form:
+        return
+    nova = especialidade_valida(form.get("especialidade"))
+    if nova and nova != current_user.especialidade:
+        current_user.especialidade = nova
+
+
+def _registrar_sugestao_tipo(form, modelo):
+    """Se o médico escolheu "Não encontrei o meu exame", grava (ou reaproveita
+    a pendente de mesmo nome) a sugestão para o dono e liga o preparo a ela.
+    Escolhendo um tipo da lista, desfaz qualquer ligação anterior."""
+    if (form.get("tipo_exame_id") or "").strip() != "outro":
+        modelo.tipo_exame_sugestao_id = None
+        return
+    nome = " ".join((form.get("tipo_exame_outro") or "").split())[:150]
+    if not nome:
+        return
+    sugestao = TipoExameSugestao.query.filter(
+        func.lower(TipoExameSugestao.nome) == nome.lower(), TipoExameSugestao.status == "pendente"
+    ).first()
+    if not sugestao:
+        sugestao = TipoExameSugestao(
+            nome=nome, especialidade=current_user.especialidade or None,
+            autor_usuario_id=current_user.id, autor_nome=current_user.nome, status="pendente",
+        )
+        db.session.add(sugestao)
+        db.session.flush()
+    modelo.tipo_exame_sugestao_id = sugestao.id
+    modelo.tipo_exame_id = None
+
+
 @medico_bp.route("/preparo-modelos/novo", methods=["GET", "POST"])
 @login_required
 @staff_required
@@ -1699,6 +1784,7 @@ def preparo_modelos_novo():
             "medico/preparo_modelo_form.html", modelo=None, sugestao=None,
             medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
             wizard=wizard, medicos=medicos, eh_medico_logado=eh_medico(),
+            tipos_exame=_tipos_exame_ativos(),
         )
 
     if request.method == "POST":
@@ -1722,6 +1808,11 @@ def preparo_modelos_novo():
 
         if not nome or not instrucoes:
             flash("Nome do modelo e instruções são obrigatórios.", "danger")
+            return _rerender_novo()
+
+        tipo_exame_id, erro_tipo = _ler_tipo_exame(request.form, obrigatorio=True)
+        if erro_tipo:
+            flash(erro_tipo, "danger")
             return _rerender_novo()
 
         if PreparoModelo.query.filter(
@@ -1770,12 +1861,15 @@ def preparo_modelos_novo():
             grupo_id=filial.id if filial else None,
             nome=nome, instrucoes=instrucoes,
             observacoes_medicamentos=observacoes_medicamentos or None,
+            tipo_exame_id=tipo_exame_id,
             # DONO do modelo: quem criou. Se for um médico, só ele
             # edita/remove (ver PreparoModelo.pode_ser_editado_por).
             criado_por_id=current_user.id,
         )
         db.session.add(modelo)
         db.session.flush()
+        _registrar_sugestao_tipo(request.form, modelo)
+        _atualizar_especialidade_do_medico(request.form)
         _salvar_cortes_e_medicamentos(modelo, request.form)
 
         # Exame gêmeo do modelo: nasce já ASSOCIADO de verdade (não existe
@@ -1803,6 +1897,22 @@ def preparo_modelos_novo():
         # essa mensagem pro médico sem ele ter feito nada agora.
         if eh_medico():
             enviar_preparo_cadastrado_whatsapp(current_user)
+            # Pedido do Silvan (2026-10-01): o mesmo aviso (próximo passo)
+            # também no sininho, para quem não recebe/não vê o WhatsApp.
+            # Falha aqui nunca derruba o cadastro do preparo.
+            try:
+                db.session.add(Notificacao(
+                    usuario_id=current_user.id, tipo="preparo_cadastrado",
+                    titulo="Modelo de preparo cadastrado",
+                    mensagem=(
+                        "Seu modelo de preparo foi cadastrado. Próximo passo: crie um agendamento "
+                        "para o seu paciente de teste (criado com o seu nome) e continue os testes."
+                    ),
+                    link_endpoint="medico.agenda_novo",
+                ))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
 
         flash("Modelo de preparo cadastrado com sucesso — o exame correspondente também foi criado.", "success")
         if wizard:
@@ -1813,6 +1923,7 @@ def preparo_modelos_novo():
         "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
         medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
         wizard=wizard, medicos=medicos, eh_medico_logado=eh_medico(),
+        tipos_exame=_tipos_exame_ativos(),
     )
 
 
@@ -1852,12 +1963,23 @@ def preparo_modelos_editar(modelo_id):
             medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
             medicos=medicos, exame_vinculado=exame_vinculado,
             varios_exames_vinculados=varios_exames_vinculados, eh_medico_logado=eh_medico(),
+            tipos_exame=_tipos_exame_ativos(),
         )
 
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
         if not nome:
             flash("Informe o nome do modelo.", "danger")
+            return _rerender_editar()
+
+        # Preparo antigo (sem tipo) não é obrigado a escolher agora - só
+        # não pode "escolher e depois esvaziar" um tipo que já tinha.
+        tipo_exame_id, erro_tipo = _ler_tipo_exame(
+            request.form, obrigatorio=modelo.tipo_exame_id is not None,
+            tipo_atual_id=modelo.tipo_exame_id,
+        )
+        if erro_tipo:
+            flash(erro_tipo, "danger")
             return _rerender_editar()
 
         duracao_minutos = request.form.get("duracao_minutos", type=int)
@@ -1905,6 +2027,9 @@ def preparo_modelos_editar(modelo_id):
                 return _rerender_editar()
 
         modelo.nome = nome
+        modelo.tipo_exame_id = tipo_exame_id
+        _registrar_sugestao_tipo(request.form, modelo)
+        _atualizar_especialidade_do_medico(request.form)
         modelo.instrucoes = request.form.get("instrucoes", "").strip()
         modelo.observacoes_medicamentos = request.form.get("observacoes_medicamentos", "").strip() or None
         _salvar_cortes_e_medicamentos(modelo, request.form)
@@ -2055,6 +2180,7 @@ def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None):
         "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
         medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
         medicos=medicos_das_filiais(_filiais_da_empresa()), eh_medico_logado=eh_medico(),
+        tipos_exame=_tipos_exame_ativos(),
     )
 
 
@@ -2879,6 +3005,90 @@ _LICENCA_LABELS = {
 }
 
 
+def _tipos_exame_da_especialidade():
+    """Tipos de exame que a ESPECIALIDADE do médico logado enxerga na base
+    compartilhada: os que listam a especialidade dele (comparação sem
+    diferenciar maiúsculas) mais os que não têm nenhuma especialidade
+    definida (visíveis a todos). Sem especialidade no cadastro -> lista vazia."""
+    esp = (current_user.especialidade or "").strip().lower()
+    if not esp:
+        return []
+    visiveis = []
+    for tipo in tipos_exame_ordenados(apenas_ativos=True):
+        lista = [e.lower() for e in tipo.lista_especialidades]
+        if not lista or esp in lista:
+            visiveis.append(tipo)
+    return visiveis
+
+
+@medico_bp.route("/base-compartilhada")
+@login_required
+@staff_required
+def base_compartilhada():
+    """Fatia 5 da "terceira IA" (pedido do Silvan, 2026-09-29): o MÉDICO vê
+    a base compartilhada só da(s) parte(s) da sua especialidade (somente
+    leitura) e sugere alterações ou itens novos - quem aprova é o dono
+    (ver dono.base_sugestoes)."""
+    if not eh_medico():
+        flash("O FAQ do MedIA é exclusivo para médicos.", "info")
+        return redirect(url_for("medico.dashboard"))
+    tipos = _tipos_exame_da_especialidade()
+    tipo_id = request.args.get("tipo", type=int)
+    ids = [t.id for t in tipos]
+    itens = []
+    if ids:
+        consulta = BaseConhecimentoItem.query.filter(
+            BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.tipo_exame_id.in_([tipo_id] if tipo_id in ids else ids)
+        )
+        itens = consulta.order_by(BaseConhecimentoItem.tipo_exame_id, BaseConhecimentoItem.id).limit(300).all()
+    minhas = BaseConhecimentoSugestao.query.filter_by(autor_usuario_id=current_user.id).order_by(
+        BaseConhecimentoSugestao.criado_em.desc()).limit(30).all()
+    return render_template("medico/base_compartilhada.html", tipos=tipos, itens=itens, filtro_tipo=tipo_id, minhas=minhas)
+
+
+@medico_bp.route("/base-compartilhada/sugerir", methods=["POST"])
+@login_required
+@staff_required
+def base_compartilhada_sugerir():
+    """Registra a sugestão (alteração de um item existente ou item novo) para
+    o dono aprovar. O texto NÃO deve ter dados de paciente nem da clínica."""
+    if not eh_medico():
+        abort(403)
+    item_id = request.form.get("item_id", type=int)
+    pergunta = request.form.get("pergunta", "").strip()
+    resposta = request.form.get("resposta", "").strip()
+    motivo = request.form.get("motivo", "").strip()
+    permitidos = {t.id for t in _tipos_exame_da_especialidade()}
+    if item_id:
+        item = BaseConhecimentoItem.query.get_or_404(item_id)
+        tipo_id = item.tipo_exame_id
+    else:
+        item = None
+        tipo_id = request.form.get("tipo_exame_id", type=int)
+    if tipo_id not in permitidos:
+        flash("Você só pode sugerir para tipos de exame da sua especialidade.", "danger")
+        return redirect(url_for("medico.base_compartilhada"))
+    if not pergunta or not resposta:
+        flash("Pergunta e resposta são obrigatórias.", "danger")
+        return redirect(url_for("medico.base_compartilhada", tipo=tipo_id))
+    if item and pergunta == item.pergunta and resposta == item.resposta:
+        flash("Nenhuma mudança em relação ao texto atual.", "info")
+        return redirect(url_for("medico.base_compartilhada", tipo=tipo_id))
+    # Uma sugestão pendente por médico e item: reenviar substitui a anterior.
+    if item:
+        anterior = BaseConhecimentoSugestao.query.filter_by(
+            item_id=item.id, autor_usuario_id=current_user.id, status="pendente").first()
+        if anterior:
+            db.session.delete(anterior)
+    db.session.add(BaseConhecimentoSugestao(
+        item_id=item.id if item else None, tipo_exame_id=tipo_id, pergunta=pergunta, resposta=resposta,
+        motivo=motivo or None, autor_usuario_id=current_user.id, autor_nome=current_user.nome, status="pendente",
+    ))
+    db.session.commit()
+    flash("Sugestão enviada. O administrador vai analisar.", "success")
+    return redirect(url_for("medico.base_compartilhada", tipo=tipo_id))
+
+
 @medico_bp.route("/minha-licenca")
 @login_required
 @staff_required
@@ -3477,6 +3687,9 @@ def testar_ia():
                     resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
                     resposta_bruta_chatgpt=resultado_ia["por_provedor"]["ChatGPT"],
                     resposta_bruta_gemini=resultado_ia["por_provedor"]["Gemini"],
+                    resposta_bruta_base=resultado_ia["por_provedor"].get("Base"),
+                    base_item_id=(resultado_ia.get("base") or {}).get("item_id"),
+                    base_divergiu=(resultado_ia.get("base") or {}).get("divergiu"),
                     ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
                 )
                 db.session.add(pendente)
@@ -3566,6 +3779,23 @@ def perguntas_responder(pergunta_id):
         flash("Digite uma resposta antes de salvar.", "danger")
         return redirect(url_for(destino))
 
+    # Aprendizado da base de conhecimento compartilhada (fatia 4, ver
+    # app.base_aprendizado): decidido ANTES de sobrescrever o status. Só
+    # respostas de MÉDICO, e só quando há algo a aprender - resposta manual
+    # a uma pergunta que a IA não soube responder ("pendente"), ou rascunho
+    # da IA/base revisado pelo médico. Rascunho AUTOMÁTICO do preparo
+    # cadastrado (sem nenhuma IA) é específico da clínica e não entra.
+    aprender = None
+    if eh_medico():
+        veio_de_ia = bool(
+            pergunta.resposta_bruta_claude or pergunta.resposta_bruta_chatgpt
+            or pergunta.resposta_bruta_gemini or pergunta.resposta_bruta_base
+        )
+        if pergunta.status == "pendente":
+            aprender = {"editou": True}
+        elif pergunta.status == "aguardando_aprovacao" and veio_de_ia:
+            aprender = {"editou": " ".join(resposta.lower().split()) != " ".join((pergunta.resposta_sugerida_ia or "").lower().split())}
+
     pergunta.resposta = resposta
     pergunta.status = "respondida"
     pergunta.respondida_por = current_user.nome
@@ -3607,6 +3837,11 @@ def perguntas_responder(pergunta_id):
             f"Sobre sua pergunta \"{pergunta.pergunta}\":\n\n{resposta}",
             content_variables=[pergunta.pergunta, resposta],
         )
+
+    if aprender is not None:
+        from app.base_aprendizado import agendar_aprendizado
+
+        agendar_aprendizado(pergunta.id, resposta, current_user.id, aprender["editou"])
 
     flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
     return redirect(url_for(destino))

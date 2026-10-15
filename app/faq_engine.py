@@ -305,6 +305,15 @@ LIMIAR_CONFIANCA_MEDICAMENTO = 0.5
 _SEPARADOR_SINONIMOS_MEDICAMENTO = re.compile(r"[,/]|\bou\b", re.IGNORECASE)
 _PALAVRAS_IGNORADAS_SINONIMO = {"similares", "similar"}
 
+# Palavras genéricas ("medicamento", "remédio", "medicação") não identificam
+# NENHUM medicamento específico - sem esta lista, a categoria "medicamento
+# antiplaquetário" casava (nota 0,5 = limiar) com qualquer pergunta que
+# tivesse a palavra "medicamento", ex.: "Posso tomar esse medicamento
+# nimesulida?" recebia a resposta pronta sobre suspender o Clopidogrel
+# (caso real encontrado ao rodar a suíte, 2026-10-14). Comparadas já
+# normalizadas por palavras_chave (sem acento, no singular).
+_PALAVRAS_GENERICAS_MEDICAMENTO = {"medicamento", "remedio", "medicacao"}
+
 
 def _sinonimos_medicamento(nome, categoria):
     """Quebra um nome de medicamento em sinônimos/marcas individuais (ex.:
@@ -360,7 +369,7 @@ def buscar_resposta_medicamento(pergunta_usuario: str, exame, paciente=None):
     melhor_tipo, melhor_item, melhor_score = None, None, 0.0
     for tipo, item, sinonimos in candidatos:
         for sinonimo in sinonimos:
-            kw_sinonimo = palavras_chave(sinonimo)
+            kw_sinonimo = palavras_chave(sinonimo) - _PALAVRAS_GENERICAS_MEDICAMENTO
             if not kw_sinonimo:
                 continue
             correspondencias = _quantidade_correspondencias(kw_sinonimo, kw_pergunta)

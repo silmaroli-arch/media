@@ -25,15 +25,23 @@ def checar(nome, condicao):
     assert condicao, nome
 
 
-def login(email, senha):
-    return client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
+def login(email, senha, grupo=None):
+    r = client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
+    if grupo:
+        # Quem tem vínculo com mais de um grupo precisa escolher em qual está
+        # trabalhando antes de usar a área de equipe (/equipe/clinica).
+        from app.models import Grupo
+        with app.app_context():
+            grupo_id = Grupo.query.filter_by(nome=grupo).first().id
+        r = client.post("/equipe/clinica", data={"clinica_id": str(grupo_id)}, follow_redirects=True)
+    return r
 
 
 with app.app_context():
     total_antes = MensagemSuporte.query.count()
 
 # Dr. Carlos (Clínica Vitória) manda uma dúvida.
-login("medico@clinicavitoria.com", "123456")
+login("medico@clinicavitoria.com", "123456", grupo="Clínica Vitória")
 r = client.post(
     "/equipe/fale-com-a-gente",
     data={"categoria": "duvida", "mensagem": "Como faço para exportar o relatório em Excel?"},
@@ -95,7 +103,7 @@ with app.app_context():
 client.get("/logout")
 
 # A resposta aparece de volta pro médico que perguntou.
-login("medico@clinicavitoria.com", "123456")
+login("medico@clinicavitoria.com", "123456", grupo="Clínica Vitória")
 r = client.get("/equipe/fale-com-a-gente")
 html = r.get_data(as_text=True)
 checar("Médico vê a resposta do dono", "Vá em Relatórios" in html)

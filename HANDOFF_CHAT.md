@@ -1,6 +1,6 @@
 # Handoff — Continuação do chat com Claude sobre o projeto Media/MedIA
 
-> Atualizado em 2026-09-11 (6ª rodada — ver seção "6ª rodada" perto do final). Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
+> Atualizado em 2026-10-02 (última sessão: "Sessão de 2026-10-01", logo antes de "Como continuar" - lá estão as mudanças mais recentes e o checklist de validação). Rodadas anteriores: ver "6ª rodada" perto do final. Cole este documento como primeira mensagem em uma nova sessão do Claude (Cowork) para retomar o trabalho de onde parou, incluindo o contexto e as pendências abaixo.
 >
 > **A partir da 6ª rodada, toda alteração de código feita numa sessão precisa ser documentada aqui** (pedido explícito do Silvan) - não só ao final da sessão.
 >
@@ -2016,6 +2016,262 @@ Antes, o link "Pagar agora" (Checkout Pro) de um mês só existia se o dono tive
 - **`app/templates/medico/minha_licenca.html`**: novo macro `link_bloco(p)`. O botão só aparece enquanto o mês não tem `mp_init_point`; depois vira "Pagar agora". Também aparece no card de "Pagamento anual pendente" quando ainda não há link.
 - **Teste**: `test_licenca_gerar_link_medico.py` (novo, mock de `requests.post`, sem rede) - botão visível, sem credenciais, geração com credenciais + "Pagar agora", sem valor definido, isolamento entre médicos, mês pago, ciclo anual.
 - **Verificação feita**: sintaxe Python dos arquivos e renderização Jinja do template (3 cenários) conferidas. **A suíte NÃO foi executada** nesta sessão (sem Flask/PyPI acessível no ambiente) - rodar `DATABASE_URL=sqlite:///teste_licenca_gerar_link.db python test_licenca_gerar_link_medico.py` e também `test_pix_licenca.py`/`test_licenca_pagamento_valor_e_gateway.py` (regressão) antes de promover pro `main`.
+
+## Botão "Aplicar valor padrão a todos" em /dono/usuarios (2026-09-29, pedido do Silvan)
+
+Problema reportado com prints: o Silvan definiu o valor mensal padrão (R$ 150,00, Configurações > Licença de médico), mas o médico continuou com "Valor mensal: ainda não definido" e o "Gerar link de pagamento" (ver seção anterior) recusava com "Ainda não há um valor de licença definido para a sua conta". Causa: o padrão só é copiado pro médico NO CADASTRO (`routes_auth.cadastro`) - médico que já existia (ou se cadastrou com o padrão em branco) fica sem valor pra sempre, e o mês dele também nasce sem valor (`garantir_meses_licenca` tira a "fotografia" do valor do médico).
+
+- **`app/routes_dono.py`**: nova rota `dono.licencas_aplicar_valor_padrao` (POST `/dono/usuarios/aplicar-valor-padrao`). Regras decididas com o Silvan: (1) só médico SEM valor (None) recebe o padrão - valor individual negociado nunca é sobrescrito (vale pro mensal e pro anual); (2) meses em aberto (ciclo mensal, não pago, sem link/Pix, sem valor) também recebem o valor; mês pago ou com cobrança já gerada não muda. Sem chamada de rede. Se não houver padrão configurado, só avisa. Mostra resumo (quantos médicos/meses atualizados).
+- **`app/templates/dono/usuarios.html`**: botão "Aplicar valor padrão a todos" (com confirmação) ao lado de "Gerar itens do ano para todos".
+- **Teste**: `test_licencas_aplicar_valor_padrao.py` (novo) - sem padrão, aplicar sem sobrescrever valor próprio, mês em aberto vs. pago/com link, ciclo anual, idempotência, acesso só do dono. **Ainda NÃO executado** (sem Flask/PyPI no ambiente do assistente) - rodar no terminal do Silvan.
+
+## "Terceira IA": base de conhecimento compartilhada - ESPECIFICAÇÃO E FATIA 1 (2026-09-29, pedido do Silvan)
+
+**Ideia**: hoje o paciente pergunta e duas IAs respondem (Claude/ChatGPT/Gemini, o dono escolhe o par, e a Claude arbitra divergência). Vamos adicionar uma TERCEIRA voz: uma base de conhecimento própria do app (perguntas e respostas de preparo por tipo de exame), consultada por busca de similaridade. Não é um modelo treinado, é uma base com busca.
+
+### Decisões do Silvan (definem as próximas fatias - não reabrir sem ele)
+1. **A base é do app (global, todas as clínicas)** e se alimenta sozinha das perguntas respondidas pelos médicos.
+2. **O preparo cadastrado pelo médico é SEMPRE o prioritário.** A base só complementa.
+3. **Aprovação do médico só quando a resposta da base for "muito diferente" das IAs.** Quem julga "muito diferente" é o ÁRBITRO CLAUDE (reaproveitar `_respostas_divergem` em `app/ia_preparo.py`), não similaridade de texto. Isso vale para as duas comparações: base x IAs e edição do médico x base.
+4. **Ao comparar, diferenças só de prazo/horas NÃO contam como divergência** (jejum de 6h vs 8h varia por clínica).
+5. **Se o médico editar a resposta e ela ficar muito diferente da base, a base é ATUALIZADA** (guardar histórico da versão anterior, para desfazer).
+6. **Interruptor na área do dono** para usar ou não a terceira IA (desligada = tudo como hoje). Também na área do dono: **configuração de qual provedor faz a busca** (OpenAI/Gemini embeddings, ou palavra-chave).
+7. **Ao carregar o preparo, o médico informa o TIPO DE EXAME** (dropdown de lista criada por nós) - FEITO na fatia 1.
+8. **Médico excluído: as respostas dele na base NÃO são apagadas** (guardar nome da autoria como texto e soltar o vínculo; ajustar `app/exclusao_usuario.py`, que já teve erro 500 por FK).
+9. **Por especialidade, o médico pode ver a base e SUGERIR alterações, aprovadas pelo dono.** Exige campo novo "especialidade" no cadastro do médico (dropdown) - não existe hoje.
+10. **Sem Excel**: a carga inicial é inserção direta na base (migração/script), não planilha.
+11. Recomendações minhas aceitas: **generalizar o texto antes de salvar na base** (remover nome de paciente, telefone, dados da clínica e detalhes de protocolo - LGPD) e mostrar a base como uma 4ª coluna "Base" na tela de aprovação do médico, com a fonte visível.
+
+### Ordem das fatias
+1. **[FEITA, ver abaixo]** Tipos de exame + campo no preparo + tela do dono.
+2. **[FEITA, ver abaixo]** Base de conhecimento (tabela + tela do dono + interruptor + provedor de busca).
+3. **[FEITA, ver abaixo]** Integração na resposta (4ª coluna, árbitro, aprovação só quando divergir).
+4. Auto-alimentação e atualização por edição do médico (com generalização e prazo ignorado).
+5. Especialidade do médico + sugestões de alteração aprovadas pelo dono.
+
+### Fatia 1 - Tipos de exame (implementada)
+- **`app/models.py`**: novo modelo `TipoExame` (`tipos_exame`: nome único, `especialidades` em texto separado por vírgula, `ativo`, `ordem`). `PreparoModelo.tipo_exame_id` (FK, nullable) + relação `tipo_exame`. O tipo fica no PREPARO (`PreparoModelo`), que é o que o médico "carrega".
+- **`app/tipos_exame_padrao.py`** (novo): lista inicial com 66 tipos de exame que exigem preparo (endoscopia/digestivo, ultrassom, tomografia/ressonância, radiografias contrastadas, medicina nuclear, cardiologia, laboratório, ginecologia/urologia, pneumologia/neurologia, oftalmo/otorrino), cada um ligado a especialidades. `semear_tipos_exame()` só INSERE o que falta, nunca altera nem reativa o que o dono mexeu.
+- **`migrar_banco.py`**: semeia a lista logo após o `db.create_all()` e adiciona `ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS tipo_exame_id`.
+- **`app/routes_medico.py`**: `_tipos_exame_ativos()` e `_ler_tipo_exame()`. Novo preparo: tipo OBRIGATÓRIO (só quando existem tipos ativos, então o banco de testes vazio não trava). Editar: preparo antigo sem tipo não é obrigado a escolher, e um tipo que o preparo já tinha continua válido mesmo se o dono o inativou depois.
+- **`app/templates/medico/preparo_modelo_form.html`**: dropdown "Tipo de exame".
+- **Área do dono**: nova aba "Tipos de exame" (`/dono/tipos-exame`): adicionar, renomear/ajustar especialidades, ativar/inativar, com contagem de preparos por tipo e aviso de preparos sem tipo. Rotas `dono.tipos_exame*` em `app/routes_dono.py`, template `dono/tipos_exame.html`, item no `_menu.html`.
+- **Teste**: `test_tipos_exame.py` (novo). **NÃO executado** nesta sessão (sem Flask no ambiente do assistente): conferidos só a sintaxe Python e a renderização Jinja. Rodar no terminal: `DATABASE_URL=sqlite:///teste_tipos_exame.db python test_tipos_exame.py` e, de regressão, `test_preparo_form_abas_importar.py` e `test_dono_conteudo_clinico.py` (criam preparos pelo formulário).
+- **Pendência do Silvan**: revisar a lista inicial de 66 tipos (aba "Tipos de exame" depois do deploy) e ajustar o que quiser. Preparos já cadastrados ficam "sem tipo" até o médico escolher ao editar.
+
+### Fatia 2 - Base de conhecimento, interruptor e provedor de busca (implementada, 2026-09-29)
+- **`app/models.py`**: `BaseConhecimentoItem` (`base_conhecimento`: tipo de exame, pergunta, resposta, fonte, `origem` internet/medico/dono, `status` ativo/inativo, `revisado`, autoria `autor_usuario_id` (FK `ON DELETE SET NULL`) + `autor_nome` como texto, `embedding` JSON + `embedding_modelo`, `vezes_utilizada`) e `BaseConhecimentoHistorico` (versão anterior a cada mudança de texto, permite desfazer). `PlataformaConfig.base_conhecimento_ativa` (interruptor, padrão DESLIGADO) e `base_busca_provedor` (`palavra_chave`/`openai`/`gemini`, padrão `palavra_chave`).
+- **`app/base_conhecimento.py`** (novo): `gerar_embedding` (OpenAI `text-embedding-3-small` ou Gemini `gemini-embedding-001`, modelos trocáveis por env `OPENAI_EMBEDDING_MODEL`/`GEMINI_EMBEDDING_MODEL`, nunca levanta exceção), `atualizar_embedding_do_item`, `buscar_na_base(pergunta, tipo_exame_id, limite)`: só itens ATIVOS do tipo dado, em modo embeddings só compara vetores do MESMO modelo e cai para palavra-chave se a API falhar. Reaproveita `palavras_chave` do `faq_engine`. Limiares iniciais `LIMIAR_PALAVRA_CHAVE=0.6` e `LIMIAR_EMBEDDING=0.70` são CHUTES a calibrar com a tela "Testar busca". Simulação offline: palavra-chave acerta perguntas com vocabulário parecido ("posso dirigir depois" -> 1.00) mas falha em paráfrases ("remédio para limpar o intestino não funcionou" -> 0.20), que é o motivo de existir o modo embeddings.
+- **`app/base_conhecimento_padrao.py`** (novo): carga inicial de 15 perguntas de COLONOSCOPIA, reescritas com palavras próprias, com fonte, SEM prazos/horas/doses e sem "confirme com seu médico". Entram como `origem=internet`, `revisado=False`. Só insere o que falta, nunca altera item que o dono editou. Chamada no `migrar_banco.py` logo após semear os tipos de exame. **Só colonoscopia por enquanto** - os demais tipos precisam de pesquisa própria e revisão.
+- **`migrar_banco.py`**: `ALTER TABLE plataforma_config` para as 2 colunas novas + semeadura da base.
+- **`app/exclusao_usuario.py`**: ao excluir um médico, os itens dele na base NÃO são apagados, só perdem o vínculo (`autor_usuario_id` = NULL), o nome fica em `autor_nome`.
+- **Área do dono** (nova aba "Base de conhecimento", `/dono/base-conhecimento`, rotas `dono.base_conhecimento*`, template `dono/base_conhecimento.html`): interruptor + provedor de busca, adicionar/editar (guarda histórico, marca revisado)/inativar/desfazer/marcar revisado, filtros, aviso de itens não revisados, "Calcular vetores de busca" (limite de 40 por clique, cada item é uma chamada de rede: mesma lição do 502) e "Testar busca" para calibrar antes de ligar.
+- **Ainda NÃO integrado ao chat**: com a base ligada ou desligada, o comportamento do paciente/médico é idêntico ao de antes. A integração é a fatia 3.
+- **Não verificado**: as chamadas reais às APIs de embeddings (OpenAI/Gemini) não foram testadas contra a API de verdade, só simuladas. O custo dos embeddings NÃO é registrado em `ChamadaIA` (avaliar na fatia 3).
+- **Teste**: `test_base_conhecimento.py` (novo, provedor de embeddings simulado, sem rede). **NÃO executado** (sem Flask no ambiente do assistente): conferidos só a sintaxe e a renderização Jinja. Rodar: `DATABASE_URL=sqlite:///teste_base_conhecimento.db python test_base_conhecimento.py`, mais `test_tipos_exame.py`.
+
+### Fatia 3 - Integração da base na resposta do chat (implementada, 2026-09-29)
+Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conhecimento") a base é consultada em toda pergunta que passou pelas IAs. **O preparo cadastrado continua sendo o prioritário**: a base NUNCA substitui a resposta das IAs (que se baseiam no preparo), só complementa.
+- **IAs responderam**: o árbitro Claude compara a resposta delas com a da base **ignorando diferenças só de prazo/horas/dose** (`_respostas_divergem(..., ignorar_prazos=True)`). Se são "muito diferentes" -> `exige_revisao_base=True`: o médico revisa MESMO com a aprovação geral desligada (mesmo mecanismo de `exige_revisao_medicamento`). Se não divergem, a base só aparece como 3ª voz, sem revisão extra. Sem árbitro disponível (sem ANTHROPIC_API_KEY) conta como divergente (mais seguro). O rascunho final continua sendo o das IAs.
+- **IAs sem resposta** (preparo não cobre, erro, sem chave) e a base achou algo: o rascunho passa a ser a resposta da base, SEMPRE com revisão do médico.
+- **A base não entra** quando: está desligada, o preparo do exame não tem tipo de exame (`PreparoModelo.tipo_exame_id`), nada parecido foi achado, ou a IA julgou a mensagem sem sentido. Uma falha na base é logada e o chat segue só com as IAs.
+- **`app/ia_preparo.py`**: a função antiga virou `_responder_com_duas_ias` (intacta) e `responder_com_ia` agora é um wrapper que chama `_aplicar_base_de_conhecimento`. Retorno ganhou `por_provedor["Base"]`, `base` (item_id, score, método, divergiu, preencheu_lacuna) e `exige_revisao_base`. A resposta da base passa pelo mesmo filtro que remove "confirme com seu médico". Cada uso conta em `BaseConhecimentoItem.vezes_utilizada`.
+- **`PerguntaPendente`**: colunas novas `resposta_bruta_base`, `base_item_id` (FK, ON DELETE SET NULL) e `base_divergiu`; `migrar_banco.py` com os 3 `ALTER TABLE`. Gravadas nos 3 pontos que criam a pergunta: `routes_paciente.chat`, `whatsapp_conversa._responder_pergunta` e o chat de teste do médico em `routes_medico`. As duas primeiras também passaram a exigir revisão quando `exige_revisao_base`.
+- **`medico/perguntas.html`**: 4ª coluna "Base de conhecimento" (com a fonte e link), badge "Base diverge" no cabeçalho e um alerta explicando se a base divergiu das IAs ou se o rascunho veio só da base.
+- **Verificação feita**: sintaxe dos arquivos, renderização Jinja da tela nos 3 cenários (só IA, IA + base divergente, só base) e a lógica de `responder_com_ia` EXECUTADA com peças simuladas (não diverge, diverge, lacuna, sem tipo, desligada, sem sentido, falha na base, prompt do árbitro com/sem `ignorar_prazos`) - tudo como esperado.
+- **Teste**: `test_base_integracao_chat.py` (novo, IAs e árbitro simulados). **NÃO executado** com Flask/banco (sem Flask no ambiente do assistente). Precisa de banco recriado + seed: `DATABASE_URL=sqlite:///teste_base_integracao.db python seed.py` e depois o teste. Rodar também os testes de regressão do chat/perguntas (`test_whatsapp_pergunta.py`, `test_perguntas_medico_so_do_proprio_exame.py`).
+- **Limitação conhecida**: preparos cadastrados antes desta mudança não têm tipo de exame, então a base não os atende até o médico escolher o tipo ao editar o preparo.
+- **Custo**: a chamada extra do árbitro (base x IAs) é registrada como as demais em `ChamadaIA`. Embeddings ainda não.
+
+### Fatia 4 - A base aprende com as respostas dos médicos (implementada, 2026-09-29)
+- **Interruptor próprio** na aba "Base de conhecimento" do dono: "Aprender com as respostas dos médicos" (`PlataformaConfig.base_aprendizado_ativo`, padrão DESLIGADO, `ALTER TABLE` em `migrar_banco.py`). Independente do interruptor que liga o USO da base.
+- **Gancho**: `medico.perguntas_responder` chama `app.base_aprendizado.agendar_aprendizado(...)` depois de gravar a resposta. Só para respostas de MÉDICO (secretaria não alimenta a base) e só quando há o que aprender: resposta manual a pergunta "pendente", ou rascunho da IA/base revisado pelo médico. Rascunho automático do preparo cadastrado (sem IA) não entra. Roda em thread em segundo plano (não atrasa a resposta ao paciente); falha só vai para o log. Em teste, `app.config["BASE_APRENDIZADO_SINCRONO"]=True` roda na hora.
+- **Generalização (LGPD)**: a Claude reescreve pergunta e resposta de forma genérica (sem nomes, telefones, valores; prazos/horas/doses viram "no prazo indicado no seu preparo") e descarta o que não é dúvida geral de preparo (agendamento, resultado, preço etc.). Depois um regex (`contem_dado_pessoal`) barra telefone, CPF, e-mail, link e R$ que tenham sobrado. Custo registrado em `ChamadaIA` (`base_conhecimento_aprendizado`).
+- **Regras**: exige tipo de exame no preparo. Sem item parecido (similaridade >= `LIMIAR_ATUALIZACAO`=0.85, chute a calibrar) -> CRIA item (origem "medico", não revisado, autor = médico). Item parecido + médico EDITOU (ou respondeu à mão) + árbitro Claude diz "muito diferente" ignorando prazos -> ATUALIZA, guarda a versão anterior em `BaseConhecimentoHistorico` (dono pode desfazer) e volta a "não revisado". Aprovar o rascunho sem editar nunca sobrescreve item existente.
+- **Excluir médico**: os itens ficam (autoria vira só texto, fatia 2).
+- **Teste**: `test_base_aprendizado.py` (generalização e árbitro simulados). **NÃO executado** (sem Flask no ambiente do assistente): só sintaxe conferida. Precisa de seed: `DATABASE_URL=sqlite:///teste_base_aprendizado.db python seed.py` e depois o teste. Rodar também a regressão `test_perguntas_medico_so_do_proprio_exame.py` e `test_whatsapp_pergunta.py`.
+- **Não verificado**: a chamada real à Claude para generalizar (formato JSON, qualidade do texto). Ligar em dev e conferir os itens criados na tela do dono antes de ligar em prod.
+
+### Fatia 5 - Especialidade, base por especialidade e sugestões dos médicos (implementada, 2026-09-29)
+- **Especialidade**: `Usuario.especialidade` (String 80, `ALTER TABLE` em `migrar_banco.py`). Dropdown em `app/especialidades.py` (nomes iguais aos de `tipos_exame_padrao.py`), no cadastro (só médico) e em "Meus dados". OPCIONAL de propósito (não quebra cadastros/testes antigos); valor fora da lista é ignorado. Lista via `app_context_processor` de `routes_auth`.
+- **Tela do médico** "Base compartilhada" (`medico.base_compartilhada`, menu lateral só para médico): somente leitura, itens ATIVOS dos tipos de exame cuja lista de especialidades contém a dele (sem diferenciar maiúsculas) OU que não têm especialidade definida. Sem especialidade no cadastro: aviso com link para Meus dados.
+- **Sugestões** (`BaseConhecimentoSugestao`, tabela nova via `create_all`): médico sugere alteração de um item ou item novo (só em tipos da sua especialidade); reenviar para o mesmo item substitui a pendente. A base NÃO muda até o dono aprovar.
+- **Dono**: `dono.base_sugestoes` (fila, link/contador na aba Base de conhecimento). Aprovar (pode ajustar o texto): alteração -> versão anterior no histórico, item vira revisado, embedding recalculado; item novo -> entra ativo, revisado, origem "medico", autor = médico. Rejeitar com recado opcional. O médico recebe `Notificacao` (tipo `sugestao_base`) nas duas decisões.
+- **Excluir médico**: itens e sugestões ficam (autoria vira só texto).
+- **Teste**: `test_base_sugestoes.py` (banco recriado, sem seed). **NÃO executado** (sem Flask no ambiente do assistente): só sintaxe e parse Jinja. Rodar também regressão de cadastro/Meus dados (`test_*cadastro*`, `test_meus_dados*` se existirem).
+- **Fica para depois**: sugestão de EXCLUSÃO/inativação de item pelo médico; conteúdo de outros exames além de colonoscopia.
+
+### Carga 2 da base - Endoscopia digestiva alta (2026-09-29)
+- `app/base_conhecimento_padrao.py` ganhou 13 itens de "Endoscopia digestiva alta" (jejum, água, remédios, diabetes, anticoagulante, acompanhante, dirigir, alimentação depois, chiclete/cigarro, dentadura, sintomas normais, sinais de alerta), reescritos com palavras próprias a partir de Instituto Victor Dib, Sedig e Nav (Dasa), com a fonte em cada item. Sem prazos/horas/doses e sem "confirme com o médico" (o teste confere). Entram como origem "internet", não revisados; a carga é insert-only (roda no `migrar_banco.py` no próximo deploy).
+- **Cuidado editorial**: as fontes divergem em prazos (jejum, tempo sem dirigir), por isso os itens mandam seguir o preparo cadastrado em vez de citar números.
+- `test_base_conhecimento.py` ajustado: a checagem "respeita o tipo de exame" e a do item inativo deixaram de assumir que endoscopia não tem itens parecidos. Continua **NÃO executado** (sem Flask no ambiente do assistente).
+- Próximos tipos sugeridos por volume de dúvida: ressonância magnética, tomografia com contraste, ultrassonografia abdominal, exames de sangue (jejum).
+
+### Carga 3 da base - Ressonância, tomografia, ultrassom de abdome e exames de sangue (2026-09-29)
+- `app/base_conhecimento_padrao.py` ganhou 20 itens (agora 48 no total): 6 de "Ressonância magnética com contraste" (jejum, marcapasso/implante, roupa e joias, claustrofobia, barulho/imobilidade, gravidez), 6 de "Tomografia computadorizada com contraste" (jejum, alergia, rins, metformina, sensação do contraste, cuidados depois), 3 de "Ultrassonografia de abdome total" (jejum, água/bexiga cheia, dieta contra gases) e 5 de "Exames de sangue com jejum..." (água, café/chiclete, remédios, exercício, comeu sem querer). Fontes: Doctoralia, Mais Laudo, Instituto da Imagem, Diagnósticos do Brasil. Reescritos, sem prazos/horas/doses. Origem "internet", não revisados, insert-only.
+- **Vale o dono revisar**: as fontes citam prazos de jejum diferentes (ex.: 4 a 6 vs 8 a 12), por isso nenhum número entrou nos textos - todos mandam seguir o preparo cadastrado.
+- **Lacuna**: cada tipo cobre só o essencial. Ressonância e tomografia SEM contraste, ultrassom pélvico/transvaginal (bexiga cheia), curva glicêmica, ecocardiograma e outros tipos da lista ainda não têm itens. Como a base também aprende com as respostas dos médicos (fatia 4), os itens tendem a crescer sozinhos onde há mais perguntas.
+- Sem execução de teste (sem Flask no ambiente do assistente): conferidos sintaxe, nomes de tipo existentes em `tipos_exame_padrao.py`, ausência de duplicatas e de prazos em horas/dias.
+
+### Carga 4 da base - cobertura de TODOS os 66 tipos de exame (2026-09-29)
+- A base inicial passou de 48 para **331 itens**, agora com todos os 66 tipos do dropdown cobertos (3 a 6 itens por tipo). Seis módulos novos, um por grupo, importados no fim de `app/base_conhecimento_padrao.py` (`ITENS_PADRAO = ITENS_PADRAO + _G1 + ... + _G6`): `_g1` digestivo funcional/endoscópico (retossigmoidoscopia, enteroscopia, cápsula, ecoendoscopia, CPRE, manometrias, pHmetria, defecografia, testes respiratórios, colonografia), `_g2` ultrassom/angiotomografia/urotomografia/RM com sedação/enterografia/colangiorressonância, `_g3` radiografias contrastadas + cintilografias + PET-CT + densitometria, `_g4` cardiologia, `_g5` laboratório (curva glicêmica, hormônios, PSA, urina 24h, urina tipo 1, fezes, espermograma), `_g6` colposcopia, histeroscopia, Papanicolau, urodinâmica, cistoscopia, biópsias, broncoscopia, espirometria, polissonografia, EEG, retina, audiometria/BERA, nasofibro.
+- Pesquisado por 6 agentes em paralelo com fontes reais abertas (hospitais, laboratórios, órgãos públicos), texto reescrito, sem prazos/horas/doses, sem "confirme com o médico", sem ponto e vírgula. Origem "internet", NÃO revisados, insert-only (entram no próximo deploy via `migrar_banco.py`).
+- **Verificação feita pelo assistente**: todos os nomes de tipo existem, nenhuma pergunta duplicada, nenhum dígito/"horas"/"dias"/"R$"/ponto e vírgula nos textos novos, formato (tipo, pergunta, resposta, (fonte, url)) ok, py_compile ok. **Não executado com Flask.**
+- **REVISÃO HUMANA PRIORITÁRIA** (fonte única ou fraca, alguns trechos são conhecimento geral e não da fonte): Enterografia, Colonografia, Enteroscopia (fonte portuguesa), Ecoendoscopia e CPRE (sinais de alerta e sedação inferidos), pHmetria/manometrias/cápsula/hidrogênio expirado (uma página só), US pélvico e transvaginal, RM com sedação (dirigir depois é conduta geral), Angiotomografia (metformina), Trânsito intestinal, EED, Densitometria, Cintilografia óssea/renal, Urografia (alergia a contraste), PET-CT, Eco de estresse, Cateterismo, Tilt test, urina 24h, Dosagens hormonais, PSA, sangue oculto/calprotectina, Espermograma, Papanicolau, Histeroscopia, Colposcopia, Nasofibro, Audiometria/BERA, Retina/angiofluoresceinografia. Como todos entram "não revisados", use o filtro da tela do dono para revisar por tipo antes de ligar a base em produção. Atenção a `g6`: usa 8 nomes de fonte mas 17 URLs (um nome cobre várias páginas).
+- **Risco a avaliar**: com 331 itens a busca por palavra-chave tem mais chance de casar com item de tipo diferente do exame? NÃO - a busca sempre filtra pelo tipo do preparo do médico, então só compete com os itens do mesmo tipo. Ainda assim, recalibrar limiares com "Testar busca".
+
+### Roteiro de validação (2026-09-29)
+- Criado `ROTEIRO_VALIDACAO_BASE.md` na pasta do projeto: ordem dos testes, conferência em dev, calibração da busca, como ligar os interruptores aos poucos, checklist de produção e passos do PR `dev` -> `main` (manter o `render.yaml` da main).
+
+### Carga 5 da base - ampliação parcial (2026-09-30)
+- Pedido do Silvan: trazer o máximo possível de perguntas por exame. Onze agentes pesquisaram em paralelo (`app/base_conhecimento_padrao_g7.py` a `_g17.py`), mas **bateram no limite de uso da sessão e foram cortados no meio**. Os arquivos ficaram sem o `]` final: recuperei o que estava escrito (cortando no último item completo), filtrei pelas regras do projeto (tipo existente, sem dígitos/"horas"/"dias"/ponto e vírgula/"consulte o médico", sem duplicata) e integrei `_g7`, `_g8`, `_g9`, `_g10`, `_g11`, `_g12`, `_g13`, `_g15`, `_g16` no fim de `base_conhecimento_padrao.py`.
+- Resultado: base foi de 331 para **806 itens** (colonoscopia de 15 para 40). Foram descartados 10 itens que violavam as regras ou repetiam pergunta.
+- **Lacunas**: `_g14` (sangue, curva glicêmica, hormônios, PSA, urina 24h) e `_g17` (espirometria, polissonografia, EEG, retina, audiometria, nasofibro) NÃO foram gerados. Nos demais grupos, só os primeiros tipos de cada arquivo foram escritos antes do corte: vários tipos seguem com poucos itens (ex.: pHmetria, manometria anorretal, angiotomografia, cateterismo, colposcopia, broncoscopia). Refazer só esses tipos numa próxima rodada, em lotes menores.
+- Arquivos antigos/originais dos agentes foram movidos para `_to_delete/` (sem permissão de apagar): pode excluir a pasta. Não commitar.
+- Não executado com Flask; conferidos import, unicidade e regras de conteúdo.
+
+### Correção de menu (2026-09-30)
+- As abas "Tipos de exame" e "Base de conhecimento" só tinham sido adicionadas em `dono/_menu.html` (telas soltas). O painel principal (`dono/dashboard.html`) tem a própria lista de abas e não aparecia nada. Adicionados os dois links lá, antes de "Ferramentas". Lição: ao criar tela nova do dono, incluir nos DOIS lugares (`_menu.html` e a lista de abas do `dashboard.html`).
+
+### Tipos de exame em ordem alfabética (2026-09-30)
+- Pedido do Silvan: sempre em ordem alfabética, na área do dono e do médico. Novo helper `tipos_exame_ordenados(apenas_ativos=False)` em `app/models.py` (ignora acentos/maiúsculas) usado em `routes_dono` (lista de tipos e filtros/dropdowns da base), `routes_medico` (`_tipos_exame_ativos` do cadastro de preparo e `_tipos_exame_da_especialidade` da Base compartilhada). A coluna `TipoExame.ordem` segue existindo mas não define mais a exibição. Sempre usar o helper em listas novas.
+
+### Telefone obrigatório para médico (2026-09-30)
+- Pedido do Silvan. No cadastro público (`auth.cadastro`) o telefone JÁ era obrigatório (front `required` e back-end), para todos os papéis - o comentário antigo "campo opcional" em `routes_auth.py` está desatualizado. A lacuna era **Meus dados**: dava para apagar o telefone. Agora `auth.meus_dados` recusa telefone vazio quando a conta é de médico e o campo tem `required` no HTML para médico. Dono e secretária continuam podendo deixar em branco ali. Médicos antigos sem telefone só são cobrados quando forem salvar Meus dados. Sem teste novo (não executado).
+
+### Boas-vindas do médico: popup + sininho (2026-09-30)
+- Pedido do Silvan: ao concluir o cadastro do MÉDICO, aparece um popup de boas-vindas (modal Bootstrap em `base.html`, uma única vez) e as mesmas mensagens ficam no sininho. O texto diz que as instruções do sistema estão no sininho.
+- Novo `app/boas_vindas.py` (título, texto, passo a passo e `criar_notificacoes_boas_vindas`). `auth.cadastro`: só para `papel == "medico"` cria 2 `Notificacao` (tipo `boas_vindas`: "Bem-vindo(a) ao MedIA!" -> dashboard, e "Primeiros passos no MedIA" -> `medico.primeiros_passos`, com o passo a passo) e marca `session["mostrar_boas_vindas"]`; um context processor de `routes_auth` consome o marcador e entrega `popup_boas_vindas` ao template. Falha nessa parte nunca derruba o cadastro (cai no flash antigo). Secretária continua com o flash "Conta criada com sucesso".
+- A mensagem de WhatsApp de boas-vindas (fluxo existente) não mudou.
+- **Teste**: `test_boas_vindas_medico.py` (sem seed). NÃO executado (sem Flask no ambiente do assistente). Atenção: o teste assume a rota `/equipe/` (dashboard) e os campos de endereço do cadastro, ajustar se algo divergir.
+- No sininho a mensagem aparece truncada em uma linha: o passo a passo completo abre ao clicar (leva a Primeiros passos).
+
+### Cadastro de preparo: especialidade, filtro de tipos e "Não encontrei meu exame" (2026-09-30)
+- Pedido do Silvan (o Excel citado na conversa era o PDF: a importação lê PDF direto; não mexi nela). Em `preparo_modelo_form.html`, para MÉDICO: novo select **"Sua especialidade"** (pré-preenchido; ao salvar atualiza `Usuario.especialidade` se for valor da lista, via `_atualizar_especialidade_do_medico`) e o dropdown **"Tipo de exame"** passa a ser **filtrado por essa especialidade** no navegador (tipos sem especialidade definida aparecem sempre; checkbox "Mostrar exames de todas as especialidades"). Servidor não impede escolher tipo de outra especialidade. Secretária vê a lista completa, sem o campo de especialidade.
+- Nova opção final **"Não encontrei o meu exame na lista"** (`value="outro"`) que abre o campo "Qual é o exame?". O preparo é salvo normalmente, SEM tipo, e cria (ou reaproveita a pendente de mesmo nome) uma `TipoExameSugestao` (tabela nova, com especialidade e autor) ligada por `PreparoModelo.tipo_exame_sugestao_id` (ALTER em `migrar_banco.py`). Enquanto pendente a base não é usada nesse preparo.
+- **Dono** (`/dono/tipos-exame`): cartão "Exames que médicos não encontraram na lista" com **Criar tipo** (nome e especialidades editáveis, pré-preenchidos com os do médico), **Ligar a um tipo existente** ou **Rejeitar**; criar/ligar apontam automaticamente os preparos pendentes para o tipo. Selo com o número de pendências na aba "Tipos de exame" (menu e dashboard, via context processor).
+- Excluir médico: sugestões ficam (autoria vira só texto).
+- **Teste**: `test_tipo_exame_nao_encontrado.py` (novo, sem seed). NÃO executado (sem Flask no ambiente do assistente).
+- **ATENÇÃO - testes antigos**: o cadastro (`/cadastro`) hoje exige telefone, CEP/endereço completo e confirmação de senha. Vários testes antigos do repositório (ex.: `test_licenca_medico.py`) postam cadastro sem esses campos e provavelmente já falham. Nos testes novos que escrevi (`test_licenca_gerar_link_medico`, `test_tipos_exame`, `test_base_conhecimento`, `test_base_sugestoes`) acrescentei um `EXTRA_CADASTRO` com esses campos. Vale conferir a regressão dos antigos.
+
+## WhatsApp: valida o dígito verificador do CPF na hora
+
+- `app/whatsapp_conversa.py`: ao receber o CPF, se o dígito verificador não confere (`validar_cpf`), responde `MENSAGEM_CPF_DIGITO_INVALIDO` e não pede a data. Não consulta o banco para dizer se o CPF existe (sem vazar cadastros).
+- Exceção: CPF inválido que já esteja salvo em algum paciente antigo (`_cpf_ja_cadastrado`) segue o fluxo normal, para não trancar ninguém.
+- Não conta como tentativa de identificação (o limite de 3 continua só para CPF+data que não batem).
+- Testes: `test_whatsapp_identificacao.py` (novo caso com dígito errado) e `test_whatsapp_clara_itens_6_7_9.py` passaram a usar o CPF válido inexistente 529.982.247-25 no lugar de 111.111.111-11. Não executados (sem Flask aqui).
+
+## Correção: especialidade e tipo de exame não apareciam após importar PDF
+
+- A tela de revisão da importação de PDF (`preparo_modelos_importar_xlsx`, render direto em `routes_medico.py`) não passava `tipos_exame` ao template, então o bloco inteiro (especialidade, tipo, "Não encontrei") sumia. Agora passa `tipos_exame=_tipos_exame_ativos()`. As outras três telas (novo, erro de POST, editar) já passavam.
+- Se mesmo assim não aparecer em dev, conferir se há tipos de exame ativos cadastrados (`/dono/tipos-exame`).
+
+## Sessão de 2026-10-01 (pelo celular): revisão estática, testes de cadastro, aviso de exames pendentes e carga 6 de colonoscopia
+
+### Ambiente de trabalho desta sessão
+- `device_bash` funcionou (shell Linux com a pasta `C:\app\media\src` montada), mas **sem Flask e sem acesso ao PyPI** (proxy 403). Nenhum teste `test_*.py` foi executado. Só foram feitas checagens estáticas: `py_compile` de todos os `.py` (ok), conferência de imports `from app.x import y` (nenhum quebrado), parse Jinja das telas alteradas (ok). **Rodar `.\rodar_testes.ps1` no PowerShell continua pendente.**
+
+### Testes antigos de cadastro atualizados (6 arquivos)
+- O cadastro público exige telefone, CEP/endereço e `senha_confirmacao`. Seis testes postavam `/cadastro` sem esses campos: `test_licenca_medico.py`, `test_licenca_pagamento_valor_e_gateway.py`, `test_licencas_aplicar_valor_padrao.py`, `test_medico_independente.py`, `test_painel_agenda_do_medico.py`, `test_pix_licenca.py`.
+- Cada um ganhou o bloco `EXTRA_CADASTRO` (igual ao dos testes novos) e as chamadas `client.post("/cadastro", data={**EXTRA_CADASTRO, ...` . Verificações não mudaram. A chamada de `test_medico_independente.py` que testa cadastro vazio foi deixada como estava de propósito.
+- Os outros arquivos da lista inicial de 14 usam `/cadastro-paciente` ou a decisão de cadastro da equipe e não precisavam de mudança. Todos compilam. **Não executados.**
+
+### Aviso de exames pendentes no painel do dono + exportação
+- Fluxo combinado com o Silvan: quando o médico cadastra um preparo com "Não encontrei o meu exame", o dono é avisado e as perguntas e respostas desse exame são pesquisadas numa sessão com o assistente.
+- **O sininho só existe para médico/secretária** (`current_user.is_staff` em `base.html`), então o aviso ficou como **faixa amarela no topo do `dono/dashboard.html`** (usa `tipos_sugeridos_pendentes`, já existente) com botão "Ver pendências".
+- Nova rota `dono.tipos_exame_pendencias_txt` (`GET /dono/tipos-exame/pendencias.txt`, só dono, só leitura): texto simples com nome, especialidade, preparos aguardando e data. Botão "Exportar pendências (texto para copiar)" no cartão de `dono/tipos_exame.html`.
+- Arquivos: `app/routes_dono.py`, `app/templates/dono/dashboard.html`, `app/templates/dono/tipos_exame.html`.
+- **Pendente (decisão do Silvan)**: fila para tipos que EXISTEM mas têm base fraca. Recomendação do assistente: mínimo de **10 itens por tipo** (hoje não há tipo entre 7 e 17 itens, então qualquer corte nessa faixa dá o mesmo resultado), aviso uma vez por tipo, valor num único ponto do código. Ainda não implementado.
+
+### Carga 6 da base: colonoscopia chegou a 100 itens
+- Novo `app/base_conhecimento_padrao_g18.py` (60 itens) importado em `base_conhecimento_padrao.py` (`_G18`). Colonoscopia: 40 -> 100. Base total: 806 -> 866 itens. Entram no próximo deploy via `migrar_banco.py`, como origem "internet", **não revisados**, ativos.
+- Pesquisa por 4 agentes em paralelo, cada item conferido em página aberta com URL exata. Cortados 10 de cerca de 70: regras de hospital específico apresentadas como gerais, conduta de medicamento sem fonte forte e itens de menor valor. Três itens usavam "dias" e foram reescritos. Validado: sem dígitos, ";", "horas", "dias", "R$", "consulte o médico" nem pergunta repetida; compila.
+- **Revisão humana prioritária**: três itens de sinais de alerta pós-exame (febre, dor persistente, sangramento) vêm do blog Saúde Américas, a fonte mais fraca. Fontes como MD.Saúde, Dr. Derival, Berrini, Gastrocor e Progastro são de clínicas ou portais. Não foram confirmados em fonte aceitável: hemorroida, crianças, aparelho auditivo/lentes, dieta vegetariana, diarreia crônica.
+- Esclarecimento: `revisado` NÃO é usado pela busca (ela filtra só status ativo e tipo). Um item não revisado e ativo já pode alimentar o rascunho assim que o interruptor da base estiver ligado. O Silvan decidiu NÃO criar a regra "só itens revisados".
+
+### Planilha descartada
+- `faq_colonoscopia_220_itens.xlsx` (enviada pelo Silvan) foi analisada e descartada por decisão dele: 120 dos 220 itens eram cópias com "(Aspecto 2/3)", só 5 fontes em rodízio com link de página inicial, 146 itens com números ou prazos. Nada foi importado.
+
+### Backups
+- Cópias dos arquivos alterados (testes, `routes_dono.py`, templates, `base_conhecimento_padrao.py`, este handoff) ficaram fora do projeto, na pasta `bkp_testes` do usuário do shell da máquina.
+
+## Bug corrigido: erro 500 ao apagar dados de teste de performance (2026-10-01)
+
+- Sintoma (prints do Silvan, `media-dev`): `POST /dono/ferramentas/performance/limpar` -> "Internal Server Error". Log do Render: `psycopg.errors.ForeignKeyViolation: update or delete on table "usuarios" violates foreign key constraint "licenca_pagamentos_usuario_id_fkey" on table "licenca_pagamentos"` (Key id=19 ainda referenciada).
+- Causa: `apagar_dados_teste` (`app/performance_teste.py`) apagava os médicos `perfteste` com um DELETE em massa, assumindo que eles não tinham histórico. Só que a tela de licença (dono ou médico) chama `garantir_meses_licenca` e cria `LicencaPagamento` para eles, então a premissa deixou de valer (mesmo tipo de FK do bug de excluir médico de 2026-09-29).
+- Correção: antes de apagar os usuários de teste, apaga (ou desvincula) o que aponta para eles, por subconsulta de ids: `PushSubscription`, `LicencaPagamento`, `MensagemSuporte`, `Notificacao` (delete) e `ChamadaIA.usuario_id` (vira NULL). Imports ajustados no topo do arquivo. Compila. **Não executado**: sem Flask no ambiente do assistente e sem teste automatizado dessa função. Validar no `media-dev` depois do deploy (o app é Postgres, onde a FK é aplicada de verdade).
+- Observação: a transação anterior falhou no meio, então nenhum dado foi apagado parcialmente (a rota só faz commit depois da função). Se aparecer outra FK diferente no log, a lista de dependentes a estender é a de `app/exclusao_usuario.py`.
+
+## Sininho + "Primeiros passos": próximo passo depois de cadastrar o preparo (2026-10-01, pedido do Silvan)
+
+- Antes só havia o aviso por WhatsApp (`enviar_preparo_cadastrado_whatsapp`, depende do template Meta `WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO` estar aprovado e configurado - sem ele o envio é pulado em silêncio). O sininho não recebia nada nesse momento.
+- `app/routes_medico.py` (`preparo_modelos_novo`): depois do WhatsApp, e só quando quem cadastra é o PRÓPRIO médico, cria uma `Notificacao` tipo `preparo_cadastrado` ("Modelo de preparo cadastrado - próximo passo: crie um agendamento para o seu paciente de teste"), com link para `medico.agenda_novo`. Envolvida em try/except com rollback: falha ali nunca derruba o cadastro do preparo.
+- `primeiros_passos()` + `medico/primeiros_passos.html`: novo item de checklist (só médico) "Agendar exame para o paciente de teste". Marcado como feito quando o médico já tem algum `Agendamento` próprio no escopo atual (`medico_id` = ele). Botão "Agendar agora"/"Agendar outro" -> `medico.agenda_novo`.
+- Compila e o Jinja passa. **Não executado** (sem Flask no ambiente do assistente). Sem teste automatizado novo.
+- Observação: o agendamento sintético que a tela "Testar IA" / o WhatsApp de teste cria para o médico também conta como "feito" no checklist, pois não há marcador que o distinga de um agendamento real.
+
+### "Primeiros passos" de volta ao menu lateral (2026-10-01, pedido do Silvan)
+- Para o usuário conseguir voltar ao checklist depois de sair da tela. `app/templates/base.html`: item "Primeiros passos" (`medico.primeiros_passos`, ícone `bi-list-check`) logo abaixo de "Meus dados". Desktop/tablet usa a classe `oculto_no_celular_do_medico` (secretária vê sempre) e há uma cópia `d-md-none` para o menu reduzido do celular do médico, logo abaixo da cópia mobile de "Meus dados". Isso reverte a decisão de 2026-09-10/11 que o havia tirado do menu (a ordem do menu definida na planilha do Silvan agora tem esse item na 3ª posição). Jinja parseia, **não executado** no navegador.
+
+### Menu do celular do médico igual ao do sistema web (2026-10-01, pedido do Silvan)
+- Pedido: organizar os menus do "portal do médico" iguais ao sistema web (o Silvan escolheu "os dois": portal de atendimento rápido e menu do celular). O Portal de atendimento (`portal/atendimento.html`) já estende `base.html`, então usa a mesma barra lateral - o ajuste foi no menu do celular, que era reduzido.
+- `app/templates/base.html`: `oculto_no_celular_do_medico` agora é vazio, ou seja, nenhum item fica escondido no celular. Removidas as cópias `d-md-none` de "Meus dados", "Primeiros passos", "Pacientes" e "Agendar exame" (que ficavam fora de ordem). Ordem única (desktop e celular): Painel, Meus dados, Primeiros passos, Base compartilhada, Exames & preparo, Pacientes, Agendar exame, Meus exames agendados, Portal de atendimento rápido, Últimas respondidas, Base de conhecimento, Grupos de trabalho, Fale com a gente, Minha licença.
+- Única exceção deliberada: "Exames & preparo" no celular continua levando a `medico.preparo_modelos_aviso_mobile` (explica que o cadastro manual completo é pela versão web e permite importar PDF), mas agora na MESMA posição do menu (cópia `d-md-none` logo após a versão desktop). Revisa a decisão de 2026-09-10/25 de manter o menu reduzido no celular. Jinja parseia, **não verificado no navegador**.
+
+### Renomeação: "Meu FAQ" e "FAQ do MedIA" (2026-10-01, pedido do Silvan)
+- Os dois "conhecimentos" eram confundidos. Agora: **Meu FAQ** = FAQ do próprio médico/grupo (`medico.faq_lista`, tabela `faq_itens`, antes "Base de conhecimento" no menu do médico). **FAQ do MedIA** = base global da plataforma, a "terceira IA" (`BaseConhecimentoItem`; no menu do médico era "Base compartilhada", e é a aba "Base de conhecimento" do painel do dono).
+- Só texto exibido mudou (rotas, endpoints, tabelas e nomes de arquivo intactos): `base.html` (itens do menu), `medico/base_compartilhada.html` e `medico/faq_lista.html` (título e cabeçalho), `medico/perguntas.html` (coluna, alertas, badge "FAQ do MedIA diverge" e a frase sobre o "seu FAQ"), `dono/_menu.html` e `dono/dashboard.html` (nome da aba), mensagens em `routes_medico.py` (flash) e `routes_dono.py` (título e texto da notificação de sugestão).
+- Deixado como estava de propósito: o cabeçalho da tela do dono continua "Base de conhecimento (terceira IA)" (um teste confere esse texto em `test_base_conhecimento.py`). `test_base_integracao_chat.py` foi ajustado para procurar "FAQ do MedIA" na tela de perguntas. Notificações antigas já gravadas mantêm o texto antigo. Compila e Jinja parseia, **não executado**.
+
+- Ordem do menu ajustada (mesmo dia): "FAQ do MedIA" (só médico) agora fica logo ABAIXO de "Meu FAQ" (antes ficava depois de "Primeiros passos"). Ordem atual: Painel, Meus dados, Primeiros passos, Exames & preparo, Pacientes, Agendar exame, Meus exames agendados, Portal de atendimento rápido, Últimas respondidas, Meu FAQ, FAQ do MedIA, Grupos de trabalho, Fale com a gente, Minha licença.
+
+### Menu do dono nos moldes do médico: barra lateral (2026-10-01, pedido do Silvan)
+- Antes o dono navegava por abas horizontais (`dono/_menu.html` nas telas soltas e a `nav-tabs #donoTabs` do `dono/dashboard.html`). Agora tem a MESMA barra lateral em gaveta do médico (botão hambúrguer no cabeçalho).
+- `app/templates/base.html`: nova variável `mostrar_sidebar` (staff OU dono) controla a barra, o botão e o script da gaveta; dentro da barra, `{% if current_user.is_dono %}` renderiza a lista do dono e `{% else %}` mantém a do médico/secretária intacta. Itens do dono: Visão geral, Usuários, Grupos, Licenças, Mensagens (badge de novas), Anúncios, Tipos de exame (badge de pendentes), FAQ do MedIA, Custo de IA, Configurações, Ferramentas, Meus dados.
+- Visão geral, Usuários, Grupos, Custo de IA e Configurações continuam sendo abas da própria `dono/dashboard.html`: os links da barra levam a `dono.dashboard#painel-...`. A barra de abas do dashboard ficou escondida (`d-none`, mantida porque o script usa os botões) e o script ganhou o evento `hashchange` (clicar em outro item estando no dashboard troca a aba, marca o item ativo e fecha a gaveta). `dono/_menu.html` agora não renderiza nada (continua incluído pelas telas soltas).
+- `app/routes_dono.py`: o context processor `_injetar_sugestoes_tipos_exame` passou a fornecer também `mensagens_suporte_novas` em todas as telas do dono (antes só o dashboard passava).
+- Compila e Jinja parseia, nenhum teste existente confere o texto das abas. **Não verificado no navegador**: conferir gaveta no celular e no desktop, o item ativo nas telas soltas e a troca de aba pelo menu.
+
+### Checklist de validação da sessão de 2026-10-01 (nada abaixo foi executado - sem Flask no ambiente do assistente)
+1. No PowerShell, `.\rodar_testes.ps1` (suíte inteira) e conferir principalmente: os 6 testes de cadastro editados, `test_base_integracao_chat.py` (texto "FAQ do MedIA"), `test_base_conhecimento.py` (cabeçalho "Base de conhecimento (terceira IA)" mantido), e os testes novos da base (`test_tipos_exame`, `test_base_*`, `test_tipo_exame_nao_encontrado`, `test_boas_vindas_medico`).
+2. Depois do deploy no `media-dev` (se a versão antiga persistir, Manual Deploy com limpeza de cache de build): apagar dados de teste em Ferramentas > Performance (fix da FK de `licenca_pagamentos`); cadastrar um preparo como médico e ver a notificação no sininho e o item novo em "Primeiros passos"; conferir o menu do médico (desktop e celular) e a barra lateral do dono (gaveta, item ativo, troca de aba, contadores); ver a faixa amarela e o botão "Exportar pendências" para o dono.
+3. Revisar na tela do dono ("FAQ do MedIA") os itens novos de colonoscopia, principalmente os 3 de sinais de alerta pós-exame (fonte mais fraca).
+4. Conferir se `WHATSAPP_META_TEMPLATE_MEDICO_PREPARO_CADASTRADO` está aprovado e configurado no Render (sem ele o aviso por WhatsApp é pulado em silêncio).
+
+### Pendências abertas (decisões ou trabalho futuro)
+- Fila de tipos de exame com base fraca (mínimo sugerido de 10 itens por tipo, aviso uma vez por tipo) - aguardando o Silvan confirmar.
+- Cargas pendentes da base: `_g14` (sangue, curva glicêmica, hormônios, PSA, urina de 24 horas) e `_g17` (espirometria, polissonografia, EEG, retina, audiometria, nasofibro), e tipos com poucos itens. O fluxo combinado agora é por demanda: o dono vê a faixa de pendências, exporta a lista e traz para uma sessão do assistente, que pesquisa com fontes reais e entrega em módulo `_gNN`.
+- Sininho para o dono (hoje só médico/secretária têm) - não feito, mudaria o cabeçalho de todas as telas.
+- Diagnóstico do push no iPhone (Fatia 8 do PWA) segue sem resolução; Fatia 6 (desacoplar conta de Grupo) segue em andamento.
+
+### Backups desta sessão
+- Cópias dos arquivos antes de cada edição ficaram na pasta `bkp_testes` do usuário do shell da máquina (subpastas `ren` e `dono` para as rodadas de renomeação e do menu do dono). Não fazem parte do repositório.
+
+## Sessão de 2026-10-14 (Claude Code na nuvem): suíte de testes executada pela primeira vez - 79/79 passando
+
+### Ambiente
+- Pela primeira vez o ambiente do assistente conseguiu instalar o `requirements.txt` (PyPI liberado) e rodar a suíte inteira de verdade, com SQLite descartável por arquivo (mesmo esquema do `rodar_testes.ps1`).
+
+### Por que quase tudo falhava
+- **`rodar_testes.ps1` não rodava o `seed.py`**: os testes dependem dos dados de demonstração (João, Clínica Vitória, Dr. Carlos...). Sem eles, 67 de 80 falhavam. O script agora roda `python seed.py` antes de cada arquivo (o `.env` não atrapalha: `load_dotenv()` não sobrescreve o `DATABASE_URL` já definido pelo script). Com o seed: 48/80.
+- Os testes `test_exclusao_usuario.py` e `test_meus_dados.py` precisam de banco VAZIO - agora chamam `resetar_banco(db)` no início (funcionam com ou sem seed).
+
+### Bugs reais do sistema encontrados e corrigidos
+1. **`app/ia_preparo.py`**: quando a chamada a uma IA de chat dava erro (queda de rede, timeout), `_perguntar_claude`/`_perguntar_chatgpt`/`_perguntar_gemini` devolviam 3 valores, mas `_tentar_provedor` espera 4 - o resultado era `ValueError` em vez de cair para a IA reserva/FAQ. Agora devolvem `(None, None, False, False)`. Reproduzido antes e depois com uma IA falsa que levanta `TimeoutError`; `test_ia_sem_sentido.py` ganhou essa checagem.
+2. **`app/templates/dono/base_conhecimento.html`**: o "Testar busca" do FAQ do MedIA (tela do dono) dava **erro 500 sempre que um tipo de exame era escolhido** - o template usava `request.args.get('teste_tipo', type=int)`, e `int` não existe no Jinja. Agora compara como texto (`t.id|string`).
+
+### Testes atualizados (comportamento do sistema mudou de propósito, testes não acompanharam)
+- CPFs inválidos nos cadastros (`111.222.333-97` e outros) - trocados por CPFs válidos; os cadastros dos dois smoke tests ganharam os campos obrigatórios (telefone, CEP, endereço, confirmação de senha).
+- Quem tem vínculo com mais de um grupo (Dr. Carlos, secretária do Grupo Saúde) precisa escolher o grupo em `/equipe/clinica` antes de usar a área de equipe - vários testes não faziam isso e o pedido nunca chegava na rota.
+- Regras novas refletidas nos testes: FAQ consultada antes da IA (2026-09-11); "Oi" é conversa social (2026-09-24); gatilho "1" removido (2026-09-14); geração em massa de cobranças só cria as linhas, sem link nem Pix, e ignora médico em trial (2026-09-29); importação de preparo só por PDF; menu na ordem de 2026-10-01; badge "FAQ do MedIA diverge"; funções da IA com 4 valores de retorno.
+- Telas que agora repetem a pergunta do paciente (balão do chat/histórico): as checagens de "a resposta não aparece" passaram a ignorar o texto da própria pergunta.
+- `test_smoke_final.py` era uma cópia antiga do `test_smoke.py` (com as regras de antes de 2026-09-11) - apagado (ver decisões abaixo).
+- Outros ajustes só de teste: objetos SQLAlchemy usados fora do `app_context` (ids guardados antes), mock de busca devolvendo item de outra sessão, vetor falso de embedding perto demais do limiar 0,70, "na hora" (= imediatamente) confundido com prazo na checagem de texto da base.
+
+### Decisões do Silvan na mesma sessão (implementadas) - suíte: 79/79 passando
+1. **Busca do FAQ do MedIA ignora a palavra "exame" quando o tipo de exame já está definido** (`app/base_conhecimento.py`, `_PALAVRAS_GENERICAS_EXAME`): "posso dirigir depois do **exame**" agora acha "Posso dirigir depois da colonoscopia?". Antes, "depois" é STOPWORD em `app/faq_engine.py`, sobrava {dirigir, exame}, e "exame" nunca casava com o nome do exame (0,5, abaixo do limiar 0,6). Sem tipo de exame, nada muda.
+2. **Resposta pronta de medicamento não casa mais por palavra genérica** (`app/faq_engine.py`, `_PALAVRAS_GENERICAS_MEDICAMENTO` = medicamento/remédio/medicação, removidas do nome e da categoria antes de comparar): antes "Posso tomar esse medicamento nimesulida?" recebia a resposta pronta sobre suspender o Clopidogrel (categoria "medicamento antiplaquetário", nota 0,5 = limiar) - e, com a aprovação geral desligada, ia direto ao paciente. Continuam funcionando: "meu antiplaquetário?" -> Clopidogrel, "o remédio Xarelto?" -> Xarelto. Checagens novas no fim de `test_medicamento_nao_cadastrado_revisao.py`.
+3. **`test_smoke_final.py` apagado** (era idêntico ao `test_smoke.py`). As menções a ele nas seções antigas deste documento ficam como registro histórico.
 
 ## Como continuar
 

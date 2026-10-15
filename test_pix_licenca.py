@@ -32,6 +32,11 @@ from app.models import Usuario, LicencaPagamento, PlataformaConfig
 import app.mercadopago_integration as mp_integration
 
 app = create_app()
+EXTRA_CADASTRO = {
+    "senha_confirmacao": "123456", "telefone": "(27) 99999-1234", "cep": "29010-000", "rua": "Rua A",
+    "numero": "1", "bairro": "Centro", "cidade": "Vitoria", "uf": "ES",
+}
+
 client = app.test_client()
 
 with app.app_context():
@@ -70,10 +75,10 @@ DADOS_PIX_FALSO = {
 }
 
 # ---------- Setup: médico com valor mensal definido ----------
-r = client.post("/cadastro", data={
+r = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Dr. Pix Teste",
     "papel": "medico",
-    "cpf": "111.222.333-97", "crm_numero": "33333", "crm_uf": "ES",
+    "cpf": "111.222.333-96", "crm_numero": "33333", "crm_uf": "ES",
     "data_nascimento": "10/05/1980",
     "email": "pix.medico@example.com",
     "senha": "123456",
@@ -213,7 +218,11 @@ checar("Tentar gerar Pix de mês já pago responde 200", r_pago.status_code == 2
 checar("Mensagem de mês já pago aparece", "já está pago" in r_pago.get_data(as_text=True))
 client.get("/logout")
 
-# ---------- 5. Geração em massa do ano também gera Pix ----------
+# ---------- 5. Geração em massa do ano NÃO gera Pix ----------
+# Desde 2026-09-29 (fix do 502 Bad Gateway, ver HANDOFF_CHAT.md) a geração
+# em massa só cria as linhas dos meses restantes, sem nenhuma chamada ao
+# Mercado Pago - o Pix de cada mês é gerado pelo próprio médico em "Minha
+# licença", na hora de pagar (testado nas seções acima).
 with app.app_context():
     medico2 = Usuario(
         nome="Dr. Pix Massa", email="pix.massa@example.com", tipo="medico",
@@ -246,15 +255,16 @@ finally:
     mp_integration.requests.post = post_original
 
 checar("Geração em massa responde 200", r_massa.status_code == 200)
-checar("A geração em massa também gerou Pix pra cada mês novo", len(chamadas_pix_massa) > 0)
-html_massa = r_massa.get_data(as_text=True)
-checar("O resumo da geração em massa menciona Pix gerado", "Pix gerado" in html_massa)
+checar("A geração em massa NÃO chama o Mercado Pago (nem Pix, nem link)",
+       not chamadas_pix_massa and not chamadas_post_massa)
 
 with app.app_context():
-    algum_pix_massa = LicencaPagamento.query.filter_by(usuario_id=medico2_id).filter(
-        LicencaPagamento.pix_qr_code.isnot(None)
-    ).first()
-    checar("Pelo menos um mês do médico 2 recebeu Pix na geração em massa", algum_pix_massa is not None)
+    pagamentos_medico2 = LicencaPagamento.query.filter_by(usuario_id=medico2_id).all()
+    if date.today().month < 12:
+        checar("Os meses restantes do médico 2 foram criados (até dezembro)",
+               any(p.mes == date(date.today().year, 12, 1) for p in pagamentos_medico2))
+    checar("Nenhum mês do médico 2 recebeu Pix na geração em massa",
+           all(p.pix_qr_code is None for p in pagamentos_medico2))
 
 client.get("/logout")
 

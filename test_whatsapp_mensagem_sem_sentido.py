@@ -93,6 +93,7 @@ app = create_app()
 
 with app.app_context():
     joao = Paciente.query.filter_by(cpf="123.456.789-00").first()
+    joao_id = joao.id  # o objeto fica "desanexado" fora deste app_context
     telefone = "+5527900008765"
 
     ConversaWhatsapp.query.filter_by(telefone=telefone).delete()
@@ -152,8 +153,8 @@ with app.app_context():
 from unittest.mock import patch
 
 with app.app_context():
-    perguntas_antes3 = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
-    mensagens_antes3 = ChatMensagem.query.filter_by(paciente_id=joao.id).count()
+    perguntas_antes3 = PerguntaPendente.query.filter_by(paciente_id=joao_id).count()
+    mensagens_antes3 = ChatMensagem.query.filter_by(paciente_id=joao_id).count()
 
     with patch(
         "app.whatsapp_conversa.responder_com_ia",
@@ -168,11 +169,11 @@ with app.app_context():
     )
     checar(
         "IA julgando sem sentido NÃO cria PerguntaPendente",
-        PerguntaPendente.query.filter_by(paciente_id=joao.id).count() == perguntas_antes3,
+        PerguntaPendente.query.filter_by(paciente_id=joao_id).count() == perguntas_antes3,
     )
     checar(
         "IA julgando sem sentido NÃO cria ChatMensagem",
-        ChatMensagem.query.filter_by(paciente_id=joao.id).count() == mensagens_antes3,
+        ChatMensagem.query.filter_by(paciente_id=joao_id).count() == mensagens_antes3,
     )
     checar(
         "IA julgando sem sentido NÃO cola o convite de próxima pergunta (só o aviso puro)",

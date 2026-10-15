@@ -47,6 +47,20 @@ class PlataformaConfig(db.Model):
     # da mesma cautela.
     ia_validador_pergunta = db.Column(db.String(20), nullable=False, default="Claude")
 
+    # "Terceira IA" - base de conhecimento compartilhada (pedido do Silvan,
+    # 2026-09-29, ver BaseConhecimentoItem e app.base_conhecimento). Liga/
+    # desliga o uso da base nas respostas do chat (desligada = tudo como
+    # antes) e escolhe COMO a base acha a pergunta parecida: "palavra_chave"
+    # (sem custo, reaproveita o motor de FAQ), "openai" ou "gemini"
+    # (embeddings - busca por sentido, custo mínimo por chamada).
+    base_conhecimento_ativa = db.Column(db.Boolean, nullable=False, default=False)
+    base_busca_provedor = db.Column(db.String(20), nullable=False, default="palavra_chave")
+    # Aprendizado (fatia 4): quando ligado, as respostas dos MÉDICOS alimentam
+    # a base (ver app.base_aprendizado). Independente do interruptor acima
+    # (que liga o USO da base nas respostas) - o dono pode deixar a base
+    # aprender sem ainda usá-la, ou o contrário. Padrão: desligado.
+    base_aprendizado_ativo = db.Column(db.Boolean, nullable=False, default=False)
+
     # Limite diário de mensagens que um paciente pode mandar sobre um MESMO
     # exame, por WhatsApp (pedido do Silvan, 2026-09-24) - configurável
     # pelo dono aqui, valendo igual pra toda a plataforma (sem
@@ -202,6 +216,10 @@ class Usuario(db.Model, UserMixin):
     # médico sem o estado de emissão.
     crm_numero = db.Column(db.String(20))
     crm_uf = db.Column(db.String(2))
+    # Especialidade médica (dropdown de app.especialidades) - só médico, opcional.
+    # Define que parte da base de conhecimento compartilhada ele enxerga e
+    # pode sugerir alterações (fatia 5 da "terceira IA", 2026-09-29).
+    especialidade = db.Column(db.String(80))
 
     # Fatia 8 (licença individual): a cobrança agora é POR MÉDICO, não só
     # por Grupo (Grupo.valor_por_medico é uma estimativa de mercado; a
@@ -1167,6 +1185,151 @@ class Medicamento(db.Model):
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class TipoExame(db.Model):
+    """Tipo de exame que exige preparo (colonoscopia, endoscopia, ressonância
+    com contraste...) - lista GLOBAL da plataforma, mantida pelo dono em
+    /dono/tipos-exame (pedido do Silvan, 2026-09-29). Cada preparo
+    (PreparoModelo) aponta para um tipo. É o que liga o preparo de uma
+    clínica à base de conhecimento compartilhada (nas fatias seguintes) e o
+    que define, pela especialidade, qual médico enxerga qual parte dessa
+    base. `especialidades` é texto separado por vírgula (nomes de
+    especialidade médica) - simples de propósito, sem tabela extra."""
+    __tablename__ = "tipos_exame"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(200), nullable=False, unique=True)
+    especialidades = db.Column(db.Text, nullable=False, default="")
+    ativo = db.Column(db.Boolean, nullable=False, default=True)
+    ordem = db.Column(db.Integer, nullable=False, default=0)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def lista_especialidades(self):
+        return [e.strip() for e in (self.especialidades or "").split(",") if e.strip()]
+
+
+def tipos_exame_ordenados(apenas_ativos=False):
+    """Tipos de exame em ORDEM ALFABÉTICA (pedido do Silvan, 2026-09-30),
+    ignorando acentos e maiúsculas - usado em todos os dropdowns e listas
+    (dono e médico). A coluna `ordem` deixou de definir a exibição."""
+    import unicodedata
+
+    consulta = TipoExame.query
+    if apenas_ativos:
+        consulta = consulta.filter_by(ativo=True)
+
+    def chave(tipo):
+        base = unicodedata.normalize("NFKD", tipo.nome or "")
+        return "".join(c for c in base if not unicodedata.combining(c)).lower()
+
+    return sorted(consulta.all(), key=chave)
+
+
+class TipoExameSugestao(db.Model):
+    """Exame que o MÉDICO não encontrou na lista de tipos de exame ao
+    cadastrar um preparo ("Não encontrei o meu exame", 2026-09-30). Fica na
+    fila do dono, que cria o tipo (com a especialidade do médico), vincula a
+    um tipo que já existia ou rejeita. Os preparos ligados a ela ficam sem
+    tipo até a decisão e passam a apontar para o tipo escolhido depois."""
+    __tablename__ = "tipos_exame_sugestoes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(150), nullable=False)
+    especialidade = db.Column(db.String(80))
+    autor_usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    autor_nome = db.Column(db.String(150))
+    status = db.Column(db.String(12), nullable=False, default="pendente")  # pendente|aprovada|vinculada|rejeitada
+    tipo_exame_id = db.Column(db.Integer, db.ForeignKey("tipos_exame.id"), nullable=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    decidido_em = db.Column(db.DateTime)
+
+    tipo_exame = db.relationship("TipoExame", foreign_keys=[tipo_exame_id])
+
+
+class BaseConhecimentoItem(db.Model):
+    """Pergunta e resposta da base de conhecimento COMPARTILHADA da
+    plataforma (a "terceira IA", pedido do Silvan, 2026-09-29) - global,
+    vale para todas as clínicas, organizada por TipoExame. O preparo
+    cadastrado pelo médico SEMPRE tem prioridade sobre a base (ver
+    app.base_conhecimento). O texto aqui é sempre GENERALIZADO: sem nome de
+    paciente, telefone, dados da clínica nem detalhes de protocolo.
+
+    `origem`: "internet" (carga inicial pesquisada e reescrita), "medico"
+    (aprendida das respostas dos médicos) ou "dono" (cadastrada pelo dono).
+    `revisado`: o dono já conferiu o conteúdo. `autor_usuario_id` vira NULL
+    se o médico for excluído do sistema, mas `autor_nome` guarda o nome como
+    texto - a resposta dele NUNCA é apagada junto com a conta (decisão do
+    Silvan). `embedding` é o vetor de busca (JSON), só usado quando o dono
+    escolhe um provedor de embeddings - `embedding_modelo` diz de qual
+    modelo ele veio (vetores de modelos diferentes não se comparam)."""
+    __tablename__ = "base_conhecimento"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tipo_exame_id = db.Column(db.Integer, db.ForeignKey("tipos_exame.id"), nullable=False)
+    pergunta = db.Column(db.Text, nullable=False)
+    resposta = db.Column(db.Text, nullable=False)
+    fonte_nome = db.Column(db.String(200))
+    fonte_url = db.Column(db.String(500))
+    origem = db.Column(db.String(20), nullable=False, default="dono")
+    status = db.Column(db.String(20), nullable=False, default="ativo")
+    revisado = db.Column(db.Boolean, nullable=False, default=False)
+    autor_usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    autor_nome = db.Column(db.String(150))
+    embedding = db.Column(db.Text)
+    embedding_modelo = db.Column(db.String(60))
+    vezes_utilizada = db.Column(db.Integer, nullable=False, default=0)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tipo_exame = db.relationship("TipoExame", foreign_keys=[tipo_exame_id])
+    historico = db.relationship(
+        "BaseConhecimentoHistorico", back_populates="item", cascade="all, delete-orphan",
+        order_by="BaseConhecimentoHistorico.alterado_em.desc()",
+    )
+
+
+class BaseConhecimentoSugestao(db.Model):
+    """Sugestão de um MÉDICO para a base compartilhada, aguardando o dono
+    (fatia 5). `item_id` preenchido = sugestão de ALTERAÇÃO de um item;
+    vazio = sugestão de item NOVO (nesse caso `tipo_exame_id` diz onde). O
+    médico nunca altera a base direto: só o dono aprova. A autoria fica também
+    como texto (`autor_nome`) para sobreviver à exclusão da conta do médico."""
+    __tablename__ = "base_conhecimento_sugestoes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey("base_conhecimento.id", ondelete="SET NULL"), nullable=True)
+    tipo_exame_id = db.Column(db.Integer, db.ForeignKey("tipos_exame.id"), nullable=False)
+    pergunta = db.Column(db.Text, nullable=False)
+    resposta = db.Column(db.Text, nullable=False)
+    motivo = db.Column(db.Text)
+    autor_usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    autor_nome = db.Column(db.String(150))
+    status = db.Column(db.String(12), nullable=False, default="pendente")  # pendente|aprovada|rejeitada
+    resposta_dono = db.Column(db.Text)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    decidido_em = db.Column(db.DateTime)
+
+    item = db.relationship("BaseConhecimentoItem")
+    tipo_exame = db.relationship("TipoExame")
+
+
+class BaseConhecimentoHistorico(db.Model):
+    """Versão ANTERIOR de um item da base, gravada toda vez que o texto
+    muda (edição do dono, atualização automática a partir da edição de um
+    médico, sugestão aprovada) - permite desfazer uma atualização ruim."""
+    __tablename__ = "base_conhecimento_historico"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey("base_conhecimento.id"), nullable=False)
+    pergunta = db.Column(db.Text, nullable=False)
+    resposta = db.Column(db.Text, nullable=False)
+    alterado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    alterado_por_nome = db.Column(db.String(150))
+    motivo = db.Column(db.String(200))
+
+    item = db.relationship("BaseConhecimentoItem", back_populates="historico")
+
+
 class PreparoModelo(db.Model):
     """Um modelo de preparo reaproveitável, pertencente a uma filial. Pode
     ser usado por vários exames ao mesmo tempo (ex.: os 3 substratos do
@@ -1196,10 +1359,18 @@ class PreparoModelo(db.Model):
     # Observações sobre medicamentos que NÃO precisam ser suspensos (ex.:
     # "não é necessário suspender o AAS, Somalgin, Aspirina").
     observacoes_medicamentos = db.Column(db.Text)
+    # Tipo de exame (ver TipoExame) - escolhido pelo médico ao cadastrar o
+    # preparo. Nullable: preparos antigos ficam sem tipo até alguém escolher.
+    tipo_exame_id = db.Column(db.Integer, db.ForeignKey("tipos_exame.id"), nullable=True)
+    # "Não encontrei o meu exame": enquanto o dono não decide, o preparo fica
+    # sem tipo e aponta para esta sugestão (ver TipoExameSugestao).
+    tipo_exame_sugestao_id = db.Column(db.Integer, db.ForeignKey("tipos_exame_sugestoes.id", ondelete="SET NULL"), nullable=True)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
+    tipo_exame = db.relationship("TipoExame", foreign_keys=[tipo_exame_id])
+    tipo_exame_sugestao = db.relationship("TipoExameSugestao", foreign_keys=[tipo_exame_sugestao_id])
     exames = db.relationship("Exame", back_populates="preparo_modelo")
     cortes = db.relationship(
         "PreparoCorte", back_populates="preparo_modelo", cascade="all, delete-orphan",
@@ -1746,6 +1917,16 @@ class PerguntaPendente(db.Model):
     # rascunho final saiu normal - o médico continua tendo visibilidade de
     # que uma IA configurada falhou nesta pergunta específica.
     ias_com_erro = db.Column(db.String(60), nullable=True)
+    # "Terceira IA" (base de conhecimento compartilhada, ver
+    # BaseConhecimentoItem e app.ia_preparo.responder_com_ia): a resposta do
+    # item da base que foi consultado nesta pergunta (None quando a base
+    # estava desligada, o preparo não tem tipo de exame ou nada parecido foi
+    # achado), qual item foi e se a base DIVERGIU das IAs (True obriga a
+    # revisão do médico mesmo com a aprovação geral desligada). Na tela de
+    # aprovação é a coluna "Base de conhecimento" (ver medico/perguntas.html).
+    resposta_bruta_base = db.Column(db.Text)
+    base_item_id = db.Column(db.Integer, db.ForeignKey("base_conhecimento.id", ondelete="SET NULL"), nullable=True)
+    base_divergiu = db.Column(db.Boolean, nullable=True)
     resposta = db.Column(db.Text)
     respondida_por = db.Column(db.String(150))
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
@@ -1753,6 +1934,7 @@ class PerguntaPendente(db.Model):
 
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
     paciente = db.relationship("Paciente", back_populates="perguntas_pendentes")
+    base_item = db.relationship("BaseConhecimentoItem", foreign_keys=[base_item_id])
     exame = db.relationship("Exame")
 
 

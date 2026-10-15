@@ -33,6 +33,15 @@
               da clínica), seja qual for sua escolha aqui.
             </div>
           </div>
+          <div class="col-md-6" id="campo-especialidade" style="display:none;">
+            <label class="form-label">Especialidade</label>
+            <select name="especialidade" id="especialidade" class="form-select">
+              <option value="">Selecione...</option>
+              {% for e in ESPECIALIDADES %}
+              <option value="{{ e }}">{{ e }}</option>
+              {% endfor %}
+            </select>
+          </div>
           <div class="col-md-3" id="campo-crm-numero" style="display:none;">
             <label class="form-label">CRM (número)</label>
             <input type="text" inputmode="numeric" name="crm_numero" id="crm_numero" class="form-control" placeholder="123456">
@@ -191,6 +200,7 @@
 function atualizarCampoCrm() {
   const ehMedico = document.getElementById('papel').value === 'medico';
   document.getElementById('campo-crm-numero').style.display = ehMedico ? 'block' : 'none';
+  document.getElementById('campo-especialidade').style.display = ehMedico ? 'block' : 'none';
   document.getElementById('campo-crm-uf').style.display = ehMedico ? 'block' : 'none';
   document.getElementById('crm_numero').required = ehMedico;
   document.getElementById('crm_uf').required = ehMedico;

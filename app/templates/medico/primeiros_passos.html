@@ -43,5 +43,26 @@
     {% endif %}
   </div>
 </div>
+
+<div class="card p-3 mb-3">
+  <div class="d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center">
+      <span class="me-3" style="font-size: 1.6rem;">{{ "✅" if tem_agendamento else "📅" }}</span>
+      <div>
+        <strong>Agendar exame para o paciente de teste</strong>
+        <div class="text-muted small">
+          {% if tem_agendamento %}
+          Você já tem pelo menos um agendamento cadastrado.
+          {% elif tem_preparo %}
+          Próximo passo: crie um agendamento para o paciente de teste (criado com o seu nome) e continue os seus testes.
+          {% else %}
+          Depois de cadastrar o modelo de preparo, crie um agendamento para o paciente de teste (criado com o seu nome).
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <a href="{{ url_for('medico.agenda_novo') }}" class="btn {% if tem_agendamento %}btn-outline-secondary{% else %}btn-outline-primary{% endif %} btn-sm text-nowrap ms-3">{% if tem_agendamento %}Agendar outro{% else %}Agendar agora{% endif %}</a>
+  </div>
+</div>
 {% endif %}
 {% endblock %}

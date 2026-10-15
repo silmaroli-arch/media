@@ -24,6 +24,11 @@ from app.db_utils import resetar_banco
 from app.models import Usuario, GrupoMembro, Paciente, Exame, Agendamento, GrupoPaciente, GrupoConvite
 
 app = create_app()
+EXTRA_CADASTRO = {
+    "senha_confirmacao": "123456", "telefone": "(27) 99999-1234", "cep": "29010-000", "rua": "Rua A",
+    "numero": "1", "bairro": "Centro", "cidade": "Vitoria", "uf": "ES",
+}
+
 client = app.test_client()
 
 with app.app_context():
@@ -55,7 +60,7 @@ checar("O CPF já é anunciado como o login da conta",
        "CPF (será seu login)" in html_cad)
 
 # ---------- Cadastro só com dados pessoais, papel médico ----------
-r = client.post("/cadastro", data={
+r = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Dr. João Autônomo",
     "papel": "medico",
     "cpf": "852.963.741-00", "crm_numero": "44444", "crm_uf": "ES",
@@ -145,7 +150,7 @@ with app.app_context():
 client.get("/logout")
 
 # ---------- Cadastro, papel secretária (não é mais exclusivo de médico) ----------
-r = client.post("/cadastro", data={
+r = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Secretária Autônoma",
     "papel": "secretaria",
     "cpf": "123.456.789-09",
@@ -170,7 +175,7 @@ checar("Cadastro sem dados obrigatórios é rejeitado", r.status_code == 200 and
 
 # ---------- Duas contas solo com nomes iguais/parecidos não colidem (não há Grupo pra colidir) ----------
 client.get("/logout")
-r = client.post("/cadastro", data={
+r = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Bruno Pavan",
     "cpf": "168.995.350-09", "crm_numero": "77777", "crm_uf": "ES",
     "data_nascimento": "10/05/1980",
@@ -188,7 +193,7 @@ client.get("/logout")
 # ---------- Migração também acontece ao ACEITAR convite pra um Grupo já existente ----------
 # (não só ao CRIAR um Grupo novo - é o mesmo cuidado, mas no fluxo em que
 # quem já tinha Grupo convida um médico solo com histórico próprio.)
-r = client.post("/cadastro", data={
+r = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Dra. Convidada Solo",
     "papel": "medico",
     "cpf": "104.332.181-00", "crm_numero": "55555", "crm_uf": "ES",

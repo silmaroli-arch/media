@@ -51,6 +51,16 @@ from app import create_app, db  # import tardio - só depois de já ter validado
 _app_para_create_all = create_app()
 with _app_para_create_all.app_context():
     db.create_all()
+    # Lista inicial de tipos de exame (app/tipos_exame_padrao.py) - so
+    # insere os que faltam, nunca altera os que o dono ja mexeu.
+    from app.models import TipoExame
+    from app.tipos_exame_padrao import semear_tipos_exame
+    _novos_tipos = semear_tipos_exame(db, TipoExame)
+    print(f"Tipos de exame: {_novos_tipos} novo(s) inserido(s) na lista padrao.")
+    # Conteudo inicial da base de conhecimento (so insere o que falta).
+    from app.base_conhecimento_padrao import semear_base_conhecimento
+    _novos_itens = semear_base_conhecimento(db)
+    print(f"Base de conhecimento: {_novos_itens} item(ns) inicial(is) inserido(s).")
 print("Schema de tabelas OK - seguindo para os ajustes de coluna (ALTER TABLE).")
 
 SQL = """
@@ -478,6 +488,21 @@ ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_qr_code TEXT;
 ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_qr_code_base64 TEXT;
 ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_payment_id VARCHAR(80);
 ALTER TABLE licenca_pagamentos ADD COLUMN IF NOT EXISTS pix_expira_em TIMESTAMP;
+
+-- Tipo de exame do preparo (lista global tipos_exame, criada pelo db.create_all()).
+ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS tipo_exame_id INTEGER REFERENCES tipos_exame(id);
+
+-- Terceira IA (base de conhecimento): interruptor e provedor de busca. As tabelas base_conhecimento e base_conhecimento_historico sao criadas pelo db.create_all().
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS base_conhecimento_ativa BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS base_busca_provedor VARCHAR(20) NOT NULL DEFAULT 'palavra_chave';
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS base_aprendizado_ativo BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS especialidade VARCHAR(80);
+ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS tipo_exame_sugestao_id INTEGER REFERENCES tipos_exame_sugestoes(id) ON DELETE SET NULL;
+
+-- Terceira IA na fila de aprovacao: resposta da base, item usado e se divergiu das IAs.
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_base TEXT;
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS base_item_id INTEGER REFERENCES base_conhecimento(id) ON DELETE SET NULL;
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS base_divergiu BOOLEAN;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

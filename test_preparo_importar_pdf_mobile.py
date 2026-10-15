@@ -37,6 +37,12 @@ def login(email, senha):
 
 
 login("secretaria@gruposaude.com", "123456")
+# A secretária atua nos dois grupos "Saúde Total" - precisa escolher qual
+# está usando agora antes de entrar na área de equipe.
+with app.app_context():
+    from app.models import Grupo
+    centro_id = Grupo.query.filter_by(nome="Grupo Saúde Total - Centro").first().id
+client.post("/equipe/clinica", data={"clinica_id": str(centro_id)}, follow_redirects=True)
 
 # A tela em si (GET) continua funcionando normalmente.
 r0 = client.get("/equipe/preparo-modelos/aviso-mobile")

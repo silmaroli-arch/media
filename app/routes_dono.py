@@ -6,7 +6,11 @@ from sqlalchemy import func
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico, BaseConhecimentoSugestao, tipos_exame_ordenados, TipoExameSugestao
+from app.base_conhecimento import (
+    PROVEDORES_BUSCA, PROVEDOR_PALAVRA_CHAVE, provedor_configurado, atualizar_embedding_do_item, buscar_na_base,
+    LIMIAR_PALAVRA_CHAVE, LIMIAR_EMBEDDING,
+)
 from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 from app.mercadopago_integration import (
@@ -744,6 +748,69 @@ def usuarios():
     return render_template("dono/usuarios.html", linhas=_usuarios_com_custo())
 
 
+@dono_bp.route("/usuarios/aplicar-valor-padrao", methods=["POST"])
+@login_required
+@dono_required
+def licencas_aplicar_valor_padrao():
+    """Pedido do Silvan (2026-09-29): o valor mensal padrão
+    (PlataformaConfig.valor_licenca_padrao) só é copiado pro médico NO
+    CADASTRO (ver routes_auth.cadastro) - médico que já existia antes do
+    padrão ser definido (ou que se cadastrou com ele em branco) continua
+    sem valor pra sempre, e "Minha licença" dele não consegue gerar link/
+    Pix. Este botão preenche isso de uma vez.
+
+    Regras (decididas com o Silvan):
+    - só médico que está SEM valor (None) recebe o padrão - valor
+      individual já negociado nunca é sobrescrito;
+    - o valor anual segue a mesma regra, com o padrão anual (se houver);
+    - os meses EM ABERTO desses médicos (ciclo mensal, não pagos, ainda
+      sem link/Pix gerado e sem valor) recebem o novo valor - mês pago ou
+      com cobrança já gerada nunca muda (é uma "fatura já emitida", ver
+      LicencaPagamento.valor). Sem nenhuma chamada de rede."""
+    config = PlataformaConfig.obter()
+    padrao_mensal = config.valor_licenca_padrao
+    padrao_anual = config.valor_licenca_anual_padrao
+    if not padrao_mensal and not padrao_anual:
+        flash(
+            "Defina primeiro o valor mensal (ou anual) padrão em Configurações > Licença de médico.",
+            "warning",
+        )
+        return redirect(url_for("dono.usuarios"))
+
+    medicos_mensal = medicos_anual = meses_atualizados = 0
+    for medico in Usuario.query.filter(Usuario.tipo == "medico").all():
+        if padrao_mensal and medico.valor_licenca_mensal is None:
+            medico.valor_licenca_mensal = padrao_mensal
+            medicos_mensal += 1
+        if padrao_anual and medico.valor_licenca_anual is None:
+            medico.valor_licenca_anual = padrao_anual
+            medicos_anual += 1
+
+        if medico.ciclo_licenca == "mensal" and medico.valor_licenca_mensal is not None:
+            abertos = LicencaPagamento.query.filter(
+                LicencaPagamento.usuario_id == medico.id,
+                LicencaPagamento.pago.is_(False),
+                LicencaPagamento.valor.is_(None),
+                LicencaPagamento.mp_init_point.is_(None),
+                LicencaPagamento.pix_qr_code.is_(None),
+            ).all()
+            for pagamento in abertos:
+                pagamento.valor = medico.valor_licenca_mensal
+                meses_atualizados += 1
+
+    db.session.commit()
+    if medicos_mensal or medicos_anual or meses_atualizados:
+        flash(
+            f"Valor padrão aplicado: {medicos_mensal} médico(s) sem valor mensal, "
+            f"{medicos_anual} sem valor anual, {meses_atualizados} mês(es) em aberto atualizado(s). "
+            "Médicos que já tinham valor próprio não foram alterados.",
+            "success",
+        )
+    else:
+        flash("Nada a atualizar - todos os médicos já têm valor definido.", "success")
+    return redirect(url_for("dono.usuarios"))
+
+
 @dono_bp.route("/usuarios/gerar-cobrancas-ano", methods=["POST"])
 @login_required
 @dono_required
@@ -808,6 +875,501 @@ def licencas_gerar_cobrancas_ano():
     else:
         flash(f"Nenhum item novo - os {len(medicos)} médico(s) elegível(is) já tinham todos os meses deste ano gerados.", "success")
     return redirect(url_for("dono.usuarios"))
+
+
+# ---------- Tipos de exame (lista do dropdown do cadastro de preparo) ----------
+
+@dono_bp.route("/tipos-exame")
+@login_required
+@dono_required
+def tipos_exame():
+    """Pedido do Silvan (2026-09-29): o dono mantém a lista de tipos de
+    exame que exigem preparo (ver app.models.TipoExame e
+    app.tipos_exame_padrao para a lista inicial). Mostra também quantos
+    preparos usam cada tipo, para não inativar/renomear às cegas."""
+    tipos = tipos_exame_ordenados()
+    uso = dict(
+        db.session.query(PreparoModelo.tipo_exame_id, func.count(PreparoModelo.id))
+        .filter(PreparoModelo.tipo_exame_id.isnot(None))
+        .group_by(PreparoModelo.tipo_exame_id)
+        .all()
+    )
+    sem_tipo = PreparoModelo.query.filter(PreparoModelo.tipo_exame_id.is_(None)).count()
+    pendentes = TipoExameSugestao.query.filter_by(status="pendente").order_by(TipoExameSugestao.criado_em).all()
+    preparos_por_sugestao = dict(
+        db.session.query(PreparoModelo.tipo_exame_sugestao_id, func.count(PreparoModelo.id))
+        .filter(PreparoModelo.tipo_exame_sugestao_id.isnot(None))
+        .group_by(PreparoModelo.tipo_exame_sugestao_id)
+        .all()
+    )
+    return render_template(
+        "dono/tipos_exame.html", tipos=tipos, uso=uso, sem_tipo=sem_tipo,
+        sugestoes=pendentes, preparos_por_sugestao=preparos_por_sugestao,
+    )
+
+
+@dono_bp.route("/tipos-exame/pendencias.txt")
+@login_required
+@dono_required
+def tipos_exame_pendencias_txt():
+    """Texto simples com os exames que médicos não encontraram na lista, para
+    o dono copiar e levar à sessão com o assistente, que pesquisa as perguntas
+    e respostas desses exames (fluxo combinado em 2026-10-01). Só leitura."""
+    from flask import Response
+    pendentes = TipoExameSugestao.query.filter_by(status="pendente").order_by(TipoExameSugestao.criado_em).all()
+    preparos = dict(
+        db.session.query(PreparoModelo.tipo_exame_sugestao_id, func.count(PreparoModelo.id))
+        .filter(PreparoModelo.tipo_exame_sugestao_id.isnot(None))
+        .group_by(PreparoModelo.tipo_exame_sugestao_id)
+        .all()
+    )
+    linhas = ["Exames que médicos não encontraram na lista (pendentes):", ""]
+    if not pendentes:
+        linhas.append("Nenhuma pendência no momento.")
+    for s in pendentes:
+        linhas.append(
+            "- %s | especialidade: %s | preparos aguardando: %s | pedido em %s" % (
+                s.nome, s.especialidade or "não informada", preparos.get(s.id, 0),
+                s.criado_em.strftime("%d/%m/%Y") if s.criado_em else "-",
+            )
+        )
+    return Response("\n".join(linhas) + "\n", mimetype="text/plain; charset=utf-8")
+
+
+@dono_bp.app_context_processor
+def _injetar_sugestoes_tipos_exame():
+    """Contador de exames sugeridos por médicos ("Não encontrei o meu exame")
+    para o selo da aba "Tipos de exame" do painel do dono."""
+    if current_user.is_authenticated and getattr(current_user, "tipo", None) == "dono":
+        try:
+            return {
+                "tipos_sugeridos_pendentes": TipoExameSugestao.query.filter_by(status="pendente").count(),
+                # Badge de "Mensagens" na barra lateral do dono (2026-10-01), em todas as telas.
+                "mensagens_suporte_novas": MensagemSuporte.query.filter_by(status="nova").count(),
+            }
+        except Exception:
+            db.session.rollback()
+    return {}
+
+
+def _vincular_preparos_ao_tipo(sugestao, tipo):
+    for preparo in PreparoModelo.query.filter_by(tipo_exame_sugestao_id=sugestao.id).all():
+        preparo.tipo_exame_id = tipo.id
+        preparo.tipo_exame_sugestao_id = None
+    sugestao.tipo_exame_id = tipo.id
+    sugestao.decidido_em = datetime.utcnow()
+
+
+@dono_bp.route("/tipos-exame/sugestoes/<int:sug_id>/criar", methods=["POST"])
+@login_required
+@dono_required
+def tipo_sugestao_criar(sug_id):
+    """Cria o tipo de exame sugerido (com as especialidades informadas) e
+    liga a ele os preparos que estavam esperando."""
+    sug = TipoExameSugestao.query.get_or_404(sug_id)
+    if sug.status != "pendente":
+        flash("Esta sugestão já foi analisada.", "info")
+        return redirect(url_for("dono.tipos_exame"))
+    nome = " ".join(request.form.get("nome", "").split()) or sug.nome
+    especialidades = request.form.get("especialidades", "").strip()
+    tipo = TipoExame.query.filter(func.lower(TipoExame.nome) == nome.lower()).first()
+    if not tipo:
+        ultima_ordem = db.session.query(func.max(TipoExame.ordem)).scalar() or 0
+        tipo = TipoExame(nome=nome, especialidades=especialidades, ativo=True, ordem=ultima_ordem + 1)
+        db.session.add(tipo)
+        db.session.flush()
+    sug.status = "aprovada"
+    _vincular_preparos_ao_tipo(sug, tipo)
+    db.session.commit()
+    flash(f"Tipo de exame \"{tipo.nome}\" criado e ligado aos preparos do médico.", "success")
+    return redirect(url_for("dono.tipos_exame"))
+
+
+@dono_bp.route("/tipos-exame/sugestoes/<int:sug_id>/vincular", methods=["POST"])
+@login_required
+@dono_required
+def tipo_sugestao_vincular(sug_id):
+    """A sugestão é um exame que já existe na lista com outro nome: liga os
+    preparos ao tipo escolhido, sem criar nada."""
+    sug = TipoExameSugestao.query.get_or_404(sug_id)
+    tipo = TipoExame.query.get(request.form.get("tipo_exame_id", type=int) or 0)
+    if sug.status != "pendente" or not tipo:
+        flash("Escolha um tipo de exame existente.", "danger")
+        return redirect(url_for("dono.tipos_exame"))
+    sug.status = "vinculada"
+    _vincular_preparos_ao_tipo(sug, tipo)
+    db.session.commit()
+    flash(f"Preparos ligados ao tipo \"{tipo.nome}\".", "success")
+    return redirect(url_for("dono.tipos_exame"))
+
+
+@dono_bp.route("/tipos-exame/sugestoes/<int:sug_id>/rejeitar", methods=["POST"])
+@login_required
+@dono_required
+def tipo_sugestao_rejeitar(sug_id):
+    sug = TipoExameSugestao.query.get_or_404(sug_id)
+    if sug.status == "pendente":
+        sug.status = "rejeitada"
+        sug.decidido_em = datetime.utcnow()
+        db.session.commit()
+        flash("Sugestão rejeitada. Os preparos continuam sem tipo.", "success")
+    return redirect(url_for("dono.tipos_exame"))
+
+
+@dono_bp.route("/tipos-exame/novo", methods=["POST"])
+@login_required
+@dono_required
+def tipos_exame_novo():
+    nome = request.form.get("nome", "").strip()
+    especialidades = request.form.get("especialidades", "").strip()
+    if not nome:
+        flash("Informe o nome do tipo de exame.", "danger")
+        return redirect(url_for("dono.tipos_exame"))
+    if TipoExame.query.filter(func.lower(TipoExame.nome) == nome.lower()).first():
+        flash("Já existe um tipo de exame com esse nome.", "danger")
+        return redirect(url_for("dono.tipos_exame"))
+    ultima_ordem = db.session.query(func.max(TipoExame.ordem)).scalar() or 0
+    db.session.add(TipoExame(nome=nome, especialidades=especialidades, ativo=True, ordem=ultima_ordem + 1))
+    db.session.commit()
+    flash(f"Tipo de exame \"{nome}\" adicionado.", "success")
+    return redirect(url_for("dono.tipos_exame"))
+
+
+@dono_bp.route("/tipos-exame/<int:tipo_id>/editar", methods=["POST"])
+@login_required
+@dono_required
+def tipos_exame_editar(tipo_id):
+    """Renomeia e/ou ajusta as especialidades (texto separado por vírgula)
+    de um tipo. Renomear é seguro: os preparos apontam pelo id."""
+    tipo = TipoExame.query.get_or_404(tipo_id)
+    nome = request.form.get("nome", "").strip()
+    if not nome:
+        flash("Informe o nome do tipo de exame.", "danger")
+        return redirect(url_for("dono.tipos_exame"))
+    outro = TipoExame.query.filter(func.lower(TipoExame.nome) == nome.lower(), TipoExame.id != tipo.id).first()
+    if outro:
+        flash("Já existe outro tipo de exame com esse nome.", "danger")
+        return redirect(url_for("dono.tipos_exame"))
+    tipo.nome = nome
+    tipo.especialidades = request.form.get("especialidades", "").strip()
+    db.session.commit()
+    flash("Tipo de exame atualizado.", "success")
+    return redirect(url_for("dono.tipos_exame"))
+
+
+@dono_bp.route("/tipos-exame/<int:tipo_id>/alternar", methods=["POST"])
+@login_required
+@dono_required
+def tipos_exame_alternar(tipo_id):
+    """Ativa/inativa um tipo. Inativo some do dropdown de novos preparos,
+    mas os preparos que já o usam continuam com ele (nada é apagado)."""
+    tipo = TipoExame.query.get_or_404(tipo_id)
+    tipo.ativo = not tipo.ativo
+    db.session.commit()
+    flash(f"Tipo \"{tipo.nome}\" {'ativado' if tipo.ativo else 'inativado'}.", "success")
+    return redirect(url_for("dono.tipos_exame"))
+
+
+# ---------- Base de conhecimento compartilhada (a "terceira IA") ----------
+
+LIMITE_ITENS_BASE_NA_TELA = 300
+LIMITE_EMBEDDINGS_POR_CLIQUE = 40
+
+
+def _registrar_historico_base(item, motivo):
+    """Guarda a versão ATUAL (antes de mudar) do item no histórico - permite
+    desfazer uma atualização ruim (decisão do Silvan)."""
+    db.session.add(BaseConhecimentoHistorico(
+        item_id=item.id, pergunta=item.pergunta, resposta=item.resposta,
+        alterado_por_nome=current_user.nome, motivo=motivo,
+    ))
+
+
+@dono_bp.route("/base-conhecimento")
+@login_required
+@dono_required
+def base_conhecimento():
+    """Pedido do Silvan (2026-09-29): gestão da base compartilhada - o
+    interruptor da terceira IA, o provedor de busca, os itens (filtráveis) e
+    um "Testar busca" para calibrar a busca com perguntas reais antes de
+    ligar de vez. Ver app.base_conhecimento e app.models.BaseConhecimentoItem."""
+    config = PlataformaConfig.obter()
+    tipo_id = request.args.get("tipo", type=int)
+    texto = request.args.get("q", "").strip()
+    status = request.args.get("status", "")
+
+    consulta = BaseConhecimentoItem.query
+    if tipo_id:
+        consulta = consulta.filter(BaseConhecimentoItem.tipo_exame_id == tipo_id)
+    if status in ("ativo", "inativo"):
+        consulta = consulta.filter(BaseConhecimentoItem.status == status)
+    if texto:
+        like = f"%{texto}%"
+        consulta = consulta.filter(
+            BaseConhecimentoItem.pergunta.ilike(like) | BaseConhecimentoItem.resposta.ilike(like)
+        )
+    total = consulta.count()
+    itens = consulta.order_by(BaseConhecimentoItem.tipo_exame_id, BaseConhecimentoItem.id).limit(LIMITE_ITENS_BASE_NA_TELA).all()
+
+    teste_pergunta = request.args.get("teste", "").strip()
+    teste_resultados = None
+    if teste_pergunta:
+        teste_resultados = buscar_na_base(teste_pergunta, tipo_exame_id=request.args.get("teste_tipo", type=int), limite=5)
+
+    provedor = provedor_configurado()
+    return render_template(
+        "dono/base_conhecimento.html", config=config, itens=itens, total=total,
+        tipos=tipos_exame_ordenados(),
+        filtro_tipo=tipo_id, filtro_texto=texto, filtro_status=status,
+        provedores=PROVEDORES_BUSCA, provedor_atual=provedor,
+        sem_embedding=BaseConhecimentoItem.query.filter(
+            BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.embedding.is_(None)
+        ).count() if provedor != PROVEDOR_PALAVRA_CHAVE else 0,
+        nao_revisados=BaseConhecimentoItem.query.filter_by(revisado=False).count(),
+        sugestoes_pendentes=BaseConhecimentoSugestao.query.filter_by(status="pendente").count(),
+        teste_pergunta=teste_pergunta, teste_resultados=teste_resultados,
+        limiar_palavra=LIMIAR_PALAVRA_CHAVE, limiar_embedding=LIMIAR_EMBEDDING,
+        limite_tela=LIMITE_ITENS_BASE_NA_TELA,
+    )
+
+
+@dono_bp.route("/base-conhecimento/config", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_config():
+    """Interruptor da terceira IA e provedor de busca (ver
+    PlataformaConfig.base_conhecimento_ativa / base_busca_provedor)."""
+    provedor = request.form.get("base_busca_provedor", PROVEDOR_PALAVRA_CHAVE)
+    if provedor not in PROVEDORES_BUSCA:
+        flash("Provedor de busca inválido.", "danger")
+        return redirect(url_for("dono.base_conhecimento"))
+    config = PlataformaConfig.obter()
+    mudou_provedor = config.base_busca_provedor != provedor
+    config.base_conhecimento_ativa = request.form.get("base_conhecimento_ativa") == "on"
+    config.base_aprendizado_ativo = request.form.get("base_aprendizado_ativo") == "on"
+    config.base_busca_provedor = provedor
+    db.session.commit()
+    flash(
+        "Configuração da base de conhecimento salva."
+        + (" Como o provedor mudou, use \"Calcular vetores de busca\" para os itens existentes." if mudou_provedor and provedor != PROVEDOR_PALAVRA_CHAVE else ""),
+        "success",
+    )
+    return redirect(url_for("dono.base_conhecimento"))
+
+
+@dono_bp.route("/base-conhecimento/novo", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_novo():
+    tipo_id = request.form.get("tipo_exame_id", type=int)
+    pergunta = request.form.get("pergunta", "").strip()
+    resposta = request.form.get("resposta", "").strip()
+    if not tipo_id or not TipoExame.query.get(tipo_id):
+        flash("Escolha o tipo de exame.", "danger")
+        return redirect(url_for("dono.base_conhecimento"))
+    if not pergunta or not resposta:
+        flash("Pergunta e resposta são obrigatórias.", "danger")
+        return redirect(url_for("dono.base_conhecimento", tipo=tipo_id))
+    item = BaseConhecimentoItem(
+        tipo_exame_id=tipo_id, pergunta=pergunta, resposta=resposta,
+        fonte_nome=request.form.get("fonte_nome", "").strip() or None,
+        fonte_url=request.form.get("fonte_url", "").strip() or None,
+        origem="dono", status="ativo", revisado=True,
+        autor_usuario_id=current_user.id, autor_nome=current_user.nome,
+    )
+    db.session.add(item)
+    db.session.flush()
+    atualizar_embedding_do_item(item)
+    db.session.commit()
+    flash("Item adicionado à base de conhecimento.", "success")
+    return redirect(url_for("dono.base_conhecimento", tipo=tipo_id))
+
+
+@dono_bp.route("/base-conhecimento/sugestoes")
+@login_required
+@dono_required
+def base_sugestoes():
+    """Fila de sugestões dos médicos (alteração de item ou item novo)."""
+    pendentes = BaseConhecimentoSugestao.query.filter_by(status="pendente").order_by(BaseConhecimentoSugestao.criado_em).all()
+    decididas = BaseConhecimentoSugestao.query.filter(BaseConhecimentoSugestao.status != "pendente").order_by(
+        BaseConhecimentoSugestao.decidido_em.desc()).limit(30).all()
+    return render_template("dono/base_sugestoes.html", pendentes=pendentes, decididas=decididas)
+
+
+def _notificar_autor_sugestao(sug, texto):
+    if sug.autor_usuario_id:
+        db.session.add(Notificacao(
+            usuario_id=sug.autor_usuario_id, tipo="sugestao_base", titulo="Sua sugestão para o FAQ do MedIA",
+            mensagem=texto, link_endpoint="medico.base_compartilhada",
+        ))
+
+
+@dono_bp.route("/base-conhecimento/sugestoes/<int:sug_id>/aprovar", methods=["POST"])
+@login_required
+@dono_required
+def base_sugestao_aprovar(sug_id):
+    """Aplica a sugestão (o dono pode ajustar o texto antes). Alteração: guarda
+    a versão anterior no histórico. Item novo: entra já revisado."""
+    sug = BaseConhecimentoSugestao.query.get_or_404(sug_id)
+    if sug.status != "pendente":
+        flash("Esta sugestão já foi analisada.", "info")
+        return redirect(url_for("dono.base_sugestoes"))
+    pergunta = request.form.get("pergunta", "").strip() or sug.pergunta
+    resposta = request.form.get("resposta", "").strip() or sug.resposta
+    item = sug.item
+    if item:
+        _registrar_historico_base(item, f"Sugestão do médico {sug.autor_nome or ''} aprovada".strip())
+        item.pergunta, item.resposta = pergunta, resposta
+        item.revisado = True
+    else:
+        item = BaseConhecimentoItem(
+            tipo_exame_id=sug.tipo_exame_id, pergunta=pergunta, resposta=resposta, origem="medico",
+            status="ativo", revisado=True, autor_usuario_id=sug.autor_usuario_id, autor_nome=sug.autor_nome,
+        )
+        db.session.add(item)
+        db.session.flush()
+    atualizar_embedding_do_item(item)
+    sug.status = "aprovada"
+    sug.decidido_em = datetime.utcnow()
+    sug.resposta_dono = request.form.get("resposta_dono", "").strip() or None
+    _notificar_autor_sugestao(sug, "Sua sugestão foi aprovada e já está no FAQ do MedIA.")
+    db.session.commit()
+    flash("Sugestão aprovada e aplicada à base.", "success")
+    return redirect(url_for("dono.base_sugestoes"))
+
+
+@dono_bp.route("/base-conhecimento/sugestoes/<int:sug_id>/rejeitar", methods=["POST"])
+@login_required
+@dono_required
+def base_sugestao_rejeitar(sug_id):
+    sug = BaseConhecimentoSugestao.query.get_or_404(sug_id)
+    if sug.status != "pendente":
+        flash("Esta sugestão já foi analisada.", "info")
+        return redirect(url_for("dono.base_sugestoes"))
+    sug.status = "rejeitada"
+    sug.decidido_em = datetime.utcnow()
+    sug.resposta_dono = request.form.get("resposta_dono", "").strip() or None
+    _notificar_autor_sugestao(sug, "Sua sugestão não foi aceita." + (f" Motivo: {sug.resposta_dono}" if sug.resposta_dono else ""))
+    db.session.commit()
+    flash("Sugestão rejeitada.", "success")
+    return redirect(url_for("dono.base_sugestoes"))
+
+
+@dono_bp.route("/base-conhecimento/<int:item_id>/editar", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_editar(item_id):
+    """Edita pergunta/resposta/fonte/tipo. Se o texto mudou, guarda a versão
+    anterior no histórico e recalcula o vetor de busca. Editar pelo dono já
+    conta como revisado."""
+    item = BaseConhecimentoItem.query.get_or_404(item_id)
+    pergunta = request.form.get("pergunta", "").strip()
+    resposta = request.form.get("resposta", "").strip()
+    tipo_id = request.form.get("tipo_exame_id", type=int)
+    if not pergunta or not resposta:
+        flash("Pergunta e resposta são obrigatórias.", "danger")
+        return redirect(url_for("dono.base_conhecimento", tipo=item.tipo_exame_id))
+    if not tipo_id or not TipoExame.query.get(tipo_id):
+        tipo_id = item.tipo_exame_id
+
+    texto_mudou = pergunta != item.pergunta or resposta != item.resposta
+    if texto_mudou:
+        _registrar_historico_base(item, "Edição pelo dono")
+        item.pergunta = pergunta
+        item.resposta = resposta
+    item.tipo_exame_id = tipo_id
+    item.fonte_nome = request.form.get("fonte_nome", "").strip() or None
+    item.fonte_url = request.form.get("fonte_url", "").strip() or None
+    item.revisado = True
+    if texto_mudou:
+        atualizar_embedding_do_item(item)
+    db.session.commit()
+    flash("Item atualizado.", "success")
+    return redirect(url_for("dono.base_conhecimento", tipo=item.tipo_exame_id))
+
+
+@dono_bp.route("/base-conhecimento/<int:item_id>/alternar", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_alternar(item_id):
+    """Ativa/inativa um item (inativo nunca é usado nas respostas, mas nada
+    é apagado)."""
+    item = BaseConhecimentoItem.query.get_or_404(item_id)
+    item.status = "inativo" if item.status == "ativo" else "ativo"
+    db.session.commit()
+    flash(f"Item {'ativado' if item.status == 'ativo' else 'inativado'}.", "success")
+    return redirect(url_for("dono.base_conhecimento", tipo=item.tipo_exame_id))
+
+
+@dono_bp.route("/base-conhecimento/<int:item_id>/desfazer", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_desfazer(item_id):
+    """Volta o item para a versão anterior mais recente do histórico (a
+    versão atual também é guardada, então dá para "refazer")."""
+    item = BaseConhecimentoItem.query.get_or_404(item_id)
+    anterior = item.historico[0] if item.historico else None
+    if not anterior:
+        flash("Este item não tem versão anterior.", "warning")
+        return redirect(url_for("dono.base_conhecimento", tipo=item.tipo_exame_id))
+    pergunta_antiga, resposta_antiga = anterior.pergunta, anterior.resposta
+    _registrar_historico_base(item, "Antes de desfazer")
+    item.pergunta = pergunta_antiga
+    item.resposta = resposta_antiga
+    atualizar_embedding_do_item(item)
+    db.session.commit()
+    flash("Item voltou para a versão anterior.", "success")
+    return redirect(url_for("dono.base_conhecimento", tipo=item.tipo_exame_id))
+
+
+@dono_bp.route("/base-conhecimento/<int:item_id>/revisar", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_revisar(item_id):
+    item = BaseConhecimentoItem.query.get_or_404(item_id)
+    item.revisado = True
+    db.session.commit()
+    flash("Item marcado como revisado.", "success")
+    return redirect(url_for("dono.base_conhecimento", tipo=item.tipo_exame_id))
+
+
+@dono_bp.route("/base-conhecimento/calcular-vetores", methods=["POST"])
+@login_required
+@dono_required
+def base_conhecimento_calcular_vetores():
+    """Calcula o vetor de busca dos itens ativos que ainda não têm (ou que
+    vieram de outro modelo), no provedor de embeddings atual. Limite por
+    clique de propósito (cada item é uma chamada de rede - mesma lição do 502
+    de "Gerar cobranças do ano"): se sobrar, basta clicar de novo."""
+    provedor = provedor_configurado()
+    if provedor == PROVEDOR_PALAVRA_CHAVE:
+        flash("O provedor atual é palavra-chave e não usa vetores. Escolha OpenAI ou Gemini primeiro.", "warning")
+        return redirect(url_for("dono.base_conhecimento"))
+    pendentes = BaseConhecimentoItem.query.filter(
+        BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.embedding.is_(None)
+    ).limit(LIMITE_EMBEDDINGS_POR_CLIQUE + 1).all()
+    if not pendentes:
+        flash("Todos os itens ativos já têm vetor de busca.", "success")
+        return redirect(url_for("dono.base_conhecimento"))
+    sobra = len(pendentes) > LIMITE_EMBEDDINGS_POR_CLIQUE
+    ok = falhas = 0
+    for item in pendentes[:LIMITE_EMBEDDINGS_POR_CLIQUE]:
+        if atualizar_embedding_do_item(item, provedor):
+            ok += 1
+        else:
+            falhas += 1
+            if falhas >= 3 and ok == 0:
+                break  # provavelmente sem chave/credencial - não insistir item por item
+    db.session.commit()
+    if ok == 0 and falhas:
+        flash("Não foi possível calcular os vetores. Verifique se a chave de API do provedor está configurada.", "danger")
+    else:
+        flash(
+            f"{ok} vetor(es) calculado(s)" + (f", {falhas} falhou(aram)" if falhas else "")
+            + (". Ainda há itens pendentes: clique de novo." if sobra else "."),
+            "success" if not falhas else "warning",
+        )
+    return redirect(url_for("dono.base_conhecimento"))
 
 
 @dono_bp.route("/custo-ia")

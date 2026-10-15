@@ -25,15 +25,23 @@ def checar(nome, condicao):
     assert condicao, nome
 
 
-def login(email, senha):
-    return client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
+def login(email, senha, grupo=None):
+    r = client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
+    if grupo:
+        # Quem tem vínculo com mais de um grupo precisa escolher em qual está
+        # trabalhando antes de usar a área de equipe (/equipe/clinica).
+        from app.models import Grupo
+        with app.app_context():
+            grupo_id = Grupo.query.filter_by(nome=grupo).first().id
+        r = client.post("/equipe/clinica", data={"clinica_id": str(grupo_id)}, follow_redirects=True)
+    return r
 
 
 with app.app_context():
     total_notif_antes = Notificacao.query.count()
 
 # --- Resposta do "Fale com a gente" gera notificação ---
-login("medico@clinicavitoria.com", "123456")
+login("medico@clinicavitoria.com", "123456", grupo="Clínica Vitória")
 client.post(
     "/equipe/fale-com-a-gente",
     data={"categoria": "duvida", "mensagem": "Onde vejo o histórico de pagamentos?"},
@@ -65,11 +73,13 @@ with app.app_context():
     notif_resposta_id = notif_resposta.id
 
 # O sininho (via context processor) mostra a contagem de não lidas.
-login("medico@clinicavitoria.com", "123456")
+login("medico@clinicavitoria.com", "123456", grupo="Clínica Vitória")
 r = client.get("/equipe/")
 html = r.get_data(as_text=True)
 checar("Painel do médico responde 200 com a notificação pendente", r.status_code == 200)
-checar("Sininho mostra o badge de não lida", 'bg-danger rounded-pill' in html)
+# (o link "Marcar todas como lidas" só aparece quando há não lida - não
+# depende da ordem das classes CSS do badge, que já mudou uma vez)
+checar("Sininho mostra o badge de não lida", "Marcar todas como lidas" in html)
 checar("Título da notificação aparece no dropdown", "Resposta do" in html)
 
 # Abrir a notificação marca como lida e redireciona pro link_endpoint.

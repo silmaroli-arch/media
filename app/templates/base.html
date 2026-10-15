@@ -90,8 +90,10 @@
 </head>
 <body>
 {% set eh_staff_logado = current_user.is_authenticated and current_user.is_staff %}
+{# 2026-10-01: o dono também passa a ter a barra lateral (mesmo molde do médico). #}
+{% set mostrar_sidebar = current_user.is_authenticated and (current_user.is_staff or current_user.is_dono) %}
 <div class="d-flex">
-  {% if eh_staff_logado %}
+  {% if mostrar_sidebar %}
   {# Restruturação de 2026-09 (pedido do Silvan): "Exames", "Exames &
      Preparo" e "Associar exames entre filiais" viraram uma única tela
      ("Modelos de preparo" - ver medico.preparo_modelos_novo). As rotas
@@ -117,7 +119,82 @@
        incondicionalmente. As rotas em si não mudam nem ficam bloqueadas
        - dá pra chegar nelas por link direto se precisar, só não aparecem
        no menu do celular do médico. #}
-    {% set oculto_no_celular_do_medico = "d-none d-md-block" if current_user.tipo == "medico" else "" %}
+    {# 2026-10-01 (pedido do Silvan): o menu do celular do médico passou a ser
+       IGUAL ao do sistema web (mesmos itens, mesma ordem) - por isso nenhum item
+       fica mais oculto no celular. A variável continua existindo (vazia) só para
+       não precisar mexer em cada item. A única exceção é "Exames & preparo", que
+       no celular leva à tela de aviso/importar PDF (ver mais abaixo). #}
+    {% set oculto_no_celular_do_medico = "" %}
+    {% if current_user.is_dono %}
+    {# Menu do DONO (2026-10-01, pedido do Silvan): mesmo molde do menu do médico
+       (barra lateral em gaveta). As seções que são abas de dono/dashboard.html
+       levam uma âncora (#painel-...) que a própria tela abre. #}
+    <ul class="nav nav-pills flex-column">
+      {% set ep_dono = request.endpoint or '' %}
+      {% set hash_dono = '' %}
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono == 'dono.dashboard' %}active{% endif %}" href="{{ url_for('dono.dashboard') }}#painel-visao-geral" data-painel="#painel-visao-geral">
+          <i class="bi bi-speedometer2 me-2"></i>Visão geral
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link" href="{{ url_for('dono.dashboard') }}#painel-usuarios" data-painel="#painel-usuarios">
+          <i class="bi bi-people me-2"></i>Usuários
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link" href="{{ url_for('dono.dashboard') }}#painel-grupos" data-painel="#painel-grupos">
+          <i class="bi bi-diagram-3 me-2"></i>Grupos
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono == 'dono.usuarios' or ep_dono.startswith('dono.usuario_licenca') %}active{% endif %}" href="{{ url_for('dono.usuarios') }}">
+          <i class="bi bi-cash-coin me-2"></i>Licenças
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.mensagens_suporte') %}active{% endif %}" href="{{ url_for('dono.mensagens_suporte') }}">
+          <i class="bi bi-chat-dots me-2"></i>Mensagens
+          {% if mensagens_suporte_novas %}<span class="badge bg-danger rounded-pill ms-1">{{ mensagens_suporte_novas }}</span>{% endif %}
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.anuncio') %}active{% endif %}" href="{{ url_for('dono.anuncios') }}">
+          <i class="bi bi-megaphone me-2"></i>Anúncios
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.tipos_exame') or ep_dono.startswith('dono.tipo_') %}active{% endif %}" href="{{ url_for('dono.tipos_exame') }}">
+          <i class="bi bi-clipboard2-pulse me-2"></i>Tipos de exame{% if tipos_sugeridos_pendentes %} <span class="badge bg-warning text-dark">{{ tipos_sugeridos_pendentes }}</span>{% endif %}
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.base_') %}active{% endif %}" href="{{ url_for('dono.base_conhecimento') }}">
+          <i class="bi bi-journal-medical me-2"></i>FAQ do MedIA
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link" href="{{ url_for('dono.dashboard') }}#painel-custo-ia" data-painel="#painel-custo-ia">
+          <i class="bi bi-robot me-2"></i>Custo de IA
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link" href="{{ url_for('dono.dashboard') }}#painel-config" data-painel="#painel-config">
+          <i class="bi bi-sliders me-2"></i>Configurações
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.ferramentas') %}active{% endif %}" href="{{ url_for('dono.ferramentas_performance') }}">
+          <i class="bi bi-speedometer me-2"></i>Ferramentas
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono == 'auth.meus_dados' %}active{% endif %}" href="{{ url_for('auth.meus_dados') }}">
+          <i class="bi bi-person-circle me-2"></i>Meus dados
+        </a>
+      </li>
+    </ul>
+    {% else %}
     <ul class="nav nav-pills flex-column">
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint == 'medico.dashboard' %}active{% endif %}" href="{{ url_for('medico.dashboard') }}">
@@ -137,10 +214,15 @@
         </a>
       </li>
 
-      {# Pedido do Silvan (2026-09-10, revisado com a nova ordem de menu):
-         "Primeiros passos" saiu do menu lateral (o checklist/atalho em si
-         continua existindo em medico.primeiros_passos, só não tem mais
-         link fixo aqui). #}
+      {# "Primeiros passos" voltou ao menu lateral (pedido do Silvan,
+         2026-10-01), logo abaixo de "Meus dados", para quem sair da tela
+         conseguir voltar ao checklist (antes, 2026-09-10, tinha saído do
+         menu). Médico no celular usa a cópia d-md-none mais abaixo. #}
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint == 'medico.primeiros_passos' %}active{% endif %}" href="{{ url_for('medico.primeiros_passos') }}">
+          <i class="bi bi-list-check me-2"></i>Primeiros passos
+        </a>
+      </li>
 
       {# Reorganização de menus (pedido do Silvan, 2026-09-10, ajustada em
          2026-09-11): ordem fixa Painel / Meus dados / Exames & preparo /
@@ -149,11 +231,21 @@
          Grupos de trabalho / Minha licença ("Médico + IA" foi removido -
          ver comentário mais abaixo). #}
 
-      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+      <li class="nav-item mb-1 {% if current_user.tipo == 'medico' %}d-none d-md-block{% endif %}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">
           <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
         </a>
       </li>
+      {% if current_user.tipo == 'medico' %}
+      {# Cópia do celular (mesma posição do menu): no celular o cadastro manual
+         completo é feito pela versão web, então leva a uma tela que explica isso
+         e permite importar um PDF (ver medico.preparo_modelos_aviso_mobile). #}
+      <li class="nav-item mb-1 d-md-none">
+        <a class="nav-link {% if request.endpoint == 'medico.preparo_modelos_aviso_mobile' %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_aviso_mobile') }}">
+          <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
+        </a>
+      </li>
+      {% endif %}
 
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">
@@ -225,9 +317,17 @@
 
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.faq') %}active{% endif %}" href="{{ url_for('medico.faq_lista') }}">
-          <i class="bi bi-journal-text me-2"></i>Base de conhecimento
+          <i class="bi bi-journal-text me-2"></i>Meu FAQ
         </a>
       </li>
+
+      {% if current_user.tipo == 'medico' %}
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.base_compartilhada') %}active{% endif %}" href="{{ url_for('medico.base_compartilhada') }}">
+          <i class="bi bi-journal-medical me-2"></i>FAQ do MedIA
+        </a>
+      </li>
+      {% endif %}
 
       {# O menu "Médico + IA" (submenu colapsável com "Perguntas dos
          pacientes" e "Testar IA nos meus preparos") foi removido a
@@ -263,44 +363,9 @@
       </li>
 
       {% if current_user.tipo == "medico" %}
-      {# Versões mobile de "Meus dados", "Pacientes" e "Agendar exame"
-         (pedido do Silvan, 2026-09-10): esses 3 itens ficam ocultos no
-         menu reduzido do celular do médico (ver oculto_no_celular_do_medico
-         nos itens "completos" mais acima), então precisam desta cópia,
-         mesmo padrão já usado para "Portal de atendimento" e "Testar IA"
-         logo abaixo - só aparecem em telas pequenas (d-md-none). #}
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint == 'auth.meus_dados' %}active{% endif %}" href="{{ url_for('auth.meus_dados') }}">
-          <i class="bi bi-person-circle me-2"></i>Meus dados
-        </a>
-      </li>
-
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">
-          <i class="bi bi-journal-plus me-2"></i>Pacientes
-        </a>
-      </li>
-
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint == 'medico.agenda_novo' %}active{% endif %}" href="{{ url_for('medico.agenda_novo') }}">
-          <i class="bi bi-calendar-plus me-2"></i>Agendar exame
-        </a>
-      </li>
-
-      {# "Exames & preparo" no celular (pedido do Silvan, 2026-09-10): NÃO
-         leva direto para a tela de cadastro/edição (medico.preparo_
-         modelos_lista, usada em tablet/desktop dentro do item "completo"
-         mais acima) - leva para uma tela que explica que o cadastro
-         manual completo deve ser feito pela versão web (mais delicado,
-         o médico poderia se perder ali), mas que já permite importar um
-         PDF direto por ali (pedido do Silvan, 2026-09-11 - ver
-         medico.preparo_modelos_aviso_mobile). #}
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint == 'medico.preparo_modelos_aviso_mobile' %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_aviso_mobile') }}">
-          <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
-        </a>
-      </li>
-
+      {# As cópias mobile de "Meus dados", "Primeiros passos", "Pacientes" e
+         "Agendar exame" foram removidas em 2026-10-01: o menu do celular agora
+         é igual ao do web (ver comentário no topo do menu). #}
       {# A versão mobile do link "Portal de atendimento rápido" que existia
          aqui foi removida em 2026-09-11: o item agora é direto no menu
          (logo abaixo de "Meus exames agendados", fora do submenu "Médico
@@ -327,6 +392,7 @@
          as rotas (relatorios.index/agenda/pacientes/desempenho_medico)
          continuam existindo, só sem link no menu. #}
     </ul>
+    {% endif %}
   </nav>
   {# Fundo escurecido atrás da gaveta do menu - toque nele fecha o menu
      (ver CSS/JS: só aparece quando body tem a classe "sidebar-open"). #}
@@ -337,7 +403,7 @@
     {% if current_user.is_authenticated %}
     <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom bg-white no-print">
       <div class="d-flex align-items-center">
-        {% if eh_staff_logado %}
+        {% if mostrar_sidebar %}
         <button type="button" id="sidebarToggleBtn" class="btn btn-sm btn-outline-secondary sidebar-toggle-btn me-2"
                 title="Abrir/fechar o menu">
           <i class="bi bi-list"></i>
@@ -488,8 +554,34 @@
   </div>
 </div>
 
+{% if popup_boas_vindas %}
+<div class="modal fade" id="modalBoasVindas" tabindex="-1" aria-labelledby="modalBoasVindasTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalBoasVindasTitulo"><i class="bi bi-stars me-2"></i>{{ popup_boas_vindas.titulo }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0">{{ popup_boas_vindas.texto }}</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Entendi</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-{% if eh_staff_logado %}
+{% if popup_boas_vindas %}
+<script>
+window.addEventListener('load', function () {
+  var el = document.getElementById('modalBoasVindas');
+  if (el && window.bootstrap) { new bootstrap.Modal(el).show(); }
+});
+</script>
+{% endif %}
+{% if mostrar_sidebar %}
 <script>
   // Menu lateral em gaveta (off-canvas), em qualquer tamanho de tela: fica
   // escondido por padrão a cada carregamento de página e abre por cima do

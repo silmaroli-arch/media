@@ -143,7 +143,7 @@ with app.app_context():
     # rascunho final (dela) precisa de revisão.
     def side_effect_uma_ia_medicamento(nome_provedor, *args, **kwargs):
         if nome_provedor == "Claude":
-            return (resposta_medicamento_texto, "chamada-fake", True, False, True)
+            return (resposta_medicamento_texto, SimpleNamespace(), True, False, True)
         return (None, None, False, False, False)
 
     with patch("app.ia_preparo._tentar_provedor", side_effect=side_effect_uma_ia_medicamento):
@@ -156,7 +156,7 @@ with app.app_context():
     # não muda).
     def side_effect_duas_ias_normal(nome_provedor, *args, **kwargs):
         if nome_provedor in ("Claude", "ChatGPT"):
-            return ("Água pura é permitida durante o jejum.", "chamada-fake", True, False, False)
+            return ("Água pura é permitida durante o jejum.", SimpleNamespace(), True, False, False)
         return (None, None, False, False, False)
 
     with patch("app.ia_preparo._tentar_provedor", side_effect=side_effect_duas_ias_normal):
@@ -195,7 +195,10 @@ with app.app_context():
     try:
         login_paciente("123.456.789-00", "1985-04-12")
 
-        pergunta_medicamento_web = "[teste-medicamento-web] Posso tomar nimesulida antes do exame?"
+        # A marca do teste NÃO pode conter "medicamento": essa palavra casa
+        # com a categoria "medicamento antiplaquetário" do Clopidogrel (seed.py)
+        # e a resposta pronta do preparo responderia antes da IA.
+        pergunta_medicamento_web = "[teste-mnc-web] Posso tomar nimesulida antes do exame?"
         resultado_ia_medicamento = {
             "final": resposta_medicamento_texto,
             "por_provedor": {"Claude": resposta_medicamento_texto, "ChatGPT": None, "Gemini": None},
@@ -211,7 +214,8 @@ with app.app_context():
             ).get_data(as_text=True)
         checar(
             "Web, aprovação geral desativada, resposta com marcador -> NÃO vai direto ao paciente",
-            "nimesulida" not in resposta_web.lower(),
+            # a tela repete a própria pergunta do paciente - só a resposta não pode citar o remédio
+            "nimesulida" not in resposta_web.lower().replace(pergunta_medicamento_web.lower(), ""),
         )
         pendente_medicamento = (
             PerguntaPendente.query.filter_by(paciente_id=joao.id, pergunta=pergunta_medicamento_web)
@@ -228,7 +232,7 @@ with app.app_context():
 
         # Regressão: resposta normal (sem o marcador), mesma aprovação
         # geral desativada -> continua indo direto, como sempre.
-        pergunta_normal_web = "[teste-medicamento-web] Esta pergunta não tem nada a ver com medicamento não cadastrado"
+        pergunta_normal_web = "[teste-mnc-web] Esta pergunta não tem nada a ver com remédio fora do cadastro"
         resultado_ia_normal = {
             "final": "Resposta normal da IA, sem nenhum problema de cadastro.",
             "por_provedor": {"Claude": "Resposta normal da IA, sem nenhum problema de cadastro.", "ChatGPT": None, "Gemini": None},
@@ -327,7 +331,7 @@ with app.app_context():
             "exige_revisao_medicamento": False,
         }
         with patch("app.whatsapp_conversa.responder_com_ia", return_value=resultado_ia_normal_zap):
-            resposta_zap_normal = processar_mensagem(telefone_medicamento, "Outra pergunta qualquer, sem relação com medicamento não cadastrado")
+            resposta_zap_normal = processar_mensagem(telefone_medicamento, "Outra pergunta qualquer, sem relação com remédio fora do cadastro")
         checar(
             "WhatsApp, aprovação geral desativada, resposta SEM marcador -> vai direto ao paciente (regressão)",
             "resposta normal da ia" in resposta_zap_normal.lower(),
@@ -335,5 +339,28 @@ with app.app_context():
     finally:
         clinica_vitoria.aprovacao_perguntas_paciente = valor_original_aprovacao_zap
         db.session.commit()
+
+# ---------- Palavra genérica "medicamento" não casa com a categoria ----------
+# Caso real (2026-10-14): "Posso tomar esse medicamento nimesulida?" recebia
+# a resposta pronta sobre suspender o Clopidogrel, porque a categoria dele no
+# seed.py é "medicamento antiplaquetário" (ver
+# app.faq_engine._PALAVRAS_GENERICAS_MEDICAMENTO).
+from app.faq_engine import buscar_resposta_medicamento
+
+with app.app_context():
+    clinica_vitoria = Grupo.query.filter_by(nome="Clínica Vitória").first()
+    colonoscopia = Exame.query.filter_by(grupo_id=clinica_vitoria.id, nome="Colonoscopia").first()
+    checar(
+        "Pergunta sobre medicamento NÃO cadastrado, só com a palavra 'medicamento', não recebe resposta pronta",
+        buscar_resposta_medicamento("Posso tomar esse medicamento nimesulida?", colonoscopia) is None,
+    )
+    checar(
+        "'Posso tomar meu medicamento?' (genérico demais) não recebe resposta pronta",
+        buscar_resposta_medicamento("Posso tomar meu medicamento?", colonoscopia) is None,
+    )
+    resposta_categoria = buscar_resposta_medicamento("Posso tomar meu antiplaquetário?", colonoscopia) or ""
+    checar("A categoria específica continua sendo reconhecida (antiplaquetário -> Clopidogrel)", "Clopidogrel" in resposta_categoria)
+    resposta_marca = buscar_resposta_medicamento("Posso tomar o remédio Xarelto?", colonoscopia) or ""
+    checar("A marca continua sendo reconhecida mesmo com 'remédio' na frase", "Xarelto" in resposta_marca)
 
 print("\nTodos os testes da revisão obrigatória para medicamento não cadastrado passaram.")

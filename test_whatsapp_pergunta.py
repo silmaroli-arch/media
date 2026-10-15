@@ -148,7 +148,7 @@ with app.app_context():
     checar("Mesmo assim devolve a resposta já cadastrada na FAQ", "água pura é permitida" in resposta)
 
     with patch("app.whatsapp_conversa.responder_com_ia", return_value=None) as ia_mock2:
-        processar_mensagem(telefone, "Essa pergunta aqui não bate com nenhuma FAQ nem alimento nem medicamento cadastrado")
+        processar_mensagem(telefone, "Essa pergunta aqui não bate com nenhuma FAQ nem alimento nem remédio cadastrado")
     checar("Pergunta sem correspondência na FAQ/alimento/medicamento AINDA chama a IA", ia_mock2.called)
 
     print("\nTodos os testes de pergunta livre por WhatsApp (passo 5) passaram.")

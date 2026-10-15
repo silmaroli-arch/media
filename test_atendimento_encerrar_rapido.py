@@ -26,8 +26,16 @@ def checar(nome, condicao):
     assert condicao, nome
 
 
-def login(email, senha):
-    return client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
+def login(email, senha, grupo=None):
+    r = client.post("/login", data={"email": email, "senha": senha}, follow_redirects=True)
+    if grupo:
+        # Quem tem vínculo com mais de um grupo precisa escolher em qual está
+        # trabalhando antes de usar a área de equipe (/equipe/clinica).
+        from app.models import Grupo
+        with app.app_context():
+            grupo_id = Grupo.query.filter_by(nome=grupo).first().id
+        r = client.post("/equipe/clinica", data={"clinica_id": str(grupo_id)}, follow_redirects=True)
+    return r
 
 
 with app.app_context():
@@ -37,7 +45,7 @@ with app.app_context():
     agendamento_id = agendamento.id
     nota_original = agendamento.notas_atendimento
 
-login("medico@clinicavitoria.com", "123456")
+login("medico@clinicavitoria.com", "123456", grupo="Clínica Vitória")
 
 r = client.get("/equipe/medico-agenda")
 html = r.get_data(as_text=True)
@@ -75,7 +83,7 @@ with app.app_context():
     hemograma = Exame.query.filter_by(nome="Hemograma").first()
     agendamento_sp = Agendamento.query.filter(Agendamento.exame_id != colonoscopia.id).first()
 
-login("medico@gruposaude.com", "123456")
+login("medico@gruposaude.com", "123456", grupo="Grupo Saúde Total - Centro")
 r = client.post(f"/equipe/agenda/{agendamento_id}/encerrar-rapido")
 checar("Médico de outro grupo recebe 404 ao tentar encerrar agendamento fora do escopo", r.status_code == 404)
 client.get("/logout")

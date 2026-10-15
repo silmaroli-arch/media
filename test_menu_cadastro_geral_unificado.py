@@ -53,20 +53,22 @@ checar("Menu 'Médico' não existe mais (virou item direto)", ">Médico<" not in
 checar("Menu tem o item direto 'Meus exames agendados'", "Meus exames agendados" in menu)
 checar("Menu não contém mais 'Minha agenda em todos os locais'", "Minha agenda em todos os locais" not in menu)
 checar("Menu 'Relatórios' não existe mais", ">Relatórios<" not in menu)
-checar("Menu 'IA' virou 'Médico + IA'", ">Médico + IA<" in menu and ">IA<" not in menu)
+# O submenu "Médico + IA" também deixou de existir (seus itens viraram
+# itens diretos - ver HANDOFF_CHAT.md, 6ª rodada).
+checar("Menu 'Médico + IA' não existe mais (nem o antigo 'IA')", "Médico + IA" not in menu and ">IA<" not in menu)
 
-# Ordem no menu lateral: Grupos de trabalho > Pacientes > Meus exames
-# agendados > Configuração de exames > Médico + IA.
-idx_grupos = menu.find("Grupos de trabalho")
-idx_pacientes = menu.find("Pacientes")
-idx_exames_agendados = menu.find("Meus exames agendados")
-idx_config_exames = menu.find("Configuração de exames")
-idx_medico_ia = menu.find("Médico + IA")
+# Ordem do menu lateral definida pelo Silvan em 2026-10-01 (mesma no
+# computador e no celular; a secretária não vê "FAQ do MedIA" nem
+# "Minha licença", que são só do médico).
+ordem_esperada = [
+    "Painel", "Meus dados", "Primeiros passos", "Exames &amp; preparo", "Pacientes",
+    "Agendar exame", "Meus exames agendados", "Portal de atendimento rápido",
+    "Últimas respondidas", "Meu FAQ", "Grupos de trabalho", "Fale com a gente",
+]
+posicoes = [menu.find(item) for item in ordem_esperada]
 checar(
     "Ordem do menu lateral é a esperada",
-    idx_grupos != -1 and idx_pacientes != -1 and idx_exames_agendados != -1
-    and idx_config_exames != -1 and idx_medico_ia != -1
-    and idx_grupos < idx_pacientes < idx_exames_agendados < idx_config_exames < idx_medico_ia,
+    -1 not in posicoes and posicoes == sorted(posicoes),
 )
 
 # Dados Cadastrais e Dados Fiscais têm botão "Cancelar" voltando pra lista de locais.

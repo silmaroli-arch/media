@@ -14,6 +14,11 @@ from app.extensions import db
 from app.models import Usuario, Grupo, Paciente, Exame, Agendamento
 
 app = create_app()
+EXTRA_CADASTRO = {
+    "senha_confirmacao": "123456", "telefone": "(27) 99999-1234", "cep": "29010-000", "rua": "Rua A",
+    "numero": "1", "bairro": "Centro", "cidade": "Vitoria", "uf": "ES",
+}
+
 client = app.test_client()
 
 
@@ -80,7 +85,7 @@ client.get("/logout")
 
 # ---------- Médico fundador COM todas as permissões: agenda continua só a dele ----------
 
-r = client.post("/cadastro", data={
+r = client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Dr. Fundador Agenda",
     "cpf": "852.963.741-00", "crm_numero": "66666", "crm_uf": "ES",
     "data_nascimento": "10/05/1980",

@@ -5,6 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_user, logout_user, login_required, current_user
 
 from app.extensions import db
+from app.especialidades import ESPECIALIDADES, especialidade_valida
 from app.models import Usuario, Paciente, PlataformaConfig, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
 from app.whatsapp_envio import enviar_boas_vindas_whatsapp
 # `proximo_seguro` mora em clinica_utils.py (compartilhado com
@@ -14,6 +15,23 @@ from app.whatsapp_envio import enviar_boas_vindas_whatsapp
 from app.clinica_utils import proximo_seguro as _proximo_seguro
 
 auth_bp = Blueprint("auth", __name__)
+
+
+@auth_bp.app_context_processor
+def _injetar_popup_boas_vindas():
+    """Se o cadastro acabou de acontecer, entrega o texto do popup UMA vez
+    (o marcador da sessão é consumido na primeira página renderizada)."""
+    if session.pop("mostrar_boas_vindas", False) and current_user.is_authenticated:
+        from app.boas_vindas import titulo_boas_vindas, texto_boas_vindas
+
+        return {"popup_boas_vindas": {"titulo": titulo_boas_vindas(), "texto": texto_boas_vindas(current_user.nome)}}
+    return {}
+
+
+@auth_bp.app_context_processor
+def _injetar_especialidades():
+    """Lista do dropdown de especialidade (cadastro e Meus dados)."""
+    return {"ESPECIALIDADES": ESPECIALIDADES}
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
@@ -271,6 +289,12 @@ def meus_dados():
             flash("CPF inválido — confira os números digitados.", "danger")
             return render_template("auth/meus_dados.html", confirmado=True)
 
+        # Telefone é obrigatório para o MÉDICO (2026-09-30): é por ele que a
+        # plataforma manda a mensagem de boas-vindas e os avisos por WhatsApp.
+        if current_user.tipo == "medico" and not re.sub(r"\D", "", request.form.get("telefone", "")):
+            flash("O telefone é obrigatório para médicos.", "danger")
+            return render_template("auth/meus_dados.html", confirmado=True)
+
         if telefone_incompleto(request.form.get("telefone", "")):
             flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
             return render_template("auth/meus_dados.html", confirmado=True)
@@ -317,6 +341,8 @@ def meus_dados():
         current_user.email = email
         current_user.cpf = cpf
         current_user.data_nascimento = data_nascimento
+        if current_user.tipo == "medico":
+            current_user.especialidade = especialidade_valida(request.form.get("especialidade"))
         current_user.telefone = normalizar_telefone(request.form.get("telefone", ""))
         current_user.cep = request.form.get("cep", "").strip()
         current_user.rua = request.form.get("rua", "").strip()
@@ -469,6 +495,7 @@ def cadastro():
         usuario.uf = request.form.get("uf", "").strip().upper() or None
         usuario.crm_numero = crm_numero
         usuario.crm_uf = crm_uf
+        usuario.especialidade = especialidade_valida(request.form.get("especialidade")) if papel == "medico" else None
         usuario.data_nascimento = data_nascimento
         # Checkbox "Exigir minha aprovação antes de responder o paciente"
         # (ver auth/cadastro.html) - checkbox desmarcado não manda a
@@ -558,10 +585,24 @@ def cadastro():
                 # dono/suporte).
                 pass
 
-        flash(
-            f"Conta criada com sucesso, {usuario.nome}! Bem-vindo(a) ao MedIA.",
-            "success",
-        )
+        if papel == "medico":
+            # Popup de boas-vindas no primeiro acesso + as mesmas mensagens no
+            # sininho (pedido do Silvan, 2026-09-30 - ver app.boas_vindas).
+            # Falha aqui nunca derruba o cadastro (a conta já foi commitada).
+            try:
+                from app.boas_vindas import criar_notificacoes_boas_vindas
+
+                criar_notificacoes_boas_vindas(usuario)
+                db.session.commit()
+                session["mostrar_boas_vindas"] = True
+            except Exception:
+                db.session.rollback()
+                flash(f"Conta criada com sucesso, {usuario.nome}! Bem-vindo(a) ao MedIA.", "success")
+        else:
+            flash(
+                f"Conta criada com sucesso, {usuario.nome}! Bem-vindo(a) ao MedIA.",
+                "success",
+            )
         # O passo a passo de atalho/modelo de preparo/exame deixou de ser
         # forçado logo após o cadastro - agora é um item de menu
         # ("Primeiros passos", ver medico.primeiros_passos em

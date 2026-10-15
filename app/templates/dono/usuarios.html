@@ -14,12 +14,21 @@
      só a linha do mês; a cobrança em si continua sendo gerada
      individualmente, na hora de cobrar de verdade (ver texto de ajuda
      abaixo). #}
+  <div class="d-flex gap-2">
+  {# Pedido do Silvan (2026-09-29): ver dono.licencas_aplicar_valor_padrao. #}
+  <form method="post" action="{{ url_for('dono.licencas_aplicar_valor_padrao') }}"
+        onsubmit="return confirm('Aplicar o valor padrão (Configurações > Licença de médico) a todos os médicos que estão SEM valor definido, e aos meses em aberto deles? Médicos que já têm valor próprio não serão alterados.');">
+    <button type="submit" class="btn btn-outline-success btn-sm">
+      <i class="bi bi-cash-coin me-1"></i>Aplicar valor padrão a todos
+    </button>
+  </form>
   <form method="post" action="{{ url_for('dono.licencas_gerar_cobrancas_ano') }}"
         onsubmit="return confirm('Garantir o item de pagamento dos meses restantes deste ano (a partir do mês seguinte ao atual) pra todo médico com licença ativa/inadimplente em ciclo mensal? Isso não gera cobrança nenhuma (link/Pix) ainda - só cria a linha do mês.');">
     <button type="submit" class="btn btn-outline-primary btn-sm">
       <i class="bi bi-calendar-plus me-1"></i>Gerar itens do ano para todos
     </button>
   </form>
+  </div>
 </div>
 
 <p class="text-muted small">
