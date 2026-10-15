@@ -2273,6 +2273,14 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 2. **Resposta pronta de medicamento não casa mais por palavra genérica** (`app/faq_engine.py`, `_PALAVRAS_GENERICAS_MEDICAMENTO` = medicamento/remédio/medicação, removidas do nome e da categoria antes de comparar): antes "Posso tomar esse medicamento nimesulida?" recebia a resposta pronta sobre suspender o Clopidogrel (categoria "medicamento antiplaquetário", nota 0,5 = limiar) - e, com a aprovação geral desligada, ia direto ao paciente. Continuam funcionando: "meu antiplaquetário?" -> Clopidogrel, "o remédio Xarelto?" -> Xarelto. Checagens novas no fim de `test_medicamento_nao_cadastrado_revisao.py`.
 3. **`test_smoke_final.py` apagado** (era idêntico ao `test_smoke.py`). As menções a ele nas seções antigas deste documento ficam como registro histórico.
 
+## Aviso de agendamento por WhatsApp: "digite o seu CPF" (2026-10-15, pedido do Silvan)
+
+- Pedido: terminar o aviso de agendamento com "Para começar a tirar dúvidas, digite o seu CPF", SEM mexer no template aprovado na Meta. Como o texto do template é fixo e só as variáveis mudam, a frase não pode ir no fim - o Silvan escolheu a opção de colocá-la junto da data, na última variável (`{{3}}`).
+- `app/whatsapp_envio.py` (`enviar_agendamento_criado_whatsapp`): `{{3}}` passa a ser "dd/mm/aaaa às HH:MM. Para começar a tirar dúvidas, digite o seu CPF" (sem quebra de linha - a Meta recusa variável com "\n"). Resultado: "...foi agendado para 16/10/2026 às 11:00. Para começar a tirar dúvidas, digite o seu CPF. Salve este número: é por aqui...". O texto livre (usado só sem template) troca o antigo 'Digite "oi"...' pela mesma frase, no fim.
+- Conferido: mandar o CPF como PRIMEIRA mensagem funciona (o robô já pede a data de nascimento em seguida).
+- Se um dia o template ganhar uma versão com essa frase no fim, voltar a mandar só a data no `{{3}}` (comentário no código).
+- **Atenção (achado, não mexido)**: `APP_URL_PUBLICA` não está na lista de variáveis do `media-prod` no `render.yaml`. Sem ela, os links do preparo público (WhatsApp) e das notificações apontam para `https://media-dev.onrender.com` (padrão do código), mesmo em produção. Conferir no Render (media-prod → Environment) se está definida como `https://media.med.br`.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

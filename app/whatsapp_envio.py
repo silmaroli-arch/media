@@ -367,14 +367,22 @@ def enviar_agendamento_criado_whatsapp(agendamento):
     paciente = agendamento.paciente
     exame = agendamento.exame
     data_hora_formatada = agendamento.data_hora.strftime("%d/%m/%Y às %H:%M")
+    # Pedido do Silvan (2026-10-15): orientar o paciente a começar pelo CPF
+    # (é o primeiro passo da identificação em app.whatsapp_conversa) SEM
+    # mexer no template aprovado na Meta - a frase vai junto da data, na
+    # última variável ({{3}}), e aparece antes do "Salve este número" fixo
+    # do template. Sem quebra de linha: a Meta recusa variável com "\n".
+    # Quando o template ganhar uma versão com a frase no fim, voltar a
+    # mandar só a data aqui.
+    instrucao_cpf = "Para começar a tirar dúvidas, digite o seu CPF"
     return enviar_mensagem_whatsapp(
         paciente.telefone,
         texto=(
             f"Olá, {paciente.nome}! Seu exame {exame.nome} foi agendado para "
             f"{data_hora_formatada}. Salve este número: é por aqui que você tira "
             "dúvidas sobre o preparo do exame.\n\n"
-            'Digite "oi" para tirar dúvidas sobre seu exame.'
+            f"{instrucao_cpf}."
         ),
-        content_variables=[paciente.nome, exame.nome, data_hora_formatada],
+        content_variables=[paciente.nome, exame.nome, f"{data_hora_formatada}. {instrucao_cpf}"],
         nome_template_env="WHATSAPP_META_TEMPLATE_AGENDAMENTO_CRIADO",
     )
