@@ -2288,6 +2288,30 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Mesma data: **campo "Especialidade" retirado do cadastro público**. O médico informa no 1º "Novo modelo de preparo" (campo "Sua especialidade", que grava no cadastro dele) ou em Meus dados. Sem especialidade: a tela de preparo mostra todos os tipos de exame; o "FAQ do MedIA" do médico fica vazio com o aviso "Informe sua especialidade em Meus dados"; uma sugestão de "Não encontrei o meu exame" chega ao dono como "não informada". Respostas aos pacientes (chat/WhatsApp) não dependem disso - a busca usa o tipo de exame do preparo. `routes_auth.cadastro` grava `especialidade = None`; `test_base_sugestoes.py` e `test_tipo_exame_nao_encontrado.py` passaram a gravar a especialidade direto no banco. Suíte: 79/79.
 - Discutido e NÃO feito (o Silvan cancelou): deixar o cadastro público só para médico e cadastrar a secretária apenas por dentro do sistema (Grupos de trabalho -> Convidar -> "criar conta nova", que já existe).
 
+## Login com Google - só equipe (2026-10-19, pedido do Silvan)
+
+**Decisões do Silvan**: só para a equipe (médico, secretária, dono) - paciente continua com CPF + data de nascimento. Quem se cadastra pelo Google NÃO precisa criar senha (pode criar depois).
+
+**Como funciona** (`app/login_google.py`, biblioteca `Authlib==1.3.2`, OpenID Connect só com nome e e-mail):
+- Botão "Entrar com Google" no login e "Cadastrar com Google" no cadastro.
+- Entrar: acha a conta pelo `Usuario.google_sub` (identificador fixo da conta Google) ou, na 1ª vez, pelo MESMO e-mail (não paciente) e já liga as duas. Sem conta -> cadastro público com nome e e-mail preenchidos (e-mail travado - vale o que o Google confirmou, o do formulário é ignorado), sem campos de senha.
+- Só aceita e-mail que o Google marca como verificado. Conta desativada não entra.
+- Meus dados: bloco "Conta Google" para ligar (pode ser outro e-mail, ex.: cadastro com e-mail da clínica) ou desligar (só quem tem senha, para não ficar sem acesso).
+- Sem senha: "Meus dados" e "Criar senha" pedem "Confirmar com Google" (mesma janela de 15 minutos da confirmação por senha). Depois de criar a senha, entra também com CPF + senha.
+- Sem `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` o recurso fica desligado (botões não aparecem).
+- Banco: coluna `usuarios.google_sub` + índice único `uq_usuarios_google_sub` (`migrar_banco.py`). Testado num Postgres local: banco montado com a versão da `main` + migração nova rodada 2x.
+- Endereço de volta do Google: `/login/google/retorno`, montado com https por trás do proxy do Render (cabeçalho X-Forwarded-Proto) - conferido.
+- Testes: `test_login_google.py` (25 checagens, respostas do Google simuladas). Suíte: 80/80.
+
+**Pendências do Silvan (configuração no Google, ~20 min)**:
+1. console.cloud.google.com -> criar projeto (ex.: "MedIA").
+2. "Google Auth Platform" (antiga "Tela de consentimento OAuth"): tipo **Externo**, nome do app MedIA, e-mail de suporte, domínio autorizado `media.med.br`. Escopos: só `openid`, `email`, `profile`. Enquanto estiver em modo **Teste**, só os e-mails cadastrados como "usuários de teste" conseguem entrar - para produção, **publicar o app** (pede logo, link da política de privacidade e domínio verificado).
+3. "Clientes" (Credenciais) -> criar ID do cliente OAuth do tipo **Aplicativo da Web**, com estes **URIs de redirecionamento autorizados**:
+   - `https://media.med.br/login/google/retorno`
+   - `https://dev.media.med.br/login/google/retorno`
+   - `https://media-dev.onrender.com/login/google/retorno`
+4. Copiar o ID do cliente e a chave secreta para o Render -> Environment: `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` (primeiro no `media-dev`, depois no `media-prod`). A chave secreta nunca deve ir para o repositório nem ser colada em conversa.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

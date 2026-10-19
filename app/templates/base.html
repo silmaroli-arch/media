@@ -474,8 +474,8 @@
         </div>
         {% endif %}
         <span class="text-muted small me-3 {% if not current_user.is_staff and not current_user.is_dono %}d-none d-md-inline{% endif %}">{{ current_user.nome }}</span>
-        {% if current_user.tem_senha %}
-        <a href="{{ url_for('auth.trocar_senha') }}" class="small text-decoration-none me-3 {% if not current_user.is_staff and not current_user.is_dono %}d-none d-md-inline{% endif %}">Trocar senha</a>
+        {% if current_user.acessa_com_senha_ou_google %}
+        <a href="{{ url_for('auth.trocar_senha') }}" class="small text-decoration-none me-3 {% if not current_user.is_staff and not current_user.is_dono %}d-none d-md-inline{% endif %}">{{ 'Trocar senha' if current_user.tem_senha else 'Criar senha' }}</a>
         {% endif %}
         <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-secondary btn-sm">Sair</a>
       </div>

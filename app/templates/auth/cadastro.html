@@ -9,12 +9,26 @@
         Uma única tela pra todo mundo — médico(a) ou secretário(a), com ou sem clínica própria.
       </p>
 
+      {# Login com Google (só equipe, ver app/login_google.py) #}
+      {% if google_cadastro %}
+      <div class="alert alert-info small">
+        <i class="bi bi-google me-1"></i> Cadastro com a conta Google <strong>{{ google_cadastro.email }}</strong>.
+        Você vai entrar pelo Google - não precisa criar senha agora (pode criar depois, se quiser).
+        <a href="{{ url_for('auth.cadastro', sem_google=1) }}">Cadastrar sem o Google</a>
+      </div>
+      {% elif google_login_ativo %}
+      <a href="{{ url_for('google_login.iniciar') }}" class="btn btn-outline-secondary w-100 mb-3">
+        <i class="bi bi-google me-1"></i> Cadastrar com Google
+      </a>
+      {% endif %}
+
       <form method="post">
         <h5 class="mb-3">Seus dados</h5>
         <div class="row g-3">
           <div class="col-md-6">
             <label class="form-label">Seu nome</label>
-            <input type="text" name="nome" id="nome" class="form-control" autocapitalize="words" required autofocus>
+            <input type="text" name="nome" id="nome" class="form-control" autocapitalize="words" required autofocus
+                   value="{{ request.form.get('nome') or (google_cadastro.nome if google_cadastro else '') }}">
           </div>
           <div class="col-md-6">
             <label class="form-label">CPF (será seu login)</label>
@@ -91,8 +105,14 @@
           </div>
           <div class="col-md-6">
             <label class="form-label">Seu e-mail</label>
+            {% if google_cadastro %}
+            <input type="email" name="email" class="form-control" value="{{ google_cadastro.email }}" readonly>
+            <div class="form-text">Confirmado pelo Google.</div>
+            {% else %}
             <input type="email" name="email" class="form-control" required>
+            {% endif %}
           </div>
+          {% if not google_cadastro %}
           <div class="col-md-6">
             <label class="form-label">Senha</label>
             <input type="password" name="senha" class="form-control" minlength="6" required>
@@ -103,6 +123,7 @@
             <input type="password" name="senha_confirmacao" id="senha_confirmacao" class="form-control" minlength="6" required>
             <div class="invalid-feedback" id="senha_confirmacao_status"></div>
           </div>
+          {% endif %}
         </div>
 
         <h6 class="mb-0 mt-3">Seu endereço</h6>
@@ -283,6 +304,7 @@ document.getElementById('telefone').addEventListener('blur', function () {
 function marcarSenhaConfirmacaoValida() {
   var campoSenha = document.querySelector('input[name="senha"]');
   var campoConfirmacao = document.getElementById('senha_confirmacao');
+  if (!campoConfirmacao) return true;  // cadastro com Google: sem senha
   var status = document.getElementById('senha_confirmacao_status');
   if (!campoConfirmacao.value) { status.textContent = ''; campoConfirmacao.classList.remove('is-invalid'); return false; }
   if (campoConfirmacao.value !== campoSenha.value) {
@@ -294,10 +316,12 @@ function marcarSenhaConfirmacaoValida() {
   campoConfirmacao.classList.remove('is-invalid');
   return true;
 }
-document.getElementById('senha_confirmacao').addEventListener('blur', marcarSenhaConfirmacaoValida);
-document.querySelector('input[name="senha"]').addEventListener('input', function () {
-  if (document.getElementById('senha_confirmacao').value) marcarSenhaConfirmacaoValida();
-});
+if (document.getElementById('senha_confirmacao')) {
+  document.getElementById('senha_confirmacao').addEventListener('blur', marcarSenhaConfirmacaoValida);
+  document.querySelector('input[name="senha"]').addEventListener('input', function () {
+    if (document.getElementById('senha_confirmacao').value) marcarSenhaConfirmacaoValida();
+  });
+}
 
 // ---------- Validação de data de nascimento (só existe/exige para médico) ----------
 var campoDataNasc = document.getElementById('data_nascimento');

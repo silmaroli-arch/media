@@ -503,6 +503,10 @@ ALTER TABLE preparo_modelos ADD COLUMN IF NOT EXISTS tipo_exame_sugestao_id INTE
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS resposta_bruta_base TEXT;
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS base_item_id INTEGER REFERENCES base_conhecimento(id) ON DELETE SET NULL;
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS base_divergiu BOOLEAN;
+
+-- Login com Google (so equipe, 2026-10-19): identificador fixo da conta Google ligada ao usuario.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS google_sub VARCHAR(255);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_google_sub ON usuarios (google_sub);
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

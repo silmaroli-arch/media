@@ -220,6 +220,10 @@ class Usuario(db.Model, UserMixin):
     # Define que parte da base de conhecimento compartilhada ele enxerga e
     # pode sugerir alterações (fatia 5 da "terceira IA", 2026-09-29).
     especialidade = db.Column(db.String(80))
+    # Login com Google (só equipe, pedido do Silvan, 2026-10-19 - ver
+    # app/login_google.py): o "sub" é o identificador fixo da conta Google,
+    # que não muda nem se a pessoa trocar o e-mail do Google.
+    google_sub = db.Column(db.String(255), unique=True, nullable=True)
 
     # Fatia 8 (licença individual): a cobrança agora é POR MÉDICO, não só
     # por Grupo (Grupo.valor_por_medico é uma estimativa de mercado; a
@@ -358,6 +362,13 @@ class Usuario(db.Model, UserMixin):
         except Exception:
             pass
         return self.pacientes[0] if self.pacientes else None
+
+    @property
+    def acessa_com_senha_ou_google(self):
+        """Conta da equipe/dono: tem senha OU conta Google ligada (quem se
+        cadastrou pelo Google pode não ter senha nenhuma). Paciente não
+        tem nenhum dos dois - entra com CPF + data de nascimento."""
+        return self.tem_senha or bool(self.google_sub)
 
     @property
     def tem_senha(self):

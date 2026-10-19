@@ -215,6 +215,10 @@ def create_app():
     app.register_blueprint(whatsapp_bp)
     app.register_blueprint(pagamentos_webhook_bp)
 
+    # Login com Google (só equipe) - sem GOOGLE_CLIENT_ID/SECRET fica desligado.
+    from app import login_google
+    login_google.init_app(app)
+
     @app.template_filter("hora_hhmm")
     def hora_hhmm(valor):
         """Formata um horário (objeto `time` do banco, ou string 'HH:MM'
