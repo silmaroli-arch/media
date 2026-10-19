@@ -502,7 +502,10 @@ def cadastro():
         # chave no POST, então ausência = False (não exigir aprovação).
         # Sem isso, a conta sempre nascia com o default do modelo
         # (True), ignorando a escolha feita no próprio cadastro.
-        usuario.aprovacao_perguntas_paciente = bool(request.form.get("aprovacao_perguntas_paciente"))
+        # A opção só aparece na tela para médico (2026-10-19): secretária
+        # fica com o padrão do modelo (exigir aprovação).
+        if papel == "medico":
+            usuario.aprovacao_perguntas_paciente = bool(request.form.get("aprovacao_perguntas_paciente"))
 
         # Fatia 8 (licença individual): a cobrança é por médico e vale a
         # partir do cadastro, independente de Grupo (decisão do Silvan) -

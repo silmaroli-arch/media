@@ -164,6 +164,8 @@
            paciente, usado enquanto a conta for solo - se um Grupo vier a
            existir depois, o campo do Grupo passa a valer para todo mundo
            da equipe, e pode ser mudado por lá). #}
+        {# Só aparece para médico (pedido do Silvan, 2026-10-19) - ver atualizarCampoCrm() #}
+        <div id="campo-aprovacao">
         <h6 class="mb-0 mt-3">Respostas para o paciente</h6>
         <div class="card bg-light border-0 mt-2">
           <div class="card-body py-3">
@@ -187,6 +189,7 @@
             </div>
           </div>
         </div>
+        </div>
 
         <button type="submit" class="btn btn-primary w-100 mt-4" id="btn-submit">Criar minha conta</button>
       </form>
@@ -207,6 +210,7 @@ function atualizarCampoCrm() {
   document.getElementById('crm_uf').required = ehMedico;
   document.getElementById('campo-data-nascimento').style.display = ehMedico ? 'block' : 'none';
   document.getElementById('data_nascimento').required = ehMedico;
+  document.getElementById('campo-aprovacao').style.display = ehMedico ? 'block' : 'none';
 }
 atualizarCampoCrm();
 

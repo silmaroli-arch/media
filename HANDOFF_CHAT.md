@@ -2284,6 +2284,7 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 ## Cadastro público: "Médico(a)" vem selecionado por padrão (2026-10-19, pedido do Silvan)
 
 - `app/templates/auth/cadastro.html`: no campo "Você é médico(a) ou secretário(a)?", Médico(a) passou a ser a primeira opção e já vem selecionada (antes era Secretário(a)). Como o script da página roda ao carregar, os campos de médico (especialidade, CRM, data de nascimento) já aparecem de cara. A opção Secretário(a) continua existindo.
+- Mesma data: a seção "Respostas para o paciente" (interruptor "Exigir minha aprovação...") só aparece quando o papel é Médico(a) - some ao trocar para Secretário(a) (mesma função `atualizarCampoCrm()` do template). No servidor (`routes_auth.cadastro`), a escolha só é gravada para médico; secretária fica com o padrão do modelo (exigir aprovação). Conferido no navegador (Chromium) e nos testes de cadastro.
 - Discutido e NÃO feito (o Silvan cancelou): deixar o cadastro público só para médico e cadastrar a secretária apenas por dentro do sistema (Grupos de trabalho -> Convidar -> "criar conta nova", que já existe).
 
 ## Como continuar
