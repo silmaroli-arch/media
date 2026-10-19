@@ -495,7 +495,9 @@ def cadastro():
         usuario.uf = request.form.get("uf", "").strip().upper() or None
         usuario.crm_numero = crm_numero
         usuario.crm_uf = crm_uf
-        usuario.especialidade = especialidade_valida(request.form.get("especialidade")) if papel == "medico" else None
+        # Especialidade não é mais pedida no cadastro (2026-10-19): o médico
+        # informa no 1º "Novo modelo de preparo" ou em Meus dados.
+        usuario.especialidade = None
         usuario.data_nascimento = data_nascimento
         # Checkbox "Exigir minha aprovação antes de responder o paciente"
         # (ver auth/cadastro.html) - checkbox desmarcado não manda a
