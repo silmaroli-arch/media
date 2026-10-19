@@ -24,8 +24,9 @@
           <div class="col-md-6" id="campo-papel">
             <label class="form-label">Você é médico(a) ou secretário(a)?</label>
             <select name="papel" id="papel" class="form-select" required onchange="atualizarCampoCrm()">
+              {# Médico vem primeiro e já selecionado (pedido do Silvan, 2026-10-19) #}
+              <option value="medico" selected>Médico(a)</option>
               <option value="secretaria">Secretário(a)</option>
-              <option value="medico">Médico(a)</option>
             </select>
             <div class="form-text">
               Não tem problema se a sua clínica não tem secretária — como você está criando a

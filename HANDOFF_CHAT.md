@@ -2281,6 +2281,11 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Se um dia o template ganhar uma versão com essa frase no fim, voltar a mandar só a data no `{{3}}` (comentário no código).
 - **Atenção (achado, não mexido)**: `APP_URL_PUBLICA` não está na lista de variáveis do `media-prod` no `render.yaml`. Sem ela, os links do preparo público (WhatsApp) e das notificações apontam para `https://media-dev.onrender.com` (padrão do código), mesmo em produção. Conferir no Render (media-prod → Environment) se está definida como `https://media.med.br`.
 
+## Cadastro público: "Médico(a)" vem selecionado por padrão (2026-10-19, pedido do Silvan)
+
+- `app/templates/auth/cadastro.html`: no campo "Você é médico(a) ou secretário(a)?", Médico(a) passou a ser a primeira opção e já vem selecionada (antes era Secretário(a)). Como o script da página roda ao carregar, os campos de médico (especialidade, CRM, data de nascimento) já aparecem de cara. A opção Secretário(a) continua existindo.
+- Discutido e NÃO feito (o Silvan cancelou): deixar o cadastro público só para médico e cadastrar a secretária apenas por dentro do sistema (Grupos de trabalho -> Convidar -> "criar conta nova", que já existe).
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
