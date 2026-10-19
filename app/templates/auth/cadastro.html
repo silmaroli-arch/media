@@ -106,8 +106,16 @@
           <div class="col-md-6">
             <label class="form-label">Seu e-mail</label>
             {% if google_cadastro %}
-            <input type="email" name="email" class="form-control" value="{{ google_cadastro.email }}" readonly>
-            <div class="form-text">Confirmado pelo Google.</div>
+            {# Travado: vale o e-mail confirmado pelo Google (o servidor ignora o
+               que vier do formulário - ver auth.cadastro). Fundo cinza e fora
+               da ordem do Tab para não parecer editável. #}
+            <div class="input-group">
+              <span class="input-group-text bg-light"><i class="bi bi-lock-fill"></i></span>
+              <input type="email" name="email" class="form-control bg-light text-muted" value="{{ google_cadastro.email }}"
+                     readonly tabindex="-1" style="cursor: not-allowed;" title="E-mail confirmado pelo Google - não pode ser alterado">
+            </div>
+            <div class="form-text"><i class="bi bi-google"></i> Confirmado pelo Google - não pode ser alterado.
+              Quer usar outro e-mail? <a href="{{ url_for('auth.cadastro', sem_google=1) }}">Cadastre sem o Google</a>.</div>
             {% else %}
             <input type="email" name="email" class="form-control" required>
             {% endif %}
