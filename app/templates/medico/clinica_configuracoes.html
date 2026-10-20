@@ -120,18 +120,35 @@
   // ali dispara no "blur" - aqui dispara direto ao completar o CEP,
   // porque a mascara ja bloqueia digitar mais de 8 digitos mesmo). Os
   // campos de endereco (rua, bairro, cidade, UF e codigo IBGE) sao
-  // preenchidos automaticamente por essa busca, mas continuam editaveis -
+  // preenchidos automaticamente por essa busca (e travados, ver
+  // travarEnderecoDoCep abaixo), mas voltam a ficar editaveis -
   // se o ViaCEP estiver fora do ar, demorar demais ou o CEP nao for
   // encontrado, a pessoa preenche o endereco a mao e o formulario
   // continua salvando normalmente (a busca do CEP e so uma ajuda, nunca
   // bloqueia o cadastro). Um timeout de 5s evita ficar "Buscando
   // endereço..." pra sempre se a rede nao responder.
+  // Pedido do Silvan (2026-10-20): depois que o CEP é encontrado, o
+  // endereço que veio do ViaCEP fica travado - só Número e Complemento são
+  // digitados. Campo que veio VAZIO (CEP geral da cidade) continua editável,
+  // e CEP incompleto, não encontrado ou ViaCEP fora do ar destrava tudo.
+  function travarEnderecoDoCep(ids, valores) {
+    ids.forEach(function (id, i) {
+      var campo = document.getElementById(id);
+      if (!campo) return;
+      if (valores) campo.value = valores[i] || '';
+      var travar = !!(valores && valores[i]);
+      campo.readOnly = travar;
+      campo.classList.toggle('bg-light', travar);
+    });
+  }
+  var camposEnderecoClinica = ['rua_clinica', 'bairro_clinica', 'cidade_clinica', 'uf_clinica'];
   var campoCepClinica = document.getElementById('cep_clinica');
   if (campoCepClinica) {
     campoCepClinica.addEventListener('input', function () {
       var digitos = campoCepClinica.value.replace(/\D/g, '');
       var status = document.getElementById('cep_clinica_status');
       if (digitos.length !== 8) {
+        travarEnderecoDoCep(camposEnderecoClinica, null);
         status.textContent = '';
         return;
       }
@@ -145,18 +162,17 @@
         .then(function (dados) {
           clearTimeout(tempoEsgotado);
           if (dados.erro) {
+            travarEnderecoDoCep(camposEnderecoClinica, null);
             status.textContent = 'CEP não encontrado — preencha o endereço manualmente.';
             return;
           }
-          document.getElementById('rua_clinica').value = dados.logradouro || '';
-          document.getElementById('bairro_clinica').value = dados.bairro || '';
-          document.getElementById('cidade_clinica').value = dados.localidade || '';
-          document.getElementById('uf_clinica').value = dados.uf || '';
+          travarEnderecoDoCep(camposEnderecoClinica, [dados.logradouro, dados.bairro, dados.localidade, dados.uf]);
           document.getElementById('codigo_ibge_municipio_clinica').value = dados.ibge || '';
           status.textContent = 'Endereço preenchido automaticamente pelo CEP.';
         })
         .catch(function () {
           clearTimeout(tempoEsgotado);
+          travarEnderecoDoCep(camposEnderecoClinica, null);
           status.textContent = 'Não foi possível consultar o CEP agora — preencha o endereço manualmente.';
         });
     });
