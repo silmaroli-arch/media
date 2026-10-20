@@ -1,11 +1,17 @@
-{% extends "base.html" %}
+{% extends "site/base_publico.html" %}
+{% block nav_acoes %}
+{# Tela do paciente: sem "Criar conta" (é só da equipe). #}
+<a href="{{ url_for('auth.login_paciente') }}" class="nav-link-site {% if request.endpoint == 'auth.login_paciente' %}ativo{% endif %}">Área do paciente</a>
+{% endblock %}
+{% block rodape_links %}
+<a class="link-rodape" href="{{ url_for('auth.login_paciente') }}">Área do paciente</a>
+{% endblock %}
 {% block titulo %}Cadastro de paciente{% endblock %}
 {% block conteudo %}
 <div class="row justify-content-center">
   <div class="col-md-7">
     <div class="card p-4 mt-4">
-      <div class="text-center mb-3"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 52px;"></div>
-      <h5 class="text-center mb-1">Cadastro de paciente</h5>
+      <h4 class="text-center mb-2">Cadastro de paciente</h4>
       <p class="text-muted small text-center">
         Seu cadastro é único e vale para <strong>qualquer clínica</strong> que use a plataforma —
         você não se cadastra "numa clínica". Quando chegar à recepção, informe o seu CPF: a

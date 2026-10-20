@@ -1,0 +1,155 @@
+{% extends "site/base_publico.html" %}
+{# Política de Privacidade (pedido do Silvan, 2026-10-20 - exigida pelo
+   Google para publicar o "Continuar com Google"). Rascunho escrito a partir
+   do que o sistema realmente faz - recomendada revisão por advogado.
+   Controlador e e-mail vêm da rota (ver index/privacidade em app/__init__.py). #}
+{% block titulo %}Política de Privacidade - MedIA{% endblock %}
+{% block meta %}<meta name="description" content="Como o MedIA coleta, usa e protege dados pessoais, de acordo com a LGPD.">{% endblock %}
+{% block estilos %}
+    .documento { max-width: 860px; }
+    .documento h2 { font-size: 1.25rem; margin-top: 2rem; }
+    .documento h3 { font-size: 1.05rem; margin-top: 1.25rem; }
+    .documento p, .documento li { color: #374151; line-height: 1.6; }
+{% endblock %}
+{% block conteudo %}
+<article class="documento card p-4 p-md-5 mx-auto my-2">
+  <h1 class="h3 fw-bold mb-1">Política de Privacidade</h1>
+  <p class="text-muted small">Última atualização: {{ atualizado_em }}</p>
+
+  <p>
+    Esta política explica como o <strong>MedIA</strong> coleta, usa, compartilha e protege dados pessoais,
+    de acordo com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018, "LGPD"). Ela vale para o site
+    <strong>media.med.br</strong>, para o sistema usado por médicos e equipes e para o atendimento de pacientes pelo WhatsApp.
+  </p>
+
+  <h2>1. Quem é o responsável</h2>
+  <p>
+    O MedIA é mantido por <strong>{{ controlador }}</strong>. Para qualquer assunto sobre privacidade e
+    dados pessoais, inclusive para exercer os seus direitos, escreva para
+    <a href="mailto:{{ email_privacidade }}">{{ email_privacidade }}</a>.
+  </p>
+  <p>
+    <strong>Dados dos médicos e das equipes:</strong> o MedIA é o <em>controlador</em> desses dados.<br>
+    <strong>Dados dos pacientes:</strong> o médico ou a clínica que atende o paciente é o <em>controlador</em>,
+    e o MedIA atua como <em>operador</em>, tratando os dados em nome deles e segundo as orientações deles.
+  </p>
+
+  <h2>2. Quais dados coletamos</h2>
+  <h3>Médicos, secretárias e demais usuários da equipe</h3>
+  <ul>
+    <li>Nome, CPF, e-mail, telefone, endereço e data de nascimento;</li>
+    <li>No caso de médicos: número e estado do CRM e especialidade;</li>
+    <li>Senha (guardada de forma criptografada, nunca em texto puro);</li>
+    <li>Se você usar "Continuar com Google": nome, e-mail e o identificador da sua conta Google. Não temos acesso ao seu Gmail, Drive, contatos ou outros dados da conta;</li>
+    <li>Conteúdo que você cadastra: preparos de exames (inclusive PDFs importados), agendamentos, respostas às perguntas dos pacientes;</li>
+    <li>Dados de pagamento da licença (valores e situação dos pagamentos). Os dados do cartão ou da conta bancária ficam com o Mercado Pago, não com o MedIA.</li>
+  </ul>
+  <h3>Pacientes</h3>
+  <ul>
+    <li>Nome, CPF, data de nascimento, telefone e, quando informados, endereço e contato de emergência;</li>
+    <li>Exames agendados, com data, horário, médico e preparo;</li>
+    <li>Mensagens trocadas pelo WhatsApp ou pela área do paciente, inclusive perguntas sobre o preparo. Mensagens de áudio são convertidas em texto;</li>
+    <li>Essas informações podem revelar dados sobre a saúde do paciente, que a LGPD considera <strong>dados sensíveis</strong> e que tratamos com cuidado redobrado.</li>
+  </ul>
+  <h3>Dados técnicos</h3>
+  <ul>
+    <li>Registros de acesso (como endereço IP, data e hora), mantidos por segurança e por exigência do Marco Civil da Internet;</li>
+    <li>Um cookie de sessão, necessário para manter você conectado. Não usamos cookies de publicidade nem de rastreamento.</li>
+  </ul>
+
+  <h2>3. Para que usamos os dados</h2>
+  <ul>
+    <li>Criar e manter a sua conta e permitir o acesso ao sistema;</li>
+    <li>Identificar o paciente com segurança (CPF e data de nascimento) antes de qualquer resposta sobre o exame dele;</li>
+    <li>Responder às dúvidas dos pacientes sobre o preparo do exame, com apoio de inteligência artificial e, quando o médico escolher, com a revisão dele;</li>
+    <li>Avisar o paciente pelo WhatsApp sobre o agendamento e enviar as respostas;</li>
+    <li>Avisar a equipe sobre perguntas novas (WhatsApp e notificações no celular);</li>
+    <li>Cobrar a licença do médico;</li>
+    <li>Garantir a segurança do sistema, prevenir fraudes e cumprir obrigações legais.</li>
+  </ul>
+  <p>
+    As bases legais da LGPD usadas são, conforme o caso: a execução do contrato com o usuário, o cumprimento de
+    obrigação legal, o legítimo interesse (segurança e melhoria do serviço) e, para dados de saúde dos pacientes,
+    a tutela da saúde por profissionais de saúde e o consentimento, quando aplicável.
+  </p>
+
+  <h2>4. Inteligência artificial</h2>
+  <p>
+    Para responder às dúvidas, o MedIA envia a serviços de inteligência artificial de terceiros o
+    <strong>texto da pergunta</strong>, o <strong>preparo do exame</strong> cadastrado pelo médico e o histórico
+    recente da conversa sobre aquele exame. <strong>Não enviamos</strong> o nome, o CPF, a data de nascimento ou o
+    telefone do paciente. Se o próprio paciente escrever algum dado pessoal na pergunta, esse texto também é enviado.
+    Os PDFs de preparo importados pelo médico e os áudios do WhatsApp (para conversão em texto) também passam por esses serviços.
+  </p>
+  <p>
+    As respostas da IA podem passar pela aprovação do médico antes de chegar ao paciente, conforme a escolha de cada
+    médico ou clínica. Perguntas e respostas aprovadas, sem dados pessoais, podem ser usadas para melhorar a base de
+    conhecimento compartilhada do MedIA (o "FAQ do MedIA").
+  </p>
+
+  <h2>5. Com quem compartilhamos</h2>
+  <p>Compartilhamos dados apenas com prestadores necessários para o funcionamento do serviço:</p>
+  <ul>
+    <li><strong>Render</strong> - hospedagem do sistema e do banco de dados (servidores nos Estados Unidos);</li>
+    <li><strong>Anthropic (Claude), OpenAI (ChatGPT e Whisper) e Google (Gemini)</strong> - inteligência artificial, como descrito no item 4;</li>
+    <li><strong>Meta (WhatsApp)</strong> - envio e recebimento de mensagens;</li>
+    <li><strong>Google</strong> - login com a conta Google, para quem escolher essa opção;</li>
+    <li><strong>Mercado Pago</strong> - pagamento da licença;</li>
+    <li><strong>ViaCEP</strong> - preenchimento automático do endereço a partir do CEP (só o CEP é consultado).</li>
+  </ul>
+  <p>
+    Os dados do paciente também são acessados pelo médico e pela equipe que o atendem. Não vendemos dados pessoais
+    e não os usamos para publicidade. Podemos fornecer dados a autoridades quando a lei exigir.
+  </p>
+
+  <h2>6. Transferência internacional</h2>
+  <p>
+    Alguns desses prestadores processam dados fora do Brasil, principalmente nos Estados Unidos. Nesses casos, a
+    transferência é feita para a execução do serviço contratado e com prestadores que adotam medidas de segurança
+    compatíveis com a LGPD.
+  </p>
+
+  <h2>7. Por quanto tempo guardamos</h2>
+  <p>
+    Mantemos os dados enquanto a conta estiver ativa ou enquanto forem necessários para a finalidade de uso. Depois
+    disso, eles são excluídos ou anonimizados, exceto quando a lei exigir a guarda por mais tempo (por exemplo,
+    registros de acesso e dados fiscais). Dados de pacientes seguem as orientações do médico ou da clínica responsável.
+  </p>
+
+  <h2>8. Segurança</h2>
+  <p>
+    Usamos conexão criptografada (HTTPS), senhas guardadas de forma criptografada, controle de acesso por perfil
+    (cada médico e equipe vê só os próprios pacientes) e identificação do paciente antes de qualquer informação sobre o
+    exame. Nenhum sistema é totalmente imune a falhas; se ocorrer um incidente relevante, os afetados e a Autoridade
+    Nacional de Proteção de Dados (ANPD) serão comunicados, como a lei determina.
+  </p>
+
+  <h2>9. Seus direitos</h2>
+  <p>Pela LGPD, você pode, a qualquer momento:</p>
+  <ul>
+    <li>Confirmar se tratamos seus dados e ter acesso a eles;</li>
+    <li>Corrigir dados incompletos, inexatos ou desatualizados;</li>
+    <li>Pedir a anonimização, o bloqueio ou a exclusão de dados desnecessários ou tratados em desacordo com a lei;</li>
+    <li>Pedir a portabilidade dos dados;</li>
+    <li>Ser informado sobre com quem compartilhamos seus dados;</li>
+    <li>Revogar o consentimento, quando ele for a base do tratamento;</li>
+    <li>Apresentar reclamação à ANPD.</li>
+  </ul>
+  <p>
+    Para exercer esses direitos, escreva para <a href="mailto:{{ email_privacidade }}">{{ email_privacidade }}</a>.
+    Pacientes também podem procurar diretamente o médico ou a clínica que os atende.
+  </p>
+
+  <h2>10. Crianças e adolescentes</h2>
+  <p>
+    O sistema não é destinado a menores de 18 anos como usuários. Dados de pacientes menores de idade são cadastrados
+    pelo médico ou pela clínica, com a autorização do responsável legal.
+  </p>
+
+  <h2>11. Mudanças nesta política</h2>
+  <p>
+    Podemos atualizar esta política. A data da última atualização fica no topo da página. Mudanças importantes serão
+    comunicadas aos usuários.
+  </p>
+</article>
+{% endblock %}

@@ -177,7 +177,7 @@ def _vincular(sub, email):
         return redirect(url_for("auth.meus_dados"))
     current_user.google_sub = sub
     db.session.commit()
-    flash(f"Conta Google ({email}) ligada. A partir de agora você pode usar \"Entrar com Google\".", "success")
+    flash(f"Conta Google ({email}) ligada. A partir de agora você pode usar \"Continuar com Google\".", "success")
     return redirect(url_for("auth.meus_dados"))
 
 

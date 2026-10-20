@@ -2303,6 +2303,8 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Endereço de volta do Google: `/login/google/retorno`, montado com https por trás do proxy do Render (cabeçalho X-Forwarded-Proto) - conferido.
 - Testes: `test_login_google.py` (25 checagens, respostas do Google simuladas). Suíte: 80/80.
 
+**Tela de login reorganizada (2026-10-20, pedido do Silvan)**: um botão só, **"Continuar com Google"**, no topo, para entrar E criar conta ("Já tem conta? Você entra direto. Primeiro acesso? Você completa o cadastro em seguida."). Abaixo, "ou entre com CPF e senha" e o formulário. O link de cadastro virou "Ainda não tem conta? Criar conta com e-mail e senha" (o caminho SEM o Google). Saiu o texto técnico "Conforme o BBP...". No cadastro, o botão também se chama "Continuar com Google". Sem as chaves do Google, a tela volta a ser só CPF + senha.
+
 **Pendências do Silvan (configuração no Google, ~20 min)**:
 1. console.cloud.google.com -> criar projeto (ex.: "MedIA").
 2. "Google Auth Platform" (antiga "Tela de consentimento OAuth"): tipo **Externo**, nome do app MedIA, e-mail de suporte, domínio autorizado `media.med.br`. Escopos: só `openid`, `email`, `profile`. Enquanto estiver em modo **Teste**, só os e-mails cadastrados como "usuários de teste" conseguem entrar - para produção, **publicar o app** (pede logo, link da política de privacidade e domínio verificado).
@@ -2311,6 +2313,46 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
    - `https://dev.media.med.br/login/google/retorno`
    - `https://media-dev.onrender.com/login/google/retorno`
 4. Copiar o ID do cliente e a chave secreta para o Render -> Environment: `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` (primeiro no `media-dev`, depois no `media-prod`). A chave secreta nunca deve ir para o repositório nem ser colada em conversa.
+
+## Página de apresentação em media.med.br (2026-10-20, pedido do Silvan)
+
+- Quem abre `media.med.br` SEM estar logado agora vê uma página de apresentação (antes ia direto para o login). Quem está logado continua indo direto para o painel. `index()` em `app/__init__.py` + `app/templates/site/inicio.html` (página própria, sem o menu do sistema, não estende `base.html`).
+- Seções: topo (frase principal, botões "Criar conta grátis" -> /cadastro e "Já tenho conta" -> /login, exemplo ilustrativo de conversa no WhatsApp), como funciona (3 passos), por que usar (6 benefícios), perguntas frequentes, chamada final e rodapé (Entrar, Criar conta, Sou paciente).
+- Os "X dias grátis" vêm de `PlataformaConfig.trial_dias` (mesmo número do cadastro).
+- Decisões tomadas sem confirmação explícita (o Silvan só disse "pode criar"): SEM preço na página, SEM contato comercial (para não inventar e-mail/WhatsApp), texto escrito pelo assistente a partir do que o sistema faz. Revisar o texto e decidir preço/contato.
+- Conferido no Chromium em 390px (celular) e 1280px (computador): sem rolagem lateral, FAQ abre.
+- **Mesmo dia: texto do site reforça como o MedIA responde** (pedido do Silvan): título passou a "Você decide se quer revisar"; nova seção "Como o MedIA responde" (duas IAs conferindo uma à outra; FAQ do MedIA como conhecimento global sobre mais de 60 tipos de exame; revisão opcional - desligada, as IAs respondem sozinhas, mas medicamento fora do preparo e divergência da base sempre vão ao médico, como em `routes_paciente.chat`); passo 3, "Você no controle" e as perguntas frequentes "A IA responde sozinha?" e "De onde vêm as respostas?" reescritos. **Atenção**: o site anuncia o FAQ do MedIA, mas o interruptor da base (`PlataformaConfig.base_conhecimento_ativa`) nasce DESLIGADO - ligar em produção (painel do dono -> FAQ do MedIA) antes de divulgar a página.
+- **Mesmo dia: layout único do site público** (pedido do Silvan - login e cadastro pareciam outro sistema e não tinham como voltar ao site). Novo `app/templates/site/base_publico.html`: cabeçalho azul com o logo (clicar volta para o início), menu "Início / Entrar / Criar conta" e rodapé. Usado pela página de apresentação e pelas telas antes do login: `auth/login.html`, `auth/cadastro.html`, `auth/login_paciente.html`, `auth/login_paciente_escolher_clinica.html`, `auth/cadastro_paciente.html` (todas deixaram de estender `base.html`). Nas telas do paciente, menu e rodapé mostram só "Área do paciente" (sem "Criar conta", que é da equipe). O logo repetido dentro dos cartões virou título ("Entrar no MedIA", "Área do paciente"); o cadastro ficou mais largo no computador. O ano do rodapé vem de um context processor (`ano_atual`, `app/__init__.py`). Conferido no Chromium (celular e computador, sem rolagem lateral); suíte 80/80.
+
+## Sistema na mesma paleta do site (2026-10-20, pedido do Silvan - barra do topo escura)
+
+- `app/static/css/style.css`: o azul padrão do Bootstrap (#0d6efd) foi trocado pelo azul da marca (#1660B0; azul-escuro #0E3F78; fundo #f4f8fd) via variáveis do Bootstrap - botões, links, campos em foco, interruptores, abas, paginação, barras de progresso e o balão do chat mudam juntos em todas as telas. Verde/amarelo/vermelho (sucesso/alerta/perigo) não mudaram.
+- `app/templates/base.html`: barra do topo (`.app-topbar`) e menu lateral (`.app-sidebar-marca`) no azul-escuro, logo branco, textos claros, botões "outline-light". Médico/secretária passaram a ver o logo também na barra do topo. No celular, nome da clínica, nome do usuário e "Trocar senha" somem da barra (continuam em Meus dados), para caber.
+- Correção de layout encontrada no caminho: no celular, a coluna principal não encolhia (`min-width: 0` faltando) e o painel rolava 17px para o lado.
+- Gráficos dos relatórios e a tela pública do preparo (link enviado ao paciente) também trocaram o azul antigo pelo da marca.
+- Conferido no Chromium (secretária, dono e paciente; computador e celular). Suíte 80/80.
+
+## Imagens guardadas para o site (2026-10-20, pedido do Silvan - usar depois)
+
+Prints do sistema enviados pelo Silvan para colocar na página de apresentação (`site/inicio.html`) mais tarde. Ainda NÃO usados em nenhuma página:
+- `app/static/img/site/importar-pdf-preparo.png` (505x390) - popup "Importar de um PDF" extraindo o preparo com IA ("Tentando extrair os dados com Gemini..."). Sugestão: ilustrar o passo 1 do "Como funciona" (Importe o seu preparo).
+- `app/static/img/site/primeiros-passos.png` (1004x563) - tela "Primeiros passos" com o checklist (atalho na tela de início, modelo de preparo e exame, agendar exame para o paciente de teste). Sugestão: ilustrar o início rápido ou a chamada final ("Comece hoje, em poucos minutos").
+- `app/static/img/site/revisao-resposta-portal.png` (798x490) - Portal de atendimento: pergunta "Posso tomar nimesulida?" com as sugestões do ChatGPT e do Claude e o rascunho final para o médico aprovar. Sugestão: ilustrar a seção "Como o MedIA responde" (duas IAs + revisão opcional). O nome do paciente no cabeçalho foi trocado por um fictício ("Ana Paula Ribeiro") a pedido do Silvan.
+- Uso no template: `{{ url_for('static', filename='img/site/importar-pdf-preparo.png') }}`.
+- Observação: o print do PDF cita o nome "Gemini" - se não quiser expor qual IA é usada na extração, recortar ou refazer o print antes de publicar.
+
+## FAQ do MedIA também no Portal de atendimento rápido (2026-10-20, pedido do Silvan)
+
+- Caso real: pergunta "Posso tomar nimesulida?" (colonoscopia) no Portal mostrava só ChatGPT/Claude. Motivos: (1) o Portal (`portal/atendimento.html`) nunca mostrava a base - só "Perguntas pendentes" mostrava; (2) a base de colonoscopia não tem item sobre nimesulida/anti-inflamatórios - o mais próximo ("Posso tomar meus remédios de rotina...") só casa "tomar" (0,5 < limiar 0,6); (3) não verificável daqui: interruptor da base no media-dev e tipo de exame do preparo "Colonoscopia com Picoprep e Manitol (Manhã)".
+- Feito (decisão do Silvan): o modal do Portal mostra "Sugestão do FAQ do MedIA", com fonte e o mesmo aviso de divergência das Perguntas pendentes, SÓ quando a base encontrou algo. Sem resposta da base, não mostra nada (sem linha explicando o motivo - opção discutida e descartada pelo Silvan). Teste em `test_base_integracao_chat.py`. Suíte 80/80.
+- NÃO feito (decisão do Silvan): carga de itens sobre anti-inflamatórios/analgésicos na colonoscopia.
+
+## Política de Privacidade e Termos de Uso (2026-10-20, pedido do Silvan - exigidos pelo Google para publicar o login com Google)
+
+- Novas páginas públicas: `/privacidade` (`site/privacidade.html`) e `/termos` (`site/termos.html`), no layout do site. Links no rodapé de todas as páginas públicas (inclusive as do paciente) e aviso no cadastro ("Ao criar a conta, você concorda com..."). Controlador, e-mail e data ficam num só lugar: `DADOS_LEGAIS` em `app/__init__.py` - controlador **Silvan Martins de Oliveira** (pessoa física, confirmado pelo Silvan), e-mail **privacidade@media.med.br**.
+- Conteúdo escrito a partir do que o sistema faz de verdade: dados de equipe e pacientes (saúde = dado sensível), MedIA controlador dos dados da equipe e OPERADOR dos dados de pacientes (controlador = médico/clínica), IA recebe só o texto da pergunta + preparo + histórico (não recebe nome/CPF/nascimento/telefone - conferido no código), prestadores (Render/EUA, Anthropic, OpenAI incl. Whisper para áudio, Google Gemini e login, Meta/WhatsApp, Mercado Pago, ViaCEP), transferência internacional, segurança, direitos LGPD. Termos: MedIA não substitui o médico, responsabilidades, licença/trial, cancelamento. **É rascunho - recomendado revisar com advogado.**
+- Teste: `test_paginas_legais.py`. Suíte 81/81.
+- **Pendências do Silvan**: (1) criar o e-mail `privacidade@media.med.br` (sugestão: redirecionamento gratuito pelo ImprovMX para o Gmail - registros MX/TXT no DNS do domínio; conferir antes se já existe MX); (2) levar para produção (PR dev -> main); (3) no Google Auth Platform -> Branding: página inicial `https://media.med.br` (estava `/dono/`, que exige login), política `https://media.med.br/privacidade`, termos `https://media.med.br/termos`; remover o domínio autorizado `media-dev.onrender.com` (não dá para provar posse do onrender.com) e o URI de retorno correspondente; depois "Publicar app" em Público-alvo.
 
 ## Como continuar
 

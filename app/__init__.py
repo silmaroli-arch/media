@@ -304,12 +304,42 @@ def create_app():
             }
         return {}
 
+    @app.context_processor
+    def _injetar_ano_atual():
+        """Ano do rodapé do site público (site/base_publico.html)."""
+        from datetime import date
+        return {"ano_atual": date.today().year}
+
+    # Dados das páginas legais do site (pedido do Silvan, 2026-10-20 - o
+    # Google exige Política de Privacidade para publicar o login com Google).
+    DADOS_LEGAIS = {
+        "controlador": "Silvan Martins de Oliveira",
+        "email_privacidade": "privacidade@media.med.br",
+        "atualizado_em": "20 de outubro de 2026",
+    }
+
+    @app.route("/privacidade")
+    def privacidade():
+        from flask import render_template
+        return render_template("site/privacidade.html", **DADOS_LEGAIS)
+
+    @app.route("/termos")
+    def termos():
+        from flask import render_template
+        return render_template("site/termos.html", **DADOS_LEGAIS)
+
     @app.route("/")
     def index():
         from flask import redirect, url_for
         from flask_login import current_user
         if not current_user.is_authenticated:
-            return redirect(url_for("auth.login"))
+            # Página de apresentação para quem chega em media.med.br sem
+            # estar logado (pedido do Silvan, 2026-10-20) - com os botões de
+            # cadastro e login. Os dias grátis vêm da mesma configuração
+            # usada no cadastro (PlataformaConfig.trial_dias).
+            from flask import render_template
+            from app.models import PlataformaConfig
+            return render_template("site/inicio.html", trial_dias=PlataformaConfig.obter().trial_dias)
         if current_user.is_dono:
             return redirect(url_for("dono.dashboard"))
         if current_user.is_staff:

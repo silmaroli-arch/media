@@ -1,10 +1,25 @@
-{% extends "base.html" %}
+{% extends "site/base_publico.html" %}
 {% block titulo %}Login{% endblock %}
 {% block conteudo %}
 <div class="row justify-content-center">
   <div class="col-md-5">
-    <div class="card p-4 mt-5">
-      <div class="text-center mb-3"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 52px;"></div>
+    <div class="card p-4 mt-3 mt-md-4">
+      <h4 class="text-center mb-3">Entrar no MedIA</h4>
+      {% set proximo = request.values.get('next', '') %}
+      {% if google_login_ativo %}
+      {# Login com Google - só equipe (ver app/login_google.py). Um botão só
+         para entrar E para criar conta (pedido do Silvan, 2026-10-20): quem
+         já tem conta entra direto, quem não tem cai no cadastro. #}
+      <a href="{{ url_for('google_login.iniciar', next=proximo or None) }}" class="btn btn-outline-secondary w-100">
+        <i class="bi bi-google me-1"></i> Continuar com Google
+      </a>
+      <div class="form-text text-center mt-2">
+        Já tem conta? Você entra direto.<br>Primeiro acesso? Você completa o cadastro em seguida.
+      </div>
+      <div class="d-flex align-items-center my-3 text-muted small">
+        <hr class="flex-grow-1"><span class="px-2">ou entre com CPF e senha</span><hr class="flex-grow-1">
+      </div>
+      {% endif %}
       <form method="post">
         {# Propaga o "next" (ver auth.login/_proximo_seguro em
            app/routes_auth.py) - permite que um atalho direto pra uma tela
@@ -14,12 +29,10 @@
            vez que a tela aparece) quanto este mesmo campo oculto
            reenviado (POST, se a senha for digitada errada e a tela for
            mostrada de novo). #}
-        {% set proximo = request.values.get('next', '') %}
         {% if proximo %}<input type="hidden" name="next" value="{{ proximo }}">{% endif %}
         <div class="mb-3">
           <label class="form-label">CPF ou e-mail</label>
           <input type="text" name="identificador" class="form-control" placeholder="000.000.000-00" required autofocus>
-          <div class="form-text">Conforme o BBP, o login do sistema principal passa a ser por CPF; o e-mail continua funcionando por compatibilidade com contas já existentes.</div>
         </div>
         <div class="mb-3">
           <label class="form-label">Senha</label>
@@ -27,17 +40,12 @@
         </div>
         <button type="submit" class="btn btn-primary w-100">Entrar</button>
       </form>
-      {% if google_login_ativo %}
-      {# Login com Google - só equipe (ver app/login_google.py). #}
-      <div class="d-flex align-items-center my-3 text-muted small">
-        <hr class="flex-grow-1"><span class="px-2">ou</span><hr class="flex-grow-1">
-      </div>
-      <a href="{{ url_for('google_login.iniciar', next=proximo or None) }}" class="btn btn-outline-secondary w-100">
-        <i class="bi bi-google me-1"></i> Entrar com Google
-      </a>
-      {% endif %}
       <div class="text-center mt-3">
-        <a href="{{ url_for('auth.cadastro') }}" class="small"><strong>Primeira vez por aqui?</strong> Crie sua conta</a>
+        {% if google_login_ativo %}
+        <a href="{{ url_for('auth.cadastro') }}" class="small"><strong>Ainda não tem conta?</strong> Criar conta com e-mail e senha</a>
+        {% else %}
+        <a href="{{ url_for('auth.cadastro') }}" class="small"><strong>Ainda não tem conta?</strong> Crie sua conta</a>
+        {% endif %}
       </div>
       {# O cadastro público agora é uma tela única pra todo mundo — não
       existe mais "modo" (empresa x independente): o CNPJ virou um campo

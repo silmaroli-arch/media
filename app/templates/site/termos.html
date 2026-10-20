@@ -1,0 +1,79 @@
+{% extends "site/base_publico.html" %}
+{# Termos de Uso (pedido do Silvan, 2026-10-20 - pedido pelo Google na tela
+   de consentimento do "Continuar com Google"). Rascunho - recomendada
+   revisão por advogado. #}
+{% block titulo %}Termos de Uso - MedIA{% endblock %}
+{% block meta %}<meta name="description" content="Termos de uso do MedIA.">{% endblock %}
+{% block estilos %}
+    .documento { max-width: 860px; }
+    .documento h2 { font-size: 1.25rem; margin-top: 2rem; }
+    .documento p, .documento li { color: #374151; line-height: 1.6; }
+{% endblock %}
+{% block conteudo %}
+<article class="documento card p-4 p-md-5 mx-auto my-2">
+  <h1 class="h3 fw-bold mb-1">Termos de Uso</h1>
+  <p class="text-muted small">Última atualização: {{ atualizado_em }}</p>
+
+  <p>
+    Estes termos regulam o uso do <strong>MedIA</strong>, mantido por <strong>{{ controlador }}</strong>.
+    Ao criar uma conta ou usar o sistema, você concorda com eles e com a
+    <a href="{{ url_for('privacidade') }}">Política de Privacidade</a>.
+  </p>
+
+  <h2>1. O que é o MedIA</h2>
+  <p>
+    O MedIA é uma plataforma que ajuda médicos e clínicas a orientar pacientes sobre o preparo de exames. O médico
+    cadastra o preparo, agenda o paciente, e as dúvidas do paciente sobre o preparo são respondidas pelo WhatsApp ou
+    pela área do paciente, com apoio de inteligência artificial e, se o médico escolher, com a revisão dele.
+  </p>
+
+  <h2>2. O MedIA não substitui o médico</h2>
+  <p>
+    As respostas tratam de orientações de preparo de exames e se baseiam no preparo cadastrado pelo médico, no
+    conhecimento compartilhado do MedIA e em inteligência artificial. Elas <strong>não são diagnóstico, prescrição nem
+    consulta médica</strong>. O médico continua sendo o responsável pelas orientações dadas aos seus pacientes, pelo
+    conteúdo dos preparos que cadastra e pela decisão de revisar ou não as respostas antes do envio. Em caso de
+    sintomas ou emergência, o paciente deve procurar atendimento médico.
+  </p>
+
+  <h2>3. Conta e acesso</h2>
+  <ul>
+    <li>As informações do cadastro devem ser verdadeiras e mantidas atualizadas;</li>
+    <li>A conta é pessoal. Você é responsável por manter sua senha (ou sua conta Google) em segurança e pelas ações feitas com ela;</li>
+    <li>O médico ou administrador do grupo é responsável pelas pessoas que convida para a sua equipe.</li>
+  </ul>
+
+  <h2>4. Responsabilidades de quem usa</h2>
+  <ul>
+    <li>Cadastrar pacientes e enviar mensagens a eles apenas com base legal adequada, de acordo com a LGPD e as normas éticas da profissão;</li>
+    <li>Revisar os preparos importados por IA antes de usá-los;</li>
+    <li>Não usar o MedIA para fins ilegais, para enviar mensagens não solicitadas ou para tentar acessar dados de outras contas.</li>
+  </ul>
+
+  <h2>5. Licença, período grátis e pagamento</h2>
+  <p>
+    Novas contas de médico têm um período de teste gratuito. Depois dele, o uso depende do pagamento da licença, pelo
+    valor e na periodicidade informados no sistema ("Minha licença"). Em caso de falta de pagamento, o acesso pode ser
+    limitado até a regularização.
+  </p>
+
+  <h2>6. Disponibilidade</h2>
+  <p>
+    Trabalhamos para manter o MedIA disponível, mas podem ocorrer interrupções por manutenção ou por falhas de
+    serviços de terceiros (como WhatsApp e provedores de inteligência artificial). Nessas situações, a área web
+    continua sendo o canal de consulta das informações.
+  </p>
+
+  <h2>7. Cancelamento</h2>
+  <p>
+    Você pode deixar de usar o MedIA quando quiser e pedir a exclusão da sua conta pelo e-mail
+    <a href="mailto:{{ email_privacidade }}">{{ email_privacidade }}</a>. Podemos suspender contas que violem estes termos.
+  </p>
+
+  <h2>8. Alterações e foro</h2>
+  <p>
+    Estes termos podem ser atualizados; a data da última atualização fica no topo da página. Eles são regidos pelas
+    leis brasileiras.
+  </p>
+</article>
+{% endblock %}

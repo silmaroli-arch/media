@@ -88,6 +88,30 @@
   <div class="campo"><span class="rotulo">{{ rotulo }}:</span> {{ valor }}</div>
 {% endmacro %}
 
+{# FAQ do MedIA (base compartilhada) no portal - mesmo conteúdo que
+   medico/perguntas.html já mostrava (pedido do Silvan, 2026-10-20). Só
+   aparece quando a base encontrou algo; sem resposta da base, não mostra
+   nada (decisão do Silvan). #}
+{% macro faq_medIA(p) %}
+  {% if p.resposta_bruta_base %}
+    {% if p.base_divergiu %}
+    <div class="alert alert-warning py-2 small mb-2">
+      <i class="bi bi-journal-medical"></i>
+      {% if not (p.resposta_bruta_claude or p.resposta_bruta_chatgpt or p.resposta_bruta_gemini) %}
+        Nenhuma IA soube responder com base no preparo - o rascunho veio do <strong>FAQ do MedIA</strong>. Revise com atenção.
+      {% else %}
+        A resposta do <strong>FAQ do MedIA</strong> é bem diferente da resposta das IAs (diferenças só de prazo não contam). Compare e revise com atenção.
+      {% endif %}
+    </div>
+    {% endif %}
+    <div class="campo"><span class="rotulo"><i class="bi bi-journal-medical"></i> Sugestão do FAQ do MedIA:</span> {{ p.resposta_bruta_base }}
+      {% if p.base_item and (p.base_item.fonte_nome or p.base_item.fonte_url) %}
+      <div class="small text-muted">Fonte: {% if p.base_item.fonte_url %}<a href="{{ p.base_item.fonte_url }}" target="_blank" rel="noopener">{{ p.base_item.fonte_nome or p.base_item.fonte_url }}</a>{% else %}{{ p.base_item.fonte_nome }}{% endif %}</div>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endmacro %}
+
 {% macro modal_pergunta(p, aguardando_ia) %}
   <div class="modal fade" id="modal-pergunta-{{ p.id }}" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -110,6 +134,7 @@
             {% if p.resposta_bruta_gemini %}{{ campo("Sugestão do Gemini", p.resposta_bruta_gemini) }}{% endif %}
             {% if p.resposta_bruta_chatgpt %}{{ campo("Sugestão do ChatGPT", p.resposta_bruta_chatgpt) }}{% endif %}
             {% if p.resposta_bruta_claude %}{{ campo("Sugestão do Claude", p.resposta_bruta_claude) }}{% endif %}
+            {{ faq_medIA(p) }}
             <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
               <input type="hidden" name="origem" value="portal">
               <div class="campo">

@@ -63,7 +63,7 @@ new Chart(document.getElementById('graficoAgendamentosMedico'), {
   type: 'bar',
   data: {
     labels: {{ linhas_dados|map(attribute='medico')|map(attribute='nome')|list|tojson }},
-    datasets: [{ label: 'Agendamentos', data: {{ linhas_dados|map(attribute='total')|list|tojson }}, backgroundColor: '#0d6efd' }]
+    datasets: [{ label: 'Agendamentos', data: {{ linhas_dados|map(attribute='total')|list|tojson }}, backgroundColor: '#1660B0' }]
   },
   options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
 });
