@@ -37,6 +37,11 @@ PROVEDORES_BUSCA = {
 
 MODELO_EMBEDDING_OPENAI = os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 MODELO_EMBEDDING_GEMINI = os.environ.get("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
+# Versão do TEXTO usado no vetor dos itens (ver texto_do_item_para_vetor).
+# Vai junto no nome do modelo gravado em embedding_modelo: ao mudar o texto,
+# todos os vetores antigos passam a contar como pendentes e um clique em
+# "Calcular vetores" refaz tudo. v2 (2026-10-20): exame + pergunta + resposta.
+VERSAO_TEXTO_VETOR = "v2"
 
 # Pontos de corte iniciais - PRECISAM ser calibrados com perguntas reais
 # (ver "Testar busca" em /dono/base-conhecimento). Palavra-chave: fração das
@@ -70,7 +75,7 @@ def gerar_embedding(texto, provedor):
             import openai
             cliente = openai.OpenAI(api_key=api_key)
             resposta = cliente.embeddings.create(model=MODELO_EMBEDDING_OPENAI, input=texto)
-            return list(resposta.data[0].embedding), f"openai:{MODELO_EMBEDDING_OPENAI}"
+            return list(resposta.data[0].embedding), modelo_do_provedor(provedor)
         if provedor == PROVEDOR_GEMINI:
             api_key = os.environ.get("GEMINI_API_KEY")
             if not api_key:
@@ -78,7 +83,7 @@ def gerar_embedding(texto, provedor):
             from google import genai
             cliente = genai.Client(api_key=api_key)
             resposta = cliente.models.embed_content(model=MODELO_EMBEDDING_GEMINI, contents=texto)
-            return list(resposta.embeddings[0].values), f"gemini:{MODELO_EMBEDDING_GEMINI}"
+            return list(resposta.embeddings[0].values), modelo_do_provedor(provedor)
     except Exception:
         return None
     return None
@@ -99,10 +104,29 @@ def modelo_do_provedor(provedor):
     """Nome do modelo gravado em BaseConhecimentoItem.embedding_modelo para
     o provedor (ou None se o provedor não usa vetores)."""
     if provedor == PROVEDOR_OPENAI:
-        return f"openai:{MODELO_EMBEDDING_OPENAI}"
+        return f"openai:{MODELO_EMBEDDING_OPENAI}:{VERSAO_TEXTO_VETOR}"
     if provedor == PROVEDOR_GEMINI:
-        return f"gemini:{MODELO_EMBEDDING_GEMINI}"
+        return f"gemini:{MODELO_EMBEDDING_GEMINI}:{VERSAO_TEXTO_VETOR}"
     return None
+
+
+def texto_do_item_para_vetor(item):
+    """Texto usado no vetor de um ITEM da base: "Exame: pergunta" + a
+    resposta. Pedido do Silvan (2026-10-20): antes era só a pergunta, e
+    "o remédio pra limpar o intestino não fez efeito" não achava "O laxante
+    não fez efeito, o que eu faço?" - a resposta ("intestino mal limpo")
+    traz as palavras que o paciente usa. O nome do exame deixa o item no
+    mesmo formato da pergunta do paciente (ver _pergunta_com_exame)."""
+    from app.models import TipoExame
+
+    # pelo id (e não item.tipo_exame): item recém-criado ou com o tipo
+    # trocado ainda pode estar com a relação desatualizada
+    tipo = db.session.get(TipoExame, item.tipo_exame_id) if item.tipo_exame_id else None
+    nome_exame = tipo.nome if tipo and tipo.nome else ""
+    pergunta = (item.pergunta or "").strip()
+    if nome_exame:
+        pergunta = f"{nome_exame}: {pergunta}"
+    return f"{pergunta}\n{(item.resposta or '').strip()}".strip()
 
 
 def gerar_embeddings_em_lote(textos, provedor):
@@ -175,7 +199,7 @@ def calcular_vetores_pendentes(provedor=None, tempo_maximo=TEMPO_MAXIMO_CALCULO_
         if i > 0 and time.monotonic() - inicio > tempo_maximo:
             break  # o 1º lote sempre roda - cada clique sempre avança
         lote = pendentes[i:i + TAMANHO_LOTE_EMBEDDING]
-        resultado = gerar_embeddings_em_lote([item.pergunta for item in lote], provedor)
+        resultado = gerar_embeddings_em_lote([texto_do_item_para_vetor(item) for item in lote], provedor)
         if resultado:
             vetores, modelo = resultado
             for item, vetor in zip(lote, vetores):
@@ -202,12 +226,12 @@ def calcular_vetores_pendentes(provedor=None, tempo_maximo=TEMPO_MAXIMO_CALCULO_
 
 
 def atualizar_embedding_do_item(item, provedor=None):
-    """(Re)calcula o embedding da PERGUNTA do item com o provedor atual e
+    """(Re)calcula o embedding do item (ver texto_do_item_para_vetor) com o provedor atual e
     grava no próprio item (quem chama decide o commit). Devolve True se
     gravou. Com provedor "palavra_chave" (ou falha), limpa o embedding
     antigo para não sobrar um vetor de outro modelo/texto desatualizado."""
     provedor = provedor or provedor_configurado()
-    resultado = gerar_embedding(item.pergunta, provedor)
+    resultado = gerar_embedding(texto_do_item_para_vetor(item), provedor)
     if not resultado:
         item.embedding = None
         item.embedding_modelo = None
@@ -260,8 +284,8 @@ def _pergunta_com_exame(pergunta, tipo_exame_id):
     dirigir depois?"). Pedido do Silvan (2026-10-20): perguntas curtas não
     citam o exame - para o paciente ele é óbvio -, e sem esse contexto
     "dá pra dirigir depois?" ficava abaixo do limiar para "Posso dirigir
-    depois da colonoscopia?". Só a pergunta recebe o prefixo; os vetores dos
-    itens continuam os mesmos (não precisa recalcular)."""
+    depois da colonoscopia?". Os vetores dos itens também levam o nome do
+    exame (ver texto_do_item_para_vetor)."""
     if not tipo_exame_id:
         return pergunta
     from app.models import TipoExame

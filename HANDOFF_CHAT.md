@@ -2374,6 +2374,16 @@ Prints do sistema enviados pelo Silvan para colocar na página de apresentação
 - NÃO verificado com a OpenAI real (ambiente do assistente sem acesso). Depois do deploy, repetir no "Testar busca": "dá pra dirigir depois?", "o remédio pra limpar o intestino não fez efeito", "nimesulida", "posso fazer o exame menstruada?", "posso levar meu filho junto?" - e então decidir o limiar (0,70 hoje; subir se aparecer item fora do assunto).
 - Discutido e NÃO feito (decisão do Silvan): mostrar no "Testar busca" o item mais próximo mesmo abaixo do mínimo.
 
+## Vetor dos itens do FAQ do MedIA com exame + pergunta + resposta (2026-10-20, pedido do Silvan)
+
+- Teste em dev (tipo Colonoscopia, OpenAI, mínimo 0,70): "dá pra dirigir depois?" achou o item certo (0,88), "Posso fazer o exame menstruada?" também (0,80), "nimesulida" e "levar meu filho junto" não acharam nada (correto). Faltou "o remédio pra limpar o intestino não fez efeito" -> "O laxante não fez efeito...". Decisão: manter LIMIAR_EMBEDDING em 0,70.
+- `app/base_conhecimento.py`: `texto_do_item_para_vetor(item)` = "Exame: pergunta" + quebra de linha + resposta, usado no cálculo em lote e em `atualizar_embedding_do_item` (antes era só a pergunta). A resposta traz as palavras do paciente ("intestino mal limpo") e o nome do exame deixa o item no mesmo formato da pergunta do paciente.
+- `VERSAO_TEXTO_VETOR = "v2"` entra no nome do modelo (`openai:text-embedding-3-small:v2`): os vetores antigos passam a contar como pendentes, e um clique em "Calcular vetores" refaz tudo. Ao mudar o texto do vetor de novo, troque a versão.
+- `app/routes_dono.py` (editar item): trocar o tipo de exame agora também recalcula o vetor, porque o nome do exame faz parte dele.
+- Testes: `test_base_conhecimento.py` (vetores falsos pelo começo do texto + check do texto exame+pergunta+resposta) e `test_base_vetores_lote.py` (vetores da versão anterior contam como pendentes e o texto enviado). Suíte 82/82.
+- Resultado em dev (867 vetores recalculados em 1 clique): 5 de 5 certos. Dirigir 0,81, laxante 0,77 (antes não achava), menstruada 0,74. Nimesulida, filho junto e "Qual o endereço da clínica?" não acharam nada. As notas caem um pouco porque a resposta "dilui" o vetor. Mínimo mantido em 0,70: subir para 0,75 perderia a menstruada.
+- Em produção, depois do deploy: clicar uma vez em "Calcular vetores".
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

@@ -150,10 +150,14 @@ html = client.get("/dono/base-conhecimento?teste=posso+dirigir+depois&teste_tipo
 checar("Testar busca mostra o resultado", "Posso dirigir depois da colonoscopia?" in html and "similaridade" in html)
 
 # ---------- 5. Embeddings (simulados) ----------
+# itens: o vetor e calculado com "Exame: pergunta" + resposta (2026-10-20) -
+# aqui a chave e so o comeco do texto (ver embedding_falso)
+VETORES_ITENS = {
+    "Colonoscopia: A colonoscopia dói?\n": [1.0, 0.0, 0.0],
+    "Colonoscopia: Posso dirigir depois da colonoscopia?\n": [0.0, 1.0, 0.0],
+    "Colonoscopia: O laxante não fez efeito, o que eu faço?\n": [0.0, 0.0, 1.0],
+}
 VETORES = {
-    "A colonoscopia dói?": [1.0, 0.0, 0.0],
-    "Posso dirigir depois da colonoscopia?": [0.0, 1.0, 0.0],
-    "O laxante não fez efeito, o que eu faço?": [0.0, 0.0, 1.0],
     # perguntas do paciente: a busca prefixa o nome do tipo de exame (2026-10-20)
     "Colonoscopia: o remedio para limpar o intestino nao funcionou": [0.05, 0.05, 0.99],
     # cosseno ~0,577 com cada vetor acima - bem abaixo de LIMIAR_EMBEDDING (0,70)
@@ -168,7 +172,7 @@ def embedding_falso(texto, provedor):
     textos_enviados.append(texto)
     if falhar["ligado"] or provedor not in ("openai", "gemini"):
         return None
-    vetor = VETORES.get(texto)
+    vetor = VETORES.get(texto) or next((v for k, v in VETORES_ITENS.items() if texto.startswith(k)), None)
     return (vetor, "openai:teste") if vetor else ([0.0, 0.0, 0.0], "openai:teste")
 
 
@@ -182,6 +186,8 @@ try:
     checar("Calcular vetores responde com resumo", "vetor(es) calculado(s)" in r.get_data(as_text=True))
     with app.app_context():
         checar("Vetores foram gravados", BaseConhecimentoItem.query.filter(BaseConhecimentoItem.embedding.isnot(None)).count() > 0)
+        checar("Vetor do item usa exame + pergunta + resposta",
+               any(t.startswith("Colonoscopia: O laxante não fez efeito, o que eu faço?\nAguarde mais um tempo") for t in textos_enviados))
         achou = bc.buscar_na_base("o remedio para limpar o intestino nao funcionou", tipo_exame_id=colono_id)
         checar("Embedding acha por SENTIDO (palavras diferentes)", achou and achou[0]["item"].pergunta.startswith("O laxante não fez efeito") and achou[0]["metodo"] == "openai")
         checar("A busca por sentido envia a pergunta com o nome do exame",

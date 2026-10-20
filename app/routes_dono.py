@@ -1275,11 +1275,13 @@ def base_conhecimento_editar(item_id):
         _registrar_historico_base(item, "Edição pelo dono")
         item.pergunta = pergunta
         item.resposta = resposta
+    # o nome do exame entra no vetor do item (ver texto_do_item_para_vetor)
+    tipo_mudou = tipo_id != item.tipo_exame_id
     item.tipo_exame_id = tipo_id
     item.fonte_nome = request.form.get("fonte_nome", "").strip() or None
     item.fonte_url = request.form.get("fonte_url", "").strip() or None
     item.revisado = True
-    if texto_mudou:
+    if texto_mudou or tipo_mudou:
         atualizar_embedding_do_item(item)
     db.session.commit()
     flash("Item atualizado.", "success")
