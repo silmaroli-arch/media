@@ -1,6 +1,6 @@
 """Testa a tela "Meus dados" (auth.meus_dados), pedida pelo Silvan para o
 dono da plataforma poder manter o próprio cadastro (nome, CPF, e-mail,
-telefone, endereço) atualizado - disponível também para médico/secretária,
+telefone) atualizado - disponível também para médico/secretária,
 já que a mesma necessidade vale para qualquer conta com senha.
 
 Cobre:
@@ -10,8 +10,8 @@ Cobre:
 3. Senha certa libera a edição (no mesmo request, sem precisar recarregar
    de novo) e a confirmação vale pelas próximas visitas dentro da janela
    de tempo (MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS).
-4. Salvar com dados válidos atualiza nome/CPF/e-mail/telefone/endereço de
-   verdade.
+4. Salvar com dados válidos atualiza nome/CPF/e-mail/telefone de
+   verdade (o endereço pessoal saiu em 2026-10-20 - LGPD).
 5. Validações: CPF inválido, e-mail duplicado de outra conta, CPF
    duplicado de outra conta (mesma lógica de busca por dígitos usada no
    login) - nenhum desses casos deve alterar o registro.
@@ -150,8 +150,7 @@ with app.app_context():
     checar("E-mail foi atualizado", d.email == "dono.novo@plataforma.com")
     checar("CPF foi atualizado", d.cpf == "529.982.247-25")
     checar("Telefone foi normalizado/salvo", d.telefone and "999991234" in d.telefone)
-    checar("Endereço foi salvo", d.rua == "Av. Teste" and d.cidade == "Vitória")
-    checar("UF foi salva em maiúsculo", d.uf == "ES")
+    checar("Endereço enviado no POST não é guardado (LGPD)", not hasattr(d, "rua") and not hasattr(d, "cidade"))
 
 # --- Paciente (sem senha) não acessa a tela. ---
 client.get("/logout")

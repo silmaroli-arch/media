@@ -2393,9 +2393,21 @@ Prints do sistema enviados pelo Silvan para colocar na página de apresentação
 
 - Antes, depois que o ViaCEP preenchia o endereço, Rua/Bairro/Cidade/UF continuavam editáveis. Agora ficam travados (readonly + bg-light) e só **Número e Complemento** são digitados.
 - Exceções, para não impedir o cadastro (os campos são obrigatórios): campo que veio VAZIO do ViaCEP (CEP geral da cidade, sem rua nem bairro) continua editável; CEP não encontrado, ViaCEP fora do ar ou CEP alterado/apagado destravam tudo.
-- Telas: `auth/cadastro.html`, `auth/meus_dados.html`, `medico/clinica_configuracoes.html` (função `travarEnderecoDoCep` em cada uma). As telas de paciente (`auth/cadastro_paciente.html`, `paciente/meus_dados.html`, `medico/pacientes_form.html`) já tinham esses campos sempre somente leitura.
+- Telas: `auth/cadastro.html`, `auth/meus_dados.html`, `medico/clinica_configuracoes.html` (função `travarEnderecoDoCep` em cada uma). ATUALIZAÇÃO (mesmo dia): o endereço pessoal da equipe saiu (LGPD, seção abaixo), então isso só vale hoje para "Dados da clínica". As telas de paciente (`auth/cadastro_paciente.html`, `paciente/meus_dados.html`, `medico/pacientes_form.html`) já tinham esses campos sempre somente leitura.
 - Ao abrir "Meus dados" ou "Dados da clínica" com um endereço já salvo, os campos começam editáveis e só travam depois que o CEP for buscado de novo.
 - Conferido no navegador (Playwright, ViaCEP simulado) nas 3 telas: CEP achado, CEP geral e CEP não encontrado. Suíte 82/82.
+
+## LGPD: minimização dos dados pessoais (2026-10-20, pedido do Silvan - "seguir à risca a LGPD")
+
+Levantamento: dados pedidos que o sistema não usava para nada. Removidos das telas, das rotas e dos modelos, e **apagados do banco**:
+- **Equipe:** endereço pessoal (CEP, rua, número, complemento, bairro, cidade, UF). Era obrigatório no cadastro e não era usado: o Mercado Pago recebe só o e-mail e a nota fiscal usa os dados da clínica.
+- **Paciente:** e-mail (o login é CPF + nascimento e as mensagens vão pelo WhatsApp), endereço e contato de emergência (dado de terceiro). Só apareciam na ficha.
+- **Mantidos, com finalidade:** CPF da equipe (login e busca no "Convidar membros" do grupo, por isso continua até para secretária); data de nascimento só do médico (paciente de teste do WhatsApp); paciente: nome, CPF, nascimento (identificação no WhatsApp) e telefone. A Política de Privacidade foi atualizada com essas finalidades.
+- **Observações do paciente:** ficam, com aviso na tela para não registrar diagnósticos ou outros dados de saúde.
+- **Banco (`migrar_banco.py`):** fase 1, que roda neste deploy: `UPDATE ... SET NULL` em todos esses campos (e no e-mail das contas `usuarios` de tipo paciente). As colunas ainda existem porque a versão anterior do app, que atende durante o deploy, lê essas colunas em toda página; derrubar já daria erro 500 nesse intervalo. **Fase 2 (PENDENTE, num deploy seguinte):** trocar os UPDATE e os `ADD COLUMN` antigos dessas colunas por `ALTER TABLE ... DROP COLUMN IF EXISTS`.
+- Validado num PostgreSQL de verdade: banco criado com o código antigo e dados preenchidos -> migração nova -> 0 registros com esses dados, e-mail da equipe intacto, idempotente (2ª execução ok), app novo e app antigo funcionando no banco migrado.
+- Removidos: `cep_incompleto` (models), `_preencher_endereco_emergencia` (routes_medico), JS de CEP/contato de emergência nas telas, `test_autocadastro_paciente_endereco.py`. Novo: `test_lgpd_minimizacao.py` (22 checks). Ajustados: test_smoke, test_meus_dados, test_meus_dados_paciente, test_paciente_da_empresa, test_grupo_agendamento, test_cadastro_global_importar_cpf, seed.py (pacientes sem e-mail). Suíte 82/82.
+- Atenção: os backups automáticos do Render ainda guardam esses dados até expirarem pelo prazo de retenção do plano.
 
 ## Como continuar
 

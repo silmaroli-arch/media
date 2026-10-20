@@ -25,7 +25,7 @@ from app.models import (
     PlataformaConfig, MensagemSuporte, Notificacao, TipoExame, BaseConhecimentoItem, BaseConhecimentoSugestao,
     tipos_exame_ordenados, TipoExameSugestao,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
-    cep_incompleto, telefone_incompleto,
+    telefone_incompleto,
 )
 from app.especialidades import ESPECIALIDADES, especialidade_valida
 from app.mercadopago_integration import (
@@ -621,21 +621,6 @@ def pacientes_cadastro_decidir(paciente_id):
     return redirect(url_for("medico.pacientes_solicitacoes"))
 
 
-def _preencher_endereco_emergencia(paciente, form):
-    """Preenche os campos de endereço (obtidos via busca por CEP no
-    formulário) e de contato de emergência a partir do form — usado tanto
-    no cadastro quanto na edição do paciente."""
-    paciente.cep = form.get("cep", "").strip()
-    paciente.rua = form.get("rua", "").strip()
-    paciente.numero = form.get("numero", "").strip()
-    paciente.complemento = form.get("complemento", "").strip()
-    paciente.bairro = form.get("bairro", "").strip()
-    paciente.cidade = form.get("cidade", "").strip()
-    paciente.uf = form.get("uf", "").strip().upper() or None
-    paciente.contato_emergencia_nome = formatar_nome_proprio(form.get("contato_emergencia_nome", ""))
-    paciente.contato_emergencia_telefone = form.get("contato_emergencia_telefone", "").strip()
-
-
 def _buscar_paciente_por_cpf_plataforma(cpf):
     """Acha o cadastro mais recente de um paciente na PLATAFORMA inteira
     pelo CPF (comparado só nos dígitos - o CPF é guardado como digitado).
@@ -686,7 +671,6 @@ def pacientes_novo():
         # marcar cada consulta (medico.agenda_novo).
         nome = formatar_nome_proprio(request.form.get("nome", ""))
         cpf = request.form.get("cpf", "").strip()
-        email = request.form.get("email", "").strip().lower()
         telefone_digitado = request.form.get("telefone", "").strip()
         data_nascimento_str = request.form.get("data_nascimento", "").strip()
         telefone = normalizar_telefone(telefone_digitado)
@@ -704,26 +688,11 @@ def pacientes_novo():
                 "medico/pacientes_form.html", paciente=None,
                 cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
             )
-        if telefone_incompleto(request.form.get("contato_emergencia_telefone", "")):
-            flash("Telefone do contato de emergência incompleto — digite o DDD e o número completos.", "danger")
-            return render_template(
-                "medico/pacientes_form.html", paciente=None,
-                cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
-            )
 
         data_nascimento = _parse_data_nascimento(data_nascimento_str)
         if not data_nascimento:
             flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
-
-        # CEP incompleto (ex.: "29055") não bloqueava o envio e ficava
-        # salvo pela metade, com rua/bairro/cidade/UF vazios.
-        if cep_incompleto(request.form.get("cep", "")):
-            flash("CEP incompleto — digite os 8 números.", "danger")
-            return render_template(
-                "medico/pacientes_form.html", paciente=None,
-                cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
-            )
 
         # Telefone não é único por pessoa - é normal uma família inteira
         # (pais e filhos, por exemplo) compartilhar o mesmo telefone de
@@ -743,14 +712,6 @@ def pacientes_novo():
             .first()
         ):
             flash("Já existe um paciente cadastrado com esse telefone e data de nascimento nesta empresa.", "danger")
-            return render_template("medico/pacientes_form.html", paciente=None)
-
-        if email and (
-            Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
-            .filter(_filtro_pacientes_da_empresa(), Usuario.email == email)
-            .first()
-        ):
-            flash("Já existe um paciente com esse e-mail nesta empresa.", "danger")
             return render_template("medico/pacientes_form.html", paciente=None)
 
         # Fatia 5: o cadastro (Paciente) é único e GLOBAL por CPF - não dá
@@ -778,7 +739,7 @@ def pacientes_novo():
         # empresa é novo. Ver encontrar_conta_paciente em app/models.py.
         usuario = encontrar_conta_paciente_por_cpf(cpf) or encontrar_conta_paciente(telefone, data_nascimento)
         if not usuario:
-            usuario = Usuario(nome=nome, email=email or None, telefone=telefone, tipo="paciente")
+            usuario = Usuario(nome=nome, telefone=telefone, tipo="paciente")
             db.session.add(usuario)
             db.session.flush()
 
@@ -792,10 +753,8 @@ def pacientes_novo():
             nome=nome,
             cpf=cpf,
             data_nascimento=data_nascimento,
-            email=email or None,
             telefone=telefone,
         )
-        _preencher_endereco_emergencia(paciente, request.form)
         db.session.add(paciente)
         db.session.flush()
         _associar_paciente_ao_escopo_atual(paciente, empresa)
@@ -846,8 +805,8 @@ def pacientes_importar():
     _associar_paciente_ao_escopo_atual(origem, empresa)
     db.session.commit()
     flash(
-        f"{origem.nome} foi importado(a) da plataforma para esta empresa - o cadastro (contato/"
-        "endereço) é o mesmo de sempre; o histórico dele(a) em outras clínicas continua lá (cada "
+        f"{origem.nome} foi importado(a) da plataforma para esta empresa - o cadastro (contato) "
+        "é o mesmo de sempre; o histórico dele(a) em outras clínicas continua lá (cada "
         "clínica vê só o que é dela).",
         "success",
     )
@@ -864,19 +823,8 @@ def pacientes_editar(paciente_id):
     ).first_or_404()
 
     if request.method == "POST":
-        # CEP incompleto (ex.: "29055") não bloqueava o envio e ficava
-        # salvo pela metade, com rua/bairro/cidade/UF vazios.
-        if cep_incompleto(request.form.get("cep", "")):
-            flash("CEP incompleto — digite os 8 números.", "danger")
-            return render_template("medico/pacientes_form.html", paciente=paciente)
-        if telefone_incompleto(request.form.get("contato_emergencia_telefone", "")):
-            flash("Telefone do contato de emergência incompleto — digite o DDD e o número completos.", "danger")
-            return render_template("medico/pacientes_form.html", paciente=paciente)
-
         paciente.nome = formatar_nome_proprio(request.form.get("nome", "")) or paciente.nome
-        paciente.email = request.form.get("email", "").strip().lower() or None
         paciente.observacoes = request.form.get("observacoes", "").strip() or None
-        _preencher_endereco_emergencia(paciente, request.form)
         db.session.commit()
         flash("Cadastro do paciente atualizado.", "success")
         return redirect(url_for("medico.pacientes_detalhe", paciente_id=paciente.id))

@@ -75,7 +75,6 @@ with app.app_context():
     paciente = Paciente(
         usuario_id=usuario_paciente.id, nome="Paciente Agenda BBP", cpf="901.234.567-70",
         telefone=telefone_paciente, data_nascimento=datetime(1988, 3, 3).date(),
-        cep="29000-000", rua="Rua Agenda", numero="1", bairro="Centro", cidade="Vitória", uf="ES",
     )
     db.session.add(paciente)
     db.session.commit()

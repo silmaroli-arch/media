@@ -6,7 +6,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 
 from app.extensions import db
 from app.especialidades import ESPECIALIDADES, especialidade_valida
-from app.models import Usuario, Paciente, PlataformaConfig, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.models import Usuario, Paciente, PlataformaConfig, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, telefone_incompleto
 from app.whatsapp_envio import enviar_boas_vindas_whatsapp
 # `proximo_seguro` mora em clinica_utils.py (compartilhado com
 # routes_medico.py:escolher_clinica, que precisa do mesmo tratamento pra
@@ -314,10 +314,6 @@ def meus_dados():
             flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
             return render_template("auth/meus_dados.html", confirmado=True)
 
-        if cep_incompleto(request.form.get("cep", "")):
-            flash("CEP incompleto — digite os 8 números.", "danger")
-            return render_template("auth/meus_dados.html", confirmado=True)
-
         # Pedido do Silvan (2026-09-10): só o médico tem esse campo (ver
         # auth/meus_dados.html) - vira a identificação (CPF + data de
         # nascimento) do "paciente de teste" de medico.testar_ia (ver
@@ -359,13 +355,6 @@ def meus_dados():
         if current_user.tipo == "medico":
             current_user.especialidade = especialidade_valida(request.form.get("especialidade"))
         current_user.telefone = normalizar_telefone(request.form.get("telefone", ""))
-        current_user.cep = request.form.get("cep", "").strip()
-        current_user.rua = request.form.get("rua", "").strip()
-        current_user.numero = request.form.get("numero", "").strip()
-        current_user.complemento = request.form.get("complemento", "").strip()
-        current_user.bairro = request.form.get("bairro", "").strip()
-        current_user.cidade = request.form.get("cidade", "").strip()
-        current_user.uf = request.form.get("uf", "").strip().upper() or None
         db.session.commit()
         flash("Dados atualizados com sucesso.", "success")
         return redirect(url_for("auth.meus_dados"))
@@ -429,31 +418,17 @@ def cadastro():
 
         papel = request.form.get("papel", "secretaria")
 
-        # Pedido do Silvan (2026-09-10): todo o formulário de cadastro
-        # (exceto Complemento, que nem todo endereço tem) virou
-        # obrigatório - antes só nome/e-mail/senha/CPF eram exigidos de
-        # verdade, telefone e CEP só validavam formato quando preenchidos
-        # (podiam ficar em branco), e o resto do endereço (rua, número,
-        # bairro, cidade, UF) não tinha validação nenhuma. Vale só para
-        # cadastros NOVOS a partir de agora - contas já existentes com
-        # esses campos vazios não são bloqueadas nem avisadas.
-        campos_endereco = {
-            "rua": request.form.get("rua", "").strip(),
-            "numero": request.form.get("numero", "").strip(),
-            "bairro": request.form.get("bairro", "").strip(),
-            "cidade": request.form.get("cidade", "").strip(),
-            "uf": request.form.get("uf", "").strip(),
-        }
+        # Todos os campos do cadastro são obrigatórios. O endereço pessoal
+        # deixou de ser pedido (LGPD, minimização - 2026-10-20): o sistema
+        # não usava para nada.
         if (
             not nome
             or not email
             or (not senha and not google_cadastro)
             or not cpf
             or not request.form.get("telefone", "").strip()
-            or not request.form.get("cep", "").strip()
-            or not all(campos_endereco.values())
         ):
-            flash("Preencha todos os campos obrigatórios (todos, exceto Complemento).", "danger")
+            flash("Preencha todos os campos obrigatórios.", "danger")
             return render_template("auth/cadastro.html")
 
         if not validar_cpf(cpf):
@@ -462,10 +437,6 @@ def cadastro():
 
         if telefone_incompleto(request.form.get("telefone", "")):
             flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
-            return render_template("auth/cadastro.html")
-
-        if cep_incompleto(request.form.get("cep", "")):
-            flash("CEP incompleto — digite os 8 números.", "danger")
             return render_template("auth/cadastro.html")
 
         if papel not in ("medico", "secretaria"):
@@ -520,13 +491,6 @@ def cadastro():
         else:
             usuario.set_senha(senha)
         usuario.telefone = normalizar_telefone(request.form.get("telefone", ""))
-        usuario.cep = request.form.get("cep", "").strip()
-        usuario.rua = request.form.get("rua", "").strip()
-        usuario.numero = request.form.get("numero", "").strip()
-        usuario.complemento = request.form.get("complemento", "").strip()
-        usuario.bairro = request.form.get("bairro", "").strip()
-        usuario.cidade = request.form.get("cidade", "").strip()
-        usuario.uf = request.form.get("uf", "").strip().upper() or None
         usuario.crm_numero = crm_numero
         usuario.crm_uf = crm_uf
         # Especialidade não é mais pedida no cadastro (2026-10-19): o médico
@@ -690,7 +654,6 @@ def cadastro_paciente_global():
         # maiúscula) - no celular quase todo mundo digita minúsculo.
         nome = formatar_nome_proprio(request.form.get("nome", ""))
         cpf = request.form.get("cpf", "").strip()
-        email = request.form.get("email", "").strip().lower()
         telefone_digitado = request.form.get("telefone", "").strip()
         data_nascimento_str = request.form.get("data_nascimento", "").strip()
         telefone = normalizar_telefone(telefone_digitado)
@@ -705,9 +668,6 @@ def cadastro_paciente_global():
         if telefone_incompleto(telefone_digitado):
             flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
             return render_template("auth/cadastro_paciente.html")
-        if telefone_incompleto(request.form.get("contato_emergencia_telefone", "")):
-            flash("Telefone do contato de emergência incompleto — digite o DDD e o número completos.", "danger")
-            return render_template("auth/cadastro_paciente.html")
 
         # O CPF é o login e a chave que a clínica usa pra importar o
         # paciente - precisa ser um CPF que EXISTE (dígitos verificadores
@@ -719,13 +679,6 @@ def cadastro_paciente_global():
         data_nascimento = _parse_data_nascimento(data_nascimento_str)
         if not data_nascimento:
             flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
-            return render_template("auth/cadastro_paciente.html")
-
-        # CEP incompleto (ex.: "29055") não bloqueava o envio e ficava
-        # salvo pela metade, com rua/bairro/cidade/UF vazios (a busca do
-        # ViaCEP só preenche esses campos com os 8 números completos).
-        if cep_incompleto(request.form.get("cep", "")):
-            flash("CEP incompleto — digite os 8 números.", "danger")
             return render_template("auth/cadastro_paciente.html")
 
         # A pessoa já tem conta (telefone + nascimento)? Então já está
@@ -745,7 +698,7 @@ def cadastro_paciente_global():
                 )
                 return render_template("auth/cadastro_paciente.html")
 
-        usuario = Usuario(nome=nome, email=email or None, telefone=telefone, tipo="paciente")
+        usuario = Usuario(nome=nome, telefone=telefone, tipo="paciente")
         db.session.add(usuario)
         db.session.flush()
 
@@ -758,19 +711,9 @@ def cadastro_paciente_global():
             nome=nome,
             cpf=cpf,
             data_nascimento=data_nascimento,
-            email=email or None,
             telefone=telefone,
             status_cadastro="aprovado",
         )
-        paciente.cep = request.form.get("cep", "").strip()
-        paciente.rua = request.form.get("rua", "").strip()
-        paciente.numero = request.form.get("numero", "").strip()
-        paciente.complemento = request.form.get("complemento", "").strip()
-        paciente.bairro = request.form.get("bairro", "").strip()
-        paciente.cidade = request.form.get("cidade", "").strip()
-        paciente.uf = request.form.get("uf", "").strip().upper() or None
-        paciente.contato_emergencia_nome = formatar_nome_proprio(request.form.get("contato_emergencia_nome", ""))
-        paciente.contato_emergencia_telefone = request.form.get("contato_emergencia_telefone", "").strip()
         db.session.add(paciente)
         db.session.commit()
 

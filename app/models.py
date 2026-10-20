@@ -183,19 +183,12 @@ class Usuario(db.Model, UserMixin):
     # campo do Grupo é que vale para todo mundo da equipe.
     aprovacao_perguntas_paciente = db.Column(db.Boolean, nullable=False, default=True)
 
-    # CPF e endereço PESSOAL de quem trabalha na plataforma (dono/médico/
-    # secretária) - coletados no cadastro (auth.cadastro) e também no
-    # cadastro/edição de membros da equipe (medico.equipe_novo/
-    # equipe_editar). Endereço da PESSOA, não da clínica (ver Clinica.cep
-    # etc. para o endereço do local de atendimento).
+    # CPF de quem trabalha na plataforma (dono/médico/secretária): é
+    # credencial de login (auth.login) e é por ele que o administrador de um
+    # grupo acha a pessoa para convidar (grupo.convidar). O endereço PESSOAL
+    # deixou de existir (LGPD, minimização - pedido do Silvan, 2026-10-20):
+    # o sistema não usava para nada; migrar_banco.py apagou as colunas.
     cpf = db.Column(db.String(20))
-    cep = db.Column(db.String(10))
-    rua = db.Column(db.String(200))
-    numero = db.Column(db.String(20))
-    complemento = db.Column(db.String(100))
-    bairro = db.Column(db.String(100))
-    cidade = db.Column(db.String(100))
-    uf = db.Column(db.String(2))
 
     # Data de nascimento do MÉDICO (pedido do Silvan, 2026-09-10): sem ela,
     # o "paciente de teste" que a tela medico.testar_ia usa como âncora
@@ -482,16 +475,6 @@ def validar_cnpj(cnpj):
         return False
     dv2 = _digito_verificador(digitos[:12] + dv1, pesos2)
     return dv2 == digitos[13]
-
-
-def cep_incompleto(cep):
-    """True se o CEP foi digitado mas ficou incompleto (nem todos os 8
-    dígitos) - sem isso, o cadastro deixava salvar um CEP pela metade
-    (ex.: "29055") com rua/bairro/cidade/UF vazios, porque a busca do
-    ViaCEP só dispara com os 8 números completos e nada travava o envio
-    do formulário com o restante em branco."""
-    digitos = re.sub(r"\D", "", cep or "")
-    return bool(digitos) and len(digitos) != 8
 
 
 def encontrar_conta_paciente_por_cpf(cpf):
@@ -996,21 +979,11 @@ class Paciente(db.Model):
     cpf = db.Column(db.String(20), nullable=False)
     data_nascimento = db.Column(db.Date, nullable=True)
     telefone = db.Column(db.String(30))
-    email = db.Column(db.String(150))
+    # Só a equipe vê. E-mail, endereço e contato de emergência do paciente
+    # deixaram de existir (LGPD, minimização - pedido do Silvan,
+    # 2026-10-20): o paciente entra por CPF + data de nascimento e recebe
+    # tudo pelo WhatsApp, e esses dados só apareciam na ficha.
     observacoes = db.Column(db.Text)
-
-    # Endereço (preenchido a partir da busca por CEP no cadastro).
-    cep = db.Column(db.String(10))
-    rua = db.Column(db.String(200))
-    numero = db.Column(db.String(20))
-    complemento = db.Column(db.String(100))
-    bairro = db.Column(db.String(100))
-    cidade = db.Column(db.String(100))
-    uf = db.Column(db.String(2))
-
-    # Contato de emergência.
-    contato_emergencia_nome = db.Column(db.String(150))
-    contato_emergencia_telefone = db.Column(db.String(30))
 
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 

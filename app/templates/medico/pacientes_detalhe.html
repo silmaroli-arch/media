@@ -36,16 +36,6 @@
   <p><strong>CPF:</strong> {{ paciente.cpf }}</p>
   <p><strong>Telefone (login de acesso):</strong> {{ paciente.telefone or '-' }}</p>
   <p><strong>Data de nascimento:</strong> {{ paciente.data_nascimento.strftime('%d/%m/%Y') if paciente.data_nascimento else '-' }}</p>
-  <p><strong>E-mail:</strong> {{ paciente.email or '-' }}</p>
-  <p class="mb-0"><strong>Endereço:</strong>
-    {% if paciente.rua %}
-      {{ paciente.rua }}, {{ paciente.numero or 's/n' }}{% if paciente.complemento %} - {{ paciente.complemento }}{% endif %} —
-      {{ paciente.bairro or '' }}, {{ paciente.cidade or '' }}/{{ paciente.uf or '' }} — CEP {{ paciente.cep or '-' }}
-    {% else %}-{% endif %}
-  </p>
-  <p class="mb-0"><strong>Contato de emergência:</strong>
-    {% if paciente.contato_emergencia_nome %}{{ paciente.contato_emergencia_nome }} — {{ paciente.contato_emergencia_telefone or '-' }}{% else %}-{% endif %}
-  </p>
 </div>
 
 <div class="card p-3">

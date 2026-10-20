@@ -10,7 +10,7 @@ from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, GrupoPaciente, Grupo, Usuario, FaqItem, normalizar_telefone, formatar_nome_proprio, cep_incompleto, telefone_incompleto
+from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, GrupoPaciente, Grupo, Usuario, FaqItem, normalizar_telefone, telefone_incompleto
 from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
 from app.ia_preparo import responder_com_ia
 from app.clinica_utils import verificar_vencimento_grupo
@@ -590,7 +590,6 @@ def meus_dados():
     if request.method == "POST":
         telefone_digitado = request.form.get("telefone", "").strip()
         telefone = normalizar_telefone(telefone_digitado)
-        email = request.form.get("email", "").strip().lower()
 
         if not telefone:
             flash("O telefone é obrigatório — é o contato que as clínicas usam com você.", "danger")
@@ -602,31 +601,11 @@ def meus_dados():
         if telefone_incompleto(telefone_digitado):
             flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
             return redirect(url_for("paciente.meus_dados"))
-        if telefone_incompleto(request.form.get("contato_emergencia_telefone", "")):
-            flash("Telefone do contato de emergência incompleto — digite o DDD e o número completos.", "danger")
-            return redirect(url_for("paciente.meus_dados"))
-
-        # CEP incompleto (ex.: "29055") não bloqueava o envio e ficava
-        # salvo pela metade, com rua/bairro/cidade/UF vazios.
-        if cep_incompleto(request.form.get("cep", "")):
-            flash("CEP incompleto — digite os 8 números.", "danger")
-            return redirect(url_for("paciente.meus_dados"))
 
         # Aplica na CONTA (login) e em TODOS os cadastros (todas as clínicas).
         current_user.telefone = telefone
-        current_user.email = email or None
         for p in current_user.pacientes:
             p.telefone = telefone
-            p.email = email or None
-            p.cep = request.form.get("cep", "").strip()
-            p.rua = request.form.get("rua", "").strip()
-            p.numero = request.form.get("numero", "").strip()
-            p.complemento = request.form.get("complemento", "").strip()
-            p.bairro = request.form.get("bairro", "").strip()
-            p.cidade = request.form.get("cidade", "").strip()
-            p.uf = request.form.get("uf", "").strip().upper() or None
-            p.contato_emergencia_nome = formatar_nome_proprio(request.form.get("contato_emergencia_nome", ""))
-            p.contato_emergencia_telefone = request.form.get("contato_emergencia_telefone", "").strip()
         db.session.commit()
 
         # O telefone deixou de ser credencial (o login é CPF + data de

@@ -1355,7 +1355,7 @@ client.get("/logout")
 # ---------- Novas funcionalidades: duração/preço/acompanhante do exame,
 # horário do médico, otimizador de agenda, solicitação de agendamento pelo
 # paciente, atendimento (histórico de chat + encerramento), resultado em
-# PDF, e endereço/contato de emergência ----------
+# PDF ----------
 
 with app.app_context():
     clinica_vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
@@ -1463,32 +1463,18 @@ r = client.get(f"/paciente/exame/{agendamento_colono_id}/resultado")
 checar("Paciente consegue baixar o resultado do exame anexado", r.status_code == 200 and r.mimetype == "application/pdf")
 client.get("/logout")
 
-# --- Endereço (CEP) e contato de emergência no cadastro do paciente ---
+# --- Edição do cadastro do paciente pela equipe (observações) ---
+# E-mail, endereço e contato de emergência saíram em 2026-10-20 (LGPD, ver
+# test_lgpd_minimizacao.py).
 login("secretaria@clinicavitoria.com", "123456")
 r = client.post(f"/equipe/pacientes/{joao_id}/editar", data={
     "nome": "João Pereira",
-    "email": "",
-    "observacoes": "",
-    "cep": "29010-000",
-    "rua": "Avenida Jerônimo Monteiro",
-    "numero": "1000",
-    "complemento": "",
-    "bairro": "Centro",
-    "cidade": "Vitória",
-    "uf": "ES",
-    "contato_emergencia_nome": "Maria Pereira",
-    "contato_emergencia_telefone": "(27) 99999-2222",
+    "observacoes": "Prefere contato à tarde",
 }, follow_redirects=True)
-checar("Cadastro do paciente com endereço/contato de emergência salvo", "atualizado" in r.get_data(as_text=True).lower())
+checar("Cadastro do paciente salvo", "atualizado" in r.get_data(as_text=True).lower())
 
 with app.app_context():
-    joao_atualizado = Paciente.query.get(joao_id)
-    checar("Endereço do paciente salvo (rua)", joao_atualizado.rua == "Avenida Jerônimo Monteiro")
-    checar("Contato de emergência salvo", joao_atualizado.contato_emergencia_nome == "Maria Pereira")
-
-r = client.get(f"/equipe/pacientes/{joao_id}")
-checar("Detalhe do paciente exibe o endereço cadastrado", "Jerônimo Monteiro" in r.get_data(as_text=True))
-checar("Detalhe do paciente exibe o contato de emergência", "Maria Pereira" in r.get_data(as_text=True))
+    checar("Observações salvas", Paciente.query.get(joao_id).observacoes == "Prefere contato à tarde")
 client.get("/logout")
 
 

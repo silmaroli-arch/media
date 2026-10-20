@@ -507,6 +507,17 @@ ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS base_divergiu BOOLEAN;
 -- Login com Google (so equipe, 2026-10-19): identificador fixo da conta Google ligada ao usuario.
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS google_sub VARCHAR(255);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_google_sub ON usuarios (google_sub);
+
+-- LGPD, minimizacao (pedido do Silvan, 2026-10-20): o sistema deixou de pedir
+-- o endereco pessoal da equipe e o e-mail, o endereco e o contato de emergencia
+-- do paciente, porque nao usava esses dados para nada. Aqui eles sao APAGADOS.
+-- Fase 1: so esvazia os valores. As colunas continuam existindo ate o proximo
+-- deploy porque a versao anterior do app, que ainda atende durante o deploy,
+-- le essas colunas em toda pagina. Fase 2 (deploy seguinte): DROP COLUMN.
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS email VARCHAR(150);
+UPDATE usuarios SET cep = NULL, rua = NULL, numero = NULL, complemento = NULL, bairro = NULL, cidade = NULL, uf = NULL WHERE cep IS NOT NULL OR rua IS NOT NULL OR numero IS NOT NULL OR complemento IS NOT NULL OR bairro IS NOT NULL OR cidade IS NOT NULL OR uf IS NOT NULL;
+UPDATE usuarios SET email = NULL WHERE tipo = 'paciente' AND email IS NOT NULL;
+UPDATE pacientes SET email = NULL, cep = NULL, rua = NULL, numero = NULL, complemento = NULL, bairro = NULL, cidade = NULL, uf = NULL, contato_emergencia_nome = NULL, contato_emergencia_telefone = NULL WHERE email IS NOT NULL OR cep IS NOT NULL OR rua IS NOT NULL OR numero IS NOT NULL OR complemento IS NOT NULL OR bairro IS NOT NULL OR cidade IS NOT NULL OR uf IS NOT NULL OR contato_emergencia_nome IS NOT NULL OR contato_emergencia_telefone IS NOT NULL;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)

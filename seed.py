@@ -371,7 +371,6 @@ with app.app_context():
         cpf="123.456.789-00",
         data_nascimento=date(1985, 4, 12),
         telefone=telefone_joao,
-        email="joao@paciente.com",
     )
     db.session.add(joao)
 
@@ -386,7 +385,6 @@ with app.app_context():
         cpf="987.654.321-00",
         data_nascimento=date(1990, 9, 3),
         telefone=telefone_maria,
-        email="maria@paciente.com",
     )
     db.session.add(maria)
 
@@ -403,7 +401,6 @@ with app.app_context():
         cpf="111.222.333-00",
         data_nascimento=date(1978, 12, 25),
         telefone=telefone_pedro,
-        email="pedro@paciente.com",
     )
     db.session.add(pedro)
     db.session.commit()
