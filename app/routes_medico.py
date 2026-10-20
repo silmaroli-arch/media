@@ -3936,41 +3936,18 @@ def clinica_configuracoes(filial_id=None):
         return redirect(url_for("medico.filiais_lista"))
 
     if request.method == "POST":
-        # Dados gerais
+        # Pedido do Silvan (2026-10-20): "Dados do grupo" ficou só com o
+        # nome. Razão social, CNPJ, telefone, e-mail de contato e endereço
+        # não eram usados em lugar nenhum do sistema (as colunas continuam
+        # no banco, sem uso).
         nome = request.form.get("nome", "").strip()
-        if nome:
-            clinica.nome = nome
-        clinica.razao_social = request.form.get("razao_social", "").strip()
-        clinica.cnpj = request.form.get("cnpj", "").strip()
-        telefone = request.form.get("telefone", "").strip()
-        if telefone_incompleto(telefone):
-            flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
+        if not nome:
+            flash("Informe o nome do grupo.", "danger")
             return redirect(url_for("medico.clinica_configuracoes", filial_id=filial_id))
-        if telefone:
-            clinica.telefone = telefone
-        email_contato = request.form.get("email_contato", "").strip()
-        if email_contato:
-            clinica.email_contato = email_contato
-
-        # Endereço
-        clinica.cep = request.form.get("cep", "").strip()
-        clinica.rua = request.form.get("rua", "").strip()
-        clinica.numero = request.form.get("numero", "").strip()
-        clinica.complemento = request.form.get("complemento", "").strip()
-        clinica.bairro = request.form.get("bairro", "").strip()
-        clinica.cidade = request.form.get("cidade", "").strip()
-        clinica.uf = request.form.get("uf", "").strip().upper() or None
-        # O código IBGE do município continua sendo preenchido aqui (a
-        # partir da busca automática do CEP, feita nesta mesma tela) mesmo
-        # com os demais campos fiscais tendo se mudado para a tela "Dados
-        # Fiscais" — ele é derivado do endereço, não é digitado à mão.
-        clinica.codigo_ibge_municipio = request.form.get("codigo_ibge_municipio", "").strip()
-
+        clinica.nome = nome
         db.session.commit()
-        flash(f"Dados Cadastrais de '{clinica.nome}' atualizados com sucesso.", "success")
-        # Salvou -> FECHA a tela, voltando pra lista de locais (ou pro
-        # assistente, se veio de lá) - em vez de continuar no formulário.
-        return redirect(url_for("medico.filiais_lista"))
+        flash(f"Dados do grupo '{clinica.nome}' atualizados.", "success")
+        return redirect(url_for("grupo.meus_grupos"))
 
     return render_template(
         "medico/clinica_configuracoes.html",

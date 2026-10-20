@@ -22,7 +22,7 @@
        no banco, sem uso). #}
     <div class="form-check mb-3">
       <input class="form-check-input" type="checkbox" name="perm_dados_clinica" id="perm_dados_clinica" {% if usuario_alvo.perm_dados_clinica %}checked{% endif %}>
-      <label class="form-check-label" for="perm_dados_clinica">Editar dados do grupo (cadastrais e fiscais)</label>
+      <label class="form-check-label" for="perm_dados_clinica">Editar dados do grupo</label>
     </div>
     {% if usuario_alvo.id == current_user.id %}
     <div class="alert alert-warning small">Atenção: você está editando as próprias permissões.</div>

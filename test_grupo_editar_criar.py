@@ -34,23 +34,20 @@ with app.app_context():
     grupo_id = grupo.id
 
 r = client.get("/grupos/")
-checar("Com um grupo só, 'Grupos de trabalho' continua indo direto para Convidar membros",
-       r.status_code == 302 and f"/grupos/{grupo_id}/convidar" in r.headers["Location"])
-html = client.get(f"/grupos/{grupo_id}/convidar").get_data(as_text=True)
-checar("Convidar membros tem 'Dados do grupo'", "Dados do grupo" in html and "/equipe/clinica/configuracoes/" in html)
-checar("Convidar membros tem 'Criar outro grupo'", "Criar outro grupo" in html and 'href="/grupos/novo"' in html)
-checar("O link 'Meus grupos' não volta mais para a mesma tela", 'href="/grupos/?lista=1"' in html)
-
-r = client.get("/grupos/?lista=1")
 html = r.get_data(as_text=True)
-checar("'Meus grupos' (?lista=1) mostra a lista com 'Criar novo grupo'",
-       r.status_code == 200 and "Criar novo grupo" in html and "Clinica Primeira" in html)
+checar("Com um grupo só, 'Grupos de trabalho' abre a lista (não pula mais para Convidar membros)",
+       r.status_code == 200 and "Meus grupos" in html and "Clinica Primeira" in html)
+checar("A lista tem 'Criar novo grupo', 'Dados do grupo' e 'Ver membros / Convidar'",
+       "Criar novo grupo" in html and "Dados do grupo" in html and f"/grupos/{grupo_id}/convidar" in html)
 
 r = client.get(f"/equipe/clinica/configuracoes/{grupo_id}")
-checar("'Dados do grupo' abre os Dados Cadastrais", r.status_code == 200 and 'value="Clinica Primeira"' in r.get_data(as_text=True))
-client.post(f"/equipe/clinica/configuracoes/{grupo_id}", data={
-    "nome": "Clinica Renomeada", "telefone": "(27) 3333-4444", "email_contato": "contato@renomeada.com",
-}, follow_redirects=True)
+html = r.get_data(as_text=True)
+checar("'Dados do grupo' abre só com o nome do grupo", r.status_code == 200 and 'value="Clinica Primeira"' in html)
+checar("... sem razão social, CNPJ, telefone, e-mail, endereço nem Dados Fiscais",
+       not any(f'name="{c}"' in html for c in ["razao_social", "cnpj", "telefone", "email_contato", "cep", "rua"])
+       and "Dados Fiscais" not in html)
+r = client.post(f"/equipe/clinica/configuracoes/{grupo_id}", data={"nome": "Clinica Renomeada"})
+checar("Salvar volta para Meus grupos", r.status_code == 302 and r.headers["Location"].endswith("/grupos/"))
 with app.app_context():
     checar("Editar os dados do grupo salva (nome novo)", Grupo.query.get(grupo_id).nome == "Clinica Renomeada")
 
@@ -68,6 +65,6 @@ with app.app_context():
 html = client.get(f"/equipe/equipe-membros/{usuario_id}/permissoes", follow_redirects=True).get_data(as_text=True)
 checar("Permissões não têm mais 'Gerenciar filiais'", "Gerenciar filiais" not in html and 'name="perm_filiais"' not in html)
 checar("'Editar dados da clínica' virou 'Editar dados do grupo (cadastrais e fiscais)'",
-       "Editar dados do grupo (cadastrais e fiscais)" in html and "Editar dados da clínica" not in html)
+       "Editar dados do grupo" in html and "Editar dados da clínica" not in html)
 
 print("\nTodos os testes de editar/criar grupo passaram.")

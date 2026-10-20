@@ -71,12 +71,13 @@ checar(
     -1 not in posicoes and posicoes == sorted(posicoes),
 )
 
-# Dados Cadastrais e Dados Fiscais têm botão "Cancelar" voltando pra lista de locais.
+# "Dados do grupo" tem botão "Cancelar" voltando pra "Meus grupos" (2026-10-20);
+# Dados Fiscais continua voltando pra URL antiga (que redireciona).
 r1 = client.get(f"/equipe/clinica/configuracoes/{clinica_id}")
 html1 = r1.get_data(as_text=True)
 checar(
-    "Dados Cadastrais tem o botão Cancelar apontando pra Meus locais",
-    'href="/equipe/filiais" class="btn btn-link">Cancelar</a>' in html1,
+    "Dados do grupo tem o botão Cancelar apontando pra Meus grupos",
+    'href="/grupos/" class="btn btn-link">Cancelar</a>' in html1,
 )
 
 r2 = client.get(f"/equipe/clinica/dados-fiscais/{clinica_id}")

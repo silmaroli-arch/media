@@ -37,7 +37,7 @@
              dessas telas aqui (ver nota no topo de routes_grupo.py). #}
           {% if item.papel in ('dono', 'administrador') %}
           <a href="{{ url_for('grupo.convidar', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-primary">Ver membros / Convidar</a>
-          {# Dados Cadastrais editam o grupo ATIVO (medico.clinica_configuracoes) #}
+          {# "Dados do grupo" (medico.clinica_configuracoes) edita o grupo ATIVO #}
           {% if empresa_atual_navbar and empresa_atual_navbar.id == item.grupo.id and current_user.perm_dados_clinica %}
           <a href="{{ url_for('medico.clinica_configuracoes', filial_id=item.grupo.id) }}" class="btn btn-sm btn-outline-primary">Dados do grupo</a>
           {% endif %}

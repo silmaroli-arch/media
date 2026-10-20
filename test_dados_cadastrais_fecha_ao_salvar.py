@@ -29,34 +29,17 @@ with app.app_context():
     vitoria = Grupo.query.filter_by(nome="Clínica Vitória").first()
     vitoria_id = vitoria.id
 
-# ---------- Salvar Dados Cadastrais fecha a tela ----------
+# ---------- Salvar "Dados do grupo" fecha a tela ----------
+# Desde 2026-10-20 a tela tem só o nome do grupo e volta para "Meus grupos".
 
-r = client.post(f"/equipe/clinica/configuracoes/{vitoria_id}", data={
-    "nome": "Clínica Vitória",
-    "razao_social": "Clínica Vitória Diagnósticos Ltda.",
-    "cnpj": "12.345.678/0001-90",
-    "telefone": "(27) 3333-4444",
-    "email_contato": "contato@clinicavitoria.com",
-    "cep": "29055-360", "rua": "Rua Teste", "numero": "10",
-    "complemento": "", "bairro": "Centro", "cidade": "Vitória", "uf": "ES",
-}, follow_redirects=False)
+r = client.post(f"/equipe/clinica/configuracoes/{vitoria_id}", data={"nome": "Clínica Vitória"}, follow_redirects=False)
 checar("Salvar redireciona (não fica na mesma tela)", r.status_code in (301, 302))
-checar("O destino é 'Meus locais de atendimento'", r.headers["Location"].endswith("/equipe/filiais"))
+checar("O destino é 'Meus grupos'", r.headers["Location"].endswith("/grupos/"))
 
-r2 = client.post(f"/equipe/clinica/configuracoes/{vitoria_id}", data={
-    "nome": "Clínica Vitória",
-    "razao_social": "Clínica Vitória Diagnósticos Ltda. Atualizada",
-    "cnpj": "12.345.678/0001-90",
-    "telefone": "(27) 3333-4444",
-    "email_contato": "contato@clinicavitoria.com",
-    "cep": "29055-360", "rua": "Rua Teste", "numero": "10",
-    "complemento": "", "bairro": "Centro", "cidade": "Vitória", "uf": "ES",
-}, follow_redirects=True)
+r2 = client.post(f"/equipe/clinica/configuracoes/{vitoria_id}", data={"nome": "Clínica Vitória"}, follow_redirects=True)
 html = r2.get_data(as_text=True)
-checar("A lista de locais abre com a mensagem de sucesso", "Dados Cadastrais de" in html and "atualizados com sucesso" in html)
-checar("A mensagem diz de QUAL local eram os dados", "Clínica Vitória" in html)
-with app.app_context():
-    checar("Razão social foi persistida", Grupo.query.get(vitoria_id).razao_social == "Clínica Vitória Diagnósticos Ltda. Atualizada")
+checar("A lista de grupos abre com a mensagem de sucesso", "Dados do grupo" in html and "atualizados" in html)
+checar("A mensagem diz de QUAL grupo eram os dados", "Clínica Vitória" in html)
 
 # ---------- Salvar Dados Fiscais também fecha a tela ----------
 

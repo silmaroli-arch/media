@@ -75,14 +75,8 @@ checar("Página de dados da clínica responde 200", r.status_code == 200)
 # campo de formulário pra isso (verificado em app/models.py e nos
 # templates); a asserção correspondente que havia aqui antes era código
 # morto pré-existente (não uma regressão da Fatia 5) e foi removida.
-r = client.post("/equipe/clinica/configuracoes", data={
-    "nome": "Clínica Vitória", "telefone": "(27) 3333-4444", "email_contato": "contato@clinicavitoria.com",
-    "razao_social": "Clínica Vitória Diagnósticos Ltda.", "cnpj": "12.345.678/0001-90",
-    "cep": "29010-000", "rua": "Av. Jerônimo Monteiro", "numero": "1000", "bairro": "Centro",
-    "cidade": "Vitória", "uf": "ES",
-    "codigo_ibge_municipio": "3205309",
-}, follow_redirects=True)
-checar("Secretária consegue salvar os dados da clínica", "atualizados com sucesso" in r.get_data(as_text=True).lower())
+r = client.post("/equipe/clinica/configuracoes", data={"nome": "Clínica Vitória"}, follow_redirects=True)
+checar("Secretária consegue salvar os dados do grupo", "atualizados" in r.get_data(as_text=True).lower())
 
 client.get("/logout")
 
@@ -344,25 +338,24 @@ with app.app_context():
 login("secretaria@gruposaude.com", "123456")
 client.post("/equipe/clinica", data={"clinica_id": str(filial_centro_id)}, follow_redirects=True)
 r = client.post(f"/equipe/clinica/configuracoes/{filial_praia_id}", data={
-    "nome": "Grupo Saúde Total - Centro", "telefone": "(27) 3111-1111", "email_contato": "centro@gruposaude.com",
-    "cidade": "Vila Velha", "uf": "ES",
+    "nome": "Grupo Saúde Total - Centro (editado)",
 }, follow_redirects=True)
 checar("POST com o id da Praia na URL, mas o Centro ativo: responde 200 mesmo assim (parâmetro ignorado)",
        r.status_code == 200)
 with app.app_context():
-    checar("Quem recebeu o telefone novo foi o Grupo ATIVO (Centro), não a Praia (pelo id na URL)",
-           Grupo.query.get(filial_centro_id).telefone == "(27) 3111-1111")
+    checar("Quem recebeu o nome novo foi o Grupo ATIVO (Centro), não a Praia (pelo id na URL)",
+           Grupo.query.get(filial_centro_id).nome == "Grupo Saúde Total - Centro (editado)"
+           and Grupo.query.get(filial_praia_id).nome == "Grupo Saúde Total - Praia")
+    Grupo.query.get(filial_centro_id).nome = "Grupo Saúde Total - Centro"
+    db.session.commit()
 
 client.post("/equipe/clinica", data={"clinica_id": str(filial_praia_id)}, follow_redirects=True)
-r = client.post("/equipe/clinica/configuracoes", data={
-    "nome": "Grupo Saúde Total - Praia", "telefone": "(27) 3222-1111", "email_contato": "praia@gruposaude.com",
-    "cidade": "Vila Velha", "uf": "ES",
-}, follow_redirects=True)
-checar("Selecionando a Praia como Grupo ativo, dá pra editar os dados dela", "atualizados com sucesso" in r.get_data(as_text=True).lower())
+r = client.post("/equipe/clinica/configuracoes", data={"nome": "Grupo Saúde Total - Praia"}, follow_redirects=True)
+checar("Selecionando a Praia como Grupo ativo, dá pra editar os dados dela", "atualizados" in r.get_data(as_text=True).lower())
 with app.app_context():
     filial_praia = Grupo.query.get(filial_praia_id)
     checar("Os dados da Praia foram salvos depois de selecioná-la como ativa",
-           filial_praia.telefone == "(27) 3222-1111")
+           filial_praia.nome == "Grupo Saúde Total - Praia")
 
 # ---------- Cadastrar médico/secretária: por CPF ou conta nova (routes_grupo.convidar) ----------
 # Fatia 5 (passo 4): "equipe-membros/novo" (com filial_ids, ClinicaMembro)

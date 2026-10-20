@@ -2432,8 +2432,10 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Quem tem um grupo só cai direto em "Convidar membros" (atalho de `grupo.meus_grupos`) e não tinha como editar o grupo nem criar outro: o link "Meus grupos" voltava para a mesma tela. Agora:
   - "Convidar membros" ganhou **"Dados do grupo"** (Dados Cadastrais, `medico.clinica_configuracoes`, só para o grupo ativo e para quem tem `perm_dados_clinica`) e **"Criar outro grupo"**;
   - o link "Meus grupos" usa `?lista=1` e mostra a lista (com "Criar novo grupo"); a lista também ganhou "Dados do grupo" no grupo ativo.
-- Tela de permissões: saiu **"Gerenciar filiais"**, porque filiais deixaram de existir e `perm_filiais` não controlava nada (a coluna fica no banco, sem uso). **"Editar dados da clínica"** virou **"Editar dados do grupo (cadastrais e fiscais)"**: continua valendo para Dados Cadastrais e Dados Fiscais. O texto "em todas as filiais" virou "em todos os grupos".
-- Teste: `test_grupo_editar_criar.py`. Suíte 84/84.
+- **ATUALIZAÇÃO (mesmo dia, pedido do Silvan):** o menu "Grupos de trabalho" passou a abrir SEMPRE a lista "Meus grupos", mesmo com um grupo só (o atalho para "Convidar membros" e o `?lista=1` saíram; os botões em "Convidar membros" também). A lista é o centro: "Criar novo grupo", "Ver membros / Convidar" e "Dados do grupo".
+- **"Dados do grupo"** (`medico.clinica_configuracoes`, antes "Dados Cadastrais") ficou só com o **nome do grupo**. Razão social, CNPJ, telefone, e-mail de contato e endereço saíram, porque nada no sistema usava esses dados (as colunas do `grupos` continuam no banco, sem uso). Salvar volta para "Meus grupos". Também saiu o link para **Dados Fiscais** (NFS-e): a tela só guardava configuração, sem nenhuma emissão de nota; a rota continua existindo por URL. Com isso, a trava de endereço por CEP dessa tela também deixou de existir (`test_clinica_config_cep_nao_bloqueia.py` removido).
+- Tela de permissões: saiu **"Gerenciar filiais"**, porque filiais deixaram de existir e `perm_filiais` não controlava nada (a coluna fica no banco, sem uso). **"Editar dados da clínica"** virou **"Editar dados do grupo"**: continua controlando quem abre "Dados do grupo" (e Dados Fiscais por URL). O texto "em todas as filiais" virou "em todos os grupos".
+- Testes: `test_grupo_editar_criar.py`; ajustados test_smoke, test_dados_cadastrais_fecha_ao_salvar, test_dados_fiscais_menu, test_menu_cadastro_geral_unificado. Suíte 83/83.
 
 ## PENDENTE DE TESTE (Silvan) - lembrete
 
@@ -2457,9 +2459,10 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
    - [ ] E-mail e senha: formulário completo; "Escolher outra forma de entrar" volta para a escolha
    - [ ] Google: volta do Google no formulário sem senha, com o campo "CPF" e a explicação; "Cadastrar sem o Google" leva ao formulário com senha
 4. **Grupo: editar e criar outro + permissões** (ver seção acima)
-   - [ ] Com um grupo só: "Dados do grupo" e "Criar outro grupo" em Convidar membros; o link "Meus grupos" abre a lista
-   - [ ] Editar o nome do grupo em "Dados do grupo" e salvar
-   - [ ] Permissões: sem "Gerenciar filiais"; "Editar dados do grupo (cadastrais e fiscais)"
+   - [ ] Menu "Grupos de trabalho" abre a lista "Meus grupos" mesmo com um grupo só
+   - [ ] "Dados do grupo": só o nome; salvar volta para "Meus grupos" com o nome novo no topo
+   - [ ] "Criar novo grupo" e "Ver membros / Convidar" na lista
+   - [ ] Permissões: sem "Gerenciar filiais"; "Editar dados do grupo"
 
 ## Como continuar
 

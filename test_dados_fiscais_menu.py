@@ -37,8 +37,8 @@ checar("Não tem mais a seção 'Emissão de NFS-e'", "Emissão de NFS-e" not in
 with app.app_context():
     _clinica_vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
 checar(
-    "Tem um link apontando para a nova tela de Dados Fiscais",
-    f'href="/equipe/clinica/dados-fiscais/{_clinica_vitoria_id}"' in html1,
+    "Dados do grupo não tem mais link para Dados Fiscais (2026-10-20: a tela só guardava configuração)",
+    f'href="/equipe/clinica/dados-fiscais/{_clinica_vitoria_id}"' not in html1,
 )
 
 # A nova tela "Dados Fiscais" tem tudo isso.
@@ -72,25 +72,6 @@ with app.app_context():
     checar("Inscrição estadual foi salva no banco", clinica.inscricao_estadual == "111.222.333")
     checar("Regime tributário foi salvo no banco", clinica.regime_tributario == "Simples Nacional")
     checar("CNAE foi salvo no banco", clinica.cnae == "8630-5/03")
-
-# O código IBGE do município continua sendo preenchido via "Dados
-# Cadastrais" (simulando o preenchimento automático do CEP) e aparece
-# como leitura em "Dados Fiscais".
-r4 = client.post("/equipe/clinica/configuracoes", data={
-    "nome": "Clínica Vitória", "telefone": "(27) 99999-0000", "email_contato": "contato@clinicavitoria.com",
-    "cep": "29000-000", "rua": "Rua Teste", "numero": "100", "bairro": "Centro",
-    "cidade": "Vitória", "uf": "ES", "codigo_ibge_municipio": "3205309",
-}, follow_redirects=True)
-checar("Salvar Dados Cadastrais com CEP responde 200", r4.status_code == 200)
-
-with app.app_context():
-    clinica = Grupo.query.filter_by(nome="Clínica Vitória").first()
-    checar("Código IBGE foi salvo a partir de Dados Cadastrais", clinica.codigo_ibge_municipio == "3205309")
-
-r5 = client.get("/equipe/clinica/dados-fiscais")
-html5 = r5.get_data(as_text=True)
-checar("Código IBGE aparece (como leitura) em Dados Fiscais", "3205309" in html5)
-checar("Campo do código IBGE não é mais editável em Dados Fiscais", 'name="codigo_ibge_municipio"' not in html5)
 
 client.get("/logout")
 print("\nTodos os testes do novo menu Dados Fiscais passaram.")
