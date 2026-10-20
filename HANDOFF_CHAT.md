@@ -2340,6 +2340,12 @@ Prints do sistema enviados pelo Silvan para colocar na página de apresentação
 - Uso no template: `{{ url_for('static', filename='img/site/importar-pdf-preparo.png') }}`.
 - Observação: o print do PDF cita o nome "Gemini" - se não quiser expor qual IA é usada na extração, recortar ou refazer o print antes de publicar.
 
+## FAQ do MedIA também no Portal de atendimento rápido (2026-10-20, pedido do Silvan)
+
+- Caso real: pergunta "Posso tomar nimesulida?" (colonoscopia) no Portal mostrava só ChatGPT/Claude. Motivos: (1) o Portal (`portal/atendimento.html`) nunca mostrava a base - só "Perguntas pendentes" mostrava; (2) a base de colonoscopia não tem item sobre nimesulida/anti-inflamatórios - o mais próximo ("Posso tomar meus remédios de rotina...") só casa "tomar" (0,5 < limiar 0,6); (3) não verificável daqui: interruptor da base no media-dev e tipo de exame do preparo "Colonoscopia com Picoprep e Manitol (Manhã)".
+- Feito (decisão do Silvan): o modal do Portal mostra "Sugestão do FAQ do MedIA", com fonte e o mesmo aviso de divergência das Perguntas pendentes, SÓ quando a base encontrou algo. Sem resposta da base, não mostra nada (sem linha explicando o motivo - opção discutida e descartada pelo Silvan). Teste em `test_base_integracao_chat.py`. Suíte 80/80.
+- NÃO feito (decisão do Silvan): carga de itens sobre anti-inflamatórios/analgésicos na colonoscopia.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

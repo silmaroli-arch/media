@@ -216,4 +216,12 @@ checar("Tela mostra a fonte com link", "https://exemplo.test/fonte" in html and 
 checar("Tela mostra o aviso de divergencia", "FAQ do MedIA diverge" in html)
 checar("A pergunta sem base continua aparecendo normalmente", "Pergunta sem base" in html and "Rascunho simples" in html)
 
+# ---------- Portal de atendimento rapido tambem mostra o FAQ do MedIA (2026-10-20) ----------
+html = client.get("/equipe/portal").get_data(as_text=True)
+checar("Portal mostra a sugestao do FAQ do MedIA com o texto", "Sugestão do FAQ do MedIA" in html and "Texto vindo da base" in html)
+checar("Portal mostra a fonte com link", "https://exemplo.test/fonte" in html and "Fonte Teste" in html)
+checar("Portal mostra o aviso de divergencia", "bem diferente da resposta das IAs" in html)
+checar("Portal: pergunta sem resposta da base nao mostra nada do FAQ do MedIA",
+       html.count("Sugestão do FAQ do MedIA") == 1 and "Rascunho simples" in html)
+
 print("\nTodos os testes passaram.")
