@@ -2361,6 +2361,12 @@ Prints do sistema enviados pelo Silvan para colocar na página de apresentação
 - Zona DNS atual (7 registros antes do e-mail): `media.med.br` e `www` -> CNAME media-prod.onrender.com; `dev` -> CNAME media-dev.onrender.com; 3 CNAMEs `_...acm...` (validação antiga de certificado da AWS, inofensivos, podem ser apagados); **`qa.media.med.br` -> CNAME media-qa...sa-east-1.elasticbeanstalk.com (ambiente AWS abandonado)**.
 - **Pendência de segurança**: se o ambiente `media-qa` do Elastic Beanstalk já foi apagado na AWS, apagar o CNAME `qa` na Cloudflare - apontamento para endereço da AWS que não existe mais permite que terceiros registrem o mesmo nome e assumam `qa.media.med.br` ("subdomain takeover").
 
+## Login com Google publicado + base com vetores (2026-10-20)
+
+- PR com site, privacidade/termos, paleta e FAQ no Portal mesclado e no ar em media.med.br (conferido pelo Silvan: site, rodapé com Privacidade/Termos e e-mail privacidade@ funcionando).
+- Google Auth Platform: Branding com página inicial `https://media.med.br`, política `/privacidade`, termos `/termos`, só `media.med.br` como domínio autorizado, sem logotipo (logo exigiria verificação). App **publicado ("Em produção")**, tipo Externo. O limite de 100 usuários não se aplica (só escopos básicos openid/email/profile).
+- FAQ do MedIA em produção: interruptor LIGADO, aprendizado LIGADO, provedor **OpenAI (embeddings)**. Os 866 itens estavam SEM vetor - com provedor de embeddings, `buscar_na_base` só considera itens com vetor do mesmo modelo e NÃO cai para palavra-chave, então a base ficava muda. O Silvan está calculando os vetores pelo botão (40 por clique, ~22 cliques). **Melhoria sugerida e ainda não feita**: (1) sem vetores, cair para a busca por palavra-chave; (2) calcular todos os vetores num clique só (a API de embeddings aceita vários textos por chamada).
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
