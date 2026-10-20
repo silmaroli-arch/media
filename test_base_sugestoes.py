@@ -37,11 +37,11 @@ def login(email):
     client.post("/login", data={"identificador": email, "senha": "123456"})
 
 
-# ---------- 1. Cadastro com especialidade ----------
+# ---------- 1. Cadastro (sem especialidade desde 2026-10-19) ----------
 client.post("/cadastro", data={**EXTRA_CADASTRO,
     "nome": "Dr. Gastro", "papel": "medico", "cpf": "111.222.333-96", "crm_numero": "77777", "crm_uf": "ES",
     "data_nascimento": "10/05/1980", "email": "gastro@example.com", "senha": "123456",
-    "especialidade": "Gastroenterologia",
+    "especialidade": "Gastroenterologia",  # ignorado: o campo saiu do cadastro
 }, follow_redirects=True)
 client.get("/logout")
 client.post("/cadastro", data={**EXTRA_CADASTRO,
@@ -61,8 +61,11 @@ with app.app_context():
     dono_email = dono.email
     g = Usuario.query.filter_by(email="gastro@example.com").first()
     s = Usuario.query.filter_by(email="semesp@example.com").first()
-    checar("Especialidade valida gravada", g.especialidade == "Gastroenterologia")
-    checar("Especialidade fora da lista ignorada", s.especialidade is None)
+    checar("Cadastro nao grava especialidade (o campo saiu da tela)", g.especialidade is None and s.especialidade is None)
+    # O medico informa depois (1o preparo ou Meus dados - ver
+    # test_tipo_exame_nao_encontrado.py); aqui so gravamos direto.
+    g.especialidade = "Gastroenterologia"
+    db.session.commit()
     g_id = g.id
     semear_tipos_exame(db, TipoExame)
     semear_base_conhecimento(db)

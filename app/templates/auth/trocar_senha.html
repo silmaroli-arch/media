@@ -1,24 +1,39 @@
 {% extends "base.html" %}
-{% block titulo %}Trocar senha{% endblock %}
+{% block titulo %}{{ 'Criar senha' if criando else 'Trocar senha' }}{% endblock %}
 {% block conteudo %}
-<h3 class="mb-3">Trocar senha</h3>
+<h3 class="mb-3">{{ 'Criar senha' if criando else 'Trocar senha' }}</h3>
 <div class="card p-4" style="max-width: 480px;">
+  {% if criando and precisa_confirmar %}
+  {# Quem entrou pelo Google não tem "senha atual" - confirma pelo Google
+     antes (ver auth.trocar_senha e app/login_google.py). #}
+  <p class="text-muted small">
+    Você entra pelo Google e ainda não tem senha. Para criar uma (e poder entrar também com CPF e senha),
+    confirme primeiro que é você pela sua conta Google.
+  </p>
+  <a href="{{ url_for('google_login.iniciar', intencao='confirmar', next=url_for('auth.trocar_senha')) }}" class="btn btn-primary">
+    <i class="bi bi-google me-1"></i> Confirmar com Google
+  </a>
+  <a href="{{ url_for('index') }}" class="btn btn-link">Cancelar</a>
+  {% else %}
   <form method="post">
+    {% if not criando %}
     <div class="mb-3">
       <label class="form-label">Senha atual</label>
       <input type="password" name="senha_atual" class="form-control" required autofocus>
     </div>
+    {% endif %}
     <div class="mb-3">
       <label class="form-label">Nova senha</label>
-      <input type="password" name="senha_nova" class="form-control" required minlength="6">
+      <input type="password" name="senha_nova" class="form-control" required minlength="6" {% if criando %}autofocus{% endif %}>
       <div class="form-text">Mínimo de 6 caracteres.</div>
     </div>
     <div class="mb-3">
       <label class="form-label">Confirmar nova senha</label>
       <input type="password" name="senha_confirmacao" class="form-control" required minlength="6">
     </div>
-    <button type="submit" class="btn btn-primary">Salvar nova senha</button>
+    <button type="submit" class="btn btn-primary">{{ 'Criar senha' if criando else 'Salvar nova senha' }}</button>
     <a href="{{ url_for('index') }}" class="btn btn-link">Cancelar</a>
   </form>
+  {% endif %}
 </div>
 {% endblock %}

@@ -106,10 +106,30 @@
         </div>
 
         <button type="submit" class="btn btn-primary mt-4">Salvar alterações</button>
-        <a href="{{ url_for('auth.trocar_senha') }}" class="btn btn-outline-secondary mt-4">Trocar senha</a>
+        <a href="{{ url_for('auth.trocar_senha') }}" class="btn btn-outline-secondary mt-4">{{ 'Trocar senha' if current_user.tem_senha else 'Criar senha' }}</a>
         </fieldset>
       </form>
     </div>
+
+    {# Login com Google - só equipe (ver app/login_google.py) #}
+    {% if confirmado and (google_login_ativo or current_user.google_sub) %}
+    <div class="card p-4 mt-3">
+      <h6 class="mb-2"><i class="bi bi-google"></i> Conta Google</h6>
+      {% if current_user.google_sub %}
+      <p class="small text-muted mb-2">Sua conta está ligada a uma conta Google - você pode usar "Entrar com Google" no login.</p>
+      {% if current_user.tem_senha %}
+      <form method="post" action="{{ url_for('google_login.desvincular') }}" onsubmit="return confirm('Desligar a conta Google? Você passa a entrar só com CPF e senha.');">
+        <button type="submit" class="btn btn-outline-danger btn-sm">Desligar conta Google</button>
+      </form>
+      {% else %}
+      <p class="small text-muted mb-0">Para poder desligar a conta Google, crie antes uma senha (botão "Criar senha" acima).</p>
+      {% endif %}
+      {% else %}
+      <p class="small text-muted mb-2">Ligue sua conta Google para entrar com um clique, sem digitar senha. Pode ser uma conta Google com e-mail diferente do seu cadastro.</p>
+      <a href="{{ url_for('google_login.iniciar', intencao='vincular') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-google me-1"></i> Ligar minha conta Google</a>
+      {% endif %}
+    </div>
+    {% endif %}
 
   </div>
 </div>
@@ -124,15 +144,30 @@
           <h6 class="modal-title"><i class="bi bi-shield-lock"></i> Confirme sua senha</h6>
         </div>
         <div class="modal-body">
+          {% if current_user.tem_senha %}
           <p class="text-muted small mb-3">
             Por segurança, confirme sua senha para ver e editar seus dados pessoais.
           </p>
           <label class="form-label">Sua senha</label>
           <input type="password" name="senha_atual" class="form-control" required autofocus>
+          {% else %}
+          <p class="text-muted small mb-0">
+            Por segurança, confirme que é você pela sua conta Google para ver e editar seus dados pessoais.
+          </p>
+          {% endif %}
+          {% if current_user.tem_senha and current_user.google_sub and google_login_ativo %}
+          <div class="text-center small mt-3">
+            ou <a href="{{ url_for('google_login.iniciar', intencao='confirmar', next=url_for('auth.meus_dados')) }}">confirmar com Google</a>
+          </div>
+          {% endif %}
         </div>
         <div class="modal-footer">
           <a href="{{ url_for('index') }}" class="btn btn-link">Cancelar</a>
+          {% if current_user.tem_senha %}
           <button type="submit" class="btn btn-primary">Confirmar</button>
+          {% else %}
+          <a href="{{ url_for('google_login.iniciar', intencao='confirmar', next=url_for('auth.meus_dados')) }}" class="btn btn-primary"><i class="bi bi-google me-1"></i> Confirmar com Google</a>
+          {% endif %}
         </div>
       </form>
     </div>

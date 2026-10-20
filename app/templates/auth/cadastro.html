@@ -9,12 +9,26 @@
         Uma única tela pra todo mundo — médico(a) ou secretário(a), com ou sem clínica própria.
       </p>
 
+      {# Login com Google (só equipe, ver app/login_google.py) #}
+      {% if google_cadastro %}
+      <div class="alert alert-info small">
+        <i class="bi bi-google me-1"></i> Cadastro com a conta Google <strong>{{ google_cadastro.email }}</strong>.
+        Você vai entrar pelo Google - não precisa criar senha agora (pode criar depois, se quiser).
+        <a href="{{ url_for('auth.cadastro', sem_google=1) }}">Cadastrar sem o Google</a>
+      </div>
+      {% elif google_login_ativo %}
+      <a href="{{ url_for('google_login.iniciar') }}" class="btn btn-outline-secondary w-100 mb-3">
+        <i class="bi bi-google me-1"></i> Cadastrar com Google
+      </a>
+      {% endif %}
+
       <form method="post">
         <h5 class="mb-3">Seus dados</h5>
         <div class="row g-3">
           <div class="col-md-6">
             <label class="form-label">Seu nome</label>
-            <input type="text" name="nome" id="nome" class="form-control" autocapitalize="words" required autofocus>
+            <input type="text" name="nome" id="nome" class="form-control" autocapitalize="words" required autofocus
+                   value="{{ request.form.get('nome') or (google_cadastro.nome if google_cadastro else '') }}">
           </div>
           <div class="col-md-6">
             <label class="form-label">CPF (será seu login)</label>
@@ -24,8 +38,9 @@
           <div class="col-md-6" id="campo-papel">
             <label class="form-label">Você é médico(a) ou secretário(a)?</label>
             <select name="papel" id="papel" class="form-select" required onchange="atualizarCampoCrm()">
+              {# Médico vem primeiro e já selecionado (pedido do Silvan, 2026-10-19) #}
+              <option value="medico" selected>Médico(a)</option>
               <option value="secretaria">Secretário(a)</option>
-              <option value="medico">Médico(a)</option>
             </select>
             <div class="form-text">
               Não tem problema se a sua clínica não tem secretária — como você está criando a
@@ -33,15 +48,8 @@
               da clínica), seja qual for sua escolha aqui.
             </div>
           </div>
-          <div class="col-md-6" id="campo-especialidade" style="display:none;">
-            <label class="form-label">Especialidade</label>
-            <select name="especialidade" id="especialidade" class="form-select">
-              <option value="">Selecione...</option>
-              {% for e in ESPECIALIDADES %}
-              <option value="{{ e }}">{{ e }}</option>
-              {% endfor %}
-            </select>
-          </div>
+          {# Especialidade saiu do cadastro (pedido do Silvan, 2026-10-19): o
+             médico informa no 1º "Novo modelo de preparo" ou em Meus dados. #}
           <div class="col-md-3" id="campo-crm-numero" style="display:none;">
             <label class="form-label">CRM (número)</label>
             <input type="text" inputmode="numeric" name="crm_numero" id="crm_numero" class="form-control" placeholder="123456">
@@ -97,8 +105,22 @@
           </div>
           <div class="col-md-6">
             <label class="form-label">Seu e-mail</label>
+            {% if google_cadastro %}
+            {# Travado: vale o e-mail confirmado pelo Google (o servidor ignora o
+               que vier do formulário - ver auth.cadastro). Fundo cinza e fora
+               da ordem do Tab para não parecer editável. #}
+            <div class="input-group">
+              <span class="input-group-text bg-light"><i class="bi bi-lock-fill"></i></span>
+              <input type="email" name="email" class="form-control bg-light text-muted" value="{{ google_cadastro.email }}"
+                     readonly tabindex="-1" style="cursor: not-allowed;" title="E-mail confirmado pelo Google - não pode ser alterado">
+            </div>
+            <div class="form-text"><i class="bi bi-google"></i> Confirmado pelo Google - não pode ser alterado.
+              Quer usar outro e-mail? <a href="{{ url_for('auth.cadastro', sem_google=1) }}">Cadastre sem o Google</a>.</div>
+            {% else %}
             <input type="email" name="email" class="form-control" required>
+            {% endif %}
           </div>
+          {% if not google_cadastro %}
           <div class="col-md-6">
             <label class="form-label">Senha</label>
             <input type="password" name="senha" class="form-control" minlength="6" required>
@@ -109,6 +131,7 @@
             <input type="password" name="senha_confirmacao" id="senha_confirmacao" class="form-control" minlength="6" required>
             <div class="invalid-feedback" id="senha_confirmacao_status"></div>
           </div>
+          {% endif %}
         </div>
 
         <h6 class="mb-0 mt-3">Seu endereço</h6>
@@ -163,6 +186,8 @@
            paciente, usado enquanto a conta for solo - se um Grupo vier a
            existir depois, o campo do Grupo passa a valer para todo mundo
            da equipe, e pode ser mudado por lá). #}
+        {# Só aparece para médico (pedido do Silvan, 2026-10-19) - ver atualizarCampoCrm() #}
+        <div id="campo-aprovacao">
         <h6 class="mb-0 mt-3">Respostas para o paciente</h6>
         <div class="card bg-light border-0 mt-2">
           <div class="card-body py-3">
@@ -186,6 +211,7 @@
             </div>
           </div>
         </div>
+        </div>
 
         <button type="submit" class="btn btn-primary w-100 mt-4" id="btn-submit">Criar minha conta</button>
       </form>
@@ -200,12 +226,12 @@
 function atualizarCampoCrm() {
   const ehMedico = document.getElementById('papel').value === 'medico';
   document.getElementById('campo-crm-numero').style.display = ehMedico ? 'block' : 'none';
-  document.getElementById('campo-especialidade').style.display = ehMedico ? 'block' : 'none';
   document.getElementById('campo-crm-uf').style.display = ehMedico ? 'block' : 'none';
   document.getElementById('crm_numero').required = ehMedico;
   document.getElementById('crm_uf').required = ehMedico;
   document.getElementById('campo-data-nascimento').style.display = ehMedico ? 'block' : 'none';
   document.getElementById('data_nascimento').required = ehMedico;
+  document.getElementById('campo-aprovacao').style.display = ehMedico ? 'block' : 'none';
 }
 atualizarCampoCrm();
 
@@ -286,6 +312,7 @@ document.getElementById('telefone').addEventListener('blur', function () {
 function marcarSenhaConfirmacaoValida() {
   var campoSenha = document.querySelector('input[name="senha"]');
   var campoConfirmacao = document.getElementById('senha_confirmacao');
+  if (!campoConfirmacao) return true;  // cadastro com Google: sem senha
   var status = document.getElementById('senha_confirmacao_status');
   if (!campoConfirmacao.value) { status.textContent = ''; campoConfirmacao.classList.remove('is-invalid'); return false; }
   if (campoConfirmacao.value !== campoSenha.value) {
@@ -297,10 +324,12 @@ function marcarSenhaConfirmacaoValida() {
   campoConfirmacao.classList.remove('is-invalid');
   return true;
 }
-document.getElementById('senha_confirmacao').addEventListener('blur', marcarSenhaConfirmacaoValida);
-document.querySelector('input[name="senha"]').addEventListener('input', function () {
-  if (document.getElementById('senha_confirmacao').value) marcarSenhaConfirmacaoValida();
-});
+if (document.getElementById('senha_confirmacao')) {
+  document.getElementById('senha_confirmacao').addEventListener('blur', marcarSenhaConfirmacaoValida);
+  document.querySelector('input[name="senha"]').addEventListener('input', function () {
+    if (document.getElementById('senha_confirmacao').value) marcarSenhaConfirmacaoValida();
+  });
+}
 
 // ---------- Validação de data de nascimento (só existe/exige para médico) ----------
 var campoDataNasc = document.getElementById('data_nascimento');

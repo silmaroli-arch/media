@@ -46,7 +46,12 @@ with app.app_context():
         db.session.commit()
     dono_email = dono.email
     semear_tipos_exame(db, TipoExame)
-    medico_id = Usuario.query.filter_by(email="outro.exame@example.com").first().id
+    medico = Usuario.query.filter_by(email="outro.exame@example.com").first()
+    # Especialidade saiu do cadastro (2026-10-19) - grava direto, como se o
+    # medico tivesse informado em Meus dados.
+    medico.especialidade = "Gastroenterologia"
+    db.session.commit()
+    medico_id = medico.id
 
 login("outro.exame@example.com")
 html = client.get("/equipe/preparo-modelos/novo").get_data(as_text=True)

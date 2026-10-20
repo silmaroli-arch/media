@@ -14,6 +14,7 @@ reportlab==4.4.10  # usado no PDF de contingencia da NFS-e (app/nfse_nacional.py
 cryptography>=42.0  # criptografia dos dados fiscais sensiveis (ver app/cripto_fiscal.py) e leitura do certificado .pfx
 lxml>=5.0  # montagem/assinatura do XML do DPS na emissao de NFS-e (ver app/nfse_nacional.py)
 signxml>=5.1  # assinatura XML-DSig real do DPS com o certificado da clinica (ver app/nfse_nacional.py)
+Authlib==1.3.2  # login com Google da equipe (OpenID Connect) - ver app/login_google.py. Sem GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET o recurso fica desligado
 requests>=2.31  # envio do DPS assinado ao Ambiente de Dados Nacional (ver app/nfse_nacional.py) e envio de mensagem de WhatsApp via Graph API da Meta (ver app/whatsapp_envio.py) - a validação da assinatura do webhook (app/routes_whatsapp.py) usa só a lib padrão (hmac/hashlib), sem pacote de terceiros
 setuptools<71  # necessário para instalar a dependência http-ece do pywebpush abaixo - versões mais novas do setuptools removeram uma API do distutils que o setup.py (antigo) do http-ece ainda usa, e a instalação quebra sem isso
 pywebpush>=2.4  # notificação push (Web Push) do PWA da equipe (ver app/push_notificacoes.py) - sem VAPID_PRIVATE_KEY configurada, o recurso fica desligado sozinho

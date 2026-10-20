@@ -201,33 +201,40 @@ def trocar_senha():
     """Disponível para dono, secretária e médico trocarem a própria senha.
     Pacientes não têm senha — o acesso deles é por telefone + data de
     nascimento (ver auth.login_paciente)."""
-    if not current_user.tem_senha:
+    if not current_user.acessa_com_senha_ou_google:
         flash("Seu acesso não usa senha — você entra informando telefone e data de nascimento.", "info")
         return redirect(url_for("index"))
+
+    # Quem entrou só pelo Google (sem senha) pode CRIAR uma senha - mas,
+    # como não há "senha atual" para conferir, exige ter confirmado a
+    # identidade pelo Google há pouco (mesma janela de "Meus dados").
+    criando = not current_user.tem_senha
+    if criando and not _identidade_confirmada_recentemente():
+        return render_template("auth/trocar_senha.html", criando=True, precisa_confirmar=True)
 
     if request.method == "POST":
         senha_atual = request.form.get("senha_atual", "")
         senha_nova = request.form.get("senha_nova", "")
         senha_confirmacao = request.form.get("senha_confirmacao", "")
 
-        if not current_user.checar_senha(senha_atual):
+        if not criando and not current_user.checar_senha(senha_atual):
             flash("Senha atual incorreta.", "danger")
             return render_template("auth/trocar_senha.html")
 
         if len(senha_nova) < 6:
             flash("A nova senha deve ter pelo menos 6 caracteres.", "danger")
-            return render_template("auth/trocar_senha.html")
+            return render_template("auth/trocar_senha.html", criando=criando)
 
         if senha_nova != senha_confirmacao:
             flash("A confirmação não corresponde à nova senha.", "danger")
-            return render_template("auth/trocar_senha.html")
+            return render_template("auth/trocar_senha.html", criando=criando)
 
         current_user.set_senha(senha_nova)
         db.session.commit()
-        flash("Senha alterada com sucesso.", "success")
+        flash("Senha criada com sucesso - agora você também pode entrar com CPF e senha." if criando else "Senha alterada com sucesso.", "success")
         return redirect(url_for("index"))
 
-    return render_template("auth/trocar_senha.html")
+    return render_template("auth/trocar_senha.html", criando=criando)
 
 
 # Quanto tempo a confirmação de senha vale para acessar/editar "Meus
@@ -236,6 +243,16 @@ def trocar_senha():
 # vários apps para telas de dados sensíveis). Guardado na sessão, não no
 # banco - não sobrevive a logout/troca de navegador, de propósito.
 MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS = 15
+
+
+def _identidade_confirmada_recentemente():
+    """A pessoa confirmou a senha (ou, sem senha, a conta Google) há menos
+    de MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS minutos nesta sessão."""
+    confirmado_em = session.get("meus_dados_confirmado_em")
+    return (
+        confirmado_em is not None
+        and datetime.utcnow() - datetime.fromisoformat(confirmado_em) < timedelta(minutes=MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS)
+    )
 
 
 @auth_bp.route("/meus-dados", methods=["GET", "POST"])
@@ -255,15 +272,13 @@ def meus_dados():
     MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS minutos (guardado na sessão),
     então a pessoa não precisa digitar a senha de novo a cada campo que
     for ajustar na mesma visita."""
-    if not current_user.tem_senha:
+    if not current_user.acessa_com_senha_ou_google:
         flash("Esta tela é só para contas com senha (dono, médico ou secretária).", "info")
         return redirect(url_for("index"))
 
-    confirmado_em = session.get("meus_dados_confirmado_em")
-    confirmado = (
-        confirmado_em is not None
-        and datetime.utcnow() - datetime.fromisoformat(confirmado_em) < timedelta(minutes=MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS)
-    )
+    # Quem não tem senha (entrou pelo Google) confirma pelo Google - ver
+    # app.login_google (intenção "confirmar"), que grava a mesma chave.
+    confirmado = _identidade_confirmada_recentemente()
 
     if request.method == "POST" and request.form.get("acao") == "confirmar_senha":
         senha_atual = request.form.get("senha_atual", "")
@@ -394,11 +409,22 @@ def cadastro():
     if current_user.is_authenticated:
         return redirect(url_for("index"))
 
+    if request.args.get("sem_google"):
+        session.pop("google_cadastro", None)
+        return redirect(url_for("auth.cadastro"))
+
+    # Cadastro vindo do "Entrar com Google" (ver app.login_google): o e-mail
+    # é o que o Google confirmou (o do formulário é ignorado) e a senha é
+    # opcional - a pessoa entra pelo Google e pode criar uma senha depois.
+    google_cadastro = session.get("google_cadastro")
+
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()
         email = request.form.get("email", "").strip().lower()
         senha = request.form.get("senha", "")
         senha_confirmacao = request.form.get("senha_confirmacao", "")
+        if google_cadastro:
+            email = google_cadastro["email"]
         cpf = request.form.get("cpf", "").strip()
 
         papel = request.form.get("papel", "secretaria")
@@ -421,7 +447,7 @@ def cadastro():
         if (
             not nome
             or not email
-            or not senha
+            or (not senha and not google_cadastro)
             or not cpf
             or not request.form.get("telefone", "").strip()
             or not request.form.get("cep", "").strip()
@@ -468,23 +494,31 @@ def cadastro():
             crm_numero = crm_uf = None
             data_nascimento = None
 
-        if len(senha) < 6:
+        if not google_cadastro and len(senha) < 6:
             flash("A senha deve ter pelo menos 6 caracteres.", "danger")
             return render_template("auth/cadastro.html")
 
         # Pedido do Silvan (2026-09-10): confirmação de senha (digitar
         # duas vezes) só no cadastro inicial - outras telas de senha
         # (trocar-senha, etc.) ficam como estão por enquanto.
-        if senha != senha_confirmacao:
+        if not google_cadastro and senha != senha_confirmacao:
             flash("A confirmação não corresponde à senha digitada.", "danger")
             return render_template("auth/cadastro.html")
+
+        if google_cadastro and Usuario.query.filter_by(google_sub=google_cadastro["sub"]).first():
+            session.pop("google_cadastro", None)
+            flash("Essa conta Google já está ligada a um usuário. Use \"Entrar com Google\".", "danger")
+            return redirect(url_for("auth.login"))
 
         if Usuario.query.filter_by(email=email).first():
             flash("Já existe uma conta com esse e-mail. Faça login ou use outro e-mail.", "danger")
             return render_template("auth/cadastro.html")
 
         usuario = Usuario(nome=nome, email=email, tipo=papel, cpf=cpf)
-        usuario.set_senha(senha)
+        if google_cadastro:
+            usuario.google_sub = google_cadastro["sub"]
+        else:
+            usuario.set_senha(senha)
         usuario.telefone = normalizar_telefone(request.form.get("telefone", ""))
         usuario.cep = request.form.get("cep", "").strip()
         usuario.rua = request.form.get("rua", "").strip()
@@ -495,14 +529,19 @@ def cadastro():
         usuario.uf = request.form.get("uf", "").strip().upper() or None
         usuario.crm_numero = crm_numero
         usuario.crm_uf = crm_uf
-        usuario.especialidade = especialidade_valida(request.form.get("especialidade")) if papel == "medico" else None
+        # Especialidade não é mais pedida no cadastro (2026-10-19): o médico
+        # informa no 1º "Novo modelo de preparo" ou em Meus dados.
+        usuario.especialidade = None
         usuario.data_nascimento = data_nascimento
         # Checkbox "Exigir minha aprovação antes de responder o paciente"
         # (ver auth/cadastro.html) - checkbox desmarcado não manda a
         # chave no POST, então ausência = False (não exigir aprovação).
         # Sem isso, a conta sempre nascia com o default do modelo
         # (True), ignorando a escolha feita no próprio cadastro.
-        usuario.aprovacao_perguntas_paciente = bool(request.form.get("aprovacao_perguntas_paciente"))
+        # A opção só aparece na tela para médico (2026-10-19): secretária
+        # fica com o padrão do modelo (exigir aprovação).
+        if papel == "medico":
+            usuario.aprovacao_perguntas_paciente = bool(request.form.get("aprovacao_perguntas_paciente"))
 
         # Fatia 8 (licença individual): a cobrança é por médico e vale a
         # partir do cadastro, independente de Grupo (decisão do Silvan) -
@@ -534,6 +573,7 @@ def cadastro():
         # pro uso solo quanto para quando um Grupo vier a existir.
         usuario.conceder_todas_permissoes()
         db.session.commit()
+        session.pop("google_cadastro", None)
         login_user(usuario)
 
         # Pedido do Silvan (2026-09-10): médico recebe a mensagem de
