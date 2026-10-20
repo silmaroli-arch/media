@@ -304,6 +304,12 @@ def create_app():
             }
         return {}
 
+    @app.context_processor
+    def _injetar_ano_atual():
+        """Ano do rodapé do site público (site/base_publico.html)."""
+        from datetime import date
+        return {"ano_atual": date.today().year}
+
     @app.route("/")
     def index():
         from flask import redirect, url_for
@@ -313,12 +319,9 @@ def create_app():
             # estar logado (pedido do Silvan, 2026-10-20) - com os botões de
             # cadastro e login. Os dias grátis vêm da mesma configuração
             # usada no cadastro (PlataformaConfig.trial_dias).
-            from datetime import date
             from flask import render_template
             from app.models import PlataformaConfig
-            return render_template(
-                "site/inicio.html", trial_dias=PlataformaConfig.obter().trial_dias, ano_atual=date.today().year,
-            )
+            return render_template("site/inicio.html", trial_dias=PlataformaConfig.obter().trial_dias)
         if current_user.is_dono:
             return redirect(url_for("dono.dashboard"))
         if current_user.is_staff:

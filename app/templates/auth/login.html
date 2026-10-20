@@ -1,10 +1,10 @@
-{% extends "base.html" %}
+{% extends "site/base_publico.html" %}
 {% block titulo %}Login{% endblock %}
 {% block conteudo %}
 <div class="row justify-content-center">
   <div class="col-md-5">
-    <div class="card p-4 mt-5">
-      <div class="text-center mb-3"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 52px;"></div>
+    <div class="card p-4 mt-3 mt-md-4">
+      <h4 class="text-center mb-3">Entrar no MedIA</h4>
       {% set proximo = request.values.get('next', '') %}
       {% if google_login_ativo %}
       {# Login com Google - só equipe (ver app/login_google.py). Um botão só

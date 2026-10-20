@@ -2321,6 +2321,7 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Os "X dias grátis" vêm de `PlataformaConfig.trial_dias` (mesmo número do cadastro).
 - Decisões tomadas sem confirmação explícita (o Silvan só disse "pode criar"): SEM preço na página, SEM contato comercial (para não inventar e-mail/WhatsApp), texto escrito pelo assistente a partir do que o sistema faz. Revisar o texto e decidir preço/contato.
 - Conferido no Chromium em 390px (celular) e 1280px (computador): sem rolagem lateral, FAQ abre.
+- **Mesmo dia: layout único do site público** (pedido do Silvan - login e cadastro pareciam outro sistema e não tinham como voltar ao site). Novo `app/templates/site/base_publico.html`: cabeçalho azul com o logo (clicar volta para o início), menu "Início / Entrar / Criar conta" e rodapé. Usado pela página de apresentação e pelas telas antes do login: `auth/login.html`, `auth/cadastro.html`, `auth/login_paciente.html`, `auth/login_paciente_escolher_clinica.html`, `auth/cadastro_paciente.html` (todas deixaram de estender `base.html`). Nas telas do paciente, menu e rodapé mostram só "Área do paciente" (sem "Criar conta", que é da equipe). O logo repetido dentro dos cartões virou título ("Entrar no MedIA", "Área do paciente"); o cadastro ficou mais largo no computador. O ano do rodapé vem de um context processor (`ano_atual`, `app/__init__.py`). Conferido no Chromium (celular e computador, sem rolagem lateral); suíte 80/80.
 
 ## Como continuar
 
