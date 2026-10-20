@@ -31,10 +31,11 @@
       <div class="row align-items-center gy-4 gx-lg-5">
         <div class="col-lg-6">
           <span class="selo mb-3"><i class="bi bi-whatsapp me-1"></i> Preparo de exames pelo WhatsApp</span>
-          <h1 class="display-5 fw-bold mt-3">Seu paciente tira as dúvidas do preparo pelo WhatsApp. Você só revisa.</h1>
+          <h1 class="display-5 fw-bold mt-3">Seu paciente tira as dúvidas do preparo pelo WhatsApp. Você decide se quer revisar.</h1>
           <p class="lead mt-3">
-            O MedIA lê o preparo do seu exame e responde às perguntas dos pacientes a qualquer hora,
-            com base nas <strong>suas</strong> orientações e com a sua aprovação antes de chegar a eles.
+            Duas IAs respondem a cada pergunta com base no <strong>seu</strong> preparo e no FAQ do MedIA,
+            uma base de conhecimento sobre mais de 60 tipos de exame. Quer revisar antes de chegar ao paciente?
+            Ligue a aprovação. Prefere que respondam sozinhas? Também pode.
           </p>
           <div class="d-grid d-sm-flex gap-2 mt-4">
             <a href="{{ url_for('auth.cadastro') }}" class="btn btn-cta btn-lg px-4">Criar conta grátis</a>
@@ -79,7 +80,42 @@
         <div class="col-md-4">
           <div class="passo-num mb-3">3</div>
           <h5 class="fw-semibold">O paciente pergunta, o MedIA responde</h5>
-          <p class="text-muted">Dúvidas como "posso tomar café?" são respondidas com base no seu preparo. As respostas novas passam pela sua aprovação.</p>
+          <p class="text-muted">Dúvidas como "posso tomar café?" são respondidas por duas IAs, com base no seu preparo e no FAQ do MedIA. Se você quiser, elas passam pela sua aprovação antes.</p>
+        </div>
+      </div>
+    </section>
+
+    {# ---------- Como o MedIA responde (pedido do Silvan, 2026-10-20) ---------- #}
+    <section class="py-5" style="background: #fff;">
+      <div class="container">
+        <h2 class="fw-bold text-center mb-2">Como o MedIA responde</h2>
+        <p class="text-center text-muted mb-5">Mais de uma fonte por resposta, e você escolhe quanto controle quer ter.</p>
+        <div class="row g-4">
+          <div class="col-md-4">
+            <div class="card h-100 border-0 shadow-sm p-4">
+              <i class="bi bi-people-fill icone-beneficio"></i>
+              <h5 class="fw-semibold mt-2">Duas IAs, uma conferindo a outra</h5>
+              <p class="text-muted mb-0">Cada pergunta é respondida por duas IAs diferentes. Quando elas concordam, a resposta segue.
+                Quando divergem em algo prático, o MedIA sinaliza para você olhar com mais atenção.</p>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card h-100 border-0 shadow-sm p-4">
+              <i class="bi bi-journal-medical icone-beneficio"></i>
+              <h5 class="fw-semibold mt-2">FAQ do MedIA: conhecimento global</h5>
+              <p class="text-muted mb-0">Uma base de conhecimento compartilhada, com centenas de perguntas e respostas sobre mais de 60 tipos de exame,
+                que cresce com as contribuições dos médicos. Ela reforça as respostas e cobre o que o seu preparo não detalha.</p>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card h-100 border-0 shadow-sm p-4">
+              <i class="bi bi-toggles icone-beneficio"></i>
+              <h5 class="fw-semibold mt-2">Revisar é opcional</h5>
+              <p class="text-muted mb-0"><strong>Aprovação ligada:</strong> nenhuma resposta nova chega ao paciente sem você.
+                <strong>Desligada:</strong> as IAs respondem sozinhas, na hora. Mesmo assim, casos sensíveis, como um remédio que não está no
+                seu preparo, sempre vêm para você.</p>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -102,7 +138,7 @@
           <div class="col-sm-6 col-lg-4">
             <i class="bi bi-shield-check icone-beneficio"></i>
             <h6 class="fw-semibold mt-2">Você no controle</h6>
-            <p class="text-muted small mb-0">Você decide se as respostas novas passam pela sua aprovação. O que você aprova vira o seu FAQ e responde sozinho da próxima vez.</p>
+            <p class="text-muted small mb-0">Você escolhe se as respostas passam pela sua aprovação ou se as IAs respondem sozinhas, e pode mudar quando quiser. O que você aprova vira o seu FAQ.</p>
           </div>
           <div class="col-sm-6 col-lg-4">
             <i class="bi bi-clock icone-beneficio"></i>
@@ -136,14 +172,17 @@
         <div class="accordion-item">
           <h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">A IA responde o paciente sozinha?</button></h3>
           <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqSite"><div class="accordion-body text-muted">
-            Só se você quiser. Por padrão, as respostas novas ficam esperando a sua aprovação antes de chegar ao paciente.
-            Perguntas que você já respondeu antes passam a ser respondidas direto.
+            Você escolhe. Com a aprovação ligada (o padrão), as respostas novas esperam você aprovar antes de chegar ao paciente.
+            Com ela desligada, as duas IAs respondem sozinhas, na hora. Mesmo assim, casos sensíveis, como um remédio que não está
+            no seu preparo, sempre vêm para você. Perguntas que você já respondeu antes são respondidas direto.
           </div></div>
         </div>
         <div class="accordion-item">
           <h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">De onde vêm as respostas?</button></h3>
           <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqSite"><div class="accordion-body text-muted">
-            Do preparo que você cadastrou e das respostas que você já aprovou. Quando a dúvida não está coberta, ela vem para você responder.
+            De quatro fontes: o preparo que você cadastrou, o seu FAQ (respostas que você já aprovou), o FAQ do MedIA
+            (conhecimento compartilhado sobre mais de 60 tipos de exame) e duas IAs que conferem uma à outra.
+            Quando ninguém sabe responder com segurança, a dúvida vem para você.
           </div></div>
         </div>
         <div class="accordion-item">
