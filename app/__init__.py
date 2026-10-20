@@ -309,7 +309,16 @@ def create_app():
         from flask import redirect, url_for
         from flask_login import current_user
         if not current_user.is_authenticated:
-            return redirect(url_for("auth.login"))
+            # Página de apresentação para quem chega em media.med.br sem
+            # estar logado (pedido do Silvan, 2026-10-20) - com os botões de
+            # cadastro e login. Os dias grátis vêm da mesma configuração
+            # usada no cadastro (PlataformaConfig.trial_dias).
+            from datetime import date
+            from flask import render_template
+            from app.models import PlataformaConfig
+            return render_template(
+                "site/inicio.html", trial_dias=PlataformaConfig.obter().trial_dias, ano_atual=date.today().year,
+            )
         if current_user.is_dono:
             return redirect(url_for("dono.dashboard"))
         if current_user.is_staff:

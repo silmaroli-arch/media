@@ -2314,6 +2314,14 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
    - `https://media-dev.onrender.com/login/google/retorno`
 4. Copiar o ID do cliente e a chave secreta para o Render -> Environment: `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` (primeiro no `media-dev`, depois no `media-prod`). A chave secreta nunca deve ir para o repositório nem ser colada em conversa.
 
+## Página de apresentação em media.med.br (2026-10-20, pedido do Silvan)
+
+- Quem abre `media.med.br` SEM estar logado agora vê uma página de apresentação (antes ia direto para o login). Quem está logado continua indo direto para o painel. `index()` em `app/__init__.py` + `app/templates/site/inicio.html` (página própria, sem o menu do sistema, não estende `base.html`).
+- Seções: topo (frase principal, botões "Criar conta grátis" -> /cadastro e "Já tenho conta" -> /login, exemplo ilustrativo de conversa no WhatsApp), como funciona (3 passos), por que usar (6 benefícios), perguntas frequentes, chamada final e rodapé (Entrar, Criar conta, Sou paciente).
+- Os "X dias grátis" vêm de `PlataformaConfig.trial_dias` (mesmo número do cadastro).
+- Decisões tomadas sem confirmação explícita (o Silvan só disse "pode criar"): SEM preço na página, SEM contato comercial (para não inventar e-mail/WhatsApp), texto escrito pelo assistente a partir do que o sistema faz. Revisar o texto e decidir preço/contato.
+- Conferido no Chromium em 390px (celular) e 1280px (computador): sem rolagem lateral, FAQ abre.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
