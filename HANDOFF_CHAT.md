@@ -2337,6 +2337,7 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 Prints do sistema enviados pelo Silvan para colocar na página de apresentação (`site/inicio.html`) mais tarde. Ainda NÃO usados em nenhuma página:
 - `app/static/img/site/importar-pdf-preparo.png` (505x390) - popup "Importar de um PDF" extraindo o preparo com IA ("Tentando extrair os dados com Gemini..."). Sugestão: ilustrar o passo 1 do "Como funciona" (Importe o seu preparo).
 - `app/static/img/site/primeiros-passos.png` (1004x563) - tela "Primeiros passos" com o checklist (atalho na tela de início, modelo de preparo e exame, agendar exame para o paciente de teste). Sugestão: ilustrar o início rápido ou a chamada final ("Comece hoje, em poucos minutos").
+- `app/static/img/site/revisao-resposta-portal.png` (798x490) - Portal de atendimento: pergunta "Posso tomar nimesulida?" com as sugestões do ChatGPT e do Claude e o rascunho final para o médico aprovar. Sugestão: ilustrar a seção "Como o MedIA responde" (duas IAs + revisão opcional). Atenção: mostra o nome "Silvan Martins de Oliveira" (paciente de teste) - trocar ou desfocar se não quiser o nome no site.
 - Uso no template: `{{ url_for('static', filename='img/site/importar-pdf-preparo.png') }}`.
 - Observação: o print do PDF cita o nome "Gemini" - se não quiser expor qual IA é usada na extração, recortar ou refazer o print antes de publicar.
 
