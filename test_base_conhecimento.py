@@ -154,15 +154,18 @@ VETORES = {
     "A colonoscopia dói?": [1.0, 0.0, 0.0],
     "Posso dirigir depois da colonoscopia?": [0.0, 1.0, 0.0],
     "O laxante não fez efeito, o que eu faço?": [0.0, 0.0, 1.0],
-    "o remedio para limpar o intestino nao funcionou": [0.05, 0.05, 0.99],
+    # perguntas do paciente: a busca prefixa o nome do tipo de exame (2026-10-20)
+    "Colonoscopia: o remedio para limpar o intestino nao funcionou": [0.05, 0.05, 0.99],
     # cosseno ~0,577 com cada vetor acima - bem abaixo de LIMIAR_EMBEDDING (0,70)
-    "pergunta sem parecido": [0.5, 0.5, 0.5],
+    "Colonoscopia: pergunta sem parecido": [0.5, 0.5, 0.5],
 }
+textos_enviados = []
 falhar = {"ligado": False}
 original = bc.gerar_embedding
 
 
 def embedding_falso(texto, provedor):
+    textos_enviados.append(texto)
     if falhar["ligado"] or provedor not in ("openai", "gemini"):
         return None
     vetor = VETORES.get(texto)
@@ -181,6 +184,10 @@ try:
         checar("Vetores foram gravados", BaseConhecimentoItem.query.filter(BaseConhecimentoItem.embedding.isnot(None)).count() > 0)
         achou = bc.buscar_na_base("o remedio para limpar o intestino nao funcionou", tipo_exame_id=colono_id)
         checar("Embedding acha por SENTIDO (palavras diferentes)", achou and achou[0]["item"].pergunta.startswith("O laxante não fez efeito") and achou[0]["metodo"] == "openai")
+        checar("A busca por sentido envia a pergunta com o nome do exame",
+               textos_enviados[-1] == "Colonoscopia: o remedio para limpar o intestino nao funcionou")
+        bc.buscar_na_base("pergunta qualquer sem tipo")
+        checar("Sem tipo de exame, a pergunta vai sem prefixo", textos_enviados[-1] == "pergunta qualquer sem tipo")
         checar("Pergunta sem parecido nao passa do limiar", bc.buscar_na_base("pergunta sem parecido", tipo_exame_id=colono_id) == [])
         # vetor de OUTRO modelo nunca e comparado
         alvo = BaseConhecimentoItem.query.filter_by(pergunta="O laxante não fez efeito, o que eu faço?").first()
