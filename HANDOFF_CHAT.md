@@ -2381,7 +2381,8 @@ Prints do sistema enviados pelo Silvan para colocar na página de apresentação
 - `VERSAO_TEXTO_VETOR = "v2"` entra no nome do modelo (`openai:text-embedding-3-small:v2`): os vetores antigos passam a contar como pendentes, e um clique em "Calcular vetores" refaz tudo. Ao mudar o texto do vetor de novo, troque a versão.
 - `app/routes_dono.py` (editar item): trocar o tipo de exame agora também recalcula o vetor, porque o nome do exame faz parte dele.
 - Testes: `test_base_conhecimento.py` (vetores falsos pelo começo do texto + check do texto exame+pergunta+resposta) e `test_base_vetores_lote.py` (vetores da versão anterior contam como pendentes e o texto enviado). Suíte 82/82.
-- PRÓXIMO PASSO (Silvan): depois do deploy, clicar em "Calcular vetores" em dev e repetir os 5 testes, mais algumas perguntas sem relação, para conferir o mínimo de 0,70.
+- Resultado em dev (867 vetores recalculados em 1 clique): 5 de 5 certos. Dirigir 0,81, laxante 0,77 (antes não achava), menstruada 0,74. Nimesulida, filho junto e "Qual o endereço da clínica?" não acharam nada. As notas caem um pouco porque a resposta "dilui" o vetor. Mínimo mantido em 0,70: subir para 0,75 perderia a menstruada.
+- Em produção, depois do deploy: clicar uma vez em "Calcular vetores".
 
 ## Como continuar
 
