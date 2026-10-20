@@ -124,7 +124,11 @@ def meus_grupos():
     # Só pula quando a pessoa é dona/administradora do único grupo -
     # sem isso, ela nem teria permissão de abrir "Convidar membros" (ver
     # checagem em grupo.convidar) e cairia num redirecionamento em loop.
-    if len(grupos) == 1 and grupos[0]["papel"] in ("dono", "administrador"):
+    # ?lista=1 (link "Meus grupos" de grupo/convidar.html) mostra a lista
+    # mesmo assim - sem isso o link voltava para "Convidar membros" e não
+    # havia como chegar ao "Criar novo grupo" (relatado pelo Silvan,
+    # 2026-10-20).
+    if len(grupos) == 1 and grupos[0]["papel"] in ("dono", "administrador") and not request.args.get("lista"):
         return redirect(url_for("grupo.convidar", grupo_id=grupos[0]["grupo"].id))
     return render_template("grupo/lista.html", grupos=grupos)
 

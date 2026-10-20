@@ -1,8 +1,25 @@
 {% extends "base.html" %}
 {% block titulo %}Convidar membros — {{ grupo.nome }}{% endblock %}
 {% block conteudo %}
-<p class="text-muted mb-1"><a href="{{ url_for('grupo.meus_grupos') }}">Meus grupos</a> &rsaquo; {{ grupo.nome }} &rsaquo; Membros</p>
-<h3 class="mb-3">Convidar membros para o grupo</h3>
+<p class="text-muted mb-1"><a href="{{ url_for('grupo.meus_grupos', lista=1) }}">Meus grupos</a> &rsaquo; {{ grupo.nome }} &rsaquo; Membros</p>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h3 class="mb-0">Convidar membros para o grupo</h3>
+  {# Pedido do Silvan (2026-10-20): editar o grupo e criar outro a partir
+     daqui - quem tem um grupo só cai direto nesta tela (ver
+     grupo.meus_grupos). "Dados do grupo" é a tela de Dados Cadastrais
+     (medico.clinica_configuracoes), que edita o grupo ATIVO - por isso só
+     aparece quando este é o grupo ativo. #}
+  <div class="d-flex flex-wrap gap-2">
+    {% if empresa_atual_navbar and empresa_atual_navbar.id == grupo.id and current_user.perm_dados_clinica %}
+    <a href="{{ url_for('medico.clinica_configuracoes', filial_id=grupo.id) }}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-pencil-square me-1"></i>Dados do grupo
+    </a>
+    {% endif %}
+    <a href="{{ url_for('grupo.novo') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-plus-lg me-1"></i>Criar outro grupo
+    </a>
+  </div>
+</div>
 
 <div class="card p-3 mb-3" style="max-width: 560px;">
   <form method="get">
