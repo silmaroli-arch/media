@@ -52,9 +52,14 @@ def usuario(email):
 # ---------- Botões aparecem ----------
 html = client.get("/login").get_data(as_text=True)
 checar("Login mostra 'Continuar com Google' (serve para entrar e para criar conta)",
-       "Continuar com Google" in html and "Primeiro acesso?" in html and "Criar conta com e-mail e senha" in html)
+       "Continuar com Google" in html and "Primeiro acesso?" in html and "Crie sua conta" in html)
 html = client.get("/cadastro").get_data(as_text=True)
-checar("Cadastro mostra 'Continuar com Google'", "Continuar com Google" in html)
+checar("Criar conta começa perguntando como entrar (Google ou e-mail e senha)",
+       "Como você quer entrar no MedIA?" in html and "Continuar com Google" in html
+       and "/cadastro?metodo=senha" in html and 'name="cpf"' not in html)
+html = client.get("/cadastro?metodo=senha").get_data(as_text=True)
+checar("E-mail e senha: abre o formulário, sem o botão do Google", 'name="cpf"' in html and 'name="senha"' in html
+       and "Continuar com Google" not in html and "Escolher outra forma de entrar" in html)
 checar("Cadastro com senha: o CPF continua indicado como login", "CPF (será seu login)" in html)
 
 # ---------- 1. Conta existente, achada pelo e-mail ----------

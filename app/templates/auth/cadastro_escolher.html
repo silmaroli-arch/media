@@ -1,0 +1,47 @@
+{% extends "site/base_publico.html" %}
+{# Primeiro passo do "Criar conta" (pedido do Silvan, 2026-10-20): antes do
+   formulário, a pessoa escolhe COMO vai entrar no MedIA. Feito para crescer:
+   uma forma de entrar nova (ex.: Microsoft, Apple) é só mais um botão aqui,
+   levando ao provedor, que volta para auth.cadastro com os dados confirmados
+   (como o Google faz com a sessão "google_cadastro"). Ver auth.cadastro. #}
+{% block titulo %}Criar conta{% endblock %}
+{% block estilos %}
+    .opcao-entrada { text-align: left; padding: .9rem 1rem; }
+    .opcao-entrada .bi { font-size: 1.35rem; width: 2rem; flex-shrink: 0; text-align: center; margin-right: .75rem; }
+{% endblock %}
+{% block conteudo %}
+<div class="row justify-content-center">
+  <div class="col-md-7 col-lg-5">
+    <div class="card p-4 mt-2 mt-md-4">
+      <h4 class="mb-1 text-center"><i class="bi bi-hospital"></i> Criar conta</h4>
+      <p class="text-muted text-center mb-4">Como você quer entrar no MedIA?</p>
+
+      <div class="d-grid gap-3">
+        {% if google_login_ativo %}
+        <a href="{{ url_for('google_login.iniciar') }}" class="btn btn-outline-secondary opcao-entrada d-flex align-items-center">
+          <i class="bi bi-google"></i>
+          <span>
+            <strong class="d-block">Continuar com Google</strong>
+            <span class="small text-muted">Sem senha para lembrar. Seu e-mail vem confirmado pelo Google.</span>
+          </span>
+        </a>
+        {% endif %}
+        <a href="{{ url_for('auth.cadastro', metodo='senha') }}" class="btn btn-outline-secondary opcao-entrada d-flex align-items-center">
+          <i class="bi bi-envelope"></i>
+          <span>
+            <strong class="d-block">E-mail e senha</strong>
+            <span class="small text-muted">Você cria uma senha e entra com o CPF ou o e-mail.</span>
+          </span>
+        </a>
+      </div>
+
+      <div class="text-center mt-4">
+        <a href="{{ url_for('auth.login') }}" class="small">Já tem conta? Fazer login</a>
+      </div>
+      <div class="text-center mt-2">
+        <a href="{{ url_for('auth.login_paciente') }}" class="small">Sou paciente &rarr; <strong>Entrar com CPF e data de nascimento</strong></a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

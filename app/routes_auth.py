@@ -400,12 +400,23 @@ def cadastro():
 
     if request.args.get("sem_google"):
         session.pop("google_cadastro", None)
-        return redirect(url_for("auth.cadastro"))
+        return redirect(url_for("auth.cadastro", metodo="senha"))
 
     # Cadastro vindo do "Entrar com Google" (ver app.login_google): o e-mail
     # é o que o Google confirmou (o do formulário é ignorado) e a senha é
     # opcional - a pessoa entra pelo Google e pode criar uma senha depois.
     google_cadastro = session.get("google_cadastro")
+
+    # Primeiro passo (pedido do Silvan, 2026-10-20): antes do formulário, a
+    # pessoa escolhe como vai entrar (auth/cadastro_escolher.html). Com uma
+    # forma só disponível (Google não configurado), não há o que escolher e
+    # o formulário abre direto.
+    from app import login_google
+    if (
+        request.method == "GET" and not google_cadastro
+        and request.args.get("metodo") != "senha" and login_google.configurado()
+    ):
+        return render_template("auth/cadastro_escolher.html")
 
     if request.method == "POST":
         nome = request.form.get("nome", "").strip()

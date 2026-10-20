@@ -2418,6 +2418,15 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Código: `Notificacao.popup` (models, `migrar_banco.py` ADD COLUMN), `dono.anuncio_enviar`, `dono/anuncios.html`, `injetar_notificacoes` (app/__init__.py, `notificacoes_popup`), modal `#modalAnuncios` em base.html, rota `medico.notificacoes_popup_entendi`. Essa rota fica sem `@staff_required` de propósito: quem tem 2+ grupos vê o popup ainda na tela de escolher o grupo, e o staff_required mandaria o "Entendi" de volta para essa escolha sem marcar nada.
 - Teste: `test_anuncio_popup.py` (19 checks). Conferido no navegador: abre ao entrar, clicar fora não fecha, "Entendi" fecha e não volta. Suíte 83/83.
 
+## Criar conta: primeiro escolher como entrar (2026-10-20, pedido do Silvan)
+
+- `/cadastro` agora começa por `auth/cadastro_escolher.html`, que pergunta "Como você quer entrar no MedIA?" e mostra **Continuar com Google** e **E-mail e senha**. O formulário só abre depois: pela volta do Google (sessão `google_cadastro`) ou em `/cadastro?metodo=senha`.
+- Pensado para crescer: uma forma nova de entrar (Microsoft, Apple...) é mais um botão nessa tela e um retorno para `auth.cadastro`, como o Google já faz.
+- Sem Google configurado (sem GOOGLE_CLIENT_ID/SECRET), não há o que escolher e o formulário abre direto. POST de `/cadastro` não mudou.
+- No formulário saiu o botão do Google. No modo e-mail e senha aparece "Escolher outra forma de entrar"; no modo Google, "Cadastrar sem o Google" leva a `?metodo=senha`. No login, o link virou só "Ainda não tem conta? Crie sua conta", que leva à escolha.
+- Junto: no cadastro pelo Google o campo se chama só "CPF" (não "será seu login"), porque a conta nasce sem senha e o login por CPF exige senha.
+- Teste: `test_login_google.py` (escolha, formulário por e-mail e senha, rótulo do CPF). Suíte 83/83. Conferido no navegador (computador e celular, sem rolagem lateral).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção):
@@ -2435,6 +2444,10 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
    - [ ] Enviar anúncio COM popup para um médico: abre ao entrar, não fecha clicando fora, fecha no "Entendi" e não volta
    - [ ] Popup também no celular
    - [ ] Médico com mais de um grupo: o "Entendi" funciona (inclusive na tela de escolher o grupo)
+3. **Criar conta: escolher como entrar** (ver seção acima)
+   - [ ] "Criar conta" (site, login e menu) abre primeiro a escolha Google / E-mail e senha
+   - [ ] E-mail e senha: formulário completo; "Escolher outra forma de entrar" volta para a escolha
+   - [ ] Google: volta do Google no formulário sem senha, com o campo "CPF" e a explicação; "Cadastrar sem o Google" leva ao formulário com senha
 
 ## Como continuar
 

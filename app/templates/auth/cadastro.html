@@ -17,9 +17,11 @@
         <a href="{{ url_for('auth.cadastro', sem_google=1) }}">Cadastrar sem o Google</a>
       </div>
       {% elif google_login_ativo %}
-      <a href="{{ url_for('google_login.iniciar') }}" class="btn btn-outline-secondary w-100 mb-3">
-        <i class="bi bi-google me-1"></i> Continuar com Google
-      </a>
+      {# A escolha de como entrar fica no passo anterior (auth/cadastro_escolher.html). #}
+      <div class="text-center small mb-3">
+        <i class="bi bi-envelope me-1"></i> Cadastro com e-mail e senha.
+        <a href="{{ url_for('auth.cadastro') }}">Escolher outra forma de entrar</a>
+      </div>
       {% endif %}
 
       <form method="post">
