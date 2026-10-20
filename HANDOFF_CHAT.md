@@ -2384,6 +2384,11 @@ Prints do sistema enviados pelo Silvan para colocar na página de apresentação
 - Resultado em dev (867 vetores recalculados em 1 clique): 5 de 5 certos. Dirigir 0,81, laxante 0,77 (antes não achava), menstruada 0,74. Nimesulida, filho junto e "Qual o endereço da clínica?" não acharam nada. As notas caem um pouco porque a resposta "dilui" o vetor. Mínimo mantido em 0,70: subir para 0,75 perderia a menstruada.
 - Em produção, depois do deploy: clicar uma vez em "Calcular vetores".
 
+## Menu do dono "Configurações" caía na Visão geral (2026-10-20, relatado pelo Silvan em produção)
+
+- Causa: em `app/templates/dono/dashboard.html`, o script que abre a aba pela âncora (`/dono/#painel-config`) rodava ANTES do `bootstrap.bundle.min.js` (que fica no fim do `<body>`, ver base.html). Dava "bootstrap is not defined", o script quebrava e nem o `hashchange` era registrado. Afetava todos os itens do menu lateral que apontam para abas do painel (Usuários, Grupos, Custo de IA, Configurações).
+- Correção: o script roda dentro de `DOMContentLoaded`, o mesmo padrão de `auth/meus_dados.html`. Conferido no navegador (Playwright): cada item abre a aba certa, inclusive vindo de outra tela.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

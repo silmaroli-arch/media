@@ -538,8 +538,11 @@
 
 // Se a página chegou com uma âncora tipo "#painel-usuarios" (link vindo
 // de outra tela do painel - ver dono/_menu.html), abre a aba
-// correspondente em vez de sempre cair em "Visão geral".
-(function () {
+// correspondente em vez de sempre cair em "Visão geral". Dentro de
+// DOMContentLoaded: este bloco vem ANTES do bootstrap.bundle.min.js (fim do
+// <body>, ver base.html) - sem isso, `bootstrap` ainda não existe, o script
+// quebra e o menu "Configurações" (ou outro item) caía na Visão geral.
+document.addEventListener('DOMContentLoaded', function () {
   function abrirPelaAncora() {
     var alvo = window.location.hash;
     if (!alvo) return;
@@ -555,6 +558,6 @@
   }
   abrirPelaAncora();
   window.addEventListener('hashchange', abrirPelaAncora);
-})();
+});
 </script>
 {% endblock %}
