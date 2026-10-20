@@ -55,6 +55,7 @@ checar("Login mostra 'Continuar com Google' (serve para entrar e para criar cont
        "Continuar com Google" in html and "Primeiro acesso?" in html and "Criar conta com e-mail e senha" in html)
 html = client.get("/cadastro").get_data(as_text=True)
 checar("Cadastro mostra 'Continuar com Google'", "Continuar com Google" in html)
+checar("Cadastro com senha: o CPF continua indicado como login", "CPF (será seu login)" in html)
 
 # ---------- 1. Conta existente, achada pelo e-mail ----------
 carlos = usuario("medico@clinicavitoria.com")
@@ -79,6 +80,8 @@ checar("Sem conta: vai para o cadastro", "Cadastro com a conta Google" in html a
 checar("Cadastro com Google: nome preenchido e sem campos de senha",
        'value="Dra. Nova Google"' in html and 'type="password" name="senha"' not in html
        and 'name="senha_confirmacao"' not in html)
+checar("Cadastro com Google: o CPF não promete ser o login (sem senha, entra pelo Google)",
+       "CPF (será seu login)" not in html and "Você vai entrar pelo Google" in html)
 r = client.post("/cadastro", data={
     "nome": "Dra. Nova Google", "papel": "medico", "cpf": "111.222.334-77",
     "crm_numero": "54321", "crm_uf": "ES", "data_nascimento": "10/05/1985",

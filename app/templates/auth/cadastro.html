@@ -31,9 +31,14 @@
                    value="{{ request.form.get('nome') or (google_cadastro.nome if google_cadastro else '') }}">
           </div>
           <div class="col-md-6">
-            <label class="form-label">CPF (será seu login)</label>
+            {# Pelo Google não há senha: o CPF só vira login se a pessoa criar
+               uma senha depois (o login por CPF exige CPF + senha). #}
+            <label class="form-label">{% if google_cadastro %}CPF{% else %}CPF (será seu login){% endif %}</label>
             <input type="text" inputmode="numeric" name="cpf" id="cpf" class="form-control" placeholder="000.000.000-00" required>
             <div class="invalid-feedback" id="cpf_status"></div>
+            {% if google_cadastro %}
+            <div class="form-text">Você vai entrar pelo Google. Se criar uma senha depois, também poderá entrar com o CPF e a senha.</div>
+            {% endif %}
           </div>
           <div class="col-md-6" id="campo-papel">
             <label class="form-label">Você é médico(a) ou secretário(a)?</label>
