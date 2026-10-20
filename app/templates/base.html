@@ -576,7 +576,48 @@
   </div>
 </div>
 {% endif %}
+{# Anúncios do dono marcados como popup (2026-10-20, ver
+   app.injetar_notificacoes): abre na tela que a pessoa abrir e só fecha
+   pelo "Entendi", que marca como lidos. Não abre junto com o popup de
+   boas-vindas - aparece na tela seguinte. #}
+{% if notificacoes_popup and not popup_boas_vindas %}
+<div class="modal fade" id="modalAnuncios" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false"
+     aria-labelledby="modalAnunciosTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalAnunciosTitulo"><i class="bi bi-megaphone me-2"></i>
+          {% if notificacoes_popup|length == 1 %}{{ notificacoes_popup[0].titulo }}{% else %}Avisos do MedIA{% endif %}
+        </h5>
+      </div>
+      <div class="modal-body">
+        {% for n in notificacoes_popup %}
+        <div class="{% if not loop.last %}mb-3 pb-3 border-bottom{% endif %}">
+          {% if notificacoes_popup|length > 1 %}<h6 class="mb-1">{{ n.titulo }}</h6>{% endif %}
+          <p class="mb-1" style="white-space: pre-line;">{{ n.mensagem }}</p>
+          <div class="text-muted small">{{ n.criado_em.strftime('%d/%m/%Y') }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="modal-footer">
+        <form method="post" action="{{ url_for('medico.notificacoes_popup_entendi') }}" class="mb-0">
+          {% for n in notificacoes_popup %}<input type="hidden" name="notificacao_id" value="{{ n.id }}">{% endfor %}
+          <button type="submit" class="btn btn-primary">Entendi</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+{% if notificacoes_popup and not popup_boas_vindas %}
+<script>
+window.addEventListener('load', function () {
+  var el = document.getElementById('modalAnuncios');
+  if (el && window.bootstrap) { new bootstrap.Modal(el).show(); }
+});
+</script>
+{% endif %}
 {% if popup_boas_vindas %}
 <script>
 window.addEventListener('load', function () {

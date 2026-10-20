@@ -1541,6 +1541,7 @@ def anuncio_enviar():
     destinatario = request.form.get("destinatario", "todos")
     titulo = request.form.get("titulo", "").strip()
     mensagem = request.form.get("mensagem", "").strip()
+    popup = bool(request.form.get("popup"))
     if not titulo or not mensagem:
         flash("Preencha o título e a mensagem antes de enviar.", "danger")
         return redirect(url_for("dono.anuncios"))
@@ -1557,11 +1558,12 @@ def anuncio_enviar():
 
     for usuario in destinatarios:
         db.session.add(Notificacao(
-            usuario_id=usuario.id, tipo="anuncio", titulo=titulo, mensagem=mensagem,
+            usuario_id=usuario.id, tipo="anuncio", titulo=titulo, mensagem=mensagem, popup=popup,
         ))
     db.session.commit()
     flash(
-        f"Anúncio enviado para {len(destinatarios)} pessoa{'s' if len(destinatarios) != 1 else ''}.",
+        f"Anúncio enviado para {len(destinatarios)} pessoa{'s' if len(destinatarios) != 1 else ''}"
+        f"{' (abre como popup)' if popup else ''}.",
         "success",
     )
     return redirect(url_for("dono.anuncios"))

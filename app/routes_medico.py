@@ -4347,6 +4347,27 @@ def notificacao_abrir(notificacao_id):
         return redirect(url_for("medico.dashboard"))
 
 
+@medico_bp.route("/notificacoes/popup/entendi", methods=["POST"])
+@login_required
+def notificacoes_popup_entendi():
+    """"Entendi" do popup de anúncios (ver base.html e
+    app.injetar_notificacoes): marca como lidos os anúncios que estavam no
+    popup - só os do próprio usuário, e só os de popup. Sem @staff_required
+    de propósito: o popup também aparece na tela de escolher o grupo (quem
+    tem 2+ grupos ainda não escolheu nenhum), e o staff_required mandaria o
+    "Entendi" de volta para essa escolha sem marcar nada. Anúncio não
+    depende de grupo."""
+    if not current_user.is_staff:
+        return redirect(url_for("index"))
+    ids = [int(i) for i in request.form.getlist("notificacao_id") if i.isdigit()]
+    if ids:
+        Notificacao.query.filter(
+            Notificacao.id.in_(ids), Notificacao.usuario_id == current_user.id, Notificacao.popup.is_(True)
+        ).update({"lida": True}, synchronize_session=False)
+        db.session.commit()
+    return redirect(request.referrer or url_for("medico.dashboard"))
+
+
 @medico_bp.route("/notificacoes/marcar-todas-lidas", methods=["POST"])
 @login_required
 @staff_required

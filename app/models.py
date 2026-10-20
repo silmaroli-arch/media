@@ -2073,6 +2073,10 @@ class Notificacao(db.Model):
     # Pra onde o clique leva (ex.: de volta pro "Fale com a gente") - em
     # branco quando não há destino melhor que o próprio painel.
     link_endpoint = db.Column(db.String(80), nullable=True)
+    # Anúncio marcado pelo dono como "abrir como popup" (pedido do Silvan,
+    # 2026-10-20): além de ficar no sino, abre numa janela na próxima tela
+    # que a pessoa abrir, até ela clicar em "Entendi" (que marca como lida).
+    popup = db.Column(db.Boolean, nullable=False, default=False)
     lida = db.Column(db.Boolean, nullable=False, default=False)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 

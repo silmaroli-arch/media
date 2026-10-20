@@ -508,6 +508,9 @@ ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS base_divergiu BOOLEAN;
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS google_sub VARCHAR(255);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_google_sub ON usuarios (google_sub);
 
+-- Anuncio do dono que abre como popup para o medico ou secretaria (2026-10-20).
+ALTER TABLE notificacoes ADD COLUMN IF NOT EXISTS popup BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- LGPD, minimizacao (pedido do Silvan, 2026-10-20): o sistema deixou de pedir
 -- o endereco pessoal da equipe e o e-mail, o endereco e o contato de emergencia
 -- do paciente, porque nao usava esses dados para nada. Aqui eles sao APAGADOS.

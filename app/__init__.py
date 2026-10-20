@@ -298,9 +298,20 @@ def create_app():
                 .all()
             )
             total_nao_lidas = Notificacao.query.filter_by(usuario_id=current_user.id, lida=False).count()
+            # Anúncios que o dono marcou como popup e a pessoa ainda não leu:
+            # abrem numa janela (base.html) até ela clicar em "Entendi".
+            notificacoes_popup = []
+            if total_nao_lidas:
+                notificacoes_popup = (
+                    Notificacao.query.filter_by(usuario_id=current_user.id, lida=False, popup=True)
+                    .order_by(Notificacao.criado_em)
+                    .limit(5)
+                    .all()
+                )
             return {
                 "notificacoes_navbar": notificacoes,
                 "notificacoes_nao_lidas_navbar": total_nao_lidas,
+                "notificacoes_popup": notificacoes_popup,
             }
         return {}
 

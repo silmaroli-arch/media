@@ -2409,6 +2409,32 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Removidos: `cep_incompleto` (models), `_preencher_endereco_emergencia` (routes_medico), JS de CEP/contato de emergência nas telas, `test_autocadastro_paciente_endereco.py`. Novo: `test_lgpd_minimizacao.py` (22 checks). Ajustados: test_smoke, test_meus_dados, test_meus_dados_paciente, test_paciente_da_empresa, test_grupo_agendamento, test_cadastro_global_importar_cpf, seed.py (pacientes sem e-mail). Suíte 82/82.
 - Atenção: os backups automáticos do Render ainda guardam esses dados até expirarem pelo prazo de retenção do plano.
 
+## Anúncio do dono como popup (2026-10-20, pedido do Silvan)
+
+- Em Dono > Anúncios, novo interruptor **"Abrir como popup"**. Desmarcado: o aviso fica só no sino, como antes. Marcado: além do sino, abre numa janela na tela que a pessoa abrir e só fecha pelo **"Entendi"**, que marca como lido. Clicar fora ou apertar Esc não fecha. Enquanto não clicar, a janela abre de novo a cada tela.
+- Vale para todos os destinatários do anúncio (médico e secretária, ou "todo mundo").
+- Vários anúncios de popup pendentes aparecem juntos numa janela só ("Avisos do MedIA"), com até 5 por vez. Não abre junto com o popup de boas-vindas do cadastro: aparece na tela seguinte.
+- Código: `Notificacao.popup` (models, `migrar_banco.py` ADD COLUMN), `dono.anuncio_enviar`, `dono/anuncios.html`, `injetar_notificacoes` (app/__init__.py, `notificacoes_popup`), modal `#modalAnuncios` em base.html, rota `medico.notificacoes_popup_entendi`. Essa rota fica sem `@staff_required` de propósito: quem tem 2+ grupos vê o popup ainda na tela de escolher o grupo, e o staff_required mandaria o "Entendi" de volta para essa escolha sem marcar nada.
+- Teste: `test_anuncio_popup.py` (19 checks). Conferido no navegador: abre ao entrar, clicar fora não fecha, "Entendi" fecha e não volta. Suíte 83/83.
+
+## PENDENTE DE TESTE (Silvan) - lembrete
+
+Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção):
+
+1. **LGPD - minimização de dados** (ver seção acima)
+   - [ ] Criar conta (equipe) e Meus dados: não pedem mais endereço
+   - [ ] Cadastro de paciente pela equipe, autocadastro do paciente e Meus dados do paciente: não pedem e-mail, endereço nem contato de emergência
+   - [ ] Ficha do paciente: não mostra mais esses dados; Observações com o aviso de não registrar dados de saúde
+   - [ ] Convidar membro para o grupo pelo CPF continua funcionando
+   - [ ] Depois do deploy: conferir no banco que os dados antigos foram apagados (endereço da equipe; e-mail, endereço e contato de emergência dos pacientes)
+   - [ ] Política de Privacidade (/privacidade) com a lista nova de dados
+   - [ ] Depois de validado em produção: pedir a fase 2 (DROP COLUMN das colunas vazias)
+2. **Anúncio como popup** (ver seção acima)
+   - [ ] Enviar anúncio SEM popup: só aparece no sino
+   - [ ] Enviar anúncio COM popup para um médico: abre ao entrar, não fecha clicando fora, fecha no "Entendi" e não volta
+   - [ ] Popup também no celular
+   - [ ] Médico com mais de um grupo: o "Entendi" funciona (inclusive na tela de escolher o grupo)
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
