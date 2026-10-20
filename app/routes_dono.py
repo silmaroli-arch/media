@@ -9,6 +9,7 @@ from app.extensions import db
 from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico, BaseConhecimentoSugestao, tipos_exame_ordenados, TipoExameSugestao
 from app.base_conhecimento import (
     PROVEDORES_BUSCA, PROVEDOR_PALAVRA_CHAVE, provedor_configurado, atualizar_embedding_do_item, buscar_na_base,
+    itens_sem_vetor_query,
     LIMIAR_PALAVRA_CHAVE, LIMIAR_EMBEDDING,
 )
 from app.clinica_utils import verificar_vencimento_grupo
@@ -1073,7 +1074,6 @@ def tipos_exame_alternar(tipo_id):
 # ---------- Base de conhecimento compartilhada (a "terceira IA") ----------
 
 LIMITE_ITENS_BASE_NA_TELA = 300
-LIMITE_EMBEDDINGS_POR_CLIQUE = 40
 
 
 def _registrar_historico_base(item, motivo):
@@ -1122,9 +1122,7 @@ def base_conhecimento():
         tipos=tipos_exame_ordenados(),
         filtro_tipo=tipo_id, filtro_texto=texto, filtro_status=status,
         provedores=PROVEDORES_BUSCA, provedor_atual=provedor,
-        sem_embedding=BaseConhecimentoItem.query.filter(
-            BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.embedding.is_(None)
-        ).count() if provedor != PROVEDOR_PALAVRA_CHAVE else 0,
+        sem_embedding=itens_sem_vetor_query(provedor).count() if provedor != PROVEDOR_PALAVRA_CHAVE else 0,
         nao_revisados=BaseConhecimentoItem.query.filter_by(revisado=False).count(),
         sugestoes_pendentes=BaseConhecimentoSugestao.query.filter_by(status="pendente").count(),
         teste_pergunta=teste_pergunta, teste_resultados=teste_resultados,
@@ -1337,36 +1335,28 @@ def base_conhecimento_revisar(item_id):
 @login_required
 @dono_required
 def base_conhecimento_calcular_vetores():
-    """Calcula o vetor de busca dos itens ativos que ainda não têm (ou que
-    vieram de outro modelo), no provedor de embeddings atual. Limite por
-    clique de propósito (cada item é uma chamada de rede - mesma lição do 502
-    de "Gerar cobranças do ano"): se sobrar, basta clicar de novo."""
+    """Calcula o vetor de busca de TODOS os itens ativos que ainda não têm
+    (ou que vieram de outro modelo), no provedor de embeddings atual, num
+    clique só: em lotes (várias perguntas por chamada de API) e com limite
+    de tempo - ver app.base_conhecimento.calcular_vetores_pendentes (pedido
+    do Silvan, 2026-10-20; antes eram 40 itens por clique)."""
+    import app.base_conhecimento as base_mod
+
     provedor = provedor_configurado()
     if provedor == PROVEDOR_PALAVRA_CHAVE:
         flash("O provedor atual é palavra-chave e não usa vetores. Escolha OpenAI ou Gemini primeiro.", "warning")
         return redirect(url_for("dono.base_conhecimento"))
-    pendentes = BaseConhecimentoItem.query.filter(
-        BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.embedding.is_(None)
-    ).limit(LIMITE_EMBEDDINGS_POR_CLIQUE + 1).all()
-    if not pendentes:
+    if not itens_sem_vetor_query(provedor).first():
         flash("Todos os itens ativos já têm vetor de busca.", "success")
         return redirect(url_for("dono.base_conhecimento"))
-    sobra = len(pendentes) > LIMITE_EMBEDDINGS_POR_CLIQUE
-    ok = falhas = 0
-    for item in pendentes[:LIMITE_EMBEDDINGS_POR_CLIQUE]:
-        if atualizar_embedding_do_item(item, provedor):
-            ok += 1
-        else:
-            falhas += 1
-            if falhas >= 3 and ok == 0:
-                break  # provavelmente sem chave/credencial - não insistir item por item
-    db.session.commit()
+    ok, falhas, restantes = base_mod.calcular_vetores_pendentes(provedor)
+    sobra = restantes > 0
     if ok == 0 and falhas:
         flash("Não foi possível calcular os vetores. Verifique se a chave de API do provedor está configurada.", "danger")
     else:
         flash(
             f"{ok} vetor(es) calculado(s)" + (f", {falhas} falhou(aram)" if falhas else "")
-            + (". Ainda há itens pendentes: clique de novo." if sobra else "."),
+            + (f". Ainda faltam {restantes} (o tempo da página acabou): clique de novo." if sobra else "."),
             "success" if not falhas else "warning",
         )
     return redirect(url_for("dono.base_conhecimento"))

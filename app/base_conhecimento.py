@@ -84,6 +84,123 @@ def gerar_embedding(texto, provedor):
     return None
 
 
+# Cálculo de vetores em lote (pedido do Silvan, 2026-10-20): antes era uma
+# chamada de API por item, com teto de 40 itens por clique para a página não
+# estourar o tempo - os 866 itens da carga inicial exigiam ~22 cliques. As
+# APIs de embeddings aceitam vários textos numa chamada só.
+TAMANHO_LOTE_EMBEDDING = 100
+# Para de processar perto disso (segundos) e avisa o que sobrou, bem antes do
+# timeout do gunicorn (120s, ver render.yaml) - mesma lição do 502 de
+# "Gerar cobranças do ano".
+TEMPO_MAXIMO_CALCULO_VETORES = 60
+
+
+def modelo_do_provedor(provedor):
+    """Nome do modelo gravado em BaseConhecimentoItem.embedding_modelo para
+    o provedor (ou None se o provedor não usa vetores)."""
+    if provedor == PROVEDOR_OPENAI:
+        return f"openai:{MODELO_EMBEDDING_OPENAI}"
+    if provedor == PROVEDOR_GEMINI:
+        return f"gemini:{MODELO_EMBEDDING_GEMINI}"
+    return None
+
+
+def gerar_embeddings_em_lote(textos, provedor):
+    """Uma chamada de API para vários textos. Devolve (lista_de_vetores,
+    nome_do_modelo), com um vetor por texto na MESMA ordem, ou None se o
+    provedor não for de embeddings, faltar a chave ou a chamada falhar.
+    Nunca levanta exceção."""
+    textos = [(t or "").strip() or "-" for t in textos]
+    if not textos:
+        return None
+    try:
+        if provedor == PROVEDOR_OPENAI:
+            api_key = os.environ.get("OPENAI_API_KEY")
+            if not api_key:
+                return None
+            import openai
+            cliente = openai.OpenAI(api_key=api_key)
+            resposta = cliente.embeddings.create(model=MODELO_EMBEDDING_OPENAI, input=textos)
+            dados = sorted(resposta.data, key=lambda d: d.index)
+            vetores = [list(d.embedding) for d in dados]
+        elif provedor == PROVEDOR_GEMINI:
+            api_key = os.environ.get("GEMINI_API_KEY")
+            if not api_key:
+                return None
+            from google import genai
+            cliente = genai.Client(api_key=api_key)
+            resposta = cliente.models.embed_content(model=MODELO_EMBEDDING_GEMINI, contents=textos)
+            vetores = [list(e.values) for e in resposta.embeddings]
+        else:
+            return None
+    except Exception:
+        return None
+    if len(vetores) != len(textos):
+        return None
+    return vetores, modelo_do_provedor(provedor)
+
+
+def itens_sem_vetor_query(provedor=None):
+    """Itens ativos sem vetor ou com vetor de OUTRO modelo (ex.: depois de
+    trocar de OpenAI para Gemini) - os que a busca por sentido ignora."""
+    provedor = provedor or provedor_configurado()
+    modelo = modelo_do_provedor(provedor)
+    consulta = BaseConhecimentoItem.query.filter(BaseConhecimentoItem.status == "ativo")
+    if modelo:
+        consulta = consulta.filter(db.or_(
+            BaseConhecimentoItem.embedding.is_(None),
+            BaseConhecimentoItem.embedding_modelo.is_(None),
+            BaseConhecimentoItem.embedding_modelo != modelo,
+        ))
+    else:
+        consulta = consulta.filter(BaseConhecimentoItem.embedding.is_(None))
+    return consulta
+
+
+def calcular_vetores_pendentes(provedor=None, tempo_maximo=TEMPO_MAXIMO_CALCULO_VETORES):
+    """Calcula o vetor de TODOS os itens pendentes (ver itens_sem_vetor_query)
+    em lotes de TAMANHO_LOTE_EMBEDDING. Se um lote inteiro falhar, tenta
+    aqueles itens um a um (ver atualizar_embedding_do_item). Faz commit a
+    cada lote (o que já foi calculado não se perde se algo der errado
+    depois) e para ao passar de `tempo_maximo` segundos. Devolve
+    (calculados, falhas, restantes)."""
+    import time
+
+    provedor = provedor or provedor_configurado()
+    inicio = time.monotonic()
+    pendentes = itens_sem_vetor_query(provedor).order_by(BaseConhecimentoItem.id).all()
+    ok = falhas = 0
+    processados = 0
+    for i in range(0, len(pendentes), TAMANHO_LOTE_EMBEDDING):
+        if i > 0 and time.monotonic() - inicio > tempo_maximo:
+            break  # o 1º lote sempre roda - cada clique sempre avança
+        lote = pendentes[i:i + TAMANHO_LOTE_EMBEDDING]
+        resultado = gerar_embeddings_em_lote([item.pergunta for item in lote], provedor)
+        if resultado:
+            vetores, modelo = resultado
+            for item, vetor in zip(lote, vetores):
+                item.embedding = json.dumps(vetor)
+                item.embedding_modelo = modelo
+            ok += len(lote)
+        else:
+            falhas_seguidas = 0
+            for item in lote:
+                if atualizar_embedding_do_item(item, provedor):
+                    ok += 1
+                    falhas_seguidas = 0
+                else:
+                    falhas += 1
+                    falhas_seguidas += 1
+                    if falhas_seguidas >= 3 and ok == 0:
+                        # provavelmente sem chave/credencial - não insistir
+                        db.session.commit()
+                        return ok, falhas, len(pendentes) - ok
+        processados += len(lote)
+        db.session.commit()
+    restantes = len(pendentes) - processados
+    return ok, falhas, restantes
+
+
 def atualizar_embedding_do_item(item, provedor=None):
     """(Re)calcula o embedding da PERGUNTA do item com o provedor atual e
     grava no próprio item (quem chama decide o commit). Devolve True se
