@@ -254,6 +254,24 @@ def _buscar_por_palavra_chave(pergunta, itens, limite, ignorar_genericas=False):
     return resultados[:limite]
 
 
+def _pergunta_com_exame(pergunta, tipo_exame_id):
+    """Texto usado no vetor da PERGUNTA do paciente na busca por sentido:
+    com o tipo de exame definido, prefixa o nome dele ("Colonoscopia: dá pra
+    dirigir depois?"). Pedido do Silvan (2026-10-20): perguntas curtas não
+    citam o exame - para o paciente ele é óbvio -, e sem esse contexto
+    "dá pra dirigir depois?" ficava abaixo do limiar para "Posso dirigir
+    depois da colonoscopia?". Só a pergunta recebe o prefixo; os vetores dos
+    itens continuam os mesmos (não precisa recalcular)."""
+    if not tipo_exame_id:
+        return pergunta
+    from app.models import TipoExame
+
+    tipo = db.session.get(TipoExame, tipo_exame_id)
+    if not tipo or not tipo.nome:
+        return pergunta
+    return f"{tipo.nome}: {pergunta.strip()}"
+
+
 def buscar_na_base(pergunta, tipo_exame_id=None, limite=3, provedor=None):
     """Acha os itens ATIVOS da base mais parecidos com `pergunta`, do
     tipo de exame dado (ou de qualquer tipo, se None). Devolve uma lista de
@@ -273,7 +291,7 @@ def buscar_na_base(pergunta, tipo_exame_id=None, limite=3, provedor=None):
         return []
 
     if provedor in (PROVEDOR_OPENAI, PROVEDOR_GEMINI):
-        vetor_pergunta = gerar_embedding(pergunta, provedor)
+        vetor_pergunta = gerar_embedding(_pergunta_com_exame(pergunta, tipo_exame_id), provedor)
         if vetor_pergunta:
             vetor, modelo = vetor_pergunta
             resultados = []
