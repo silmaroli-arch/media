@@ -62,4 +62,12 @@ r = client.get("/grupos/")
 checar("Com dois grupos, 'Grupos de trabalho' mostra a lista", r.status_code == 200 and "Clinica Segunda" in r.get_data(as_text=True))
 checar("... com 'Dados do grupo' no grupo ativo", "Dados do grupo" in r.get_data(as_text=True))
 
+# ---------- Permissões: "Gerenciar filiais" saiu, "dados do grupo" renomeada ----------
+with app.app_context():
+    usuario_id = Usuario.query.filter_by(email="grupo.unico@teste.com").first().id
+html = client.get(f"/equipe/equipe-membros/{usuario_id}/permissoes", follow_redirects=True).get_data(as_text=True)
+checar("Permissões não têm mais 'Gerenciar filiais'", "Gerenciar filiais" not in html and 'name="perm_filiais"' not in html)
+checar("'Editar dados da clínica' virou 'Editar dados do grupo (cadastrais e fiscais)'",
+       "Editar dados do grupo (cadastrais e fiscais)" in html and "Editar dados da clínica" not in html)
+
 print("\nTodos os testes de editar/criar grupo passaram.")

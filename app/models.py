@@ -171,6 +171,8 @@ class Usuario(db.Model, UserMixin):
     # secretária.
     perm_pacientes = db.Column(db.Boolean, nullable=False, default=False)
     perm_equipe = db.Column(db.Boolean, nullable=False, default=False)
+    # Sem uso desde 2026-10-20 (filiais deixaram de existir): saiu da tela
+    # de permissões. Continua só no banco.
     perm_filiais = db.Column(db.Boolean, nullable=False, default=False)
     perm_dados_clinica = db.Column(db.Boolean, nullable=False, default=False)
 

@@ -2427,6 +2427,14 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Junto: no cadastro pelo Google o campo se chama só "CPF" (não "será seu login"), porque a conta nasce sem senha e o login por CPF exige senha.
 - Teste: `test_login_google.py` (escolha, formulário por e-mail e senha, rótulo do CPF). Suíte 83/83. Conferido no navegador (computador e celular, sem rolagem lateral).
 
+## Grupo: editar dados e criar outro + permissões (2026-10-20, pedido do Silvan)
+
+- Quem tem um grupo só cai direto em "Convidar membros" (atalho de `grupo.meus_grupos`) e não tinha como editar o grupo nem criar outro: o link "Meus grupos" voltava para a mesma tela. Agora:
+  - "Convidar membros" ganhou **"Dados do grupo"** (Dados Cadastrais, `medico.clinica_configuracoes`, só para o grupo ativo e para quem tem `perm_dados_clinica`) e **"Criar outro grupo"**;
+  - o link "Meus grupos" usa `?lista=1` e mostra a lista (com "Criar novo grupo"); a lista também ganhou "Dados do grupo" no grupo ativo.
+- Tela de permissões: saiu **"Gerenciar filiais"**, porque filiais deixaram de existir e `perm_filiais` não controlava nada (a coluna fica no banco, sem uso). **"Editar dados da clínica"** virou **"Editar dados do grupo (cadastrais e fiscais)"**: continua valendo para Dados Cadastrais e Dados Fiscais. O texto "em todas as filiais" virou "em todos os grupos".
+- Teste: `test_grupo_editar_criar.py`. Suíte 84/84.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção):
@@ -2448,6 +2456,10 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
    - [ ] "Criar conta" (site, login e menu) abre primeiro a escolha Google / E-mail e senha
    - [ ] E-mail e senha: formulário completo; "Escolher outra forma de entrar" volta para a escolha
    - [ ] Google: volta do Google no formulário sem senha, com o campo "CPF" e a explicação; "Cadastrar sem o Google" leva ao formulário com senha
+4. **Grupo: editar e criar outro + permissões** (ver seção acima)
+   - [ ] Com um grupo só: "Dados do grupo" e "Criar outro grupo" em Convidar membros; o link "Meus grupos" abre a lista
+   - [ ] Editar o nome do grupo em "Dados do grupo" e salvar
+   - [ ] Permissões: sem "Gerenciar filiais"; "Editar dados do grupo (cadastrais e fiscais)"
 
 ## Como continuar
 

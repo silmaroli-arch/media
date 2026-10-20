@@ -3,7 +3,7 @@
 {% block conteudo %}
 <h3 class="mb-3">Permissões de {{ usuario_alvo.nome }}</h3>
 <p class="text-muted small">
-  Essas permissões valem para a conta de {{ usuario_alvo.nome }} como um todo (em todas as filiais
+  Essas permissões valem para a conta de {{ usuario_alvo.nome }} como um todo (em todos os grupos
   em que ela atua), não são exclusivas do papel médico/secretária — nem toda clínica tem
   secretária.
 </p>
@@ -17,13 +17,12 @@
       <input class="form-check-input" type="checkbox" name="perm_equipe" id="perm_equipe" {% if usuario_alvo.perm_equipe %}checked{% endif %}>
       <label class="form-check-label" for="perm_equipe">Gerenciar equipe</label>
     </div>
-    <div class="form-check mb-2">
-      <input class="form-check-input" type="checkbox" name="perm_filiais" id="perm_filiais" {% if usuario_alvo.perm_filiais %}checked{% endif %}>
-      <label class="form-check-label" for="perm_filiais">Gerenciar filiais</label>
-    </div>
+    {# "Gerenciar filiais" saiu (2026-10-20): filiais deixaram de existir e
+       a permissão não controlava mais nada (Usuario.perm_filiais fica só
+       no banco, sem uso). #}
     <div class="form-check mb-3">
       <input class="form-check-input" type="checkbox" name="perm_dados_clinica" id="perm_dados_clinica" {% if usuario_alvo.perm_dados_clinica %}checked{% endif %}>
-      <label class="form-check-label" for="perm_dados_clinica">Editar dados da clínica</label>
+      <label class="form-check-label" for="perm_dados_clinica">Editar dados do grupo (cadastrais e fiscais)</label>
     </div>
     {% if usuario_alvo.id == current_user.id %}
     <div class="alert alert-warning small">Atenção: você está editando as próprias permissões.</div>

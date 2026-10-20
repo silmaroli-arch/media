@@ -4219,7 +4219,6 @@ def equipe_permissoes(usuario_id):
     if request.method == "POST":
         usuario_alvo.perm_pacientes = request.form.get("perm_pacientes") == "on"
         usuario_alvo.perm_equipe = request.form.get("perm_equipe") == "on"
-        usuario_alvo.perm_filiais = request.form.get("perm_filiais") == "on"
         usuario_alvo.perm_dados_clinica = request.form.get("perm_dados_clinica") == "on"
         db.session.commit()
         flash(f"Permissões de {usuario_alvo.nome} atualizadas.", "success")
