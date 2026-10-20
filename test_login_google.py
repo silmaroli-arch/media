@@ -51,9 +51,10 @@ def usuario(email):
 
 # ---------- Botões aparecem ----------
 html = client.get("/login").get_data(as_text=True)
-checar("Login mostra 'Entrar com Google'", "Entrar com Google" in html)
+checar("Login mostra 'Continuar com Google' (serve para entrar e para criar conta)",
+       "Continuar com Google" in html and "Primeiro acesso?" in html and "Criar conta com e-mail e senha" in html)
 html = client.get("/cadastro").get_data(as_text=True)
-checar("Cadastro mostra 'Cadastrar com Google'", "Cadastrar com Google" in html)
+checar("Cadastro mostra 'Continuar com Google'", "Continuar com Google" in html)
 
 # ---------- 1. Conta existente, achada pelo e-mail ----------
 carlos = usuario("medico@clinicavitoria.com")
@@ -144,6 +145,6 @@ checar("Conta desativada não entra pelo Google", logado_como() is None and "des
 # ---------- 8. Sem as chaves, o recurso some ----------
 del os.environ["GOOGLE_CLIENT_ID"]
 html = client.get("/login").get_data(as_text=True)
-checar("Sem GOOGLE_CLIENT_ID, o botão não aparece", "Entrar com Google" not in html)
+checar("Sem GOOGLE_CLIENT_ID, o botão não aparece", "Continuar com Google" not in html and "ou entre com CPF e senha" not in html)
 
 print("\nTodos os testes do login com Google passaram.")

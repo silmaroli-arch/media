@@ -2303,6 +2303,8 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Endereço de volta do Google: `/login/google/retorno`, montado com https por trás do proxy do Render (cabeçalho X-Forwarded-Proto) - conferido.
 - Testes: `test_login_google.py` (25 checagens, respostas do Google simuladas). Suíte: 80/80.
 
+**Tela de login reorganizada (2026-10-20, pedido do Silvan)**: um botão só, **"Continuar com Google"**, no topo, para entrar E criar conta ("Já tem conta? Você entra direto. Primeiro acesso? Você completa o cadastro em seguida."). Abaixo, "ou entre com CPF e senha" e o formulário. O link de cadastro virou "Ainda não tem conta? Criar conta com e-mail e senha" (o caminho SEM o Google). Saiu o texto técnico "Conforme o BBP...". No cadastro, o botão também se chama "Continuar com Google". Sem as chaves do Google, a tela volta a ser só CPF + senha.
+
 **Pendências do Silvan (configuração no Google, ~20 min)**:
 1. console.cloud.google.com -> criar projeto (ex.: "MedIA").
 2. "Google Auth Platform" (antiga "Tela de consentimento OAuth"): tipo **Externo**, nome do app MedIA, e-mail de suporte, domínio autorizado `media.med.br`. Escopos: só `openid`, `email`, `profile`. Enquanto estiver em modo **Teste**, só os e-mails cadastrados como "usuários de teste" conseguem entrar - para produção, **publicar o app** (pede logo, link da política de privacidade e domínio verificado).

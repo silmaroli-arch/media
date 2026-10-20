@@ -507,7 +507,7 @@ def cadastro():
 
         if google_cadastro and Usuario.query.filter_by(google_sub=google_cadastro["sub"]).first():
             session.pop("google_cadastro", None)
-            flash("Essa conta Google já está ligada a um usuário. Use \"Entrar com Google\".", "danger")
+            flash("Essa conta Google já está ligada a um usuário. Use \"Continuar com Google\".", "danger")
             return redirect(url_for("auth.login"))
 
         if Usuario.query.filter_by(email=email).first():

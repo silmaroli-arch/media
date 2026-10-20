@@ -116,7 +116,7 @@
     <div class="card p-4 mt-3">
       <h6 class="mb-2"><i class="bi bi-google"></i> Conta Google</h6>
       {% if current_user.google_sub %}
-      <p class="small text-muted mb-2">Sua conta está ligada a uma conta Google - você pode usar "Entrar com Google" no login.</p>
+      <p class="small text-muted mb-2">Sua conta está ligada a uma conta Google - você pode usar "Continuar com Google" no login.</p>
       {% if current_user.tem_senha %}
       <form method="post" action="{{ url_for('google_login.desvincular') }}" onsubmit="return confirm('Desligar a conta Google? Você passa a entrar só com CPF e senha.');">
         <button type="submit" class="btn btn-outline-danger btn-sm">Desligar conta Google</button>
