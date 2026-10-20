@@ -2389,6 +2389,14 @@ Prints do sistema enviados pelo Silvan para colocar na página de apresentação
 - Causa: em `app/templates/dono/dashboard.html`, o script que abre a aba pela âncora (`/dono/#painel-config`) rodava ANTES do `bootstrap.bundle.min.js` (que fica no fim do `<body>`, ver base.html). Dava "bootstrap is not defined", o script quebrava e nem o `hashchange` era registrado. Afetava todos os itens do menu lateral que apontam para abas do painel (Usuários, Grupos, Custo de IA, Configurações).
 - Correção: o script roda dentro de `DOMContentLoaded`, o mesmo padrão de `auth/meus_dados.html`. Conferido no navegador (Playwright): cada item abre a aba certa, inclusive vindo de outra tela.
 
+## Endereço travado depois do CEP (2026-10-20, pedido do Silvan)
+
+- Antes, depois que o ViaCEP preenchia o endereço, Rua/Bairro/Cidade/UF continuavam editáveis. Agora ficam travados (readonly + bg-light) e só **Número e Complemento** são digitados.
+- Exceções, para não impedir o cadastro (os campos são obrigatórios): campo que veio VAZIO do ViaCEP (CEP geral da cidade, sem rua nem bairro) continua editável; CEP não encontrado, ViaCEP fora do ar ou CEP alterado/apagado destravam tudo.
+- Telas: `auth/cadastro.html`, `auth/meus_dados.html`, `medico/clinica_configuracoes.html` (função `travarEnderecoDoCep` em cada uma). As telas de paciente (`auth/cadastro_paciente.html`, `paciente/meus_dados.html`, `medico/pacientes_form.html`) já tinham esses campos sempre somente leitura.
+- Ao abrir "Meus dados" ou "Dados da clínica" com um endereço já salvo, os campos começam editáveis e só travam depois que o CEP for buscado de novo.
+- Conferido no navegador (Playwright, ViaCEP simulado) nas 3 telas: CEP achado, CEP geral e CEP não encontrado. Suíte 82/82.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).

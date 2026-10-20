@@ -293,6 +293,21 @@ function marcarDataNascimentoValida() {
 }
 if (campoDataNasc) campoDataNasc.addEventListener('blur', marcarDataNascimentoValida);
 
+// Pedido do Silvan (2026-10-20): depois que o CEP é encontrado, o
+// endereço que veio do ViaCEP fica travado - só Número e Complemento são
+// digitados. Campo que veio VAZIO (CEP geral da cidade, sem rua/bairro)
+// continua editável, e CEP não encontrado ou fora do ar destrava tudo
+// (os campos são obrigatórios e a pessoa precisa conseguir preencher).
+function travarEnderecoDoCep(ids, valores) {
+  ids.forEach(function (id, i) {
+    var campo = document.getElementById(id);
+    if (!campo) return;
+    if (valores) campo.value = valores[i] || '';
+    var travar = !!(valores && valores[i]);
+    campo.readOnly = travar;
+    campo.classList.toggle('bg-light', travar);
+  });
+}
 // ---------- Busca de endereço por CEP via ViaCEP ----------
 var campoCep = document.getElementById('cep');
 campoCep.addEventListener('blur', function () {
@@ -309,17 +324,22 @@ campoCep.addEventListener('blur', function () {
   fetch('https://viacep.com.br/ws/' + cep + '/json/')
     .then(function (r) { return r.json(); })
     .then(function (dados) {
-      if (dados.erro) { status.textContent = 'CEP não encontrado — confira o número digitado.'; return; }
-      document.getElementById('rua').value = dados.logradouro || '';
-      document.getElementById('bairro').value = dados.bairro || '';
-      document.getElementById('cidade').value = dados.localidade || '';
-      document.getElementById('uf').value = dados.uf || '';
+      if (dados.erro) {
+        travarEnderecoDoCep(camposEnderecoCep, null);
+        status.textContent = 'CEP não encontrado — confira o número digitado.';
+        return;
+      }
+      travarEnderecoDoCep(camposEnderecoCep, [dados.logradouro, dados.bairro, dados.localidade, dados.uf]);
       status.textContent = 'Endereço preenchido automaticamente pelo CEP.';
     })
     .catch(function () {
+      travarEnderecoDoCep(camposEnderecoCep, null);
       status.textContent = 'Não foi possível consultar o CEP agora — tente de novo.';
     });
 });
+var camposEnderecoCep = ['rua', 'bairro', 'cidade', 'uf'];
+// CEP apagado ou trocado: destrava até a nova busca
+campoCep.addEventListener('input', function () { travarEnderecoDoCep(camposEnderecoCep, null); });
 
 document.getElementById('form-meus-dados').addEventListener('submit', function (evento) {
   var cpfOk = marcarCpfValido();
