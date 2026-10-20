@@ -1,5 +1,61 @@
+/* Paleta da marca (mesma do site público, ver site/base_publico.html) -
+   pedido do Silvan, 2026-10-20. Troca o azul padrão do Bootstrap
+   (#0d6efd) pelo azul do MedIA em todo o sistema de uma vez: botões,
+   links, campos em foco, interruptores, destaques. As cores com
+   significado (sucesso, alerta, perigo) continuam as do Bootstrap. */
+:root {
+  --media-azul: #1660B0;
+  --media-azul-escuro: #0E3F78;
+  --media-fundo: #f4f8fd;
+  --bs-primary: #1660B0;
+  --bs-primary-rgb: 22, 96, 176;
+  --bs-primary-text-emphasis: #092a50;
+  --bs-primary-bg-subtle: #d0dfef;
+  --bs-primary-border-subtle: #a2bfdf;
+  --bs-link-color: #1660B0;
+  --bs-link-color-rgb: 22, 96, 176;
+  --bs-link-hover-color: #0E3F78;
+  --bs-link-hover-color-rgb: 14, 63, 120;
+  --bs-focus-ring-color: rgba(22, 96, 176, .25);
+}
+.btn-primary {
+  --bs-btn-bg: #1660B0; --bs-btn-border-color: #1660B0;
+  --bs-btn-hover-bg: #0E3F78; --bs-btn-hover-border-color: #0E3F78;
+  --bs-btn-active-bg: #0b3261; --bs-btn-active-border-color: #0b3261;
+  --bs-btn-disabled-bg: #1660B0; --bs-btn-disabled-border-color: #1660B0;
+  --bs-btn-focus-shadow-rgb: 22, 96, 176;
+}
+.btn-outline-primary {
+  --bs-btn-color: #1660B0; --bs-btn-border-color: #1660B0;
+  --bs-btn-hover-bg: #1660B0; --bs-btn-hover-border-color: #1660B0;
+  --bs-btn-active-bg: #0E3F78; --bs-btn-active-border-color: #0E3F78;
+  --bs-btn-disabled-color: #1660B0; --bs-btn-disabled-border-color: #1660B0;
+  --bs-btn-focus-shadow-rgb: 22, 96, 176;
+}
+.btn-link { --bs-btn-color: #1660B0; --bs-btn-hover-color: #0E3F78; --bs-btn-active-color: #0E3F78; }
+.form-control:focus, .form-select:focus, .form-check-input:focus {
+  border-color: #8bb0d8;
+  box-shadow: 0 0 0 .25rem rgba(22, 96, 176, .25);
+}
+.form-check-input:checked { background-color: #1660B0; border-color: #1660B0; }
+.form-switch .form-check-input:focus:not(:checked) {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%238bb0d8'/%3e%3c/svg%3e");
+}
+.nav-pills { --bs-nav-pills-link-active-bg: #1660B0; }
+.dropdown-menu { --bs-dropdown-link-active-bg: #1660B0; }
+.list-group { --bs-list-group-active-bg: #1660B0; --bs-list-group-active-border-color: #1660B0; }
+.pagination { --bs-pagination-active-bg: #1660B0; --bs-pagination-active-border-color: #1660B0; }
+.progress, .progress-stacked { --bs-progress-bar-bg: #1660B0; }
+
+/* Barra do topo e menu lateral no azul-escuro do site. */
+.app-topbar { background-color: var(--media-azul-escuro); color: #fff; }
+.app-topbar .texto-suave { color: rgba(255, 255, 255, .8); }
+.app-topbar .link-topbar { color: #fff; text-decoration: none; }
+.app-topbar .link-topbar:hover { color: #cfe3ff; }
+.app-sidebar.app-sidebar-marca { background-color: var(--media-azul-escuro); }
+
 body {
-  background-color: #f4f6f9;
+  background-color: var(--media-fundo);
 }
 .card {
   border: none;
@@ -9,7 +65,7 @@ body {
   font-weight: 600;
 }
 .chat-bubble-user {
-  background-color: #0d6efd;
+  background-color: #1660B0;
   color: #fff;
   border-radius: 14px 14px 2px 14px;
   padding: 10px 14px;

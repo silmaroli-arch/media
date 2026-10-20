@@ -100,7 +100,7 @@
      antigas (medico.exames_*) continuam existindo no código, mesmo padrão
      já usado para equipe_lista/filiais_lista (ver comentário mais abaixo),
      só não têm mais link no menu. #}
-  <nav class="app-sidebar bg-primary text-white p-3 no-print">
+  <nav class="app-sidebar app-sidebar-marca text-white p-3 no-print">
     <div class="d-flex align-items-center justify-content-between mb-4">
       <a class="d-block text-decoration-none" href="{{ url_for('medico.dashboard') }}">
         <img src="{{ url_for('static', filename='img/logo-horizontal-claro.svg') }}" alt="MedIA" style="height: 34px;">
@@ -399,28 +399,32 @@
   <div class="sidebar-backdrop no-print" onclick="fecharMenuSidebar()"></div>
   {% endif %}
 
-  <div class="flex-grow-1 d-flex flex-column" style="min-height: 100vh;">
+  <div class="flex-grow-1 d-flex flex-column" style="min-height: 100vh; min-width: 0;">
     {% if current_user.is_authenticated %}
-    <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom bg-white no-print">
+    {# Barra do topo no azul-escuro do site (pedido do Silvan, 2026-10-20) - ver .app-topbar em static/css/style.css #}
+    <div class="app-topbar d-flex justify-content-between align-items-center px-3 py-2 no-print">
       <div class="d-flex align-items-center">
         {% if mostrar_sidebar %}
-        <button type="button" id="sidebarToggleBtn" class="btn btn-sm btn-outline-secondary sidebar-toggle-btn me-2"
+        <button type="button" id="sidebarToggleBtn" class="btn btn-sm btn-outline-light sidebar-toggle-btn me-2"
                 title="Abrir/fechar o menu">
           <i class="bi bi-list"></i>
         </button>
         {% endif %}
-        {% if current_user.is_dono %}
-          <a href="{{ url_for('dono.dashboard') }}" class="text-decoration-none d-inline-block"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 30px;"></a>
+        {% if current_user.is_staff %}
+          {# Logo também para médico/secretária, como no site (2026-10-20) #}
+          <a href="{{ url_for('medico.dashboard') }}" class="text-decoration-none d-inline-block"><img src="{{ url_for('static', filename='img/logo-horizontal-claro.svg') }}" alt="MedIA" style="height: 28px;"></a>
+        {% elif current_user.is_dono %}
+          <a href="{{ url_for('dono.dashboard') }}" class="text-decoration-none d-inline-block"><img src="{{ url_for('static', filename='img/logo-horizontal-claro.svg') }}" alt="MedIA" style="height: 30px;"></a>
         {% elif not current_user.is_staff %}
-          <button class="btn btn-sm btn-outline-secondary d-md-none me-2" type="button"
+          <button class="btn btn-sm btn-outline-light d-md-none me-2" type="button"
                   data-bs-toggle="offcanvas" data-bs-target="#menuPacienteOffcanvas" aria-controls="menuPacienteOffcanvas">
             <i class="bi bi-list"></i>
           </button>
-          <a href="{{ url_for('paciente.dashboard') }}" class="text-decoration-none d-inline-block me-3"><img src="{{ url_for('static', filename='img/logo-horizontal.svg') }}" alt="MedIA" style="height: 30px;"></a>
+          <a href="{{ url_for('paciente.dashboard') }}" class="text-decoration-none d-inline-block me-3"><img src="{{ url_for('static', filename='img/logo-horizontal-claro.svg') }}" alt="MedIA" style="height: 30px;"></a>
           <span class="d-none d-md-inline">
-            <a href="{{ url_for('paciente.dashboard') }}" class="text-decoration-none me-3">Meus exames</a>
-            <a href="{{ url_for('paciente.chat') }}" class="text-decoration-none me-3">Tirar dúvidas</a>
-            <a href="{{ url_for('paciente.meus_dados') }}" class="text-decoration-none">Meus dados</a>
+            <a href="{{ url_for('paciente.dashboard') }}" class="link-topbar me-3">Meus exames</a>
+            <a href="{{ url_for('paciente.chat') }}" class="link-topbar me-3">Tirar dúvidas</a>
+            <a href="{{ url_for('paciente.meus_dados') }}" class="link-topbar">Meus dados</a>
           </span>
         {% endif %}
       </div>
@@ -429,10 +433,10 @@
            é mais um "local atual" — ela aparece por registro nas listas. O
            link "trocar" só faz sentido para quem atua em mais de uma empresa. #}
         {% if current_user.is_staff and empresa_atual_navbar %}
-          <span class="text-muted small me-3">
+          <span class="texto-suave small me-3 d-none d-md-inline">
             <i class="bi bi-building"></i> {{ empresa_atual_navbar.nome }}
             {% if empresas_do_usuario_navbar and empresas_do_usuario_navbar|length > 1 %}
-              · <a href="{{ url_for('medico.escolher_clinica') }}" class="small">trocar</a>
+              · <a href="{{ url_for('medico.escolher_clinica') }}" class="small link-topbar text-decoration-underline">trocar</a>
             {% endif %}
           </span>
         {% endif %}
@@ -442,7 +446,7 @@
            no próprio painel). #}
         {% if current_user.is_staff %}
         <div class="dropdown me-2">
-          <button class="btn btn-sm btn-outline-secondary position-relative" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Notificações">
+          <button class="btn btn-sm btn-outline-light position-relative" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Notificações">
             <i class="bi bi-bell"></i>
             {% if notificacoes_nao_lidas_navbar %}
             <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: .65rem;">
@@ -473,11 +477,11 @@
           </div>
         </div>
         {% endif %}
-        <span class="text-muted small me-3 {% if not current_user.is_staff and not current_user.is_dono %}d-none d-md-inline{% endif %}">{{ current_user.nome }}</span>
+        <span class="texto-suave small me-3 d-none d-md-inline">{{ current_user.nome }}</span>
         {% if current_user.acessa_com_senha_ou_google %}
-        <a href="{{ url_for('auth.trocar_senha') }}" class="small text-decoration-none me-3 {% if not current_user.is_staff and not current_user.is_dono %}d-none d-md-inline{% endif %}">{{ 'Trocar senha' if current_user.tem_senha else 'Criar senha' }}</a>
+        <a href="{{ url_for('auth.trocar_senha') }}" class="small link-topbar me-3 d-none d-md-inline">{{ 'Trocar senha' if current_user.tem_senha else 'Criar senha' }}</a>
         {% endif %}
-        <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-secondary btn-sm">Sair</a>
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm">Sair</a>
       </div>
     </div>
 

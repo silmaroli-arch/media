@@ -2323,6 +2323,14 @@ Comportamento (decisões do Silvan): com o interruptor LIGADO (aba "Base de conh
 - Conferido no Chromium em 390px (celular) e 1280px (computador): sem rolagem lateral, FAQ abre.
 - **Mesmo dia: layout único do site público** (pedido do Silvan - login e cadastro pareciam outro sistema e não tinham como voltar ao site). Novo `app/templates/site/base_publico.html`: cabeçalho azul com o logo (clicar volta para o início), menu "Início / Entrar / Criar conta" e rodapé. Usado pela página de apresentação e pelas telas antes do login: `auth/login.html`, `auth/cadastro.html`, `auth/login_paciente.html`, `auth/login_paciente_escolher_clinica.html`, `auth/cadastro_paciente.html` (todas deixaram de estender `base.html`). Nas telas do paciente, menu e rodapé mostram só "Área do paciente" (sem "Criar conta", que é da equipe). O logo repetido dentro dos cartões virou título ("Entrar no MedIA", "Área do paciente"); o cadastro ficou mais largo no computador. O ano do rodapé vem de um context processor (`ano_atual`, `app/__init__.py`). Conferido no Chromium (celular e computador, sem rolagem lateral); suíte 80/80.
 
+## Sistema na mesma paleta do site (2026-10-20, pedido do Silvan - barra do topo escura)
+
+- `app/static/css/style.css`: o azul padrão do Bootstrap (#0d6efd) foi trocado pelo azul da marca (#1660B0; azul-escuro #0E3F78; fundo #f4f8fd) via variáveis do Bootstrap - botões, links, campos em foco, interruptores, abas, paginação, barras de progresso e o balão do chat mudam juntos em todas as telas. Verde/amarelo/vermelho (sucesso/alerta/perigo) não mudaram.
+- `app/templates/base.html`: barra do topo (`.app-topbar`) e menu lateral (`.app-sidebar-marca`) no azul-escuro, logo branco, textos claros, botões "outline-light". Médico/secretária passaram a ver o logo também na barra do topo. No celular, nome da clínica, nome do usuário e "Trocar senha" somem da barra (continuam em Meus dados), para caber.
+- Correção de layout encontrada no caminho: no celular, a coluna principal não encolhia (`min-width: 0` faltando) e o painel rolava 17px para o lado.
+- Gráficos dos relatórios e a tela pública do preparo (link enviado ao paciente) também trocaram o azul antigo pelo da marca.
+- Conferido no Chromium (secretária, dono e paciente; computador e celular). Suíte 80/80.
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
