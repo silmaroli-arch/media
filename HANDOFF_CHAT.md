@@ -2354,6 +2354,13 @@ Prints do sistema enviados pelo Silvan para colocar na página de apresentação
 - Teste: `test_paginas_legais.py`. Suíte 81/81.
 - **Pendências do Silvan**: (1) criar o e-mail `privacidade@media.med.br` (sugestão: redirecionamento gratuito pelo ImprovMX para o Gmail - registros MX/TXT no DNS do domínio; conferir antes se já existe MX); (2) levar para produção (PR dev -> main); (3) no Google Auth Platform -> Branding: página inicial `https://media.med.br` (estava `/dono/`, que exige login), política `https://media.med.br/privacidade`, termos `https://media.med.br/termos`; remover o domínio autorizado `media-dev.onrender.com` (não dá para provar posse do onrender.com) e o URI de retorno correspondente; depois "Publicar app" em Público-alvo.
 
+## E-mail privacidade@media.med.br e onde fica o DNS (2026-10-20)
+
+- **O DNS do media.med.br é administrado na CLOUDFLARE** (servidores `angela.ns.cloudflare.com` / `woz.ns.cloudflare.com`), não no Registro.br - o Registro.br só aponta para a Cloudflare. Qualquer registro novo (e-mail, subdomínio, verificação do Google) é criado em dash.cloudflare.com -> media.med.br -> DNS -> Records. NÃO usar "Utilizar DNS do Registro.br" (tiraria o domínio da Cloudflare e derrubaria o site).
+- `privacidade@media.med.br` = redirecionamento gratuito pelo **ImprovMX** (conta do Silvan) para `silmaroli@gmail.com`. Só RECEBE; responder "como" privacidade@ exigiria configurar envio. O alias pega-tudo (`*`) foi apagado. Registros na Cloudflare: MX `@` mx1.improvmx.com (10), MX `@` mx2.improvmx.com (20), TXT `@` `v=spf1 include:spf.improvmx.com ~all` - ImprovMX confirmou (verde). Não ativar também o "Email Routing" da Cloudflare (disputaria os MX).
+- Zona DNS atual (7 registros antes do e-mail): `media.med.br` e `www` -> CNAME media-prod.onrender.com; `dev` -> CNAME media-dev.onrender.com; 3 CNAMEs `_...acm...` (validação antiga de certificado da AWS, inofensivos, podem ser apagados); **`qa.media.med.br` -> CNAME media-qa...sa-east-1.elasticbeanstalk.com (ambiente AWS abandonado)**.
+- **Pendência de segurança**: se o ambiente `media-qa` do Elastic Beanstalk já foi apagado na AWS, apagar o CNAME `qa` na Cloudflare - apontamento para endereço da AWS que não existe mais permite que terceiros registrem o mesmo nome e assumam `qa.media.med.br` ("subdomain takeover").
+
 ## Como continuar
 
 Ao colar este documento em uma nova sessão/conta, a nova conversa não terá acesso automático ao histórico desta sessão nem aos arquivos já abertos aqui — mas com este resumo é possível retomar o trabalho no mesmo ponto. Garanta que a nova sessão tenha acesso ao mesmo repositório Git (branch `dev`) e, se for usar a ponte com o computador, à mesma pasta local do projeto (`C:\app\media\src`).
