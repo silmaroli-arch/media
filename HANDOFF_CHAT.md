@@ -2408,6 +2408,7 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Validado num PostgreSQL de verdade: banco criado com o código antigo e dados preenchidos -> migração nova -> 0 registros com esses dados, e-mail da equipe intacto, idempotente (2ª execução ok), app novo e app antigo funcionando no banco migrado.
 - Removidos: `cep_incompleto` (models), `_preencher_endereco_emergencia` (routes_medico), JS de CEP/contato de emergência nas telas, `test_autocadastro_paciente_endereco.py`. Novo: `test_lgpd_minimizacao.py` (22 checks). Ajustados: test_smoke, test_meus_dados, test_meus_dados_paciente, test_paciente_da_empresa, test_grupo_agendamento, test_cadastro_global_importar_cpf, seed.py (pacientes sem e-mail). Suíte 82/82.
 - Atenção: os backups automáticos do Render ainda guardam esses dados até expirarem pelo prazo de retenção do plano.
+- Criar conta: saiu também o aviso "Depois de criar sua conta, você cadastra seu(s) local(is) de atendimento em 'Meus Locais de Atendimento'". Ele ficava logo abaixo do endereço e apontava para um menu que já não existe (virou "Grupos de trabalho").
 
 ## Anúncio do dono como popup (2026-10-20, pedido do Silvan)
 
