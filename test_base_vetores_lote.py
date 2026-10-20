@@ -80,6 +80,22 @@ with app.app_context(), patch.object(bc, "gerar_embeddings_em_lote", side_effect
     ok, falhas, restantes = bc.calcular_vetores_pendentes("openai")
 checar("... e são recalculados", (ok, falhas, restantes) == (5, 0, 0) and sem_vetor() == 0)
 
+# Vetores da versão anterior do texto (só a pergunta, sem ":v2") também
+# contam como pendentes: um clique recalcula com exame + pergunta + resposta
+with app.app_context():
+    BaseConhecimentoItem.query.filter(BaseConhecimentoItem.id.in_(
+        [i.id for i in BaseConhecimentoItem.query.filter_by(status="ativo").limit(3)]
+    )).update({"embedding_modelo": f"openai:{bc.MODELO_EMBEDDING_OPENAI}"}, synchronize_session=False)
+    db.session.commit()
+checar("Vetores da versão anterior (só a pergunta) aparecem como pendentes", sem_vetor() == 3)
+textos_lote = []
+with app.app_context(), patch.object(bc, "gerar_embeddings_em_lote",
+                                     side_effect=lambda t, p: textos_lote.extend(t) or lote_falso(t, p)):
+    bc.calcular_vetores_pendentes("openai")
+    item = BaseConhecimentoItem.query.filter_by(status="ativo").order_by(BaseConhecimentoItem.id).first()
+    esperado = f"{item.tipo_exame.nome}: {item.pergunta}\n{item.resposta}"
+checar("... e o texto do vetor é exame + pergunta + resposta", textos_lote and textos_lote[0] == esperado and sem_vetor() == 0)
+
 # ---------- 3. Limite de tempo: para, avisa o que falta, e o próximo clique continua ----------
 with app.app_context():
     BaseConhecimentoItem.query.update({"embedding": None, "embedding_modelo": None})
