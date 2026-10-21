@@ -2577,6 +2577,12 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - As IAs escolhidas aparecem sempre na janela: a que respondeu com a sugestão; a que não respondeu com o motivo - "não soube responder com base no preparo cadastrado" (marcador NAO_SEI / recusa disfarçada), "deu erro" ou "não está configurada (sem chave de API)". `_responder_com_duas_ias` devolve `situacao` {nome: respondeu|nao_sabe|erro|nao_configurada} (inclui a reserva, se entrou); gravado em `PerguntaPendente.ias_situacao` (coluna nova, "Claude=respondeu;ChatGPT=nao_sabe") via `formatar_situacao_ias`; lido por `PerguntaPendente.situacao_ias`. Perguntas antigas (sem a coluna preenchida) continuam com a tela de antes.
 - Teste: `test_faq_pergunta_corrigida.py` (estendido).
 
+## Apagar pergunta sem responder (2026-10-21, pedido do Silvan)
+
+- Nova rota `medico.perguntas_excluir` (POST `/equipe/perguntas/<id>/excluir`): apaga uma PerguntaPendente ainda não respondida (pendente ou aguardando aprovação) - o paciente não recebe resposta e nada vai para o FAQ. Mesma regra de quem pode responder (médico só nos exames que atende; gerais com perm_pacientes). Já respondida: 404 (essas se apagam em Últimas respondidas). O histórico de conversa (ChatMensagem) fica.
+- Botão "Apagar pergunta" (com confirmação) na janela da pergunta do Portal de atendimento e em Perguntas pendentes.
+- Teste: `test_faq_pergunta_corrigida.py` (bloco no fim).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2656,6 +2662,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Mostra a pergunta do paciente e, embaixo, "Pergunta corrigida pela IA" (quando houve correção)
 - [ ] Mostra as 2 IAs: a que respondeu com a sugestão e a que não respondeu com o motivo (não soube / erro / não configurada)
 - [ ] A resposta que chega ao paciente cita a pergunta corrigida; as IAs respondem à pergunta corrigida
+- [ ] "Apagar pergunta" (com confirmação) tira a pergunta da fila sem responder ao paciente nem gravar no FAQ; também em Perguntas pendentes
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

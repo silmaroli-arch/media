@@ -129,3 +129,31 @@ with app.app_context():
     checar("IA sem chave aparece como nao_configurada", r["situacao"]["ChatGPT"] == "nao_configurada")
 
 print("\nTodos os testes de situação das IAs passaram.")
+
+# ---------- Apagar pergunta sem responder (2026-10-21) ----------
+with app.app_context():
+    pedro = Paciente.query.filter_by(nome="Pedro Souza").first()
+    nova = PerguntaPendente(grupo_id=vitoria_id, paciente_id=pedro.id, exame_id=exame_id,
+                            pergunta="Pergunta de teste", status="aguardando_aprovacao")
+    outra = PerguntaPendente(grupo_id=vitoria_id, paciente_id=pedro.id,
+                             exame_id=next(e.id for e in Exame.query.filter_by(grupo_id=vitoria_id).all()
+                                           if not e.medico_pode_atender(Usuario.query.filter_by(
+                                               email="medica2@clinicavitoria.com").first().id)),
+                             pergunta="Pergunta do colega", status="pendente")
+    db.session.add_all([nova, outra])
+    db.session.commit()
+    nova_id, outra_id = nova.id, outra.id
+html = medico.get("/equipe/portal").get_data(as_text=True)
+checar("Portal tem 'Apagar pergunta'", f"/equipe/perguntas/{nova_id}/excluir" in html)
+r = medico.post(f"/equipe/perguntas/{nova_id}/excluir", data={"origem": "portal"})
+with app.app_context():
+    checar("Apagar remove a pergunta e volta ao portal",
+           r.headers["Location"].endswith("/equipe/portal") and PerguntaPendente.query.get(nova_id) is None)
+    faqs = FaqItem.query.filter_by(pergunta="Pergunta de teste").count()
+    checar("... sem gravar no FAQ", faqs == 0)
+medico.post(f"/equipe/perguntas/{outra_id}/excluir")
+with app.app_context():
+    checar("Médico não apaga pergunta de exame de outro médico", PerguntaPendente.query.get(outra_id) is not None)
+r = medico.post(f"/equipe/perguntas/{pendente_id}/excluir")
+checar("Pergunta já respondida não é apagada por aqui", r.status_code == 404)
+print("\nTodos os testes de apagar pergunta passaram.")

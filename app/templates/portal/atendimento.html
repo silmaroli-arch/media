@@ -171,6 +171,12 @@
               <button type="submit" class="btn btn-primary btn-sm mt-1">Responder e ensinar a IA</button>
             </form>
           {% endif %}
+          {# Apagar sem responder (pedido do Silvan, 2026-10-21). #}
+          <form method="post" action="{{ url_for('medico.perguntas_excluir', pergunta_id=p.id) }}" class="mt-3 pt-2 border-top"
+                onsubmit="return confirm('Apagar esta pergunta? O paciente não recebe resposta e nada vai para o FAQ.');">
+            <input type="hidden" name="origem" value="portal">
+            <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Apagar pergunta</button>
+          </form>
         </div>
       </div>
     </div>

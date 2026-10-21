@@ -4019,6 +4019,33 @@ def testar_ia():
     )
 
 
+@medico_bp.route("/perguntas/<int:pergunta_id>/excluir", methods=["POST"])
+@login_required
+@staff_required
+def perguntas_excluir(pergunta_id):
+    """Apaga uma pergunta ainda sem resposta (pendente ou aguardando
+    aprovação) sem responder ao paciente nem gravar no FAQ (pedido do
+    Silvan, 2026-10-21: perguntas de teste/repetidas ficavam presas na
+    fila). Mesma regra de quem pode responder. O histórico de conversa do
+    paciente (ChatMensagem) fica como está."""
+    destino = "medico.portal_atendimento" if request.form.get("origem") == "portal" else "medico.perguntas_pendentes"
+    pergunta = PerguntaPendente.query.filter(
+        PerguntaPendente.id == pergunta_id,
+        PerguntaPendente.status != "respondida",
+        filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id),
+    ).first_or_404()
+    if eh_medico():
+        exame_proprio = pergunta.exame is not None and pergunta.exame.medico_pode_atender(current_user.id)
+        geral_administravel = pergunta.exame is None and current_user.perm_pacientes
+        if not exame_proprio and not geral_administravel:
+            flash("Você só pode apagar perguntas sobre os seus próprios exames.", "danger")
+            return redirect(url_for(destino))
+    db.session.delete(pergunta)
+    db.session.commit()
+    flash("Pergunta apagada (o paciente não recebe resposta e nada vai para o FAQ).", "success")
+    return redirect(url_for(destino))
+
+
 @medico_bp.route("/perguntas/<int:pergunta_id>/responder", methods=["POST"])
 @login_required
 @staff_required

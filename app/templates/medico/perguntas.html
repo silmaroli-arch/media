@@ -125,6 +125,10 @@
                 </div>
                 <button type="submit" class="btn btn-info btn-sm">Aprovar e enviar ao paciente</button>
               </form>
+              <form method="post" action="{{ url_for('medico.perguntas_excluir', pergunta_id=p.id) }}" class="mt-2"
+                    onsubmit="return confirm('Apagar esta pergunta? O paciente não recebe resposta e nada vai para o FAQ.');">
+                <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Apagar pergunta</button>
+              </form>
             </div>
           </div>
         </div>
@@ -169,6 +173,10 @@
               <textarea name="resposta" class="form-control" rows="2" placeholder="Digite a resposta que será enviada ao paciente e salva na base de conhecimento..." required></textarea>
             </div>
             <button type="submit" class="btn btn-primary btn-sm">Responder e ensinar a IA</button>
+          </form>
+          <form method="post" action="{{ url_for('medico.perguntas_excluir', pergunta_id=p.id) }}" class="mt-2"
+                onsubmit="return confirm('Apagar esta pergunta? O paciente não recebe resposta e nada vai para o FAQ.');">
+            <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Apagar pergunta</button>
           </form>
         </div>
       </div>
