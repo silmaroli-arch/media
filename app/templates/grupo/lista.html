@@ -36,10 +36,14 @@
              mais uma versão separada
              dessas telas aqui (ver nota no topo de routes_grupo.py). #}
           {% if item.papel in ('dono', 'administrador') %}
-          <a href="{{ url_for('grupo.convidar', grupo_id=item.grupo.id) }}" class="btn btn-sm btn-outline-primary">Ver membros / Convidar</a>
+          {# Em janela (pedido do Silvan, 2026-10-21): a tela de membros abre
+             dentro dela, sem menu nem topo (ver "embutido" em base.html). #}
+          <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalMembros"
+                  data-url="{{ url_for('grupo.convidar', grupo_id=item.grupo.id) }}" data-nome="{{ item.grupo.nome }}">Ver membros / Convidar</button>
           {# "Dados do grupo" (medico.clinica_configuracoes) edita o grupo ATIVO #}
           {% if empresa_atual_navbar and empresa_atual_navbar.id == item.grupo.id and current_user.perm_dados_clinica %}
-          <a href="{{ url_for('medico.clinica_configuracoes', filial_id=item.grupo.id) }}" class="btn btn-sm btn-outline-primary">Dados do grupo</a>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalDadosGrupo"
+                  data-acao="{{ url_for('medico.clinica_configuracoes', filial_id=item.grupo.id) }}" data-nome="{{ item.grupo.nome }}">Dados do grupo</button>
           {% endif %}
           {% endif %}
           {% if item.papel == 'dono' %}
@@ -63,4 +67,63 @@
     </tbody>
   </table>
 </div>
+
+<div class="modal fade" id="modalDadosGrupo" tabindex="-1" aria-labelledby="modalDadosGrupoTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" class="modal-content" id="formDadosGrupo">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalDadosGrupoTitulo"><i class="bi bi-pencil-square me-2"></i>Dados do grupo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label" for="dados_grupo_nome">Nome do grupo</label>
+        <input type="text" name="nome" id="dados_grupo_nome" class="form-control" required>
+        <div class="form-text">É o nome que aparece no topo do sistema e para quem você convidar.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal fade" id="modalMembros" tabindex="-1" aria-labelledby="modalMembrosTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalMembrosTitulo"><i class="bi bi-people me-2"></i><span id="membros_titulo"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body p-0">
+        <iframe id="membros_iframe" title="Membros do grupo" style="width: 100%; height: 70vh; border: 0;"></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  document.getElementById('modalDadosGrupo').addEventListener('show.bs.modal', function (evento) {
+    var b = evento.relatedTarget;
+    document.getElementById('formDadosGrupo').action = b.getAttribute('data-acao');
+    document.getElementById('dados_grupo_nome').value = b.getAttribute('data-nome');
+  });
+  var membrosAlterou = false;
+  document.getElementById('modalMembros').addEventListener('show.bs.modal', function (evento) {
+    var b = evento.relatedTarget;
+    document.getElementById('membros_titulo').textContent = 'Membros de ' + b.getAttribute('data-nome');
+    var iframe = document.getElementById('membros_iframe');
+    var primeiraCarga = true;
+    iframe.onload = function () { if (!primeiraCarga) membrosAlterou = true; primeiraCarga = false; };
+    iframe.src = b.getAttribute('data-url');
+  });
+  // Convidou, removeu ou mudou alguém lá dentro: atualiza a contagem de membros.
+  document.getElementById('modalMembros').addEventListener('hidden.bs.modal', function () {
+    var iframe = document.getElementById('membros_iframe');
+    var recarregar = membrosAlterou;
+    membrosAlterou = false;
+    iframe.onload = null;
+    iframe.src = 'about:blank';
+    if (recarregar) window.location.reload();
+  });
+</script>
 {% endblock %}

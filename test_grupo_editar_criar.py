@@ -39,6 +39,12 @@ checar("Com um grupo só, 'Grupos de trabalho' abre a lista (não pula mais para
        r.status_code == 200 and "Meus grupos" in html and "Clinica Primeira" in html)
 checar("A lista tem 'Criar novo grupo', 'Dados do grupo' e 'Ver membros / Convidar'",
        "Criar novo grupo" in html and "Dados do grupo" in html and f"/grupos/{grupo_id}/convidar" in html)
+checar("'Dados do grupo' e 'Ver membros / Convidar' abrem em janela (2026-10-21)",
+       'data-bs-target="#modalDadosGrupo"' in html and 'data-bs-target="#modalMembros"' in html
+       and 'id="membros_iframe"' in html)
+html_conv = client.get(f"/grupos/{grupo_id}/convidar").get_data(as_text=True)
+checar("A tela de membros sabe se esconder dentro da janela (menu, topo e caminho)",
+       "classList.add('embutido')" in html_conv and 'so-fora-da-janela' in html_conv)
 
 r = client.get(f"/equipe/clinica/configuracoes/{grupo_id}")
 html = r.get_data(as_text=True)

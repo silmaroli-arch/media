@@ -2472,6 +2472,11 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - **Meu FAQ:** "Adicionar manualmente" abre uma janela (POST em `faq_novo` com `origem=lista`; erro volta com `?novo=1`, `session["faq_novo_form"]`). Função nova `_exames_para_faq`.
 - Testes novos: `test_exames_agendados_tela_unica.py`, `test_faq_adicionar_janela.py`; `test_paciente_da_empresa.py` cobre máscara, editar, agendamentos e novo paciente em janela. Suíte 86/86. Conferido no navegador: janela de agendar com o filtro de médico.
 
+## Meus grupos: "Dados do grupo" e "Ver membros / Convidar" em janela (2026-10-21, pedido do Silvan)
+
+- "Dados do grupo": janela com o nome, POST em `medico.clinica_configuracoes` (que já volta para "Meus grupos").
+- "Ver membros / Convidar": janela com um iframe da própria tela `grupo.convidar`, para não reescrever a busca por CPF, criar conta, permissões e remover. **Mecanismo novo em base.html:** um script no `<head>` marca `<html class="embutido">` quando a página está dentro de um iframe, e o CSS esconde menu lateral, topo, avisos de instalar e de notificações e tudo com a classe `so-fora-da-janela` (o caminho "Meus grupos > ..." do convidar). O popup de anúncios não abre dentro da janela. Ao fechar, se algo mudou lá dentro, a lista recarrega para atualizar a contagem. Serve para outras telas que precisem abrir em janela.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2510,8 +2515,8 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 
 **Grupos de trabalho**
 - [ ] O menu abre "Meus grupos" mesmo com um grupo só
-- [ ] "Dados do grupo": só o nome; salvar volta para "Meus grupos"
-- [ ] "Criar novo grupo"; "Ver membros / Convidar" (convite pelo CPF continua funcionando)
+- [ ] "Dados do grupo" abre numa janela: só o nome; salvar volta para "Meus grupos"
+- [ ] "Criar novo grupo"; "Ver membros / Convidar" abre numa janela com a tela de membros dentro (buscar por CPF, criar conta, permissões, remover); ao fechar, a contagem de membros atualiza
 - [ ] "Excluir": grupo vazio é excluído; grupo com dados mostra o que tem e não apaga
 - [ ] Permissões: sem "Gerenciar filiais"; "Editar dados do grupo"
 

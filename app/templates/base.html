@@ -2,6 +2,16 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8">
+  {# Tela aberta DENTRO de uma janela (iframe), ex.: "Ver membros / Convidar"
+     em Meus grupos (pedido do Silvan, 2026-10-21): sem menu, topo, avisos
+     nem popups - só o conteúdo. Marcado já no <head> para não piscar. #}
+  <script>if (window.self !== window.top) document.documentElement.classList.add('embutido');</script>
+  <style>
+    html.embutido .app-sidebar, html.embutido .sidebar-backdrop, html.embutido .app-topbar,
+    html.embutido #appAvisoInstalarIos, html.embutido #appAvisoInstalarAndroid, html.embutido #pushAtivarBanner,
+    html.embutido .so-fora-da-janela { display: none !important; }
+    html.embutido body { background: #fff; }
+  </style>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block titulo %}Media{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/icone-quadrado.svg') }}">
@@ -606,7 +616,7 @@
 <script>
 window.addEventListener('load', function () {
   var el = document.getElementById('modalAnuncios');
-  if (el && window.bootstrap) { new bootstrap.Modal(el).show(); }
+  if (el && window.bootstrap && !document.documentElement.classList.contains('embutido')) { new bootstrap.Modal(el).show(); }
 });
 </script>
 {% endif %}
