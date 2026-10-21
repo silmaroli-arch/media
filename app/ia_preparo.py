@@ -1179,10 +1179,10 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
 # "aproveitar" e já responder, o que quebraria o parsing do marcador).
 PROMPT_SISTEMA_VALIDADOR = """Você é um validador de mensagens recebidas de pacientes no chat de dúvidas sobre preparo de um exame médico. Sua ÚNICA tarefa é CLASSIFICAR a mensagem do paciente - nunca respondê-la.
 
-Classifique em exatamente uma das 3 categorias abaixo, e responda SOMENTE com o texto exato da categoria escolhida (nenhuma outra palavra, pontuação ou explicação):
+Classifique em exatamente uma das 3 categorias abaixo. A PRIMEIRA linha da sua resposta deve ser SOMENTE o texto exato da categoria escolhida (nenhuma outra palavra, pontuação ou explicação - nunca explique a classificação):
 
 - SEM_SENTIDO_ENCAMINHAR: o texto não é uma pergunta ou comentário coerente (ex.: palavras reais em ordem sem nenhum sentido entre si, teclado travado, texto que nem chega a formar uma ideia compreensível) - mesmo que informal, curto ou com erros de digitação/ortografia, se dá para entender a intenção, NÃO é este caso.
-- FORA_DO_EXAME_ENCAMINHAR: o texto É coerente, mas não tem NENHUMA relação com exame médico nenhum (ex.: futebol, previsão do tempo, assunto pessoal, pedido sobre outro serviço qualquer sem nenhuma ligação com exames). Perguntas sobre outros assuntos da própria clínica (horário de atendimento, endereço, agendamento, valores) NÃO se encaixam aqui - são relacionadas à clínica/exame, mesmo que não sejam sobre o preparo específico deste exame.
+- FORA_DO_EXAME_ENCAMINHAR: o texto É coerente, mas não tem NENHUMA relação com exame médico nenhum (ex.: futebol, previsão do tempo, assunto pessoal, pedido sobre outro serviço qualquer sem nenhuma ligação com exames). Perguntas sobre outros assuntos da própria clínica ou do atendimento (horário de atendimento, que horas chegar, endereço, agendamento, valores, ir de carro/acompanhante) NÃO se encaixam aqui - são relacionadas à clínica/exame, mesmo que não sejam sobre o preparo específico deste exame.
 - VALIDA: qualquer pergunta ou comentário coerente relacionado a exame médico ou à clínica, incluindo dúvidas sobre o preparo deste exame específico, mesmo que a resposta não esteja disponível nos dados fornecidos - a checagem de "temos a informação?" é feita depois, por outra parte do sistema, não é sua tarefa aqui.
 
 Quando houver um "Histórico recente desta conversa" listado antes da mensagem atual, use-o para entender o CONTEXTO (ex.: uma mensagem de acompanhamento curta só faz sentido em conjunto com a anterior). Na dúvida entre duas categorias, prefira sempre VALIDA - é mais seguro deixar uma pergunta ambígua seguir o fluxo normal do que rejeitá-la por engano.
@@ -1239,7 +1239,7 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
     try:
         if provedor == "Claude":
             resposta = cliente.messages.create(
-                model=MODELO_PADRAO, max_tokens=200, system=PROMPT_SISTEMA_VALIDADOR,
+                model=MODELO_PADRAO, max_tokens=120, system=PROMPT_SISTEMA_VALIDADOR,
                 messages=[{"role": "user", "content": conteudo}],
             )
             uso = getattr(resposta, "usage", None)
@@ -1251,7 +1251,7 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
             texto = "".join(getattr(bloco, "text", "") for bloco in resposta.content).strip()
         elif provedor == "ChatGPT":
             resposta = cliente.chat.completions.create(
-                model=MODELO_OPENAI_PADRAO, max_tokens=200,
+                model=MODELO_OPENAI_PADRAO, max_tokens=120,
                 messages=[
                     {"role": "system", "content": PROMPT_SISTEMA_VALIDADOR},
                     {"role": "user", "content": conteudo},
@@ -1269,7 +1269,7 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
             resposta = cliente.models.generate_content(
                 model=MODELO_GEMINI_PADRAO, contents=conteudo,
                 config=genai_types.GenerateContentConfig(
-                    system_instruction=PROMPT_SISTEMA_VALIDADOR, max_output_tokens=200,
+                    system_instruction=PROMPT_SISTEMA_VALIDADOR, max_output_tokens=120,
                 ),
             )
             uso = getattr(resposta, "usage_metadata", None)
@@ -1285,20 +1285,29 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
         )
         return {"classificacao": None, "chamada": None}
 
-    primeira_linha, _, resto = texto.partition("\n")
-    texto_normalizado = primeira_linha.upper()
-    if MARCADOR_SEM_SENTIDO in texto_normalizado:
-        classificacao = "sem_sentido"
-    elif MARCADOR_FORA_DO_EXAME in texto_normalizado:
-        classificacao = "fora_do_exame"
-    elif "VALIDA" in texto_normalizado:
-        classificacao = "valida"
-    else:
+    # A categoria é a primeira linha que COMEÇA com um dos marcadores - não
+    # basta o marcador aparecer no meio de uma frase (2026-10-21: com mais
+    # tokens, a IA às vezes explica antes, ex.: "Não é FORA_DO_EXAME_
+    # ENCAMINHAR, é sobre a clínica: VALIDA", e a busca por "contém"
+    # bloqueava "Que horas tenho que chegar na clínica?").
+    classificacao = None
+    for linha in texto.splitlines():
+        linha_normalizada = linha.strip().strip("*`\"'.:- ").upper()
+        for marcador, categoria in (
+            (MARCADOR_SEM_SENTIDO, "sem_sentido"), (MARCADOR_FORA_DO_EXAME, "fora_do_exame"), ("VALIDA", "valida"),
+        ):
+            if linha_normalizada.startswith(marcador):
+                classificacao = categoria
+                break
+        if classificacao:
+            break
+    if classificacao is None:
         # Resposta que não bateu com nenhum marcador esperado (a IA não
         # seguiu a instrução à risca) - mais seguro tratar como "valida" e
         # deixar a pergunta seguir o fluxo normal do que arriscar bloquear
         # uma pergunta legítima por um formato de resposta inesperado.
         classificacao = "valida"
+    resto = texto
     pergunta_corrigida = (
         _extrair_pergunta_corrigida(resto, pergunta_usuario) if classificacao == "valida" else None
     )

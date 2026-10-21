@@ -2596,6 +2596,13 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Custo: nenhuma chamada a mais (mesma chamada, outra instrução). Depois de aprovada, entra no FAQ do médico e responde direto da próxima vez.
 - Teste novo: `test_ia_conhecimento_geral.py`.
 
+## Validador: "Que horas tenho que chegar na clínica?" bloqueada como fora do exame (2026-10-21, relatado pelo Silvan)
+
+- Sintoma no WhatsApp: "Que horas tenho que chegar na clinica?" e "Posso ir de caro/" receberam "Este chat é só para dúvidas sobre o preparo" (classificação fora_do_exame), embora o prompt diga que assuntos da clínica são VALIDA - e a mesma pergunta tinha passado minutos antes.
+- Causa provável (sem chave de IA aqui para reproduzir com a IA real): desde que o validador passou a devolver também a pergunta corrigida, o limite subiu de 12 para 200 tokens; com espaço, a IA às vezes explica a classificação (ex.: "Não se encaixa em FORA_DO_EXAME_ENCAMINHAR..."), e a leitura antiga procurava o marcador em qualquer ponto da 1ª linha.
+- Correção (`ia_preparo.validar_pergunta`): a categoria é a primeira linha que COMEÇA com um marcador (ignorando *, aspas, ponto); prompt reforça "1ª linha só a categoria, nunca explique" e cita "que horas chegar" e "ir de carro/acompanhante" como assuntos da clínica (VALIDA); limite 200 -> 120 tokens.
+- Teste: `test_ia_validador_pergunta.py` (casos com explicação antes/depois).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2677,7 +2684,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] A resposta que chega ao paciente cita a pergunta corrigida; as IAs respondem à pergunta corrigida
 - [ ] "Apagar pergunta" (com confirmação) tira a pergunta da fila sem responder ao paciente nem gravar no FAQ; também em Perguntas pendentes
 - [ ] Botão "Usar" ao lado de cada sugestão (Claude, ChatGPT, FAQ do MedIA) copia o texto para o rascunho final; também em Perguntas pendentes
-- [ ] "Que horas tenho que chegar na clínica?" (fora do preparo): as IAs respondem com orientação geral, com o aviso "conhecimento geral" na janela; vai para o médico mesmo com a aprovação automática desligada
+- [ ] "Que horas tenho que chegar na clínica?" (fora do preparo): as IAs respondem com orientação geral, com o aviso "conhecimento geral" na janela; vai para o médico mesmo com a aprovação automática desligada (antes disso, conferir que o WhatsApp não responde mais "Este chat é só para dúvidas sobre o preparo" para essa pergunta)
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos
