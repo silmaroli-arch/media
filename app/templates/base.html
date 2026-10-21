@@ -283,7 +283,7 @@
          virou um botão (com janela) na própria tela de exames agendados. #}
       <li class="nav-item mb-1">
         <a class="nav-link {% if request.endpoint in ('medico.medico_agenda_pessoal', 'medico.agenda_novo') %}active{% endif %}" href="{{ url_for('medico.medico_agenda_pessoal') }}">
-          <i class="bi bi-clipboard2-pulse me-2"></i>{% if current_user.tipo == 'medico' %}Meus exames agendados{% else %}Exames agendados{% endif %}
+          <i class="bi bi-clipboard2-pulse me-2"></i>Agenda de Exames
         </a>
         {# Reorganização de menus: o menu "Médico" (que só tinha "Meus
            exames agendados" e "Minha agenda em todos os locais") deixou

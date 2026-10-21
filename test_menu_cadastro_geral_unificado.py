@@ -52,7 +52,7 @@ checar("Menu não contém mais 'Meus locais de atendimento'", "Meus locais de at
 checar("Menu 'Médico' não existe mais (virou item direto)", ">Médico<" not in menu)
 # Secretária vê "Exames agendados" (de todos os médicos); "Agendar exame"
 # saiu do menu e virou botão nessa tela (2026-10-21).
-checar("Menu tem o item direto 'Exames agendados'", "Exames agendados" in menu)
+checar("Menu tem o item direto 'Agenda de Exames' (renomeado em 2026-10-21)", "Agenda de Exames" in menu)
 checar("Menu não tem mais 'Agendar exame'", "Agendar exame" not in menu)
 checar("Menu não contém mais 'Minha agenda em todos os locais'", "Minha agenda em todos os locais" not in menu)
 checar("Menu 'Relatórios' não existe mais", ">Relatórios<" not in menu)
@@ -65,7 +65,7 @@ checar("Menu 'Médico + IA' não existe mais (nem o antigo 'IA')", "Médico + IA
 # "Minha licença", que são só do médico).
 ordem_esperada = [
     "Painel", "Meus dados", "Primeiros passos", "Exames &amp; preparo", "Pacientes",
-    "Exames agendados", "Portal de atendimento rápido",
+    "Agenda de Exames", "Portal de atendimento rápido",
     "Últimas respondidas", "Meu FAQ", "Grupos de trabalho", "Fale com a gente",
 ]
 posicoes = [menu.find(item) for item in ordem_esperada]

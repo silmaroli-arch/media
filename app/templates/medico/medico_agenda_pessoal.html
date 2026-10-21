@@ -5,11 +5,11 @@
    Médico vê só os dele; secretária vê os de todos os médicos do grupo.
    Ver medico.medico_agenda_pessoal; o POST da janela vai para
    medico.agenda_novo (origem=agenda). #}
-{% block titulo %}{% if eh_medico %}Meus exames agendados{% else %}Exames agendados{% endif %}{% endblock %}
+{% block titulo %}Agenda de Exames{% endblock %}
 {% block conteudo %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <div>
-    <h3 class="mb-1">{% if eh_medico %}Meus exames agendados{% else %}Exames agendados{% endif %}</h3>
+    <h3 class="mb-1">Agenda de Exames</h3>
     <p class="text-muted mb-0">
       {% if eh_medico %}Os exames agendados com você.{% else %}Os exames agendados com os médicos do grupo.{% endif %}
     </p>

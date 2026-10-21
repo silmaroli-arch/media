@@ -2513,6 +2513,11 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - O paciente NÃO é avisado pelo WhatsApp da remarcação nem do cancelamento (só existe aviso na criação).
 - Teste em `test_exames_agendados_tela_unica.py`.
 
+## Menu "Agenda de Exames" (2026-10-21, pedido do Silvan)
+
+- O item do menu lateral "Meus exames agendados" (médico) / "Exames agendados" (secretária e demais) passou a se chamar **"Agenda de Exames"** para todos. O título da tela (`medico/medico_agenda_pessoal.html`) também; o subtítulo continua dizendo se são os exames do médico ou os de todos os médicos do grupo.
+- Testes ajustados: `test_exames_agendados_tela_unica.py`, `test_menu_cadastro_geral_unificado.py` (ordem do menu).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2538,7 +2543,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] "Todos os agendamentos" (janela): passados e futuros, só deste grupo
 
 **Exames agendados (tela única)**
-- [ ] Menu sem "Agendar exame"; médico vê "Meus exames agendados" (só os dele), secretária vê "Exames agendados" (todos os médicos do grupo, com filtro)
+- [ ] Menu "Agenda de Exames" (sem "Agendar exame"); médico vê só os exames dele, secretária vê os de todos os médicos do grupo (com filtro)
 - [ ] Calendário: Mês, Semana, Dia e Lista (no celular, Lista); cor por médico; clicar no exame abre os detalhes com Atendimento, Resultado e Encerrar; clicar num dia vazio abre "Agendar exame" com a data
 - [ ] Botão "Agendar exame" (janela): o médico é filtrado pelo exame escolhido; sem os campos de acompanhante
 - [ ] Dois exames do mesmo médico no mesmo horário (ou sobrepostos pela duração): recusado com o aviso; outro médico no mesmo horário: aceito
