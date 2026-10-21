@@ -3314,16 +3314,41 @@ def base_compartilhada():
         return redirect(url_for("medico.dashboard"))
     tipos = _tipos_exame_da_especialidade()
     tipo_id = request.args.get("tipo", type=int)
+    busca = request.args.get("q", "").strip()
     ids = [t.id for t in tipos]
     itens = []
+    tipos_com_itens = []
     if ids:
+        # O filtro só lista exames que têm itens no FAQ (pedido do Silvan,
+        # 2026-10-21); "Sugerir um item novo" continua com todos.
+        com_itens = {
+            linha[0] for linha in db.session.query(BaseConhecimentoItem.tipo_exame_id).filter(
+                BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.tipo_exame_id.in_(ids)
+            ).distinct()
+        }
+        tipos_com_itens = [t for t in tipos if t.id in com_itens]
         consulta = BaseConhecimentoItem.query.filter(
             BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.tipo_exame_id.in_([tipo_id] if tipo_id in ids else ids)
         )
-        itens = consulta.order_by(BaseConhecimentoItem.tipo_exame_id, BaseConhecimentoItem.id).limit(300).all()
+        itens = consulta.order_by(BaseConhecimentoItem.tipo_exame_id, BaseConhecimentoItem.id).all()
+        itens = [i for i in itens if _contem_busca(busca, i.pergunta, i.resposta)][:300]
     minhas = BaseConhecimentoSugestao.query.filter_by(autor_usuario_id=current_user.id).order_by(
         BaseConhecimentoSugestao.criado_em.desc()).limit(30).all()
-    return render_template("medico/base_compartilhada.html", tipos=tipos, itens=itens, filtro_tipo=tipo_id, minhas=minhas)
+    return render_template("medico/base_compartilhada.html", tipos=tipos, tipos_com_itens=tipos_com_itens,
+                           itens=itens, filtro_tipo=tipo_id, busca=busca, minhas=minhas)
+
+
+def _contem_busca(busca, *textos):
+    """Busca por texto livre nas telas de FAQ (pedido do Silvan, 2026-10-21):
+    todas as palavras digitadas aparecem em algum dos textos, sem diferenciar
+    acento, maiúscula e pontuação."""
+    from app.faq_engine import normalizar
+
+    palavras = normalizar(busca).split()
+    if not palavras:
+        return True
+    alvo = normalizar(" ".join(t or "" for t in textos))
+    return all(p in alvo for p in palavras)
 
 
 @medico_bp.route("/base-compartilhada/sugerir", methods=["POST"])
@@ -4184,12 +4209,24 @@ def faq_lista():
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
     itens = query.order_by(FaqItem.criado_em.desc()).all()
+    # Filtro por exame (só os que têm item) e busca por texto livre
+    # (pedido do Silvan, 2026-10-21). "geral" = itens sem exame.
+    exames_com_itens = sorted({i.exame for i in itens if i.exame}, key=lambda e: e.nome)
+    tem_gerais = any(not i.exame_id for i in itens)
+    filtro_exame = request.args.get("exame", "")
+    busca = request.args.get("q", "").strip()
+    if filtro_exame == "geral":
+        itens = [i for i in itens if not i.exame_id]
+    elif filtro_exame.isdigit():
+        itens = [i for i in itens if i.exame_id == int(filtro_exame)]
+    itens = [i for i in itens if _contem_busca(busca, i.pergunta, para_leitura(i.resposta))]
     # Janela "Adicionar manualmente" (pedido do Silvan, 2026-10-21): os
     # exames do select e, depois de um erro, os campos preenchidos.
     faq_form = session.pop("faq_novo_form", None) if request.args.get("novo") else None
     return render_template(
         "medico/faq_lista.html", itens=itens, exames=_exames_para_faq(),
         faq_form=faq_form, abrir_novo=bool(request.args.get("novo")),
+        exames_com_itens=exames_com_itens, tem_gerais=tem_gerais, filtro_exame=filtro_exame, busca=busca,
     )
 
 

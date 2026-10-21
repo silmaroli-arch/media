@@ -7,6 +7,23 @@
   {# Abre numa janela, sem sair da lista (pedido do Silvan, 2026-10-21) #}
   <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovoFaq"><i class="bi bi-plus-lg"></i> Adicionar manualmente</button>
 </div>
+{# Filtro por exame (só os que têm item) e busca por texto livre (2026-10-21) #}
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-4">
+    <select name="exame" class="form-select form-select-sm" onchange="this.form.submit()">
+      <option value="">Todos os exames</option>
+      {% for e in exames_com_itens %}<option value="{{ e.id }}" {% if filtro_exame == e.id|string %}selected{% endif %}>{{ e.nome }}</option>{% endfor %}
+      {% if tem_gerais %}<option value="geral" {% if filtro_exame == 'geral' %}selected{% endif %}>Geral (sem exame)</option>{% endif %}
+    </select>
+  </div>
+  <div class="col-md-6">
+    <div class="input-group input-group-sm">
+      <input type="search" name="q" class="form-control" value="{{ busca }}" placeholder="Buscar na pergunta ou na resposta">
+      <button class="btn btn-outline-primary"><i class="bi bi-search"></i> Buscar</button>
+    </div>
+  </div>
+  {% if busca or filtro_exame %}<div class="col-auto"><a href="{{ url_for('medico.faq_lista') }}" class="btn btn-sm btn-link">Limpar</a></div>{% endif %}
+</form>
 <table class="table table-hover">
   <thead><tr><th>Exame</th>{{ th_filial() }}<th>Pergunta</th><th>Resposta</th><th>Usada</th><th>Origem</th><th>Ações</th></tr></thead>
   <tbody>
@@ -26,7 +43,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="{{ 7 if mostrar_filial else 6 }}" class="text-muted text-center">Base vazia.</td></tr>
+    <tr><td colspan="{{ 7 if mostrar_filial else 6 }}" class="text-muted text-center">{% if busca or filtro_exame %}Nenhum item encontrado.{% else %}Base vazia.{% endif %}</td></tr>
     {% endfor %}
   </tbody>
 </table>

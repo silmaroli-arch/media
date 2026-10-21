@@ -2654,6 +2654,13 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - `exclusao_usuario.excluir_usuario_e_dados`: os FaqItem ligados aos exames próprios do médico (apagados junto) agora são APAGADOS - antes só perdiam o exame_id, e item sem exame vira FAQ geral do grupo (as respostas sobre o preparo dele passariam a responder perguntas de exames de outros médicos). FAQ geral do grupo criado por ele (sem exame) continua; FAQ do MedIA continua (só perde o vínculo do autor, decisão anterior).
 - Teste: `test_exclusao_usuario.py`.
 
+## Filtros nas telas de FAQ (2026-10-21, pedido do Silvan)
+
+- FAQ do MedIA (médico, `base_compartilhada`): o select de exame só lista tipos de exame com itens ativos (`tipos_com_itens`; o "Sugerir um item novo" continua com todos); busca por texto livre (`q`) na pergunta e na resposta. Corrigido também o `</form>` que faltava no filtro.
+- Meu FAQ (`faq_lista`): filtro por exame - só os exames do médico que têm item, mais "Geral (sem exame)" se houver - e busca por texto livre (`q`), que também acha o texto legível dos marcadores ("horário do exame"). "Limpar" volta à lista completa.
+- Busca (`routes_medico._contem_busca`): todas as palavras digitadas precisam aparecer, sem diferenciar acento, maiúscula e pontuação (`faq_engine.normalizar`).
+- Teste novo: `test_faq_filtros.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2743,6 +2750,10 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Perguntas como "Que horas tenho que chegar?" ou "Quando suspendo o Xarelto?": a janela mostra sugestões e rascunho já com as datas do paciente (sem chaves {}), com a nota de que as datas são ajustadas para cada paciente
 - [ ] Meu FAQ mostra essas respostas com [data do exame], [horário do exame], [3 dias antes do exame]; editar mantendo esse formato funciona
 - [ ] Depois de aprovada, o paciente recebe com as datas dele; Meu FAQ guarda com os marcadores; outro paciente com a mesma pergunta recebe as datas DELE
+
+**Telas de FAQ (filtros)**
+- [ ] FAQ do MedIA: o filtro de exame só mostra exames com itens; a busca por texto livre (ex.: "dirigir") filtra os itens
+- [ ] Meu FAQ: filtro pelos seus exames (só os que têm item) e busca por texto livre (ex.: "cafe" acha "café")
 
 **FAQ do MedIA (aprendizado)**
 - [ ] Responder/aprovar como médico (com "Salvar no Meu FAQ" marcado) cria um item novo no FAQ do MedIA (não revisado, autor = médico), mesmo existindo pergunta parecida; responder de novo exatamente igual não duplica
