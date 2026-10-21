@@ -2630,6 +2630,12 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Telas sem paciente (Meu FAQ - lista, editar, adicionar): marcadores aparecem como "[data do exame]", "[horário do exame]", "[3 dias antes do exame]" (filtro Jinja `legivel` / `para_leitura`); ao salvar, `de_leitura` volta para marcador. Últimas respondidas mostra preenchido para o paciente da pergunta.
 - Teste: `test_marcadores_resposta.py` (atualizado). Conferido no navegador.
 
+## Opção "Salvar no Meu FAQ" na aprovação (2026-10-21, pedido do Silvan)
+
+- Portal de atendimento e Perguntas pendentes (aprovar rascunho e responder pergunta sem IA): caixa "Salvar no Meu FAQ", marcada por padrão. Desmarcada: a resposta vai ao paciente, mas `perguntas_responder` não cria FaqItem nem agenda o aprendizado do FAQ do MedIA (resposta só deste paciente). Forms sem a opção (sem o campo oculto `opcao_faq`) mantêm o padrão de salvar. Botão "Responder e ensinar a IA" virou "Responder". A aprovação automática (aprovação desligada) continua salvando sempre.
+- Correção junto: `_sincronizar_faq_da_pergunta_respondida` procurava o FAQ só pela pergunta original; desde a pergunta corrigida pela IA, o FAQ é gravado com `pergunta_faq` - agora procura pelas duas.
+- Teste novo: `test_salvar_faq_flag.py`; `test_portal_atendimento_resumo.py` ajustado.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2711,6 +2717,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] A resposta que chega ao paciente cita a pergunta corrigida; as IAs respondem à pergunta corrigida
 - [ ] "Apagar pergunta" (com confirmação) tira a pergunta da fila sem responder ao paciente nem gravar no FAQ; também em Perguntas pendentes
 - [ ] Botão "Usar" ao lado de cada sugestão (Claude, ChatGPT, FAQ do MedIA) copia o texto para o rascunho final; também em Perguntas pendentes
+- [ ] "Salvar no Meu FAQ" (marcado por padrão): desmarcado, o paciente recebe a resposta mas ela não aparece no Meu FAQ
 - [ ] "Que horas tenho que chegar na clínica?" (fora do preparo): as IAs respondem com orientação geral, com o aviso "conhecimento geral" na janela; vai para o médico mesmo com a aprovação automática desligada (antes disso, conferir que o WhatsApp não responde mais "Este chat é só para dúvidas sobre o preparo" para essa pergunta)
 
 **Respostas com dados do paciente (marcadores)**

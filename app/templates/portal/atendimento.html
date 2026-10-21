@@ -171,6 +171,11 @@
                 <textarea name="resposta" class="form-control mt-1" rows="3" required>{{ p.para_paciente(p.resposta_sugerida_ia) }}</textarea>
                 {% if p.datas_do_paciente %}<div class="form-text">As datas deste paciente ({{ p.datas_do_paciente }}) são ajustadas automaticamente para cada paciente quando a resposta for reutilizada.</div>{% endif %}
               </div>
+              <div class="form-check mt-2">
+                <input type="hidden" name="opcao_faq" value="1">
+                <input class="form-check-input" type="checkbox" name="salvar_faq" id="salvar_faq_{{ p.id }}a" checked>
+                <label class="form-check-label small" for="salvar_faq_{{ p.id }}a">Salvar no Meu FAQ <span class="text-muted">(responde sozinho quem perguntar o mesmo; desmarque se a resposta for só para este paciente)</span></label>
+              </div>
               <button type="submit" class="btn btn-info btn-sm mt-1">Aprovar e enviar ao paciente</button>
             </form>
           {% else %}
@@ -181,7 +186,12 @@
                 <span class="rotulo">Resposta</span>
                 <textarea name="resposta" class="form-control mt-1" rows="2" placeholder="Digite a resposta..." required></textarea>
               </div>
-              <button type="submit" class="btn btn-primary btn-sm mt-1">Responder e ensinar a IA</button>
+              <div class="form-check mt-2">
+                <input type="hidden" name="opcao_faq" value="1">
+                <input class="form-check-input" type="checkbox" name="salvar_faq" id="salvar_faq_{{ p.id }}p" checked>
+                <label class="form-check-label small" for="salvar_faq_{{ p.id }}p">Salvar no Meu FAQ <span class="text-muted">(responde sozinho quem perguntar o mesmo; desmarque se a resposta for só para este paciente)</span></label>
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm mt-1">Responder</button>
             </form>
           {% endif %}
           {# Apagar sem responder (pedido do Silvan, 2026-10-21). #}

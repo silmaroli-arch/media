@@ -3166,7 +3166,8 @@ def _sincronizar_faq_da_pergunta_respondida(pergunta_pendente, pergunta_nova, re
     texto ORIGINAL de `pergunta_pendente.pergunta` (antes de qualquer
     edição), já que é esse o texto com que o item de FAQ foi criado."""
     query_faq = FaqItem.query.filter(
-        FaqItem.pergunta == pergunta_pendente.pergunta,
+        # O FAQ é gravado com a pergunta corrigida pela IA, quando houver.
+        FaqItem.pergunta.in_({pergunta_pendente.pergunta, pergunta_pendente.pergunta_faq or pergunta_pendente.pergunta}),
         FaqItem.exame_id == pergunta_pendente.exame_id,
         FaqItem.grupo_id == pergunta_pendente.grupo_id,
         FaqItem.criado_por_id == pergunta_pendente.criado_por_id,
@@ -4109,8 +4110,17 @@ def perguntas_responder(pergunta_id):
     pergunta.respondida_por = current_user.nome
     pergunta.respondida_em = datetime.utcnow()
 
+    # Flag "Salvar no Meu FAQ" (pedido do Silvan, 2026-10-21): o médico
+    # escolhe se a resposta entra no FAQ (e responde sozinha da próxima
+    # vez). Forms sem a opção (campo oculto "opcao_faq") mantêm o padrão
+    # de sempre, salvar.
+    salvar_faq = not request.form.get("opcao_faq") or request.form.get("salvar_faq") == "on"
+    if not salvar_faq:
+        # Resposta só para este paciente: também não ensina o FAQ do MedIA.
+        aprender = None
+
     # "Aprendizado": a pergunta+resposta entra na base de FAQ para uso futuro
-    novo_faq = FaqItem(
+    novo_faq = None if not salvar_faq else FaqItem(
         # O item de FAQ nasce no MESMO escopo (filial/grupo, ou dono
         # pessoal se a pergunta era de uma conta solo) da pergunta respondida.
         clinica_id=pergunta.clinica_id,
@@ -4122,7 +4132,8 @@ def perguntas_responder(pergunta_id):
         resposta=resposta,
         criado_por=current_user.nome,
     )
-    db.session.add(novo_faq)
+    if novo_faq:
+        db.session.add(novo_faq)
     db.session.commit()
 
     # Fatia 7 (ajuste): se a pergunta veio pelo WhatsApp, manda a resposta
@@ -4154,7 +4165,10 @@ def perguntas_responder(pergunta_id):
 
         agendar_aprendizado(pergunta.id, resposta, current_user.id, aprender["editou"])
 
-    flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
+    if salvar_faq:
+        flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
+    else:
+        flash("Resposta enviada ao paciente (não foi salva no Meu FAQ).", "success")
     return redirect(url_for(destino))
 
 

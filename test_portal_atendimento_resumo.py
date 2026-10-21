@@ -110,7 +110,7 @@ checar("Botão 'Aprovar e enviar ao paciente' NÃO aparece na parte resumida", "
 checar("Sugestão do ChatGPT aparece dentro dos modais", "Sugestão bruta do ChatGPT" in parte_modais)
 checar("Sugestão do Claude aparece dentro dos modais", "Sugestão bruta do Claude" in parte_modais)
 checar("Botão 'Aprovar e enviar ao paciente' aparece dentro dos modais", "Aprovar e enviar ao paciente" in parte_modais)
-checar("Botão 'Responder e ensinar a IA' aparece dentro dos modais (pergunta sem IA)", "Responder e ensinar a IA" in parte_modais)
+checar("Botão 'Responder' e a opção 'Salvar no Meu FAQ' aparecem dentro dos modais (pergunta sem IA)", ">Responder</button>" in parte_modais and "Salvar no Meu FAQ" in parte_modais)
 checar("Modal específico da pergunta com IA existe (id do modal)", f'id="modal-pergunta-{id_com_ia}"' in html)
 checar("Modal específico da pergunta sem IA existe (id do modal)", f'id="modal-pergunta-{id_sem_ia}"' in html)
 
