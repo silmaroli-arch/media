@@ -2476,11 +2476,11 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
 
-**Site / Criar conta**
-- [ ] "Criar conta" abre primeiro a escolha Google / E-mail e senha; "Escolher outra forma de entrar" volta para a escolha
-- [ ] E-mail e senha: formulário sem endereço; CPF como "(será seu login)"
-- [ ] Google: formulário sem senha, campo "CPF" com a explicação; "Cadastrar sem o Google" leva ao formulário com senha
-- [ ] Sem o aviso de "Meus Locais de Atendimento"
+**Site / Criar conta** - VALIDADO pelo Silvan em 2026-10-21
+- [x] "Criar conta" abre primeiro a escolha Google / E-mail e senha; "Escolher outra forma de entrar" volta para a escolha
+- [x] E-mail e senha: formulário sem endereço; CPF como "(será seu login)"
+- [x] Google: formulário sem senha, campo "CPF" com a explicação; "Cadastrar sem o Google" leva ao formulário com senha
+- [x] Sem o aviso de "Meus Locais de Atendimento"
 
 **Meus dados (equipe)**
 - [ ] Sem endereço
