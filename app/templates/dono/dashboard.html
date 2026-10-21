@@ -36,7 +36,7 @@
   </li>
   <li class="nav-item" role="presentation">
     <button class="nav-link" id="tab-usuarios" data-bs-toggle="tab" data-bs-target="#painel-usuarios" type="button" role="tab" aria-controls="painel-usuarios" aria-selected="false">
-      <i class="bi bi-people me-1"></i>Usuários
+      <i class="bi bi-people me-1"></i>Usuários{% if solicitacoes_exclusao %} <span class="badge bg-danger" title="Pedidos de exclusão de conta">{{ solicitacoes_exclusao|length }}</span>{% endif %}
     </button>
   </li>
   <li class="nav-item" role="presentation">
@@ -185,6 +185,7 @@
   </div>
 
   <div class="tab-pane fade" id="painel-usuarios" role="tabpanel" aria-labelledby="tab-usuarios">
+    {% include "dono/_solicitacoes_exclusao.html" %}
     <h5 class="mb-3">Usuários cadastrados</h5>
     <p class="text-muted small">
       Todas as contas de médico(a)/secretário(a) da plataforma, independente de terem um grupo de trabalho ou

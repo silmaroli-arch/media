@@ -2661,6 +2661,14 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Busca (`routes_medico._contem_busca`): todas as palavras digitadas precisam aparecer, sem diferenciar acento, maiúscula e pontuação (`faq_engine.normalizar`).
 - Teste novo: `test_faq_filtros.py`.
 
+## Pedido de exclusão da conta (2026-10-21, pedido do Silvan)
+
+- Meus dados (médico/secretária, depois de confirmar a senha): card "Excluir minha conta" com o botão "Solicitar exclusão da conta" - janela com o motivo (obrigatório). Com pedido aberto, o card mostra a data e o motivo e permite "Cancelar pedido". Rotas `auth.solicitar_exclusao` / `auth.cancelar_solicitacao_exclusao` (404 para outros tipos de conta).
+- Modelo novo `SolicitacaoExclusao` (tabela `solicitacoes_exclusao`, criada pelo db.create_all na subida - conferido em PostgreSQL): usuario_id, nome e e-mail copiados, motivo, status pendente/concluida/descartada/cancelada, criado_em, resolvido_em. `Usuario.solicitacao_exclusao_pendente`.
+- Área do dono: aba Usuários (dashboard) e /dono/usuarios mostram "Pedidos de exclusão de conta" (`dono/_solicitacoes_exclusao.html`) com data, usuário, motivo, "Excluir conta" (mesma ação `dono.usuario_excluir`, com a senha do dono e os mesmos bloqueios) e "Descartar pedido" (`dono.solicitacao_exclusao_descartar`). Badge com a quantidade na aba Usuários.
+- Ao excluir a conta (`exclusao_usuario.excluir_usuario_e_dados`), o pedido fica "concluida", sem o vínculo com a conta (nome e motivo continuam como registro).
+- Teste novo: `test_solicitar_exclusao.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2757,6 +2765,10 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 
 **FAQ do MedIA (aprendizado)**
 - [ ] Responder/aprovar como médico (com "Salvar no Meu FAQ" marcado) cria um item novo no FAQ do MedIA (não revisado, autor = médico), mesmo existindo pergunta parecida; responder de novo exatamente igual não duplica
+
+**Pedido de exclusão de conta**
+- [ ] Meus dados (médico/secretária): "Solicitar exclusão da conta" pede o motivo; depois mostra o pedido aguardando e permite cancelar
+- [ ] Painel do dono > Usuários: badge com a quantidade, lista com o motivo, "Excluir conta" (com sua senha) e "Descartar pedido"
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

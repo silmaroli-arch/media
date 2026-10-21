@@ -22,8 +22,11 @@ silenciosamente, porque afetariam dados de OUTRAS pessoas:
 Sempre chame `verificar_bloqueios_exclusao(usuario)` ANTES de
 `excluir_usuario_e_dados(usuario)` e não prossiga se a lista vier não-vazia.
 """
+from datetime import datetime
+
 from app.extensions import db
 from app.models import (
+    SolicitacaoExclusao,
     Agendamento,
     BaseConhecimentoItem,
     BaseConhecimentoSugestao,
@@ -222,6 +225,12 @@ def excluir_usuario_e_dados(usuario):
         FaqItem.query.filter_by(grupo_id=grupo_id).update({"grupo_id": None}, synchronize_session=False)
         PerguntaPendente.query.filter_by(grupo_id=grupo_id).update({"grupo_id": None}, synchronize_session=False)
         Grupo.query.filter_by(id=grupo_id).delete(synchronize_session=False)
+
+    # Pedido de exclusão feito pela própria pessoa: fica como registro,
+    # concluído e sem o vínculo com a conta.
+    SolicitacaoExclusao.query.filter_by(usuario_id=uid).update(
+        {"usuario_id": None, "status": "concluida", "resolvido_em": datetime.utcnow()}, synchronize_session=False
+    )
 
     # 10. Por fim, a própria conta.
     db.session.delete(usuario)

@@ -397,6 +397,11 @@ class Usuario(db.Model, UserMixin):
         self.perm_medicos_preparo = True
 
     @property
+    def solicitacao_exclusao_pendente(self):
+        """Pedido de exclusão da própria conta ainda aberto (ver SolicitacaoExclusao)."""
+        return SolicitacaoExclusao.query.filter_by(usuario_id=self.id, status="pendente").first()
+
+    @property
     def is_staff(self):
         return self.tipo in ("secretaria", "medico")
 
@@ -2095,6 +2100,28 @@ class HistoricoDeploy(db.Model):
     mensagem = db.Column(db.Text)
     deploy_em = db.Column(db.DateTime)
     registrado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class SolicitacaoExclusao(db.Model):
+    """Pedido de exclusão da própria conta (médico/secretária), com o motivo
+    (pedido do Silvan, 2026-10-21). Quem exclui de fato é o dono da
+    plataforma, na área do dono (dono.usuario_excluir). Nome e e-mail ficam
+    copiados aqui para o registro continuar legível depois que a conta
+    some (usuario_id vira NULL - ver app.exclusao_usuario)."""
+    __tablename__ = "solicitacoes_exclusao"
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
+    nome = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(150))
+    motivo = db.Column(db.Text, nullable=False)
+    # pendente | concluida (conta excluída) | descartada (dono não excluiu)
+    # | cancelada (a própria pessoa desistiu)
+    status = db.Column(db.String(20), nullable=False, default="pendente")
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    resolvido_em = db.Column(db.DateTime)
+
+    usuario = db.relationship("Usuario")
 
 
 class MensagemSuporte(db.Model):

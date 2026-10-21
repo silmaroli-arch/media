@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, date, timedelta
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, session
+from flask import Blueprint, abort, render_template, redirect, url_for, request, flash, session
 from flask_login import login_user, logout_user, login_required, current_user
 
 from app.extensions import db
@@ -253,6 +253,43 @@ def _identidade_confirmada_recentemente():
         confirmado_em is not None
         and datetime.utcnow() - datetime.fromisoformat(confirmado_em) < timedelta(minutes=MEUS_DADOS_CONFIRMACAO_VALIDA_MINUTOS)
     )
+
+
+@auth_bp.route("/meus-dados/solicitar-exclusao", methods=["POST"])
+@login_required
+def solicitar_exclusao():
+    """Médico/secretária pede a exclusão da própria conta, com o motivo
+    (pedido do Silvan, 2026-10-21). Só registra o pedido - quem exclui é o
+    dono da plataforma (ver dono.usuario_excluir e app.exclusao_usuario)."""
+    from app.models import SolicitacaoExclusao
+
+    if current_user.tipo not in ("medico", "secretaria"):
+        abort(404)
+    motivo = request.form.get("motivo", "").strip()
+    if not motivo:
+        flash("Conte o motivo da exclusão para enviar o pedido.", "danger")
+        return redirect(url_for("auth.meus_dados"))
+    if not SolicitacaoExclusao.query.filter_by(usuario_id=current_user.id, status="pendente").first():
+        db.session.add(SolicitacaoExclusao(
+            usuario_id=current_user.id, nome=current_user.nome, email=current_user.email, motivo=motivo[:2000],
+        ))
+        db.session.commit()
+    flash("Pedido de exclusão enviado. O administrador da plataforma vai analisar e excluir sua conta.", "success")
+    return redirect(url_for("auth.meus_dados"))
+
+
+@auth_bp.route("/meus-dados/cancelar-exclusao", methods=["POST"])
+@login_required
+def cancelar_solicitacao_exclusao():
+    from app.models import SolicitacaoExclusao
+
+    pedido = SolicitacaoExclusao.query.filter_by(usuario_id=current_user.id, status="pendente").first()
+    if pedido:
+        pedido.status = "cancelada"
+        pedido.resolvido_em = datetime.utcnow()
+        db.session.commit()
+        flash("Pedido de exclusão cancelado.", "success")
+    return redirect(url_for("auth.meus_dados"))
 
 
 @auth_bp.route("/meus-dados", methods=["GET", "POST"])

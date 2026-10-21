@@ -98,6 +98,46 @@
     </div>
     {% endif %}
 
+    {# Pedir a exclusão da conta, com o motivo - quem exclui é o dono da
+       plataforma (pedido do Silvan, 2026-10-21). #}
+    {% if confirmado and current_user.tipo in ('medico', 'secretaria') %}
+    {% set pedido = current_user.solicitacao_exclusao_pendente %}
+    <div class="card p-4 mt-3 border-danger-subtle">
+      <h6 class="mb-2 text-danger"><i class="bi bi-person-x"></i> Excluir minha conta</h6>
+      {% if pedido %}
+      <p class="small mb-2">Pedido de exclusão enviado em {{ pedido.criado_em.strftime('%d/%m/%Y') }} - aguardando o administrador da plataforma.</p>
+      <p class="small text-muted mb-2">Motivo: {{ pedido.motivo }}</p>
+      <form method="post" action="{{ url_for('auth.cancelar_solicitacao_exclusao') }}" onsubmit="return confirm('Cancelar o pedido de exclusão?');">
+        <button type="submit" class="btn btn-outline-secondary btn-sm">Cancelar pedido</button>
+      </form>
+      {% else %}
+      <p class="small text-muted mb-2">Peça a exclusão da sua conta e dos seus dados. O administrador da plataforma analisa o pedido e faz a exclusão.</p>
+      <button type="button" class="btn btn-outline-danger btn-sm align-self-start" data-bs-toggle="modal" data-bs-target="#modal-solicitar-exclusao">Solicitar exclusão da conta</button>
+      {% endif %}
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+{# ---------- Popup do pedido de exclusão ---------- #}
+<div class="modal fade" id="modal-solicitar-exclusao" tabindex="-1" aria-labelledby="modal-solicitar-exclusao-titulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" action="{{ url_for('auth.solicitar_exclusao') }}" class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title" id="modal-solicitar-exclusao-titulo"><i class="bi bi-person-x"></i> Solicitar exclusão da conta</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">Depois de excluída, a conta e os dados ligados a ela (exames, agendamentos, Meu FAQ) não podem ser recuperados.</p>
+        <label class="form-label" for="motivo_exclusao">Motivo da exclusão</label>
+        <textarea name="motivo" id="motivo_exclusao" class="form-control" rows="3" required maxlength="2000"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal">Voltar</button>
+        <button type="submit" class="btn btn-danger">Enviar pedido</button>
+      </div>
+    </form>
   </div>
 </div>
 
