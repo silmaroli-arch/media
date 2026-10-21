@@ -2472,52 +2472,60 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - **Meu FAQ:** "Adicionar manualmente" abre uma janela (POST em `faq_novo` com `origem=lista`; erro volta com `?novo=1`, `session["faq_novo_form"]`). Função nova `_exames_para_faq`.
 - Testes novos: `test_exames_agendados_tela_unica.py`, `test_faq_adicionar_janela.py`; `test_paciente_da_empresa.py` cobre máscara, editar, agendamentos e novo paciente em janela. Suíte 86/86. Conferido no navegador: janela de agendar com o filtro de médico.
 
-## PENDENTE DE TESTE (Silvan) - lembrete
+## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
-Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção):
+Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
 
-1. **LGPD - minimização de dados** (ver seção acima)
-   - [ ] Criar conta (equipe) e Meus dados: não pedem mais endereço
-   - [ ] Cadastro de paciente pela equipe, autocadastro do paciente e Meus dados do paciente: não pedem e-mail, endereço nem contato de emergência
-   - [ ] Ficha do paciente: não mostra mais esses dados; Observações com o aviso de não registrar dados de saúde
-   - [ ] Convidar membro para o grupo pelo CPF continua funcionando
-   - [ ] Depois do deploy: conferir no banco que os dados antigos foram apagados (endereço da equipe; e-mail, endereço e contato de emergência dos pacientes)
-   - [ ] Política de Privacidade (/privacidade) com a lista nova de dados
-   - [ ] Depois de validado em produção: pedir a fase 2 (DROP COLUMN das colunas vazias)
-2. **Anúncio como popup** (ver seção acima)
-   - [ ] Enviar anúncio SEM popup: só aparece no sino
-   - [ ] Enviar anúncio COM popup para um médico: abre ao entrar, não fecha clicando fora, fecha no "Entendi" e não volta
-   - [ ] Popup também no celular
-   - [ ] Médico com mais de um grupo: o "Entendi" funciona (inclusive na tela de escolher o grupo)
-3. **Criar conta: escolher como entrar** (ver seção acima)
-   - [ ] "Criar conta" (site, login e menu) abre primeiro a escolha Google / E-mail e senha
-   - [ ] E-mail e senha: formulário completo; "Escolher outra forma de entrar" volta para a escolha
-   - [ ] Google: volta do Google no formulário sem senha, com o campo "CPF" e a explicação; "Cadastrar sem o Google" leva ao formulário com senha
-4. **Grupo: editar e criar outro + permissões** (ver seção acima)
-   - [ ] Menu "Grupos de trabalho" abre a lista "Meus grupos" mesmo com um grupo só
-   - [ ] "Dados do grupo": só o nome; salvar volta para "Meus grupos" com o nome novo no topo
-   - [ ] "Criar novo grupo" e "Ver membros / Convidar" na lista
-   - [ ] Permissões: sem "Gerenciar filiais"; "Editar dados do grupo"
-5. **Excluir grupo** (ver seção acima)
-   - [ ] Criar um grupo de teste e excluir pelo botão "Excluir" em "Meus grupos"
-   - [ ] Tentar excluir um grupo com paciente ou agenda: mostra o que ainda existe e não apaga
-6. **Especialidade obrigatória no modelo de preparo** (ver seção acima)
-   - [ ] Como médico, "Novo modelo de preparo" sem especialidade: não deixa salvar
-   - [ ] Com especialidade: salva, e ela aparece em "Meus dados"
-7. **Acompanhante removido** (ver seção da LGPD)
-   - [ ] "Novo agendamento" sem os campos de acompanhante; agendar um exame que antes exigia acompanhante funciona
-   - [ ] Modelo de preparo e cadastro de exame sem a caixa "Precisa de acompanhante"
-8. **WhatsApp: data de nascimento sem "/"** (ver seção acima)
-   - [ ] Identificar-se no WhatsApp mandando a data só com números (ex.: 16111983)
-9. **Pacientes em janelas** (ver seção acima)
-   - [ ] Telefone com máscara na lista e no detalhe
-   - [ ] "Editar" na lista abre a janela e salva, inclusive CPF e telefone (e CPF inválido ou de outro paciente é recusado)
-   - [ ] "Todos os agendamentos" mostra passados e futuros só deste grupo
-   - [ ] "Novo paciente": CPF novo (cadastro completo), CPF já existente no MedIA (importar), CPF que já é paciente, CPF inválido
-10. **Exames agendados (tela única)** (ver seção acima)
-   - [ ] Menu sem "Agendar exame"; botão "Agendar exame" abre a janela e agenda
-   - [ ] Coluna Médico; secretária vê todos os médicos do grupo (e filtra); médico vê só os dele
-11. **Meu FAQ:** "Adicionar manualmente" abre a janela e salva
+**Site / Criar conta**
+- [ ] "Criar conta" abre primeiro a escolha Google / E-mail e senha; "Escolher outra forma de entrar" volta para a escolha
+- [ ] E-mail e senha: formulário sem endereço; CPF como "(será seu login)"
+- [ ] Google: formulário sem senha, campo "CPF" com a explicação; "Cadastrar sem o Google" leva ao formulário com senha
+- [ ] Sem o aviso de "Meus Locais de Atendimento"
+
+**Meus dados (equipe)**
+- [ ] Sem endereço
+
+**Pacientes (lista)**
+- [ ] Telefone com máscara; coluna "Telefone" (não mais "Telefone (login)")
+- [ ] "Novo paciente" (janela): CPF novo (cadastro completo), CPF já existente no MedIA (importar), CPF que já é paciente, CPF inválido; sem e-mail, endereço e contato de emergência
+- [ ] "Editar" (janela): nome, CPF, telefone e observações; CPF inválido ou de outro paciente é recusado; aviso de não registrar dados de saúde
+- [ ] "Todos os agendamentos" (janela): passados e futuros, só deste grupo
+
+**Exames agendados (tela única)**
+- [ ] Menu sem "Agendar exame"; médico vê "Meus exames agendados" (só os dele), secretária vê "Exames agendados" (todos os médicos do grupo, com filtro)
+- [ ] Coluna Médico
+- [ ] Botão "Agendar exame" (janela): o médico é filtrado pelo exame escolhido; sem os campos de acompanhante
+
+**Exames & preparo (modelo de preparo / cadastro de exame)**
+- [ ] Médico não salva sem "Sua especialidade"; com ela, aparece em "Meus dados"
+- [ ] Sem a caixa "Precisa de acompanhante"
+
+**Meu FAQ**
+- [ ] "Adicionar manualmente" (janela) salva; com erro, reabre com o motivo
+
+**Grupos de trabalho**
+- [ ] O menu abre "Meus grupos" mesmo com um grupo só
+- [ ] "Dados do grupo": só o nome; salvar volta para "Meus grupos"
+- [ ] "Criar novo grupo"; "Ver membros / Convidar" (convite pelo CPF continua funcionando)
+- [ ] "Excluir": grupo vazio é excluído; grupo com dados mostra o que tem e não apaga
+- [ ] Permissões: sem "Gerenciar filiais"; "Editar dados do grupo"
+
+**Área do paciente (autocadastro e Meus dados)**
+- [ ] Sem e-mail, endereço e contato de emergência
+
+**WhatsApp**
+- [ ] Identificação com a data de nascimento só em números (ex.: 16111983)
+
+**Painel do dono**
+- [ ] Menu lateral: "Configurações", "Usuários", "Grupos" e "Custo de IA" abrem a aba certa
+- [ ] Anúncios: sem popup (só no sino); com popup (abre ao entrar, só fecha no "Entendi", também no celular e com médico de mais de um grupo)
+
+**Site público**
+- [ ] /privacidade com a lista nova de dados
+
+**Banco (depois do deploy em produção)**
+- [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos
+- [ ] Depois de validado: pedir a fase 2 (DROP COLUMN das colunas vazias)
 
 ## Como continuar
 
