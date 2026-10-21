@@ -12,7 +12,7 @@ from sqlalchemy import or_
 from app.extensions import db
 from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, GrupoPaciente, Grupo, Usuario, FaqItem, normalizar_telefone, telefone_incompleto
 from app.faq_engine import buscar_resposta
-from app.ia_preparo import responder_com_ia
+from app.ia_preparo import responder_com_ia, formatar_situacao_ias
 from app.clinica_utils import verificar_vencimento_grupo
 from app.push_notificacoes import notificar_equipe_nova_pergunta
 from app.preparo_publico import montar_documento_preparo, gerar_pdf_preparo
@@ -431,6 +431,7 @@ def chat():
                         # quando a reserva "tapou o buraco" e o rascunho final
                         # saiu normal (ver medico/perguntas.html).
                         ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
+                        ias_situacao=formatar_situacao_ias(resultado_ia),
                     )
                     db.session.add(pendente)
                     # Pedido do Silvan (2026-09-28 - ver docstring de
@@ -475,6 +476,7 @@ def chat():
                         # porque alguma delas deu erro de chamada - ver
                         # app.ia_preparo.responder_com_ia.
                         ias_com_erro=(",".join(resultado_ia.get("falhas") or []) or None) if resultado_ia else None,
+                        ias_situacao=formatar_situacao_ias(resultado_ia),
                     )
                     db.session.add(pendente)
                     db.session.commit()

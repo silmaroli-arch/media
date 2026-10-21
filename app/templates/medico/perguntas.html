@@ -59,6 +59,15 @@
           </h2>
           <div id="aguardando-{{ p.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionAguardando">
             <div class="accordion-body">
+              {# Pergunta corrigida pela IA validadora e IAs que não responderam
+                 (pedido do Silvan, 2026-10-21) - as que responderam aparecem
+                 nas colunas abaixo. #}
+              {% if p.pergunta_faq and p.pergunta_faq != p.pergunta %}
+              <p class="small mb-2"><strong>Pergunta corrigida pela IA:</strong> {{ p.pergunta_faq }}</p>
+              {% endif %}
+              {% for nome, estado, texto in p.situacao_ias if estado != "respondeu" %}
+              <p class="small text-muted mb-2"><strong>{{ nome }}:</strong> <em>{{ texto }}</em></p>
+              {% endfor %}
               {% if p.ias_com_erro %}
               <div class="alert alert-warning py-2 small mb-3">
                 <i class="bi bi-exclamation-triangle-fill"></i>

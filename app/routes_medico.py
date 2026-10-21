@@ -41,7 +41,7 @@ from app.clinica_utils import (
 )
 from app.pdf_preparo import extrair_sugestao_de_pdf, extrair_sugestao_de_texto
 from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
-from app.ia_preparo import responder_com_ia
+from app.ia_preparo import responder_com_ia, formatar_situacao_ias
 from app.faq_engine import buscar_resposta
 from app.custo_ia import registrar_chamada_ia
 from app.whatsapp_envio import (
@@ -3967,6 +3967,7 @@ def testar_ia():
                     base_item_id=(resultado_ia.get("base") or {}).get("item_id"),
                     base_divergiu=(resultado_ia.get("base") or {}).get("divergiu"),
                     ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
+                    ias_situacao=formatar_situacao_ias(resultado_ia),
                 )
                 db.session.add(pendente)
                 db.session.commit()
@@ -3991,6 +3992,7 @@ def testar_ia():
                         exame_id=exame_selecionado.id,
                         pergunta=pergunta_enviada,
                         ias_com_erro=(",".join(resultado_ia.get("falhas") or []) or None) if resultado_ia else None,
+                        ias_situacao=formatar_situacao_ias(resultado_ia),
                     )
                     db.session.add(pendente)
                     db.session.commit()
@@ -4105,8 +4107,10 @@ def perguntas_responder(pergunta_id):
         # app.whatsapp_conversa._tem_pergunta_pendente).
         enviar_mensagem_whatsapp(
             pergunta.telefone_whatsapp,
-            f"Sobre sua pergunta \"{pergunta.pergunta}\":\n\n{resposta}",
-            content_variables=[pergunta.pergunta, resposta],
+            # Já com a digitação corrigida pela IA validadora, quando houver
+            # (pedido do Silvan, 2026-10-21).
+            f"Sobre sua pergunta \"{pergunta.pergunta_faq or pergunta.pergunta}\":\n\n{resposta}",
+            content_variables=[pergunta.pergunta_faq or pergunta.pergunta, resposta],
         )
 
     if aprender is not None:

@@ -59,13 +59,18 @@ with app.app_context():
     processar_mensagem(telefone, "25/12/1978")
     pedro = Paciente.query.filter_by(nome="Pedro Souza").first()
     resultado_ia = {"final": "Não é recomendado dirigir depois do exame.", "falhas": [], "sem_sentido": False,
-                    "por_provedor": {"Claude": "Não dirija.", "ChatGPT": "Não dirija.", "Gemini": None}}
+                    "por_provedor": {"Claude": "Não dirija.", "ChatGPT": None, "Gemini": None},
+                    "situacao": {"Claude": "respondeu", "ChatGPT": "nao_sabe"}}
     with validador("VALIDA\nPERGUNTA: Posso ir de carro?"), \
-            patch("app.whatsapp_conversa.responder_com_ia", return_value=resultado_ia):
+            patch("app.whatsapp_conversa.responder_com_ia", return_value=resultado_ia) as ia:
         processar_mensagem(telefone, "Posso ir de carrp?")
+    checar("As IAs recebem a pergunta já corrigida", ia.call_args[0][0] == "Posso ir de carro?")
     pendente = PerguntaPendente.query.filter_by(paciente_id=pedro.id).order_by(PerguntaPendente.id.desc()).first()
     checar("A pergunta pendente guarda o original e a versão corrigida",
            pendente.pergunta == "Posso ir de carrp?" and pendente.pergunta_faq == "Posso ir de carro?")
+    checar("... e a situação de cada IA (ChatGPT não soube)",
+           pendente.situacao_ias == [("Claude", "respondeu", "Não dirija."),
+                                     ("ChatGPT", "nao_sabe", PerguntaPendente.TEXTO_SITUACAO_IA["nao_sabe"])])
     pendente_id, exame_id = pendente.id, pendente.exame_id
 
 medico = app.test_client()
@@ -74,8 +79,16 @@ with app.app_context():
     from app.models import Grupo
     vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
 medico.post("/equipe/clinica", data={"clinica_id": str(vitoria_id)}, follow_redirects=True)
-with patch("app.routes_medico.enviar_mensagem_whatsapp", return_value=None, create=True):
+html = medico.get("/equipe/portal").get_data(as_text=True)
+checar("Portal mostra a pergunta do paciente e a corrigida pela IA",
+       "Posso ir de carrp?" in html and "Pergunta corrigida pela IA:" in html and "Posso ir de carro?" in html)
+checar("... e mostra as 2 IAs: a resposta do Claude e o motivo do ChatGPT",
+       "Sugestão do Claude:" in html and "ChatGPT:" in html and "não soube responder com base no preparo" in html)
+with patch("app.whatsapp_envio.enviar_mensagem_whatsapp") as envio:
     medico.post(f"/equipe/perguntas/{pendente_id}/responder", data={"resposta": "Não dirija depois do exame."})
+checar("A resposta ao paciente cita a pergunta já corrigida",
+       'Sobre sua pergunta "Posso ir de carro?"' in envio.call_args[0][1]
+       and envio.call_args.kwargs["content_variables"][0] == "Posso ir de carro?")
 
 with app.app_context():
     faq = FaqItem.query.filter_by(exame_id=exame_id).order_by(FaqItem.id.desc()).first()
@@ -92,3 +105,27 @@ with app.app_context():
            "Não dirija depois do exame." in resposta)
 
 print("\nTodos os testes de FAQ com pergunta corrigida passaram.")
+
+# ---------- responder_com_ia informa a situação de cada IA ----------
+from app.ia_preparo import _responder_com_duas_ias, formatar_situacao_ias
+
+with app.app_context():
+    config = PlataformaConfig.obter()
+    config.ia_chat_provedor_1, config.ia_chat_provedor_2 = "Claude", "ChatGPT"
+    db.session.commit()
+    exame = Exame.query.first()
+    chamada = MagicMock()
+    respostas = {"Claude": ("Resposta do Claude.", chamada, True, False, False),
+                 "ChatGPT": (None, chamada, True, False, False)}
+    with patch("app.ia_preparo._tentar_provedor", side_effect=lambda nome, *a, **k: respostas[nome]), \
+            patch("app.ia_preparo._cliente_anthropic", return_value=None):
+        r = _responder_com_duas_ias("Posso ir de carro?", exame)
+    checar("IA que respondeu 'não sei' aparece como nao_sabe", r["situacao"] == {"Claude": "respondeu", "ChatGPT": "nao_sabe"})
+    checar("... e é gravada como texto", formatar_situacao_ias(r) == "Claude=respondeu;ChatGPT=nao_sabe")
+    respostas["ChatGPT"] = (None, None, False, False, False)
+    with patch("app.ia_preparo._tentar_provedor", side_effect=lambda nome, *a, **k: respostas[nome]), \
+            patch("app.ia_preparo._cliente_anthropic", return_value=None):
+        r = _responder_com_duas_ias("Posso ir de carro?", exame)
+    checar("IA sem chave aparece como nao_configurada", r["situacao"]["ChatGPT"] == "nao_configurada")
+
+print("\nTodos os testes de situação das IAs passaram.")

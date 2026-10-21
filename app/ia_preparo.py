@@ -899,9 +899,26 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
     if not tentou_a and not tentou_b:
         # Nenhuma das duas escolhidas tem API key configurada - não é
         # "falha", é "não configurada", não faz sentido acionar reserva.
-        return {"final": None, "por_provedor": respostas_por_provedor, "falhas": [], "sem_sentido": False, "exige_revisao_medicamento": False}
+        return {"final": None, "por_provedor": respostas_por_provedor, "falhas": [], "sem_sentido": False,
+                "exige_revisao_medicamento": False,
+                "situacao": {provedor_a: "nao_configurada", provedor_b: "nao_configurada"}}
 
     nome_efetivo_a, nome_efetivo_b = provedor_a, provedor_b
+
+    def _situacao(tentou, resposta, chamada):
+        if not tentou:
+            return "nao_configurada"
+        if resposta:
+            return "respondeu"
+        return "nao_sabe" if chamada is not None else "erro"
+
+    # O que aconteceu com cada IA escolhida (e com a reserva, se entrou) -
+    # mostrado ao médico na aprovação (pedido do Silvan, 2026-10-21: a IA
+    # que não respondia simplesmente sumia da tela).
+    situacao = {
+        provedor_a: _situacao(tentou_a, resposta_a, chamada_a),
+        provedor_b: _situacao(tentou_b, resposta_b, chamada_b),
+    }
 
     # Uma IA "falhou de verdade" quando tinha cliente (tentou_x=True) mas
     # não voltou nem resposta nem ChamadaIA registrado - ver
@@ -935,6 +952,8 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
             # A reserva também falhou de verdade - registra pra aparecer
             # na tela do médico igual às outras.
             falhas.append(provedor_c)
+        if tentou_c:
+            situacao[provedor_c] = _situacao(tentou_c, resposta_c, chamada_c)
         if reserva_respondeu and falhou_a:
             resposta_a, chamada_a, nome_efetivo_a, sem_sentido_a, exige_revisao_a = resposta_c, chamada_c, provedor_c, sem_sentido_c, exige_revisao_c
         elif reserva_respondeu and falhou_b:
@@ -1049,7 +1068,15 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
         "falhas": falhas,
         "sem_sentido": sem_sentido,
         "exige_revisao_medicamento": exige_revisao_medicamento,
+        "situacao": situacao,
     }
+
+
+def formatar_situacao_ias(resultado_ia):
+    """"Claude=respondeu;ChatGPT=nao_sabe" para PerguntaPendente.ias_situacao
+    (None sem resultado). Ver PerguntaPendente.situacao_ias."""
+    situacao = (resultado_ia or {}).get("situacao") or {}
+    return ";".join(f"{nome}={estado}" for nome, estado in situacao.items()) or None
 
 
 def _aplicar_base_de_conhecimento(resultado, pergunta_usuario, exame, paciente_id=None):

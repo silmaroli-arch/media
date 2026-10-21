@@ -185,7 +185,7 @@ from flask import current_app
 
 from app.extensions import db
 from app.faq_engine import buscar_resposta
-from app.ia_preparo import responder_com_ia, validar_pergunta
+from app.ia_preparo import responder_com_ia, validar_pergunta, formatar_situacao_ias
 from app.preparo_publico import montar_link_preparo
 from app.models import (
     Agendamento, ChatMensagem, ContagemPerguntasDia, ConversaWhatsapp, Paciente,
@@ -609,8 +609,10 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
         origem = "faq"
     else:
         resultado_ia = (
+            # As IAs recebem a pergunta já corrigida ("caro" -> "carro"),
+            # para não interpretarem errado a digitação (2026-10-21).
             responder_com_ia(
-                pergunta_texto, exame, paciente_id=paciente.id,
+                pergunta_corrigida or pergunta_texto, exame, paciente_id=paciente.id,
                 historico=_historico_recente_chat(paciente.id, exame.id),
             )
             if exame else None
@@ -647,6 +649,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 # tela de aprovação, mesmo quando a reserva "tapou o buraco"
                 # e o rascunho final saiu normal (ver medico/perguntas.html).
                 ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
+                ias_situacao=formatar_situacao_ias(resultado_ia),
                 telefone_whatsapp=telefone,
             )
             db.session.add(pergunta_pendente_criada)
@@ -684,6 +687,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 # porque alguma delas deu erro de chamada - ver
                 # app.ia_preparo.responder_com_ia.
                 ias_com_erro=(",".join(resultado_ia.get("falhas") or []) or None) if resultado_ia else None,
+                ias_situacao=formatar_situacao_ias(resultado_ia),
                 telefone_whatsapp=telefone,
             )
             db.session.add(pergunta_pendente_criada)

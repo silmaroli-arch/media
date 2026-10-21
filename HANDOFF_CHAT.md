@@ -2570,6 +2570,13 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - FAQ antigo com erro (ex.: "Posso ir de carrp?" no media-dev): corrigir em Meu FAQ > Editar.
 - Teste novo: `test_faq_pergunta_corrigida.py`.
 
+## Pergunta corrigida vai para as IAs e para o paciente; tela mostra as 2 IAs sempre (2026-10-21, pedido do Silvan)
+
+- WhatsApp: `responder_com_ia` recebe a pergunta já corrigida pela IA validadora (evita a IA interpretar errado "caro" em vez de "carro"). Ao aprovar, a mensagem ao paciente cita a versão corrigida ("Sobre sua pergunta \"Posso ir de carro?\""), também nas variáveis do template da Meta.
+- Portal de atendimento (janela da pergunta) e Perguntas pendentes: abaixo de "Pergunta", "Pergunta corrigida pela IA" quando difere do original.
+- As IAs escolhidas aparecem sempre na janela: a que respondeu com a sugestão; a que não respondeu com o motivo - "não soube responder com base no preparo cadastrado" (marcador NAO_SEI / recusa disfarçada), "deu erro" ou "não está configurada (sem chave de API)". `_responder_com_duas_ias` devolve `situacao` {nome: respondeu|nao_sabe|erro|nao_configurada} (inclui a reserva, se entrou); gravado em `PerguntaPendente.ias_situacao` (coluna nova, "Claude=respondeu;ChatGPT=nao_sabe") via `formatar_situacao_ias`; lido por `PerguntaPendente.situacao_ias`. Perguntas antigas (sem a coluna preenchida) continuam com a tela de antes.
+- Teste: `test_faq_pergunta_corrigida.py` (estendido).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2644,6 +2651,11 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 
 **FAQ (WhatsApp)**
 - [ ] Pergunta com erro de digitação (ex.: "Posso ir de carrp?"), depois de aprovada, entra no Meu FAQ corrigida ("Posso ir de carro?"); a mesma pergunta escrita certa ou com outro erro recebe a resposta aprovada na hora
+
+**Portal de atendimento (janela da pergunta)**
+- [ ] Mostra a pergunta do paciente e, embaixo, "Pergunta corrigida pela IA" (quando houve correção)
+- [ ] Mostra as 2 IAs: a que respondeu com a sugestão e a que não respondeu com o motivo (não soube / erro / não configurada)
+- [ ] A resposta que chega ao paciente cita a pergunta corrigida; as IAs respondem à pergunta corrigida
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

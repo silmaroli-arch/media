@@ -1915,6 +1915,34 @@ class PerguntaPendente(db.Model):
     # rascunho final saiu normal - o médico continua tendo visibilidade de
     # que uma IA configurada falhou nesta pergunta específica.
     ias_com_erro = db.Column(db.String(60), nullable=True)
+    # O que cada IA consultada fez nesta pergunta, ex.:
+    # "Claude=respondeu;ChatGPT=nao_sabe" (ver app.ia_preparo.
+    # formatar_situacao_ias) - a tela de aprovação mostra sempre as IAs
+    # escolhidas, mesmo a que não respondeu (pedido do Silvan, 2026-10-21).
+    ias_situacao = db.Column(db.String(120), nullable=True)
+
+    TEXTO_SITUACAO_IA = {
+        "nao_sabe": "não soube responder com base no preparo cadastrado",
+        "erro": "deu erro ao responder (indisponível no momento)",
+        "nao_configurada": "não está configurada (sem chave de API)",
+    }
+
+    @property
+    def situacao_ias(self):
+        """[(nome, estado, resposta_ou_texto)] na ordem gravada - vazio para
+        perguntas antigas, que continuam com a tela de antes."""
+        respostas = {"Claude": self.resposta_bruta_claude, "ChatGPT": self.resposta_bruta_chatgpt,
+                     "Gemini": self.resposta_bruta_gemini}
+        itens = []
+        for parte in (self.ias_situacao or "").split(";"):
+            nome, _, estado = parte.partition("=")
+            if not nome:
+                continue
+            if estado == "respondeu" and respostas.get(nome):
+                itens.append((nome, estado, respostas[nome]))
+            else:
+                itens.append((nome, estado, self.TEXTO_SITUACAO_IA.get(estado, "não respondeu")))
+        return itens
     # "Terceira IA" (base de conhecimento compartilhada, ver
     # BaseConhecimentoItem e app.ia_preparo.responder_com_ia): a resposta do
     # item da base que foi consultado nesta pergunta (None quando a base

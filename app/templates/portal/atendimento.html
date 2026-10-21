@@ -112,6 +112,16 @@
   {% endif %}
 {% endmacro %}
 
+{# Cada IA escolhida aparece sempre, com a resposta ou o motivo de não ter
+   respondido (pedido do Silvan, 2026-10-21). Perguntas antigas, sem
+   ias_situacao gravada, não mostram nada aqui. #}
+{% macro situacao_ias(p) %}
+  {% for nome, estado, texto in p.situacao_ias %}
+    {% if estado == "respondeu" %}{{ campo("Sugestão do " ~ nome, texto) }}
+    {% else %}<div class="campo"><span class="rotulo">{{ nome }}:</span> <em class="text-muted">{{ texto }}</em></div>{% endif %}
+  {% endfor %}
+{% endmacro %}
+
 {% macro modal_pergunta(p, aguardando_ia) %}
   <div class="modal fade" id="modal-pergunta-{{ p.id }}" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -122,6 +132,9 @@
         </div>
         <div class="modal-body">
           {{ campo("Pergunta", p.pergunta) }}
+          {# A versão corrigida pela IA validadora, que vai para o FAQ
+             (pedido do Silvan, 2026-10-21). #}
+          {% if p.pergunta_faq and p.pergunta_faq != p.pergunta %}{{ campo("Pergunta corrigida pela IA", p.pergunta_faq) }}{% endif %}
           {{ campo("Recebida em", p.criado_em.strftime('%d/%m/%Y %H:%M')) }}
           {{ historico(p.paciente_id) }}
           {% if aguardando_ia %}
@@ -131,9 +144,13 @@
                (a que não foi escolhida naquele momento), por isso fica
                escondida em vez de aparecer vazia/com "—" - mesmo
                critério já usado em medico/perguntas.html. #}
+            {% if p.situacao_ias %}
+              {{ situacao_ias(p) }}
+            {% else %}
             {% if p.resposta_bruta_gemini %}{{ campo("Sugestão do Gemini", p.resposta_bruta_gemini) }}{% endif %}
             {% if p.resposta_bruta_chatgpt %}{{ campo("Sugestão do ChatGPT", p.resposta_bruta_chatgpt) }}{% endif %}
             {% if p.resposta_bruta_claude %}{{ campo("Sugestão do Claude", p.resposta_bruta_claude) }}{% endif %}
+            {% endif %}
             {{ faq_medIA(p) }}
             <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
               <input type="hidden" name="origem" value="portal">
@@ -144,6 +161,7 @@
               <button type="submit" class="btn btn-info btn-sm mt-1">Aprovar e enviar ao paciente</button>
             </form>
           {% else %}
+            {{ situacao_ias(p) }}
             <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
               <input type="hidden" name="origem" value="portal">
               <div class="campo">
