@@ -855,6 +855,30 @@ def pacientes_detalhe(paciente_id):
     return render_template("medico/pacientes_detalhe.html", paciente=paciente)
 
 
+@medico_bp.route("/pacientes/<int:paciente_id>/agendamentos")
+@login_required
+@staff_required
+def pacientes_agendamentos(paciente_id):
+    """Janela "Todos os agendamentos" da lista de pacientes (pedido do
+    Silvan, 2026-10-21): passados e futuros, só os deste grupo (ou da conta
+    solo) - o cadastro do paciente é da plataforma inteira, e os de outras
+    clínicas não aparecem. Médico sem perm_pacientes vê só os dele, mesma
+    regra da lista. Devolve só o pedaço de HTML do conteúdo da janela."""
+    paciente = Paciente.query.filter(
+        Paciente.id == paciente_id, _filtro_pacientes_da_empresa()
+    ).first_or_404()
+    consulta = Agendamento.query.filter(
+        Agendamento.paciente_id == paciente.id,
+        filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
+    )
+    if eh_medico() and not current_user.perm_pacientes:
+        consulta = consulta.filter(Agendamento.medico_id == current_user.id)
+    agendamentos = consulta.order_by(Agendamento.data_hora.desc()).all()
+    return render_template(
+        "medico/_paciente_agendamentos.html", agendamentos=agendamentos, agora=datetime.now(),
+    )
+
+
 # ---------- Exames e preparo ----------
 
 @medico_bp.route("/exames")

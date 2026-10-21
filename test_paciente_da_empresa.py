@@ -97,6 +97,14 @@ with app.app_context():
     editado.nome = "Cliente da Empresa"
     db.session.commit()
 
+# "Detalhes" virou a janela "Todos os agendamentos" (2026-10-21).
+checar("Lista tem 'Todos os agendamentos' e não tem mais 'Detalhes'",
+       "Todos os agendamentos" in html_lista and ">Detalhes<" not in html_lista
+       and f"/equipe/pacientes/{cliente_id}/agendamentos" in html_lista)
+r = client.get(f"/equipe/pacientes/{cliente_id}/agendamentos")
+checar("Janela de agendamentos responde (sem agendamentos ainda)",
+       r.status_code == 200 and "Nenhum agendamento deste paciente." in r.get_data(as_text=True))
+
 # CPF duplicado é bloqueado por GRUPO (não mais por filial).
 r = client.post("/equipe/pacientes/novo", data={
     "nome": "Cliente Repetido", "cpf": "321.654.987-00", "email": "",
@@ -146,6 +154,11 @@ with app.app_context():
     ags = Agendamento.query.filter_by(paciente_id=cliente_id).order_by(Agendamento.data_hora).all()
     checar("Cada agendamento carrega o SEU Grupo (Centro e Praia)",
            len(ags) == 2 and ags[0].grupo_id == centro_id and ags[1].grupo_id == praia_id)
+
+# A janela "Todos os agendamentos" mostra só os do grupo ativo (Praia).
+html_ags = client.get(f"/equipe/pacientes/{cliente_id}/agendamentos").get_data(as_text=True)
+checar("'Todos os agendamentos' mostra só os do grupo ativo, não os de outra clínica",
+       "02/09/2026 09:00" in html_ags and "01/09/2026 09:00" not in html_ags and "Passado" in html_ags)
 
 client.get("/logout")
 

@@ -46,7 +46,11 @@
             <i class="bi bi-pencil"></i> Editar
           </button>
           {% endif %}
-          <a href="{{ url_for('medico.pacientes_detalhe', paciente_id=p.id) }}" class="btn btn-sm btn-outline-secondary">Detalhes</a>
+          {# "Detalhes" virou esta janela (pedido do Silvan, 2026-10-21) #}
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalAgendamentosPaciente"
+                  data-url="{{ url_for('medico.pacientes_agendamentos', paciente_id=p.id) }}" data-nome="{{ p.nome }}">
+            <i class="bi bi-calendar3"></i> Todos os agendamentos
+          </button>
         </td>
       </tr>
       {% else %}
@@ -55,6 +59,31 @@
     </tbody>
   </table>
 </div>
+
+<div class="modal fade" id="modalAgendamentosPaciente" tabindex="-1" aria-labelledby="modalAgendamentosPacienteTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalAgendamentosPacienteTitulo"><i class="bi bi-calendar3 me-2"></i><span id="agendamentos_nome"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body" id="agendamentos_conteudo"></div>
+    </div>
+  </div>
+</div>
+<script>
+  // Carrega os agendamentos do paciente clicado (medico.pacientes_agendamentos).
+  document.getElementById('modalAgendamentosPaciente').addEventListener('show.bs.modal', function (evento) {
+    var b = evento.relatedTarget;
+    var conteudo = document.getElementById('agendamentos_conteudo');
+    document.getElementById('agendamentos_nome').textContent = 'Agendamentos de ' + b.getAttribute('data-nome');
+    conteudo.innerHTML = '<p class="text-muted text-center mb-0">Carregando...</p>';
+    fetch(b.getAttribute('data-url'), { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error(); return r.text(); })
+      .then(function (html) { conteudo.innerHTML = html; })
+      .catch(function () { conteudo.innerHTML = '<p class="text-danger text-center mb-0">Não foi possível carregar os agendamentos. Tente de novo.</p>'; });
+  });
+</script>
 
 {% if current_user.perm_pacientes %}
 <div class="modal fade" id="modalEditarPaciente" tabindex="-1" aria-labelledby="modalEditarPacienteTitulo" aria-hidden="true">
