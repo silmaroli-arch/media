@@ -2482,12 +2482,17 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [x] Google: formulário sem senha, campo "CPF" com a explicação; "Cadastrar sem o Google" leva ao formulário com senha
 - [x] Sem o aviso de "Meus Locais de Atendimento"
 
-**Meus dados (equipe)**
-- [ ] Sem endereço
+**Meus dados (equipe)** - VALIDADO pelo Silvan em 2026-10-21
+- [x] Sem endereço
 
 **Pacientes (lista)**
-- [ ] Telefone com máscara; coluna "Telefone" (não mais "Telefone (login)")
-- [ ] "Novo paciente" (janela): CPF novo (cadastro completo), CPF já existente no MedIA (importar), CPF que já é paciente, CPF inválido; sem e-mail, endereço e contato de emergência
+- [x] Telefone com máscara; coluna "Telefone" (não mais "Telefone (login)") - validado 2026-10-21
+- "Novo paciente" (janela):
+  - [x] CPF novo: pede nome, telefone e nascimento e cadastra - validado 2026-10-21
+  - [x] CPF já existente no MedIA: oferece "Importar para este grupo" - validado 2026-10-21
+  - [x] CPF que já é paciente do grupo: avisa - validado 2026-10-21
+  - [ ] CPF inválido: avisa
+  - [x] Sem e-mail, endereço e contato de emergência - validado 2026-10-21
 - [ ] "Editar" (janela): nome, CPF, telefone e observações; CPF inválido ou de outro paciente é recusado; aviso de não registrar dados de saúde
 - [ ] "Todos os agendamentos" (janela): passados e futuros, só deste grupo
 
