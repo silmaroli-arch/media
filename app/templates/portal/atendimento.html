@@ -88,12 +88,18 @@
   <div class="campo"><span class="rotulo">{{ rotulo }}:</span> {{ valor }}</div>
 {% endmacro %}
 
+{# Sugestão com o botão "Usar", que copia o texto para o rascunho final
+   (pedido do Silvan, 2026-10-21 - ver o script no fim da página). #}
+{% macro sugestao(rotulo, valor) %}
+  <div class="campo"><span class="rotulo">{{ rotulo }}:</span> <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ valor }}" title="Copiar esta sugestão para o rascunho final">Usar</button> {{ valor }}</div>
+{% endmacro %}
+
 {# FAQ do MedIA (base compartilhada) no portal - mesmo conteúdo que
    medico/perguntas.html já mostrava (pedido do Silvan, 2026-10-20). Só
    aparece quando a base encontrou algo; sem resposta da base, não mostra
    nada (decisão do Silvan). #}
 {% macro faq_medIA(p) %}
-  {% if p.resposta_bruta_base %}
+  {% if p.base_visivel %}
     {% if p.base_divergiu %}
     <div class="alert alert-warning py-2 small mb-2">
       <i class="bi bi-journal-medical"></i>
@@ -104,12 +110,28 @@
       {% endif %}
     </div>
     {% endif %}
-    <div class="campo"><span class="rotulo"><i class="bi bi-journal-medical"></i> Sugestão do FAQ do MedIA:</span> {{ p.resposta_bruta_base }}
+    <div class="campo"><span class="rotulo"><i class="bi bi-journal-medical"></i> Sugestão do FAQ do MedIA:</span> <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.para_paciente(p.resposta_bruta_base) }}" title="Copiar esta sugestão para o rascunho final">Usar</button> {{ p.para_paciente(p.resposta_bruta_base) }}
       {% if p.base_item and (p.base_item.fonte_nome or p.base_item.fonte_url) %}
       <div class="small text-muted">Fonte: {% if p.base_item.fonte_url %}<a href="{{ p.base_item.fonte_url }}" target="_blank" rel="noopener">{{ p.base_item.fonte_nome or p.base_item.fonte_url }}</a>{% else %}{{ p.base_item.fonte_nome }}{% endif %}</div>
       {% endif %}
     </div>
   {% endif %}
+{% endmacro %}
+
+{# Cada IA escolhida aparece sempre, com a resposta ou o motivo de não ter
+   respondido (pedido do Silvan, 2026-10-21). Perguntas antigas, sem
+   ias_situacao gravada, não mostram nada aqui. #}
+{% macro situacao_ias(p) %}
+  {% if p.usou_conhecimento_geral %}
+  <div class="alert alert-warning py-2 small mb-2">
+    <i class="bi bi-lightbulb"></i> Resposta com <strong>conhecimento geral</strong> da IA - não está no preparo cadastrado. Revise e ajuste ao que vale na sua clínica.
+  </div>
+  {% endif %}
+  {% for nome, estado, texto in p.situacao_ias %}
+    {% if estado == "respondeu_geral" %}{{ sugestao("Sugestão do " ~ nome ~ " (conhecimento geral)", texto) }}
+    {% elif estado == "respondeu" %}{{ sugestao("Sugestão do " ~ nome, texto) }}
+    {% else %}<div class="campo"><span class="rotulo">{{ nome }}:</span> <em class="text-muted">{{ texto }}</em></div>{% endif %}
+  {% endfor %}
 {% endmacro %}
 
 {% macro modal_pergunta(p, aguardando_ia) %}
@@ -122,6 +144,9 @@
         </div>
         <div class="modal-body">
           {{ campo("Pergunta", p.pergunta) }}
+          {# A versão corrigida pela IA validadora, que vai para o FAQ
+             (pedido do Silvan, 2026-10-21). #}
+          {% if p.pergunta_faq and p.pergunta_faq != p.pergunta %}{{ campo("Pergunta corrigida pela IA", p.pergunta_faq) }}{% endif %}
           {{ campo("Recebida em", p.criado_em.strftime('%d/%m/%Y %H:%M')) }}
           {{ historico(p.paciente_id) }}
           {% if aguardando_ia %}
@@ -131,28 +156,50 @@
                (a que não foi escolhida naquele momento), por isso fica
                escondida em vez de aparecer vazia/com "—" - mesmo
                critério já usado em medico/perguntas.html. #}
-            {% if p.resposta_bruta_gemini %}{{ campo("Sugestão do Gemini", p.resposta_bruta_gemini) }}{% endif %}
-            {% if p.resposta_bruta_chatgpt %}{{ campo("Sugestão do ChatGPT", p.resposta_bruta_chatgpt) }}{% endif %}
-            {% if p.resposta_bruta_claude %}{{ campo("Sugestão do Claude", p.resposta_bruta_claude) }}{% endif %}
+            {% if p.situacao_ias %}
+              {{ situacao_ias(p) }}
+            {% else %}
+            {% if p.resposta_bruta_gemini %}{{ sugestao("Sugestão do Gemini", p.para_paciente(p.resposta_bruta_gemini)) }}{% endif %}
+            {% if p.resposta_bruta_chatgpt %}{{ sugestao("Sugestão do ChatGPT", p.para_paciente(p.resposta_bruta_chatgpt)) }}{% endif %}
+            {% if p.resposta_bruta_claude %}{{ sugestao("Sugestão do Claude", p.para_paciente(p.resposta_bruta_claude)) }}{% endif %}
+            {% endif %}
             {{ faq_medIA(p) }}
             <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
               <input type="hidden" name="origem" value="portal">
               <div class="campo">
                 <span class="rotulo">Rascunho final (edite se precisar)</span>
-                <textarea name="resposta" class="form-control mt-1" rows="3" required>{{ p.resposta_sugerida_ia }}</textarea>
+                <textarea name="resposta" class="form-control mt-1" rows="3" required>{{ p.para_paciente(p.resposta_sugerida_ia) }}</textarea>
+                {% if p.datas_do_paciente %}<div class="form-text">As datas deste paciente ({{ p.datas_do_paciente }}) são ajustadas automaticamente para cada paciente quando a resposta for reutilizada.</div>{% endif %}
+              </div>
+              <div class="form-check mt-2">
+                <input type="hidden" name="opcao_faq" value="1">
+                <input class="form-check-input" type="checkbox" name="salvar_faq" id="salvar_faq_{{ p.id }}a" checked>
+                <label class="form-check-label small" for="salvar_faq_{{ p.id }}a">Salvar no Meu FAQ <span class="text-muted">(responde sozinho quem perguntar o mesmo; desmarque se a resposta for só para este paciente)</span></label>
               </div>
               <button type="submit" class="btn btn-info btn-sm mt-1">Aprovar e enviar ao paciente</button>
             </form>
           {% else %}
+            {{ situacao_ias(p) }}
             <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
               <input type="hidden" name="origem" value="portal">
               <div class="campo">
                 <span class="rotulo">Resposta</span>
                 <textarea name="resposta" class="form-control mt-1" rows="2" placeholder="Digite a resposta..." required></textarea>
               </div>
-              <button type="submit" class="btn btn-primary btn-sm mt-1">Responder e ensinar a IA</button>
+              <div class="form-check mt-2">
+                <input type="hidden" name="opcao_faq" value="1">
+                <input class="form-check-input" type="checkbox" name="salvar_faq" id="salvar_faq_{{ p.id }}p" checked>
+                <label class="form-check-label small" for="salvar_faq_{{ p.id }}p">Salvar no Meu FAQ <span class="text-muted">(responde sozinho quem perguntar o mesmo; desmarque se a resposta for só para este paciente)</span></label>
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm mt-1">Responder</button>
             </form>
           {% endif %}
+          {# Apagar sem responder (pedido do Silvan, 2026-10-21). #}
+          <form method="post" action="{{ url_for('medico.perguntas_excluir', pergunta_id=p.id) }}" class="mt-3 pt-2 border-top"
+                onsubmit="return confirm('Apagar esta pergunta? O paciente não recebe resposta e nada vai para o FAQ.');">
+            <input type="hidden" name="origem" value="portal">
+            <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Apagar pergunta</button>
+          </form>
         </div>
       </div>
     </div>
@@ -203,5 +250,19 @@
     }
   });
 })();
+</script>
+<script>
+  // "Usar" ao lado de cada sugestão: copia o texto para o rascunho final
+  // da mesma pergunta (pedido do Silvan, 2026-10-21).
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('.usar-sugestao');
+    if (!b) return;
+    var caixa = b.closest('.modal-content, .accordion-body');
+    var rascunho = caixa && caixa.querySelector('textarea[name=resposta]');
+    if (!rascunho) return;
+    rascunho.value = b.getAttribute('data-texto');
+    rascunho.focus();
+  });
+
 </script>
 {% endblock %}

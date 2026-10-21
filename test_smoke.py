@@ -75,14 +75,8 @@ checar("Página de dados da clínica responde 200", r.status_code == 200)
 # campo de formulário pra isso (verificado em app/models.py e nos
 # templates); a asserção correspondente que havia aqui antes era código
 # morto pré-existente (não uma regressão da Fatia 5) e foi removida.
-r = client.post("/equipe/clinica/configuracoes", data={
-    "nome": "Clínica Vitória", "telefone": "(27) 3333-4444", "email_contato": "contato@clinicavitoria.com",
-    "razao_social": "Clínica Vitória Diagnósticos Ltda.", "cnpj": "12.345.678/0001-90",
-    "cep": "29010-000", "rua": "Av. Jerônimo Monteiro", "numero": "1000", "bairro": "Centro",
-    "cidade": "Vitória", "uf": "ES",
-    "codigo_ibge_municipio": "3205309",
-}, follow_redirects=True)
-checar("Secretária consegue salvar os dados da clínica", "atualizados com sucesso" in r.get_data(as_text=True).lower())
+r = client.post("/equipe/clinica/configuracoes", data={"nome": "Clínica Vitória"}, follow_redirects=True)
+checar("Secretária consegue salvar os dados do grupo", "atualizados" in r.get_data(as_text=True).lower())
 
 client.get("/logout")
 
@@ -244,13 +238,13 @@ checar("Médico solo consegue acessar Novo paciente mesmo sem Grupo", r.status_c
 # ---------- Cadastro de paciente sem senha: login por telefone + data de nascimento ----------
 
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Beatriz Nunes", "cpf": "555.666.777-00", "email": "",
+    "nome": "Beatriz Nunes", "cpf": "555.666.777-20", "email": "",
 }, follow_redirects=True)
 checar("Cadastro de paciente exige telefone e data de nascimento (sem eles, é rejeitado)",
        "obrigatórios" in r.get_data(as_text=True).lower())
 
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Beatriz Nunes", "cpf": "555.666.777-00", "email": "",
+    "nome": "Beatriz Nunes", "cpf": "555.666.777-20", "email": "",
     "telefone": "(28) 98765-4321", "data_nascimento": "1995-06-20",
 }, follow_redirects=True)
 texto = r.get_data(as_text=True)
@@ -265,7 +259,7 @@ checar("Paciente recém-cadastrado (sem agendamento ainda) já aparece na lista 
 # login do paciente já usa telefone + data de nascimento pra diferenciar
 # as contas - ver comentário em routes_medico.pacientes_novo).
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Outra Pessoa", "cpf": "999.888.777-00", "email": "",
+    "nome": "Outra Pessoa", "cpf": "999.888.777-14", "email": "",
     "telefone": "(28) 98765-4321", "data_nascimento": "1980-01-01",
 }, follow_redirects=True)
 checar("Cadastro com o MESMO telefone mas data de nascimento DIFERENTE agora é permitido (compartilhamento familiar)",
@@ -274,7 +268,7 @@ checar("Cadastro com o MESMO telefone mas data de nascimento DIFERENTE agora é 
 # Duplicata DE VERDADE: mesmo telefone E mesma data de nascimento de
 # Beatriz - essa sim continua bloqueada (mesma pessoa se cadastrando de novo).
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Beatriz Duplicada", "cpf": "111.111.111-11", "email": "",
+    "nome": "Beatriz Duplicada", "cpf": "111.111.112-00", "email": "",
     "telefone": "(28) 98765-4321", "data_nascimento": "1995-06-20",
 }, follow_redirects=True)
 checar("Cadastro com o MESMO telefone E a MESMA data de nascimento continua bloqueado",
@@ -282,17 +276,17 @@ checar("Cadastro com o MESMO telefone E a MESMA data de nascimento continua bloq
 
 client.get("/logout")
 
-r = login_paciente("999.888.777-00", "1980-01-01")
+r = login_paciente("999.888.777-14", "1980-01-01")
 texto = r.get_data(as_text=True)
 checar("Login da 'Outra Pessoa' funciona (CPF + nascimento próprios, mesmo telefone de contato da Beatriz)",
        "Meus exames" in texto or "Tirar dúvidas" in texto)
 client.get("/logout")
 
-r = login_paciente("999.888.777-00", "1970-12-31")
+r = login_paciente("999.888.777-14", "1970-12-31")
 checar("Login com CPF existente mas data de nascimento que não bate é rejeitado",
        "incorretos" in r.get_data(as_text=True).lower())
 
-r = login_paciente("555.666.777-00", "1995-06-20")
+r = login_paciente("555.666.777-20", "1995-06-20")
 texto = r.get_data(as_text=True)
 checar("Paciente cadastrado sem senha consegue entrar só com CPF e data de nascimento",
        "Meus exames" in texto or "Tirar dúvidas" in texto)
@@ -344,25 +338,24 @@ with app.app_context():
 login("secretaria@gruposaude.com", "123456")
 client.post("/equipe/clinica", data={"clinica_id": str(filial_centro_id)}, follow_redirects=True)
 r = client.post(f"/equipe/clinica/configuracoes/{filial_praia_id}", data={
-    "nome": "Grupo Saúde Total - Centro", "telefone": "(27) 3111-1111", "email_contato": "centro@gruposaude.com",
-    "cidade": "Vila Velha", "uf": "ES",
+    "nome": "Grupo Saúde Total - Centro (editado)",
 }, follow_redirects=True)
 checar("POST com o id da Praia na URL, mas o Centro ativo: responde 200 mesmo assim (parâmetro ignorado)",
        r.status_code == 200)
 with app.app_context():
-    checar("Quem recebeu o telefone novo foi o Grupo ATIVO (Centro), não a Praia (pelo id na URL)",
-           Grupo.query.get(filial_centro_id).telefone == "(27) 3111-1111")
+    checar("Quem recebeu o nome novo foi o Grupo ATIVO (Centro), não a Praia (pelo id na URL)",
+           Grupo.query.get(filial_centro_id).nome == "Grupo Saúde Total - Centro (editado)"
+           and Grupo.query.get(filial_praia_id).nome == "Grupo Saúde Total - Praia")
+    Grupo.query.get(filial_centro_id).nome = "Grupo Saúde Total - Centro"
+    db.session.commit()
 
 client.post("/equipe/clinica", data={"clinica_id": str(filial_praia_id)}, follow_redirects=True)
-r = client.post("/equipe/clinica/configuracoes", data={
-    "nome": "Grupo Saúde Total - Praia", "telefone": "(27) 3222-1111", "email_contato": "praia@gruposaude.com",
-    "cidade": "Vila Velha", "uf": "ES",
-}, follow_redirects=True)
-checar("Selecionando a Praia como Grupo ativo, dá pra editar os dados dela", "atualizados com sucesso" in r.get_data(as_text=True).lower())
+r = client.post("/equipe/clinica/configuracoes", data={"nome": "Grupo Saúde Total - Praia"}, follow_redirects=True)
+checar("Selecionando a Praia como Grupo ativo, dá pra editar os dados dela", "atualizados" in r.get_data(as_text=True).lower())
 with app.app_context():
     filial_praia = Grupo.query.get(filial_praia_id)
     checar("Os dados da Praia foram salvos depois de selecioná-la como ativa",
-           filial_praia.telefone == "(27) 3222-1111")
+           filial_praia.nome == "Grupo Saúde Total - Praia")
 
 # ---------- Cadastrar médico/secretária: por CPF ou conta nova (routes_grupo.convidar) ----------
 # Fatia 5 (passo 4): "equipe-membros/novo" (com filial_ids, ClinicaMembro)
@@ -631,53 +624,22 @@ checar("Paciente vê a lista de alimentos proibidos com o horário calculado a p
        "Leite e derivados" in texto and "09/08/2026 às 20:00" in texto)
 checar("Paciente vê a lista de alimentos sugeridos para consumo", "Água de coco" in texto)
 
-# O chat calcula automaticamente a resposta sobre um alimento cadastrado (mesmo
-# sem FAQ manual), mas - por instrução do Silvan (2026-09-11: "toda a resposta,
-# mesmo estando no preparo, deve passar por aprovação nesse momento - só não
-# passa por aprovação se já estiver na base de conhecimento do médico") - essa
-# resposta calculada fica esperando aprovação do médico antes de chegar ao
-# paciente, exatamente como uma resposta da IA (ver app/routes_paciente.py e
-# app/templates/paciente/chat.html, origem 'alimento_aguard'/'medicamento_aguard').
+# Pergunta sobre alimento cadastrado no preparo não tem mais resposta pronta
+# por comparação de palavras (pedido do Silvan, 2026-10-21): fora da FAQ,
+# toda pergunta vai para as 2 IAs. Aqui não há IA configurada, então a
+# pergunta fica pendente para a equipe, sem rascunho e sem resposta direta.
 r = client.post("/paciente/chat", data={"pergunta": "posso tomar água de coco?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
-checar("Chat NÃO responde direto sobre água de coco - a resposta calculada espera aprovação do médico",
-       # a tela repete a pergunta do paciente (balão do chat e histórico),
-       # então "água de coco" só não pode aparecer FORA da pergunta
-       "água de coco" not in texto.lower().replace("posso tomar água de coco?", "")
-       and "revisada pelo médico" in texto.lower())
-
-r = client.post("/paciente/chat", data={"pergunta": "posso comer leite e derivados antes do exame?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
-texto = r.get_data(as_text=True)
-checar("Chat NÃO responde direto sobre leite e derivados - a resposta calculada espera aprovação do médico",
-       "09/08/2026" not in texto and "revisada pelo médico" in texto.lower())
-
-# Pequenos erros de digitação não devem impedir o reconhecimento do alimento
-# (ex.: "amendoin" em vez de "amendoim") - a correspondência ainda tolera isso,
-# mas a resposta calculada também fica esperando aprovação do médico.
-r = client.post("/paciente/chat", data={"pergunta": "Posso comer amendoin?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
-texto = r.get_data(as_text=True)
-checar("Chat reconhece 'amendoin' (com erro de digitação) como 'amendoim', mas espera aprovação do médico antes de responder",
-       "amendoim" not in texto.lower() and "revisada pelo médico" in texto.lower())
+checar("Chat NÃO responde direto sobre água de coco (sem resposta pronta; sem IA, vai para a equipe)",
+       "está entre os alimentos sugeridos" not in texto)
 client.get("/logout")
 
 with app.app_context():
     pend_agua = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="posso tomar água de coco?", status="aguardando_aprovacao",
+        grupo_id=clinica_vitoria_id, pergunta="posso tomar água de coco?",
     ).first()
-    checar("A resposta calculada sobre água de coco fica salva em PerguntaPendente, com o texto já pronto",
-           pend_agua is not None and "água de coco" in pend_agua.resposta_sugerida_ia.lower() and "sim" in pend_agua.resposta_sugerida_ia.lower())
-
-    pend_leite = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="posso comer leite e derivados antes do exame?", status="aguardando_aprovacao",
-    ).first()
-    checar("A resposta calculada sobre leite e derivados fica salva em PerguntaPendente, com o prazo já calculado",
-           pend_leite is not None and "09/08/2026" in pend_leite.resposta_sugerida_ia)
-
-    pend_amendoim = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="Posso comer amendoin?", status="aguardando_aprovacao",
-    ).first()
-    checar("A resposta calculada sobre amendoim (com erro de digitação) fica salva em PerguntaPendente",
-           pend_amendoim is not None and "amendoim" in pend_amendoim.resposta_sugerida_ia.lower())
+    checar("... e fica como PerguntaPendente sem resposta pronta sugerida",
+           pend_agua is not None and not pend_agua.resposta_sugerida_ia)
 
 # Cadastro manual de alimentos num modelo de preparo, via formulário do médico/secretária.
 with app.app_context():
@@ -743,61 +705,10 @@ checar("Paciente vê o alimento proibido com prazo calculado em DIAS antes (não
        "Carne vermelha" in texto and "07/08/2026" in texto and "3 dias antes" in texto)
 checar("Paciente vê a lista de medicamentos que pode manter", "AAS" in texto and "não precisa suspender" in texto)
 
-# O chat também reconhece perguntas sobre medicamentos (suspensos ou mantidos),
-# não só sobre alimentos — usando a mesma ideia de correspondência por
-# palavra-chave, agora sobre o catálogo de medicamentos do preparo.
-r = client.post("/paciente/chat", data={"pergunta": "Posso tomar AAS?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
-texto = r.get_data(as_text=True)
-checar("Chat NÃO responde direto sobre AAS - a resposta calculada também espera aprovação do médico",
-       "revisada pelo médico" in texto.lower())
-
-r = client.post("/paciente/chat", data={"pergunta": "Posso continuar tomando Xarelto?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
-texto = r.get_data(as_text=True)
-checar("Chat NÃO responde direto sobre Xarelto - a resposta calculada também espera aprovação do médico",
-       "07/08/2026" not in texto and "revisada pelo médico" in texto.lower())
+# (As respostas prontas de medicamento/categoria de alimento no chat saíram
+# em 2026-10-21 - essas perguntas vão para as 2 IAs, ver o bloco da água de
+# coco acima.)
 client.get("/logout")
-
-with app.app_context():
-    pend_aas = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="Posso tomar AAS?", status="aguardando_aprovacao",
-    ).first()
-    checar("A resposta calculada sobre AAS (medicamento mantido) fica salva em PerguntaPendente",
-           pend_aas is not None and "sim" in pend_aas.resposta_sugerida_ia.lower() and "aas" in pend_aas.resposta_sugerida_ia.lower())
-
-    pend_xarelto = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="Posso continuar tomando Xarelto?", status="aguardando_aprovacao",
-    ).first()
-    checar("A resposta calculada sobre Xarelto (medicamento suspenso) fica salva em PerguntaPendente, com o prazo calculado",
-           pend_xarelto is not None and "07/08/2026" in pend_xarelto.resposta_sugerida_ia)
-
-# O preparo cadastrou a categoria genérica "Frutas" (não item por item) —
-# o chat precisa reconhecer que uma fruta específica (ex.: laranja, banana)
-# está coberta por essa categoria, sem precisar que a clínica cadastre cada
-# fruta separadamente.
-login_paciente("123.456.789-00", "1985-04-12")
-r = client.post("/paciente/chat", data={"pergunta": "Posso chupar laranja?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
-texto = r.get_data(as_text=True)
-checar("Chat reconhece que 'laranja' está coberta pela categoria genérica 'Frutas', mas espera aprovação do médico",
-       "frutas" not in texto.lower() and "revisada pelo médico" in texto.lower())
-
-r = client.post("/paciente/chat", data={"pergunta": "Posso comer banana?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
-texto = r.get_data(as_text=True)
-checar("Chat também reconhece 'banana' (outro item da categoria 'Frutas'), mas espera aprovação do médico",
-       "frutas" not in texto.lower() and "revisada pelo médico" in texto.lower())
-client.get("/logout")
-
-with app.app_context():
-    pend_laranja = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="Posso chupar laranja?", status="aguardando_aprovacao",
-    ).first()
-    checar("A resposta calculada sobre laranja (categoria 'Frutas') fica salva em PerguntaPendente",
-           pend_laranja is not None and "frutas" in pend_laranja.resposta_sugerida_ia.lower())
-
-    pend_banana = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="Posso comer banana?", status="aguardando_aprovacao",
-    ).first()
-    checar("A resposta calculada sobre banana (categoria 'Frutas') fica salva em PerguntaPendente",
-           pend_banana is not None and "frutas" in pend_banana.resposta_sugerida_ia.lower())
 
 # Bug real reportado: uma pergunta sobre um produto específico que só
 # MENCIONA uma fruta como sabor/descrição (ex.: "gatorade de uva") não pode
@@ -1352,10 +1263,10 @@ login("dono@plataforma.com", "123456")
 client.post(f"/dono/grupos/{grupo_sp_id}/desbloquear", follow_redirects=True)
 client.get("/logout")
 
-# ---------- Novas funcionalidades: duração/preço/acompanhante do exame,
+# ---------- Novas funcionalidades: duração/preço do exame,
 # horário do médico, otimizador de agenda, solicitação de agendamento pelo
 # paciente, atendimento (histórico de chat + encerramento), resultado em
-# PDF, e endereço/contato de emergência ----------
+# PDF ----------
 
 with app.app_context():
     clinica_vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
@@ -1369,17 +1280,16 @@ with app.app_context():
 
 login("secretaria@clinicavitoria.com", "123456")
 
-# --- Duração e acompanhante do exame (o cadastro/edição do exame em si
+# --- Duração do exame (o cadastro/edição do exame em si
 # não toca mais no preço - preço é só via "Exames por filial", ver abaixo) ---
 r = client.post(f"/equipe/exames/{colonoscopia_id}/editar", data={
     "nome": "Colonoscopia",
     "descricao": "Exame do intestino grosso",
     "duracao_minutos": "45",
-    "precisa_acompanhante": "on",
     "preparo_modelo_id": str(colonoscopia.preparo_modelo_id),
     "medico_id": str(medico_carlos_id),
 }, follow_redirects=True)
-checar("Exame atualizado com duração/acompanhante", "atualizado" in r.get_data(as_text=True).lower())
+checar("Exame atualizado com duração", "atualizado" in r.get_data(as_text=True).lower())
 
 # Associação médico/exame é atualizada pela tela de associações (Exames por filial).
 r = client.post(f"/equipe/exames/por-filial/{colonoscopia_id}/atualizar", data={
@@ -1390,19 +1300,12 @@ checar("Associação atualizada pela tela de associações", r.status_code == 20
 with app.app_context():
     colonoscopia_checar = Exame.query.get(colonoscopia_id)
     checar("Duração do exame salva (45 minutos)", colonoscopia_checar.duracao_minutos == 45)
-    checar("Flag de acompanhante obrigatório salva", colonoscopia_checar.precisa_acompanhante is True)
 
-# Agendar sem informar acompanhante deve ser rejeitado
-r = client.post("/equipe/agenda/novo", data={
-    "filial_id": str(clinica_vitoria_id),
-    "paciente_id": str(joao_id),
-    "exame_id": str(colonoscopia_id),
-    "data_hora": "2026-09-15T08:00",
-    "observacoes": "",
-    "acompanhante_nome": "",
-}, follow_redirects=True)
-checar("Agendamento sem acompanhante é rejeitado quando o exame exige", "acompanhante" in r.get_data(as_text=True).lower())
-
+# Acompanhante (nome/telefone e a marca "exige acompanhante") saiu em
+# 2026-10-21 - agendar não pede nem guarda mais esse dado.
+html_agenda = client.get(f"/equipe/agenda/novo?filial_id={clinica_vitoria_id}").get_data(as_text=True)
+checar("Novo agendamento não pede acompanhante", 'name="acompanhante_nome"' not in html_agenda
+       and 'name="acompanhante_telefone"' not in html_agenda)
 r = client.post("/equipe/agenda/novo", data={
     "filial_id": str(clinica_vitoria_id),
     "paciente_id": str(joao_id),
@@ -1411,14 +1314,14 @@ r = client.post("/equipe/agenda/novo", data={
     "observacoes": "",
     "acompanhante_nome": "Maria (esposa)",
 }, follow_redirects=True)
-checar("Agendamento com acompanhante informado é aceito", "sucesso" in r.get_data(as_text=True).lower())
+checar("Agendamento é aceito sem acompanhante", "sucesso" in r.get_data(as_text=True).lower())
 
 with app.app_context():
     agendamento_colono = Agendamento.query.filter_by(
         paciente_id=joao_id, exame_id=colonoscopia_id, grupo_id=clinica_vitoria_id
     ).order_by(Agendamento.id.desc()).first()
     agendamento_colono_id = agendamento_colono.id
-    checar("Nome do acompanhante foi salvo no agendamento", agendamento_colono.acompanhante_nome == "Maria (esposa)")
+    checar("Acompanhante enviado no POST não é guardado", not hasattr(agendamento_colono, "acompanhante_nome"))
 
 # --- Paciente deixa uma pergunta no chat, para aparecer no atendimento ---
 client.get("/logout")
@@ -1463,32 +1366,18 @@ r = client.get(f"/paciente/exame/{agendamento_colono_id}/resultado")
 checar("Paciente consegue baixar o resultado do exame anexado", r.status_code == 200 and r.mimetype == "application/pdf")
 client.get("/logout")
 
-# --- Endereço (CEP) e contato de emergência no cadastro do paciente ---
+# --- Edição do cadastro do paciente pela equipe (observações) ---
+# E-mail, endereço e contato de emergência saíram em 2026-10-20 (LGPD, ver
+# test_lgpd_minimizacao.py).
 login("secretaria@clinicavitoria.com", "123456")
 r = client.post(f"/equipe/pacientes/{joao_id}/editar", data={
     "nome": "João Pereira",
-    "email": "",
-    "observacoes": "",
-    "cep": "29010-000",
-    "rua": "Avenida Jerônimo Monteiro",
-    "numero": "1000",
-    "complemento": "",
-    "bairro": "Centro",
-    "cidade": "Vitória",
-    "uf": "ES",
-    "contato_emergencia_nome": "Maria Pereira",
-    "contato_emergencia_telefone": "(27) 99999-2222",
+    "observacoes": "Prefere contato à tarde",
 }, follow_redirects=True)
-checar("Cadastro do paciente com endereço/contato de emergência salvo", "atualizado" in r.get_data(as_text=True).lower())
+checar("Cadastro do paciente salvo", "atualizado" in r.get_data(as_text=True).lower())
 
 with app.app_context():
-    joao_atualizado = Paciente.query.get(joao_id)
-    checar("Endereço do paciente salvo (rua)", joao_atualizado.rua == "Avenida Jerônimo Monteiro")
-    checar("Contato de emergência salvo", joao_atualizado.contato_emergencia_nome == "Maria Pereira")
-
-r = client.get(f"/equipe/pacientes/{joao_id}")
-checar("Detalhe do paciente exibe o endereço cadastrado", "Jerônimo Monteiro" in r.get_data(as_text=True))
-checar("Detalhe do paciente exibe o contato de emergência", "Maria Pereira" in r.get_data(as_text=True))
+    checar("Observações salvas", Paciente.query.get(joao_id).observacoes == "Prefere contato à tarde")
 client.get("/logout")
 
 

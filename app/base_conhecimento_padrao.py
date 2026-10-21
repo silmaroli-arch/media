@@ -14,6 +14,7 @@ Todos entram com origem "internet" e revisado=False: o dono confere em
 Cuidado: não use ponto e vírgula em textos que possam ir parar em
 migrar_banco.py (o parser dele quebra o SQL por ponto e vírgula) - aqui os
 textos são inseridos pelo ORM, mas mantenha o hábito."""
+from datetime import datetime
 
 FONTE_MAE_DE_DEUS = ("Hospital Mãe de Deus - Colonoscopia: indicações, preparo e dúvidas",
                      "https://www.maededeus.com.br/Blog/Artigo/colonoscopia-quando-fazer-como-e-o-preparo-e-principais-duvidas")
@@ -232,6 +233,44 @@ from app.base_conhecimento_padrao_g18 import ITENS as _G18  # colonoscopia: carg
 
 ITENS_PADRAO = ITENS_PADRAO + _G7 + _G8 + _G9 + _G10 + _G11 + _G12 + _G13 + _G15 + _G16
 ITENS_PADRAO = ITENS_PADRAO + _G18
+
+
+def arquivar_carga_inicial(db, lote=50):
+    """Move os itens da carga inicial (origem "internet") do FAQ do MedIA
+    para `base_conhecimento_arquivo` e os apaga da tabela principal (pedido
+    do Silvan, 2026-10-21). Idempotente: roda a cada deploy
+    (migrar_banco.py) e só mexe no que ainda estiver lá. Antes de apagar,
+    solta as referências: perguntas da fila (base_item_id), sugestões de
+    médicos (item_id) e o histórico de edição do item. Devolve quantos
+    itens foram movidos.
+
+    Feito no próprio banco (INSERT ... SELECT), em lotes pequenos com um
+    commit por lote: a primeira versão trazia os ~866 itens para o Python e
+    mandava um INSERT só com todos os vetores (~30 mil caracteres cada) - o
+    Postgres do plano Free caiu no meio e o deploy falhou (2026-10-21). Se
+    cair de novo no meio, o próximo deploy continua de onde parou."""
+    from sqlalchemy import text
+
+    from app.models import BaseConhecimentoItem
+
+    ids = [i for (i,) in db.session.query(BaseConhecimentoItem.id).filter_by(origem="internet").order_by(BaseConhecimentoItem.id)]
+    colunas = ("tipo_exame_id, pergunta, resposta, fonte_nome, fonte_url, origem, status, revisado, "
+               "autor_nome, embedding, embedding_modelo, vezes_utilizada, criado_em")
+    for inicio in range(0, len(ids), lote):
+        parte = ids[inicio:inicio + lote]
+        marcadores = ", ".join(f":id{n}" for n in range(len(parte)))
+        valores = {f"id{n}": item_id for n, item_id in enumerate(parte)}
+        db.session.execute(text(
+            f"INSERT INTO base_conhecimento_arquivo (item_id_original, {colunas}, arquivado_em) "
+            f"SELECT id, {colunas}, :agora FROM base_conhecimento WHERE id IN ({marcadores}) "
+            "AND id NOT IN (SELECT item_id_original FROM base_conhecimento_arquivo WHERE item_id_original IS NOT NULL)"
+        ), {**valores, "agora": datetime.utcnow()})
+        db.session.execute(text(f"UPDATE perguntas_pendentes SET base_item_id = NULL WHERE base_item_id IN ({marcadores})"), valores)
+        db.session.execute(text(f"UPDATE base_conhecimento_sugestoes SET item_id = NULL WHERE item_id IN ({marcadores})"), valores)
+        db.session.execute(text(f"DELETE FROM base_conhecimento_historico WHERE item_id IN ({marcadores})"), valores)
+        db.session.execute(text(f"DELETE FROM base_conhecimento WHERE id IN ({marcadores})"), valores)
+        db.session.commit()
+    return len(ids)
 
 
 def semear_base_conhecimento(db):

@@ -72,39 +72,6 @@
           {% endif %}
         </div>
 
-        <h6 class="mb-0 mt-4">Endereço</h6>
-        <div class="row g-3 mt-0">
-          <div class="col-md-3">
-            <label class="form-label">CEP</label>
-            <input type="text" inputmode="numeric" name="cep" id="cep" class="form-control" placeholder="00000-000" value="{{ current_user.cep or '' }}">
-            <div class="form-text" id="cep_status"></div>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Rua</label>
-            <input type="text" name="rua" id="rua" class="form-control" value="{{ current_user.rua or '' }}">
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Número</label>
-            <input type="text" name="numero" class="form-control" value="{{ current_user.numero or '' }}">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Complemento</label>
-            <input type="text" name="complemento" class="form-control" value="{{ current_user.complemento or '' }}">
-          </div>
-          <div class="col-md-4">
-            <label class="form-label">Bairro</label>
-            <input type="text" name="bairro" id="bairro" class="form-control" value="{{ current_user.bairro or '' }}">
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Cidade</label>
-            <input type="text" name="cidade" id="cidade" class="form-control" value="{{ current_user.cidade or '' }}">
-          </div>
-          <div class="col-md-1">
-            <label class="form-label">UF</label>
-            <input type="text" name="uf" id="uf" class="form-control" maxlength="2" value="{{ current_user.uf or '' }}">
-          </div>
-        </div>
-
         <button type="submit" class="btn btn-primary mt-4">Salvar alterações</button>
         <a href="{{ url_for('auth.trocar_senha') }}" class="btn btn-outline-secondary mt-4">{{ 'Trocar senha' if current_user.tem_senha else 'Criar senha' }}</a>
         </fieldset>
@@ -131,6 +98,46 @@
     </div>
     {% endif %}
 
+    {# Pedir a exclusão da conta, com o motivo - quem exclui é o dono da
+       plataforma (pedido do Silvan, 2026-10-21). #}
+    {% if confirmado and current_user.tipo in ('medico', 'secretaria') %}
+    {% set pedido = current_user.solicitacao_exclusao_pendente %}
+    <div class="card p-4 mt-3 border-danger-subtle">
+      <h6 class="mb-2 text-danger"><i class="bi bi-person-x"></i> Excluir minha conta</h6>
+      {% if pedido %}
+      <p class="small mb-2">Pedido de exclusão enviado em {{ pedido.criado_em.strftime('%d/%m/%Y') }} - aguardando o administrador da plataforma.</p>
+      <p class="small text-muted mb-2">Motivo: {{ pedido.motivo }}</p>
+      <form method="post" action="{{ url_for('auth.cancelar_solicitacao_exclusao') }}" onsubmit="return confirm('Cancelar o pedido de exclusão?');">
+        <button type="submit" class="btn btn-outline-secondary btn-sm">Cancelar pedido</button>
+      </form>
+      {% else %}
+      <p class="small text-muted mb-2">Peça a exclusão da sua conta e dos seus dados. O administrador da plataforma analisa o pedido e faz a exclusão.</p>
+      <button type="button" class="btn btn-outline-danger btn-sm align-self-start" data-bs-toggle="modal" data-bs-target="#modal-solicitar-exclusao">Solicitar exclusão da conta</button>
+      {% endif %}
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+{# ---------- Popup do pedido de exclusão ---------- #}
+<div class="modal fade" id="modal-solicitar-exclusao" tabindex="-1" aria-labelledby="modal-solicitar-exclusao-titulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" action="{{ url_for('auth.solicitar_exclusao') }}" class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title" id="modal-solicitar-exclusao-titulo"><i class="bi bi-person-x"></i> Solicitar exclusão da conta</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">Depois de excluída, a conta e os dados ligados a ela (exames, agendamentos, Meu FAQ) não podem ser recuperados.</p>
+        <label class="form-label" for="motivo_exclusao">Motivo da exclusão</label>
+        <textarea name="motivo" id="motivo_exclusao" class="form-control" rows="3" required maxlength="2000"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal">Voltar</button>
+        <button type="submit" class="btn btn-danger">Enviar pedido</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -221,7 +228,6 @@ function aplicarMascaraFixa(campo, padrao) {
 aplicarMascaraFixa(document.getElementById('cpf'), '999.999.999-99');
 aplicarMascaraFixa(document.getElementById('data_nascimento'), '99/99/9999');
 aplicarMascaraFixa(document.getElementById('telefone'), '(99) 99999-9999');
-aplicarMascaraFixa(document.getElementById('cep'), '99999-999');
 
 // ---------- Validação de CPF (dígitos verificadores) ----------
 function cpfValido(cpf) {
@@ -292,54 +298,6 @@ function marcarDataNascimentoValida() {
   return false;
 }
 if (campoDataNasc) campoDataNasc.addEventListener('blur', marcarDataNascimentoValida);
-
-// Pedido do Silvan (2026-10-20): depois que o CEP é encontrado, o
-// endereço que veio do ViaCEP fica travado - só Número e Complemento são
-// digitados. Campo que veio VAZIO (CEP geral da cidade, sem rua/bairro)
-// continua editável, e CEP não encontrado ou fora do ar destrava tudo
-// (os campos são obrigatórios e a pessoa precisa conseguir preencher).
-function travarEnderecoDoCep(ids, valores) {
-  ids.forEach(function (id, i) {
-    var campo = document.getElementById(id);
-    if (!campo) return;
-    if (valores) campo.value = valores[i] || '';
-    var travar = !!(valores && valores[i]);
-    campo.readOnly = travar;
-    campo.classList.toggle('bg-light', travar);
-  });
-}
-// ---------- Busca de endereço por CEP via ViaCEP ----------
-var campoCep = document.getElementById('cep');
-campoCep.addEventListener('blur', function () {
-  var cep = campoCep.value.replace(/\D/g, '');
-  var status = document.getElementById('cep_status');
-  if (!cep) { status.textContent = ''; campoCep.classList.remove('is-invalid'); return; }
-  if (cep.length !== 8) {
-    status.textContent = 'CEP incompleto — digite os 8 números.';
-    campoCep.classList.add('is-invalid');
-    return;
-  }
-  campoCep.classList.remove('is-invalid');
-  status.textContent = 'Buscando endereço...';
-  fetch('https://viacep.com.br/ws/' + cep + '/json/')
-    .then(function (r) { return r.json(); })
-    .then(function (dados) {
-      if (dados.erro) {
-        travarEnderecoDoCep(camposEnderecoCep, null);
-        status.textContent = 'CEP não encontrado — confira o número digitado.';
-        return;
-      }
-      travarEnderecoDoCep(camposEnderecoCep, [dados.logradouro, dados.bairro, dados.localidade, dados.uf]);
-      status.textContent = 'Endereço preenchido automaticamente pelo CEP.';
-    })
-    .catch(function () {
-      travarEnderecoDoCep(camposEnderecoCep, null);
-      status.textContent = 'Não foi possível consultar o CEP agora — tente de novo.';
-    });
-});
-var camposEnderecoCep = ['rua', 'bairro', 'cidade', 'uf'];
-// CEP apagado ou trocado: destrava até a nova busca
-campoCep.addEventListener('input', function () { travarEnderecoDoCep(camposEnderecoCep, null); });
 
 document.getElementById('form-meus-dados').addEventListener('submit', function (evento) {
   var cpfOk = marcarCpfValido();

@@ -62,21 +62,31 @@ checar("Lista tem 'Nao encontrei o meu exame'", 'value="outro"' in html and "Nã
 r = client.post("/equipe/preparo-modelos/novo", data={"nome": "Preparo Exame Novo", "instrucoes": "Jejum.", "tipo_exame_id": "outro"}, follow_redirects=True)
 checar("Sem digitar o nome do exame: recusado", "Informe o nome do exame" in r.get_data(as_text=True))
 
+# Especialidade é obrigatória para o médico (2026-10-21): vazia ou fora da
+# lista, o preparo não é salvo.
+for esp in ("", "Hepatologia inventada"):
+    r = client.post("/equipe/preparo-modelos/novo", data={
+        "nome": "Preparo Sem Especialidade", "instrucoes": "Jejum.", "tipo_exame_id": "outro",
+        "tipo_exame_outro": "Elastografia hepática", "especialidade": esp}, follow_redirects=True)
+    checar(f"Especialidade {esp!r}: recusado", "Informe a sua especialidade." in r.get_data(as_text=True))
+with app.app_context():
+    checar("... e nada foi salvo", PreparoModelo.query.filter_by(nome="Preparo Sem Especialidade").first() is None)
+    checar("... nem mudou a especialidade do cadastro", Usuario.query.get(medico_id).especialidade == "Gastroenterologia")
+
 r = client.post("/equipe/preparo-modelos/novo", data={
     "nome": "Preparo Exame Novo", "instrucoes": "Jejum.", "tipo_exame_id": "outro",
-    "tipo_exame_outro": "Elastografia hepática", "especialidade": "Hepatologia inventada"}, follow_redirects=True)
+    "tipo_exame_outro": "Elastografia hepática", "especialidade": "Gastroenterologia"}, follow_redirects=True)
 with app.app_context():
     prep = PreparoModelo.query.filter_by(nome="Preparo Exame Novo").first()
     checar("Preparo foi salvo sem tipo", prep is not None and prep.tipo_exame_id is None)
     sug = TipoExameSugestao.query.filter_by(nome="Elastografia hepática").first()
     checar("Sugestao criada, pendente, com autor e especialidade", sug and sug.status == "pendente" and sug.autor_usuario_id == medico_id and sug.especialidade == "Gastroenterologia")
     checar("Preparo ligado a sugestao", prep.tipo_exame_sugestao_id == sug.id)
-    checar("Especialidade fora da lista nao altera o cadastro", Usuario.query.get(medico_id).especialidade == "Gastroenterologia")
     prep_id, sug_id = prep.id, sug.id
 
 client.post("/equipe/preparo-modelos/novo", data={
     "nome": "Preparo Exame Novo 2", "instrucoes": "Jejum.", "tipo_exame_id": "outro",
-    "tipo_exame_outro": "elastografia hepática", "especialidade": "Hepatologia inventada"}, follow_redirects=True)
+    "tipo_exame_outro": "elastografia hepática", "especialidade": "Gastroenterologia"}, follow_redirects=True)
 with app.app_context():
     checar("Mesmo nome pendente reaproveita a sugestao", TipoExameSugestao.query.count() == 1)
 

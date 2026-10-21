@@ -231,6 +231,31 @@ def create_app():
             return valor.strftime("%H:%M")
         return str(valor)
 
+    @app.template_filter("legivel")
+    def marcadores_legiveis(texto):
+        """Marcadores de dados do paciente ({data_exame}...) como
+        "[data do exame]", para o Meu FAQ (ver app.marcadores_resposta)."""
+        from app.marcadores_resposta import para_leitura
+        return para_leitura(texto)
+
+    @app.template_filter("telefone")
+    def telefone_formatado(valor):
+        """Telefone guardado só com dígitos (ver models.normalizar_telefone)
+        mostrado com máscara: (27) 99999-9999 ou (27) 3333-4444. Aceita o
+        55 do Brasil na frente. Fora desses tamanhos, mostra como está.
+        Pedido do Silvan, 2026-10-21."""
+        if not valor:
+            return valor
+        import re
+        d = re.sub(r"\D", "", str(valor))
+        if len(d) in (12, 13) and d.startswith("55"):
+            d = d[2:]
+        if len(d) == 11:
+            return f"({d[:2]}) {d[2:7]}-{d[7:]}"
+        if len(d) == 10:
+            return f"({d[:2]}) {d[2:6]}-{d[6:]}"
+        return valor
+
     @app.template_filter("usd_para_brl")
     def usd_para_brl(valor_usd):
         """Converte um valor em dólares (custo estimado de IA, ver
@@ -298,9 +323,20 @@ def create_app():
                 .all()
             )
             total_nao_lidas = Notificacao.query.filter_by(usuario_id=current_user.id, lida=False).count()
+            # Anúncios que o dono marcou como popup e a pessoa ainda não leu:
+            # abrem numa janela (base.html) até ela clicar em "Entendi".
+            notificacoes_popup = []
+            if total_nao_lidas:
+                notificacoes_popup = (
+                    Notificacao.query.filter_by(usuario_id=current_user.id, lida=False, popup=True)
+                    .order_by(Notificacao.criado_em)
+                    .limit(5)
+                    .all()
+                )
             return {
                 "notificacoes_navbar": notificacoes,
                 "notificacoes_nao_lidas_navbar": total_nao_lidas,
+                "notificacoes_popup": notificacoes_popup,
             }
         return {}
 

@@ -25,12 +25,12 @@ login("secretaria@clinicavitoria.com", "123456")
 
 # Paciente cadastrado pela equipe já nasce aprovado.
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Paciente Status Aprovado", "cpf": "111.222.333-44",
+    "nome": "Paciente Status Aprovado", "cpf": "111.222.333-96",
     "telefone": "(27) 91234-5678", "data_nascimento": "01/01/1990",
 }, follow_redirects=True)
 
 with app.app_context():
-    paciente_id = Paciente.query.filter_by(cpf="111.222.333-44").first().id
+    paciente_id = Paciente.query.filter_by(cpf="111.222.333-96").first().id
 
 # Rejeita o cadastro para ter um exemplo com status "rejeitado" na lista.
 client.post(f"/equipe/pacientes/{paciente_id}/cadastro/decidir", data={

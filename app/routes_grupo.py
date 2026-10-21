@@ -29,8 +29,11 @@ from flask import (
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Usuario, Grupo, GrupoMembro, GrupoConvite, PlataformaConfig, validar_cpf
-from app.clinica_utils import migrar_dados_pessoais_para_grupo
+from app.models import (
+    Usuario, Grupo, GrupoMembro, GrupoConvite, GrupoPaciente, PlataformaConfig, validar_cpf,
+    Agendamento, Exame, PreparoModelo, FaqItem, PerguntaPendente,
+)
+from app.clinica_utils import migrar_dados_pessoais_para_grupo, empresa_atual, selecionar_clinica
 
 grupo_bp = Blueprint("grupo", __name__, url_prefix="/grupos")
 
@@ -40,7 +43,12 @@ def _cpf_digitos(cpf):
 
 
 def _grupo_ativo_id():
-    return session.get("grupo_ativo_id")
+    """Grupo ativo de verdade: o de clinica_utils.empresa_atual() (sessão
+    "empresa_id"), o mesmo do topo e de todas as telas. Antes esta lista
+    usava uma chave própria ("grupo_ativo_id") que nada mais lia - o
+    "Selecionar" não trocava o grupo (relatado pelo Silvan, 2026-10-21)."""
+    grupo = empresa_atual()
+    return grupo.id if grupo else None
 
 
 def _meus_grupos_ativos():
@@ -124,8 +132,9 @@ def meus_grupos():
     # Só pula quando a pessoa é dona/administradora do único grupo -
     # sem isso, ela nem teria permissão de abrir "Convidar membros" (ver
     # checagem em grupo.convidar) e cairia num redirecionamento em loop.
-    if len(grupos) == 1 and grupos[0]["papel"] in ("dono", "administrador"):
-        return redirect(url_for("grupo.convidar", grupo_id=grupos[0]["grupo"].id))
+    # Pedido do Silvan (2026-10-20): o menu SEMPRE abre esta lista, mesmo
+    # com um grupo só - antes pulava direto para "Convidar membros", e dali
+    # não havia como editar o grupo nem criar outro.
     return render_template("grupo/lista.html", grupos=grupos)
 
 
@@ -136,8 +145,75 @@ def selecionar(grupo_id):
     if not grupo.membro_ativo(current_user.id):
         flash("Você não participa deste grupo.", "danger")
         return redirect(url_for("grupo.meus_grupos"))
+    selecionar_clinica(grupo.id)
     session["grupo_ativo_id"] = grupo.id
     flash(f'Grupo ativo: "{grupo.nome}".', "success")
+    return redirect(url_for("grupo.meus_grupos"))
+
+
+def _pacientes_reais_do_grupo(grupo, dono):
+    """Pacientes do grupo, sem contar o próprio dono: o médico vira paciente
+    dele mesmo para testar o WhatsApp (routes_medico._paciente_teste_do_medico
+    - criado por ele, com o CPF dele) e esse cadastro entra sozinho em todo
+    grupo que ele cria."""
+    cpf_dono = _cpf_digitos(dono.cpf)
+    return [
+        gp for gp in GrupoPaciente.query.filter_by(grupo_id=grupo.id).all()
+        if not (gp.paciente and gp.paciente.cadastrado_por_id == dono.id
+                and cpf_dono and _cpf_digitos(gp.paciente.cpf) == cpf_dono)
+    ]
+
+
+def _o_que_impede_excluir(grupo, dono):
+    """O que ainda existe no grupo e impede excluí-lo (lista vazia = pode).
+    Pedido do Silvan (2026-10-20, opção 1): só grupo VAZIO é excluído,
+    pelo dono dele - sem pacientes, agenda, configuração de exames nem
+    outras pessoas. Assim um clique errado nunca apaga histórico de
+    paciente. Cobre toda tabela com grupo_id (ver app/models.py)."""
+    contagens = [
+        (sum(1 for m in grupo.membros if m.ativo and m.papel != "dono"), "membro(s) além de você"),
+        (len(_pacientes_reais_do_grupo(grupo, dono)), "paciente(s)"),
+        (Agendamento.query.filter_by(grupo_id=grupo.id).count(), "agendamento(s)"),
+        (Exame.query.filter_by(grupo_id=grupo.id).count(), "exame(s) configurado(s)"),
+        (PreparoModelo.query.filter_by(grupo_id=grupo.id).count(), "modelo(s) de preparo"),
+        (FaqItem.query.filter_by(grupo_id=grupo.id).count(), "item(ns) na Base de Conhecimento (FAQ)"),
+        (PerguntaPendente.query.filter_by(grupo_id=grupo.id).count(), "pergunta(s) de paciente"),
+    ]
+    return [f"{n} {nome}" for n, nome in contagens if n]
+
+
+@grupo_bp.route("/<int:grupo_id>/excluir", methods=["POST"])
+@login_required
+def excluir(grupo_id):
+    grupo = Grupo.query.get_or_404(grupo_id)
+    membro = grupo.membro_ativo(current_user.id)
+    if not membro or membro.papel != "dono":
+        flash("Só o dono do grupo pode excluí-lo.", "danger")
+        return redirect(url_for("grupo.meus_grupos"))
+    impedimentos = _o_que_impede_excluir(grupo, current_user)
+    if impedimentos:
+        flash(
+            f'O grupo "{grupo.nome}" não pode ser excluído porque ainda tem: {", ".join(impedimentos)}. '
+            "Só é possível excluir um grupo vazio.",
+            "warning",
+        )
+        return redirect(url_for("grupo.meus_grupos"))
+    nome = grupo.nome
+    # Convites e o vínculo de membro (o do próprio dono e os de quem já
+    # saiu, inativos) são do grupo e vão junto.
+    # O vínculo do próprio dono como paciente também (o cadastro dele
+    # continua - é dele, não do grupo).
+    vinculos_teste = GrupoPaciente.query.filter_by(grupo_id=grupo.id).all()
+    for registro in list(grupo.convites) + list(grupo.membros) + vinculos_teste:
+        db.session.delete(registro)
+    db.session.delete(grupo)
+    db.session.commit()
+    # Se era o grupo ativo, a sessão deixa de apontar para ele (ver
+    # clinica_utils.empresa_atual e grupo.novo, que grava as duas chaves).
+    for chave in ("grupo_ativo_id", "empresa_id"):
+        if session.get(chave) == grupo_id:
+            session.pop(chave, None)
+    flash(f'Grupo "{nome}" excluído.', "success")
     return redirect(url_for("grupo.meus_grupos"))
 
 
@@ -153,8 +229,9 @@ def sair(grupo_id):
     else:
         membro.ativo = False
         db.session.commit()
-        if _grupo_ativo_id() == grupo.id:
-            session.pop("grupo_ativo_id", None)
+        for chave in ("grupo_ativo_id", "empresa_id"):
+            if session.get(chave) == grupo.id:
+                session.pop(chave, None)
         flash(f'Você saiu do grupo "{grupo.nome}".', "success")
     return redirect(url_for("grupo.meus_grupos"))
 

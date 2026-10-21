@@ -171,8 +171,14 @@ class Usuario(db.Model, UserMixin):
     # secretária.
     perm_pacientes = db.Column(db.Boolean, nullable=False, default=False)
     perm_equipe = db.Column(db.Boolean, nullable=False, default=False)
+    # Sem uso desde 2026-10-20 (filiais deixaram de existir): saiu da tela
+    # de permissões. Continua só no banco.
     perm_filiais = db.Column(db.Boolean, nullable=False, default=False)
     perm_dados_clinica = db.Column(db.Boolean, nullable=False, default=False)
+    # Tela "Médicos por preparo" (associar médicos aos exames - pedido do
+    # Silvan, 2026-10-21). Médico com ela continua só nos preparos que
+    # pode editar (ver medico._pode_associar_medicos).
+    perm_medicos_preparo = db.Column(db.Boolean, nullable=False, default=False)
 
     # Pedido do Silvan (2026-09-13): equivalente pessoal de
     # Grupo.aprovacao_perguntas_paciente (ver comentário lá) - usado quando
@@ -183,19 +189,12 @@ class Usuario(db.Model, UserMixin):
     # campo do Grupo é que vale para todo mundo da equipe.
     aprovacao_perguntas_paciente = db.Column(db.Boolean, nullable=False, default=True)
 
-    # CPF e endereço PESSOAL de quem trabalha na plataforma (dono/médico/
-    # secretária) - coletados no cadastro (auth.cadastro) e também no
-    # cadastro/edição de membros da equipe (medico.equipe_novo/
-    # equipe_editar). Endereço da PESSOA, não da clínica (ver Clinica.cep
-    # etc. para o endereço do local de atendimento).
+    # CPF de quem trabalha na plataforma (dono/médico/secretária): é
+    # credencial de login (auth.login) e é por ele que o administrador de um
+    # grupo acha a pessoa para convidar (grupo.convidar). O endereço PESSOAL
+    # deixou de existir (LGPD, minimização - pedido do Silvan, 2026-10-20):
+    # o sistema não usava para nada; migrar_banco.py apagou as colunas.
     cpf = db.Column(db.String(20))
-    cep = db.Column(db.String(10))
-    rua = db.Column(db.String(200))
-    numero = db.Column(db.String(20))
-    complemento = db.Column(db.String(100))
-    bairro = db.Column(db.String(100))
-    cidade = db.Column(db.String(100))
-    uf = db.Column(db.String(2))
 
     # Data de nascimento do MÉDICO (pedido do Silvan, 2026-09-10): sem ela,
     # o "paciente de teste" que a tela medico.testar_ia usa como âncora
@@ -388,12 +387,19 @@ class Usuario(db.Model, UserMixin):
         self.perm_equipe = administrativo
         self.perm_filiais = administrativo
         self.perm_dados_clinica = administrativo
+        self.perm_medicos_preparo = administrativo
 
     def conceder_todas_permissoes(self):
         self.perm_pacientes = True
         self.perm_equipe = True
         self.perm_filiais = True
         self.perm_dados_clinica = True
+        self.perm_medicos_preparo = True
+
+    @property
+    def solicitacao_exclusao_pendente(self):
+        """Pedido de exclusão da própria conta ainda aberto (ver SolicitacaoExclusao)."""
+        return SolicitacaoExclusao.query.filter_by(usuario_id=self.id, status="pendente").first()
 
     @property
     def is_staff(self):
@@ -482,16 +488,6 @@ def validar_cnpj(cnpj):
         return False
     dv2 = _digito_verificador(digitos[:12] + dv1, pesos2)
     return dv2 == digitos[13]
-
-
-def cep_incompleto(cep):
-    """True se o CEP foi digitado mas ficou incompleto (nem todos os 8
-    dígitos) - sem isso, o cadastro deixava salvar um CEP pela metade
-    (ex.: "29055") com rua/bairro/cidade/UF vazios, porque a busca do
-    ViaCEP só dispara com os 8 números completos e nada travava o envio
-    do formulário com o restante em branco."""
-    digitos = re.sub(r"\D", "", cep or "")
-    return bool(digitos) and len(digitos) != 8
 
 
 def encontrar_conta_paciente_por_cpf(cpf):
@@ -996,21 +992,11 @@ class Paciente(db.Model):
     cpf = db.Column(db.String(20), nullable=False)
     data_nascimento = db.Column(db.Date, nullable=True)
     telefone = db.Column(db.String(30))
-    email = db.Column(db.String(150))
+    # Só a equipe vê. E-mail, endereço e contato de emergência do paciente
+    # deixaram de existir (LGPD, minimização - pedido do Silvan,
+    # 2026-10-20): o paciente entra por CPF + data de nascimento e recebe
+    # tudo pelo WhatsApp, e esses dados só apareciam na ficha.
     observacoes = db.Column(db.Text)
-
-    # Endereço (preenchido a partir da busca por CEP no cadastro).
-    cep = db.Column(db.String(10))
-    rua = db.Column(db.String(200))
-    numero = db.Column(db.String(20))
-    complemento = db.Column(db.String(100))
-    bairro = db.Column(db.String(100))
-    cidade = db.Column(db.String(100))
-    uf = db.Column(db.String(2))
-
-    # Contato de emergência.
-    contato_emergencia_nome = db.Column(db.String(150))
-    contato_emergencia_telefone = db.Column(db.String(30))
 
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -1119,8 +1105,9 @@ class Exame(db.Model):
     # Quanto tempo (em minutos) esse exame costuma levar — informativo.
     duracao_minutos = db.Column(db.Integer)
 
-    # Se marcado, ao agendar esse exame o sistema exige/permite indicar
-    # quem vai acompanhar o paciente no dia (ver Agendamento.acompanhante_nome).
+    # SEM USO desde 2026-10-21 (pedido do Silvan): servia só para exigir o
+    # acompanhante no agendamento, que saiu. Fica no modelo porque a coluna
+    # é NOT NULL no banco - sem ela aqui, criar exame quebraria.
     precisa_acompanhante = db.Column(db.Boolean, nullable=False, default=False)
 
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
@@ -1168,10 +1155,12 @@ class Exame(db.Model):
         return criador if criador and criador.tipo == "medico" else None
 
     def pode_ser_editado_por(self, usuario):
-        """Exame com dono médico só é editado POR ELE. Sem dono médico
-        (legado/criado pela secretária), a equipe segue editando."""
+        """Exame com dono médico é editado por ele e pelos médicos
+        associados a ele (medicos_extra - "Médicos por preparo", pedido do
+        Silvan, 2026-10-21). Sem dono médico (legado/criado pela
+        secretária), a equipe segue editando."""
         dono = self.dono_medico
-        return dono is None or usuario.id == dono.id
+        return dono is None or usuario.id == dono.id or self.medico_pode_atender(usuario.id)
 
 
 class Medicamento(db.Model):
@@ -1297,6 +1286,33 @@ class BaseConhecimentoItem(db.Model):
         "BaseConhecimentoHistorico", back_populates="item", cascade="all, delete-orphan",
         order_by="BaseConhecimentoHistorico.alterado_em.desc()",
     )
+
+
+class BaseConhecimentoArquivo(db.Model):
+    """Itens da carga inicial (baixados da internet) tirados do FAQ do MedIA
+    (pedido do Silvan, 2026-10-21: as respostas deles divergiam muito das
+    IAs). Guardados aqui, SEM uso nenhum por enquanto, para uma análise
+    futura; o FAQ do MedIA passa a ter só o que os médicos (e o dono)
+    respondem. O vetor é guardado junto para não precisar recalcular se
+    algum dia voltarem. Ver base_conhecimento_padrao.arquivar_carga_inicial."""
+    __tablename__ = "base_conhecimento_arquivo"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id_original = db.Column(db.Integer, unique=True)
+    tipo_exame_id = db.Column(db.Integer, db.ForeignKey("tipos_exame.id"), nullable=True)
+    pergunta = db.Column(db.Text, nullable=False)
+    resposta = db.Column(db.Text, nullable=False)
+    fonte_nome = db.Column(db.String(200))
+    fonte_url = db.Column(db.String(500))
+    origem = db.Column(db.String(20))
+    status = db.Column(db.String(20))
+    revisado = db.Column(db.Boolean)
+    autor_nome = db.Column(db.String(150))
+    embedding = db.Column(db.Text)
+    embedding_modelo = db.Column(db.String(60))
+    vezes_utilizada = db.Column(db.Integer)
+    criado_em = db.Column(db.DateTime)
+    arquivado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class BaseConhecimentoSugestao(db.Model):
@@ -1597,11 +1613,9 @@ class Agendamento(db.Model):
     data_hora = db.Column(db.DateTime, nullable=False)
     observacoes = db.Column(db.Text)
 
-    # Quem vai acompanhar o paciente no dia do exame — só usado quando
-    # Exame.precisa_acompanhante é True. Pode ser preenchido/alterado tanto
-    # no momento do agendamento quanto no próprio dia do exame.
-    acompanhante_nome = db.Column(db.String(150))
-    acompanhante_telefone = db.Column(db.String(30))
+    # Nome e telefone do acompanhante saíram em 2026-10-21 (pedido do
+    # Silvan): dado de terceiro que o sistema não usava (LGPD).
+    # migrar_banco.py apaga os valores já salvos.
 
     # Continuidade/encerramento do atendimento pelo médico: observações da
     # consulta (reaproveitáveis no histórico do paciente em atendimentos
@@ -1887,6 +1901,11 @@ class PerguntaPendente(db.Model):
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=True)
     pergunta = db.Column(db.Text, nullable=False)
+    # A mesma pergunta com a digitação corrigida pela IA validadora (pedido
+    # do Silvan, 2026-10-21 - "Posso ir de carrp?" ia para o FAQ assim). É
+    # o texto gravado no FAQ ao aprovar; `pergunta` continua o original,
+    # mostrado ao médico e citado ao paciente. None: sem correção.
+    pergunta_faq = db.Column(db.Text, nullable=True)
     # Fatia 7 (WhatsApp): quando a pergunta veio pelo WhatsApp, guarda o
     # número de telefone exato da conversa que originou (o mesmo formato
     # usado em ConversaWhatsapp.telefone, sem o prefixo "whatsapp:") - é
@@ -1928,6 +1947,75 @@ class PerguntaPendente(db.Model):
     # rascunho final saiu normal - o médico continua tendo visibilidade de
     # que uma IA configurada falhou nesta pergunta específica.
     ias_com_erro = db.Column(db.String(60), nullable=True)
+    # O que cada IA consultada fez nesta pergunta, ex.:
+    # "Claude=respondeu;ChatGPT=nao_sabe" (ver app.ia_preparo.
+    # formatar_situacao_ias) - a tela de aprovação mostra sempre as IAs
+    # escolhidas, mesmo a que não respondeu (pedido do Silvan, 2026-10-21).
+    ias_situacao = db.Column(db.String(120), nullable=True)
+
+    TEXTO_SITUACAO_IA = {
+        "nao_sabe": "não soube responder com base no preparo cadastrado",
+        "erro": "deu erro ao responder (indisponível no momento)",
+        "nao_configurada": "não está configurada (sem chave de API)",
+    }
+
+    @property
+    def situacao_ias(self):
+        """[(nome, estado, resposta_ou_texto)] na ordem gravada - vazio para
+        perguntas antigas, que continuam com a tela de antes."""
+        respostas = {"Claude": self.resposta_bruta_claude, "ChatGPT": self.resposta_bruta_chatgpt,
+                     "Gemini": self.resposta_bruta_gemini}
+        itens = []
+        for parte in (self.ias_situacao or "").split(";"):
+            nome, _, estado = parte.partition("=")
+            if not nome:
+                continue
+            if estado.startswith("respondeu") and respostas.get(nome):
+                itens.append((nome, estado, self.para_paciente(respostas[nome])))
+            else:
+                itens.append((nome, estado, self.TEXTO_SITUACAO_IA.get(estado, "não respondeu")))
+        return itens
+
+    @property
+    def resposta_para_paciente(self):
+        """A resposta com os marcadores ({data_exame}...) já preenchidos com
+        o agendamento deste paciente - `resposta` (e o FAQ) guardam o texto
+        genérico (pedido do Silvan, 2026-10-21, ver app.marcadores_resposta)."""
+        from app.marcadores_resposta import resposta_para_paciente
+        return resposta_para_paciente(self.resposta, self.paciente_id, self.exame_id)
+
+    @property
+    def agendamento_do_paciente(self):
+        from app.marcadores_resposta import agendamento_do_paciente
+        return agendamento_do_paciente(self.paciente_id, self.exame_id)
+
+    def para_paciente(self, texto):
+        """`texto` (sugestão da IA, rascunho) com os marcadores já trocados
+        pelas datas deste paciente - o médico nunca vê marcador na aprovação
+        (pedido do Silvan, 2026-10-21)."""
+        from app.marcadores_resposta import preencher_marcadores
+        return preencher_marcadores(texto, self.agendamento_do_paciente)
+
+    @property
+    def datas_do_paciente(self):
+        """"29/10/2026, 11:40" - para o aviso de que essas datas são ajustadas
+        para cada paciente quando a resposta for reutilizada."""
+        agendamento = self.agendamento_do_paciente
+        return agendamento.data_hora.strftime("%d/%m/%Y, %H:%M") if agendamento else None
+
+    @property
+    def base_visivel(self):
+        """Mostrar a sugestão do FAQ do MedIA gravada nesta pergunta - só
+        com a "terceira IA" LIGADA agora (pedido do Silvan, 2026-10-21:
+        desligada, as perguntas que já estavam na fila continuavam com ela)."""
+        from app.base_conhecimento import base_ativa
+        return bool(self.resposta_bruta_base) and base_ativa()
+
+    @property
+    def usou_conhecimento_geral(self):
+        """Alguma IA respondeu com conhecimento geral, fora do preparo
+        cadastrado (ver app.ia_preparo.MARCADOR_CONHECIMENTO_GERAL)."""
+        return "=respondeu_geral" in (self.ias_situacao or "")
     # "Terceira IA" (base de conhecimento compartilhada, ver
     # BaseConhecimentoItem e app.ia_preparo.responder_com_ia): a resposta do
     # item da base que foi consultado nesta pergunta (None quando a base
@@ -2049,6 +2137,28 @@ class HistoricoDeploy(db.Model):
     registrado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class SolicitacaoExclusao(db.Model):
+    """Pedido de exclusão da própria conta (médico/secretária), com o motivo
+    (pedido do Silvan, 2026-10-21). Quem exclui de fato é o dono da
+    plataforma, na área do dono (dono.usuario_excluir). Nome e e-mail ficam
+    copiados aqui para o registro continuar legível depois que a conta
+    some (usuario_id vira NULL - ver app.exclusao_usuario)."""
+    __tablename__ = "solicitacoes_exclusao"
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
+    nome = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(150))
+    motivo = db.Column(db.Text, nullable=False)
+    # pendente | concluida (conta excluída) | descartada (dono não excluiu)
+    # | cancelada (a própria pessoa desistiu)
+    status = db.Column(db.String(20), nullable=False, default="pendente")
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    resolvido_em = db.Column(db.DateTime)
+
+    usuario = db.relationship("Usuario")
+
+
 class MensagemSuporte(db.Model):
     """"Fale com a gente": canal simples para médico/secretária mandarem
     dúvidas sobre o sistema, sugestões de melhoria ou relatar problemas,
@@ -2100,6 +2210,10 @@ class Notificacao(db.Model):
     # Pra onde o clique leva (ex.: de volta pro "Fale com a gente") - em
     # branco quando não há destino melhor que o próprio painel.
     link_endpoint = db.Column(db.String(80), nullable=True)
+    # Anúncio marcado pelo dono como "abrir como popup" (pedido do Silvan,
+    # 2026-10-20): além de ficar no sino, abre numa janela na próxima tela
+    # que a pessoa abrir, até ela clicar em "Entendi" (que marca como lida).
+    popup = db.Column(db.Boolean, nullable=False, default=False)
     lida = db.Column(db.Boolean, nullable=False, default=False)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -2107,11 +2221,13 @@ class Notificacao(db.Model):
 
 
 def _preparo_pode_ser_editado_por(self, usuario):
-    """Modelo com dono médico só é editado POR ELE (ver criado_por_id).
-    Sem dono médico (legado/criado pela secretária), a equipe edita."""
+    """Modelo com dono médico é editado por ele (ver criado_por_id) e pelos
+    médicos associados a um exame que usa este preparo ("Médicos por
+    preparo", pedido do Silvan, 2026-10-21). Sem dono médico (legado/
+    criado pela secretária), a equipe edita."""
     criador = Usuario.query.get(self.criado_por_id) if self.criado_por_id else None
     if criador and criador.tipo == "medico":
-        return usuario.id == criador.id
+        return usuario.id == criador.id or any(e.medico_pode_atender(usuario.id) for e in self.exames)
     return True
 
 

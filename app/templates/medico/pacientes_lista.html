@@ -5,14 +5,15 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h3>{% if current_user.tipo == "medico" %}Meus pacientes{% else %}Pacientes{% endif %}</h3>
   {% if current_user.perm_pacientes %}
-  <a href="{{ url_for('medico.pacientes_novo') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo paciente</a>
+  {# Abre numa janela, sem sair da lista (pedido do Silvan, 2026-10-21) #}
+  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovoPaciente"><i class="bi bi-plus-lg"></i> Novo paciente</button>
   {% endif %}
 </div>
 <div class="card p-3">
   <table class="table table-hover">
     {# O paciente é da EMPRESA, não de uma filial - por isso não há coluna
        de filial aqui; a filial aparece em cada AGENDAMENTO do paciente. #}
-    <thead><tr><th>Nome</th><th>CPF</th><th>Telefone (login)</th><th>Data de nascimento</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Data de nascimento</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {# Pedido do Silvan (2026-09-10, revisão desta mesma data): o
          paciente criado automaticamente no cadastro do médico (ver
@@ -24,7 +25,7 @@
       <tr>
         <td>{{ p.nome }}</td>
         <td>{{ p.cpf }}</td>
-        <td>{{ p.telefone or '-' }}</td>
+        <td>{{ p.telefone|telefone or '-' }}</td>
         <td>{{ p.data_nascimento.strftime('%d/%m/%Y') if p.data_nascimento else '-' }}</td>
         <td>
           {% if p.status_cadastro == 'aprovado' %}
@@ -35,7 +36,23 @@
           <span class="badge bg-warning text-dark">Pendente</span>
           {% endif %}
         </td>
-        <td><a href="{{ url_for('medico.pacientes_detalhe', paciente_id=p.id) }}" class="btn btn-sm btn-outline-secondary">Detalhes</a></td>
+        <td class="text-nowrap text-end">
+          {% if current_user.perm_pacientes %}
+          {# Edita numa janela, sem sair da lista (pedido do Silvan, 2026-10-21) #}
+          <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalEditarPaciente"
+                  data-acao="{{ url_for('medico.pacientes_editar', paciente_id=p.id) }}"
+                  data-nome="{{ p.nome }}" data-cpf="{{ p.cpf }}" data-telefone="{{ p.telefone|telefone or '-' }}"
+                  data-nascimento="{{ p.data_nascimento.strftime('%d/%m/%Y') if p.data_nascimento else '-' }}"
+                  data-observacoes="{{ p.observacoes or '' }}">
+            <i class="bi bi-pencil"></i> Editar
+          </button>
+          {% endif %}
+          {# "Detalhes" virou esta janela (pedido do Silvan, 2026-10-21) #}
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalAgendamentosPaciente"
+                  data-url="{{ url_for('medico.pacientes_agendamentos', paciente_id=p.id) }}" data-nome="{{ p.nome }}">
+            <i class="bi bi-calendar3"></i> Todos os agendamentos
+          </button>
+        </td>
       </tr>
       {% else %}
       <tr><td colspan="6" class="text-muted text-center">Nenhum paciente cadastrado ainda.</td></tr>
@@ -43,4 +60,246 @@
     </tbody>
   </table>
 </div>
+
+<div class="modal fade" id="modalAgendamentosPaciente" tabindex="-1" aria-labelledby="modalAgendamentosPacienteTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalAgendamentosPacienteTitulo"><i class="bi bi-calendar3 me-2"></i><span id="agendamentos_nome"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body" id="agendamentos_conteudo"></div>
+    </div>
+  </div>
+</div>
+<script>
+  // Carrega os agendamentos do paciente clicado (medico.pacientes_agendamentos).
+  document.getElementById('modalAgendamentosPaciente').addEventListener('show.bs.modal', function (evento) {
+    var b = evento.relatedTarget;
+    var conteudo = document.getElementById('agendamentos_conteudo');
+    document.getElementById('agendamentos_nome').textContent = 'Agendamentos de ' + b.getAttribute('data-nome');
+    conteudo.innerHTML = '<p class="text-muted text-center mb-0">Carregando...</p>';
+    fetch(b.getAttribute('data-url'), { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error(); return r.text(); })
+      .then(function (html) { conteudo.innerHTML = html; })
+      .catch(function () { conteudo.innerHTML = '<p class="text-danger text-center mb-0">Não foi possível carregar os agendamentos. Tente de novo.</p>'; });
+  });
+</script>
+
+{% if current_user.perm_pacientes %}
+{# Novo paciente em duas etapas: 1) CPF - se já tem cadastro na plataforma
+   (outra clínica ou autocadastro), oferece importar; 2) se é novo, o resto
+   do cadastro. Ver medico.pacientes_buscar_cpf e medico.pacientes_novo
+   (origem=lista: em caso de erro, volta para cá com a janela aberta). #}
+<div class="modal fade" id="modalNovoPaciente" tabindex="-1" aria-labelledby="modalNovoPacienteTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" action="{{ url_for('medico.pacientes_novo') }}" class="modal-content" id="formNovoPaciente">
+      <input type="hidden" name="origem" value="lista">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalNovoPacienteTitulo"><i class="bi bi-person-plus me-2"></i>Novo paciente</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        {% if novo_form %}
+        {% for categoria, msg in get_flashed_messages(with_categories=true) if categoria in ('danger', 'warning') %}
+        <div class="alert alert-{{ categoria }} py-2 small">{{ msg }}</div>
+        {% endfor %}
+        {% endif %}
+        <label class="form-label" for="novo_cpf">CPF</label>
+        <div class="input-group">
+          <input type="text" inputmode="numeric" name="cpf" id="novo_cpf" class="form-control" placeholder="000.000.000-00"
+                 value="{{ novo_form.cpf if novo_form else '' }}" required>
+          <button type="button" class="btn btn-outline-primary" id="novo_continuar">Continuar</button>
+        </div>
+        <div class="form-text" id="novo_cpf_status">Primeiro o CPF: se o paciente já tem cadastro no MedIA, é só importar.</div>
+
+        <div id="novo_importar" class="alert alert-info mt-3 d-none">
+          <span id="novo_importar_texto"></span>
+          <button type="button" class="btn btn-sm btn-primary mt-2 d-block" id="novo_importar_botao">Importar para este grupo</button>
+        </div>
+
+        <div id="novo_campos" class="mt-3 {% if not novo_form %}d-none{% endif %}">
+          <div class="mb-3">
+            <label class="form-label" for="novo_nome">Nome</label>
+            <input type="text" name="nome" id="novo_nome" class="form-control" autocapitalize="words" value="{{ novo_form.nome if novo_form else '' }}">
+          </div>
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <label class="form-label" for="novo_telefone">Telefone (WhatsApp)</label>
+              <input type="text" inputmode="numeric" name="telefone" id="novo_telefone" class="form-control" placeholder="(27) 99999-9999"
+                     value="{{ novo_form.telefone if novo_form else '' }}">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label" for="novo_nascimento">Data de nascimento</label>
+              <input type="text" inputmode="numeric" name="data_nascimento" id="novo_nascimento" class="form-control" placeholder="DD/MM/AAAA"
+                     value="{{ novo_form.data_nascimento if novo_form else '' }}">
+            </div>
+          </div>
+          <div class="form-text mt-2">O paciente usa o CPF e a data de nascimento para acessar o sistema — não é preciso criar senha.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary {% if not novo_form %}d-none{% endif %}" id="novo_salvar">Cadastrar</button>
+      </div>
+    </form>
+  </div>
+</div>
+<form method="post" action="{{ url_for('medico.pacientes_importar') }}" id="formImportarPaciente" class="d-none">
+  <input type="hidden" name="cpf" id="importar_cpf">
+</form>
+<script>
+  (function () {
+    function mascara(campo, padrao) {
+      var max = (padrao.match(/9/g) || []).length;
+      campo.addEventListener('input', function () {
+        var d = campo.value.replace(/\D/g, '').slice(0, max), r = '', p = 0;
+        for (var i = 0; i < padrao.length && p < d.length; i++) { r += padrao[i] === '9' ? d[p++] : padrao[i]; }
+        campo.value = r;
+      });
+    }
+    var cpf = document.getElementById('novo_cpf');
+    mascara(cpf, '999.999.999-99');
+    mascara(document.getElementById('novo_telefone'), '(99) 99999-9999');
+    mascara(document.getElementById('novo_nascimento'), '99/99/9999');
+    var status = document.getElementById('novo_cpf_status');
+    var campos = document.getElementById('novo_campos');
+    var salvar = document.getElementById('novo_salvar');
+    var importar = document.getElementById('novo_importar');
+    function mostrarCampos(sim) {
+      campos.classList.toggle('d-none', !sim);
+      salvar.classList.toggle('d-none', !sim);
+      ['novo_nome', 'novo_telefone', 'novo_nascimento'].forEach(function (id) { document.getElementById(id).required = sim; });
+    }
+    function verificar() {
+      importar.classList.add('d-none');
+      mostrarCampos(false);
+      status.className = 'form-text';
+      status.textContent = 'Verificando...';
+      fetch('{{ url_for('medico.pacientes_buscar_cpf') }}?cpf=' + encodeURIComponent(cpf.value), { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.situacao === 'invalido') {
+            status.className = 'form-text text-danger';
+            status.textContent = 'CPF inválido — confira os números digitados.';
+          } else if (d.situacao === 'ja_e_paciente') {
+            status.className = 'form-text text-warning';
+            status.textContent = d.nome + ' já é paciente deste grupo.';
+          } else if (d.situacao === 'importar') {
+            status.textContent = '';
+            document.getElementById('novo_importar_texto').textContent =
+              d.nome + ' já tem cadastro no MedIA. Os dados vêm prontos: é só importar para este grupo.';
+            importar.classList.remove('d-none');
+          } else {
+            status.textContent = 'CPF novo no MedIA — complete o cadastro.';
+            mostrarCampos(true);
+            document.getElementById('novo_nome').focus();
+          }
+        })
+        .catch(function () {
+          status.className = 'form-text text-danger';
+          status.textContent = 'Não foi possível verificar o CPF agora. Tente de novo.';
+        });
+    }
+    document.getElementById('novo_continuar').addEventListener('click', verificar);
+    cpf.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && campos.classList.contains('d-none')) { e.preventDefault(); verificar(); }
+    });
+    cpf.addEventListener('input', function () { importar.classList.add('d-none'); mostrarCampos(false); });
+    document.getElementById('novo_importar_botao').addEventListener('click', function () {
+      document.getElementById('importar_cpf').value = cpf.value;
+      document.getElementById('formImportarPaciente').submit();
+    });
+    {% if novo_form %}
+    mostrarCampos(true);
+    // Voltou de um erro no cadastro: reabre a janela com os campos preenchidos.
+    window.addEventListener('load', function () {
+      if (window.bootstrap) new bootstrap.Modal(document.getElementById('modalNovoPaciente')).show();
+    });
+    {% endif %}
+  })();
+</script>
+
+<div class="modal fade" id="modalEditarPaciente" tabindex="-1" aria-labelledby="modalEditarPacienteTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" class="modal-content" id="formEditarPaciente">
+      <input type="hidden" name="origem" value="lista">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalEditarPacienteTitulo"><i class="bi bi-pencil me-2"></i>Editar cadastro</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        {% if editar_form %}
+        {% for categoria, msg in get_flashed_messages(with_categories=true) if categoria in ('danger', 'warning') %}
+        <div class="alert alert-{{ categoria }} py-2 small">{{ msg }}</div>
+        {% endfor %}
+        {% endif %}
+        <div class="mb-3">
+          <label class="form-label" for="editar_nome">Nome</label>
+          <input type="text" name="nome" id="editar_nome" class="form-control" required>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-sm-6">
+            <label class="form-label" for="editar_cpf">CPF</label>
+            <input type="text" inputmode="numeric" name="cpf" id="editar_cpf" class="form-control" required>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="editar_telefone">Telefone (WhatsApp)</label>
+            <input type="text" inputmode="numeric" name="telefone" id="editar_telefone" class="form-control" required>
+          </div>
+          <div class="col-12 small text-muted">
+            Nascimento: <span id="editar_nascimento"></span>.
+            O cadastro vale em todas as clínicas do paciente: CPF e telefone novos passam a valer para todas.
+          </div>
+        </div>
+        <label class="form-label" for="editar_observacoes">Observações</label>
+        <textarea name="observacoes" id="editar_observacoes" class="form-control" rows="3"></textarea>
+        <div class="form-text">Só o necessário para o atendimento (ex.: "prefere contato à tarde"). Não registre diagnósticos, doenças ou outros dados de saúde aqui.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  // Preenche a janela com os dados da linha clicada (atributos data-* do botão "Editar").
+  document.getElementById('modalEditarPaciente').addEventListener('show.bs.modal', function (evento) {
+    var b = evento.relatedTarget;
+    document.getElementById('formEditarPaciente').action = b.getAttribute('data-acao');
+    document.getElementById('editar_nome').value = b.getAttribute('data-nome');
+    document.getElementById('editar_observacoes').value = b.getAttribute('data-observacoes');
+    document.getElementById('editar_cpf').value = b.getAttribute('data-cpf');
+    document.getElementById('editar_nascimento').textContent = b.getAttribute('data-nascimento');
+    document.getElementById('editar_telefone').value = b.getAttribute('data-telefone') === '-' ? '' : b.getAttribute('data-telefone');
+    // Voltou de um erro: usa o que foi digitado (ver pacientes_editar).
+    var volta = b.getAttribute('data-volta');
+    if (volta) {
+      var d = JSON.parse(volta);
+      ['nome', 'cpf', 'telefone', 'observacoes'].forEach(function (c) { document.getElementById('editar_' + c).value = d[c] || ''; });
+    }
+  });
+  (function () {
+    function mascara(campo, padrao) {
+      var max = (padrao.match(/9/g) || []).length;
+      campo.addEventListener('input', function () {
+        var d = campo.value.replace(/\D/g, '').slice(0, max), r = '', p = 0;
+        for (var i = 0; i < padrao.length && p < d.length; i++) { r += padrao[i] === '9' ? d[p++] : padrao[i]; }
+        campo.value = r;
+      });
+    }
+    mascara(document.getElementById('editar_cpf'), '999.999.999-99');
+    mascara(document.getElementById('editar_telefone'), '(99) 99999-9999');
+    {% if editar_form %}
+    window.addEventListener('load', function () {
+      var botao = document.querySelector('[data-acao$="/pacientes/{{ editar_form.id }}/editar"]');
+      if (!botao || !window.bootstrap) return;
+      botao.setAttribute('data-volta', JSON.stringify({{ editar_form|tojson }}));
+      new bootstrap.Modal(document.getElementById('modalEditarPaciente')).show(botao);
+    });
+    {% endif %}
+  })();
+</script>
+{% endif %}
 {% endblock %}

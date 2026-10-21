@@ -41,11 +41,7 @@
         <button type="submit" class="btn btn-primary w-100">Entrar</button>
       </form>
       <div class="text-center mt-3">
-        {% if google_login_ativo %}
-        <a href="{{ url_for('auth.cadastro') }}" class="small"><strong>Ainda não tem conta?</strong> Criar conta com e-mail e senha</a>
-        {% else %}
         <a href="{{ url_for('auth.cadastro') }}" class="small"><strong>Ainda não tem conta?</strong> Crie sua conta</a>
-        {% endif %}
       </div>
       {# O cadastro público agora é uma tela única pra todo mundo — não
       existe mais "modo" (empresa x independente): o CNPJ virou um campo

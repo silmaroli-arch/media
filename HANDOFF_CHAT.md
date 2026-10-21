@@ -2393,9 +2393,409 @@ Prints do sistema enviados pelo Silvan para colocar na página de apresentação
 
 - Antes, depois que o ViaCEP preenchia o endereço, Rua/Bairro/Cidade/UF continuavam editáveis. Agora ficam travados (readonly + bg-light) e só **Número e Complemento** são digitados.
 - Exceções, para não impedir o cadastro (os campos são obrigatórios): campo que veio VAZIO do ViaCEP (CEP geral da cidade, sem rua nem bairro) continua editável; CEP não encontrado, ViaCEP fora do ar ou CEP alterado/apagado destravam tudo.
-- Telas: `auth/cadastro.html`, `auth/meus_dados.html`, `medico/clinica_configuracoes.html` (função `travarEnderecoDoCep` em cada uma). As telas de paciente (`auth/cadastro_paciente.html`, `paciente/meus_dados.html`, `medico/pacientes_form.html`) já tinham esses campos sempre somente leitura.
+- Telas: `auth/cadastro.html`, `auth/meus_dados.html`, `medico/clinica_configuracoes.html` (função `travarEnderecoDoCep` em cada uma). ATUALIZAÇÃO (mesmo dia): o endereço pessoal da equipe saiu (LGPD, seção abaixo), então isso só vale hoje para "Dados da clínica". As telas de paciente (`auth/cadastro_paciente.html`, `paciente/meus_dados.html`, `medico/pacientes_form.html`) já tinham esses campos sempre somente leitura.
 - Ao abrir "Meus dados" ou "Dados da clínica" com um endereço já salvo, os campos começam editáveis e só travam depois que o CEP for buscado de novo.
 - Conferido no navegador (Playwright, ViaCEP simulado) nas 3 telas: CEP achado, CEP geral e CEP não encontrado. Suíte 82/82.
+
+## LGPD: minimização dos dados pessoais (2026-10-20, pedido do Silvan - "seguir à risca a LGPD")
+
+Levantamento: dados pedidos que o sistema não usava para nada. Removidos das telas, das rotas e dos modelos, e **apagados do banco**:
+- **Equipe:** endereço pessoal (CEP, rua, número, complemento, bairro, cidade, UF). Era obrigatório no cadastro e não era usado: o Mercado Pago recebe só o e-mail e a nota fiscal usa os dados da clínica.
+- **Paciente:** e-mail (o login é CPF + nascimento e as mensagens vão pelo WhatsApp), endereço e contato de emergência (dado de terceiro). Só apareciam na ficha.
+- **Mantidos, com finalidade:** CPF da equipe (login e busca no "Convidar membros" do grupo, por isso continua até para secretária); data de nascimento só do médico (paciente de teste do WhatsApp); paciente: nome, CPF, nascimento (identificação no WhatsApp) e telefone. A Política de Privacidade foi atualizada com essas finalidades.
+- **Observações do paciente:** ficam, com aviso na tela para não registrar diagnósticos ou outros dados de saúde.
+- **Banco (`migrar_banco.py`):** fase 1, que roda neste deploy: `UPDATE ... SET NULL` em todos esses campos (e no e-mail das contas `usuarios` de tipo paciente). As colunas ainda existem porque a versão anterior do app, que atende durante o deploy, lê essas colunas em toda página; derrubar já daria erro 500 nesse intervalo. **Fase 2 (PENDENTE, num deploy seguinte):** trocar os UPDATE e os `ADD COLUMN` antigos dessas colunas por `ALTER TABLE ... DROP COLUMN IF EXISTS`.
+- Validado num PostgreSQL de verdade: banco criado com o código antigo e dados preenchidos -> migração nova -> 0 registros com esses dados, e-mail da equipe intacto, idempotente (2ª execução ok), app novo e app antigo funcionando no banco migrado.
+- Removidos: `cep_incompleto` (models), `_preencher_endereco_emergencia` (routes_medico), JS de CEP/contato de emergência nas telas, `test_autocadastro_paciente_endereco.py`. Novo: `test_lgpd_minimizacao.py` (22 checks). Ajustados: test_smoke, test_meus_dados, test_meus_dados_paciente, test_paciente_da_empresa, test_grupo_agendamento, test_cadastro_global_importar_cpf, seed.py (pacientes sem e-mail). Suíte 82/82.
+- Atenção: os backups automáticos do Render ainda guardam esses dados até expirarem pelo prazo de retenção do plano.
+- **Acompanhante (2026-10-21, pedido do Silvan):** saíram o nome e o telefone do acompanhante do "Novo agendamento" (dado de terceiro, sem uso) e a caixa "Precisa de acompanhante" do modelo de preparo e do cadastro de exame (só servia para exigir esse preenchimento). `Agendamento.acompanhante_nome/telefone` saíram do modelo e `migrar_banco.py` apaga os valores (fase 1, mesmo esquema). `Exame.precisa_acompanhante` fica no modelo SEM USO, porque a coluna é NOT NULL e, num banco criado pelo `db.create_all()`, não tem valor padrão no banco. As perguntas sobre acompanhante do FAQ do MedIA continuam (são orientação ao paciente). Fase 2 inclui `agendamentos.acompanhante_nome/telefone`.
+- Criar conta: saiu também o aviso "Depois de criar sua conta, você cadastra seu(s) local(is) de atendimento em 'Meus Locais de Atendimento'". Ele ficava logo abaixo do endereço e apontava para um menu que já não existe (virou "Grupos de trabalho").
+
+## Anúncio do dono como popup (2026-10-20, pedido do Silvan)
+
+- Em Dono > Anúncios, novo interruptor **"Abrir como popup"**. Desmarcado: o aviso fica só no sino, como antes. Marcado: além do sino, abre numa janela na tela que a pessoa abrir e só fecha pelo **"Entendi"**, que marca como lido. Clicar fora ou apertar Esc não fecha. Enquanto não clicar, a janela abre de novo a cada tela.
+- Vale para todos os destinatários do anúncio (médico e secretária, ou "todo mundo").
+- Vários anúncios de popup pendentes aparecem juntos numa janela só ("Avisos do MedIA"), com até 5 por vez. Não abre junto com o popup de boas-vindas do cadastro: aparece na tela seguinte.
+- Código: `Notificacao.popup` (models, `migrar_banco.py` ADD COLUMN), `dono.anuncio_enviar`, `dono/anuncios.html`, `injetar_notificacoes` (app/__init__.py, `notificacoes_popup`), modal `#modalAnuncios` em base.html, rota `medico.notificacoes_popup_entendi`. Essa rota fica sem `@staff_required` de propósito: quem tem 2+ grupos vê o popup ainda na tela de escolher o grupo, e o staff_required mandaria o "Entendi" de volta para essa escolha sem marcar nada.
+- Teste: `test_anuncio_popup.py` (19 checks). Conferido no navegador: abre ao entrar, clicar fora não fecha, "Entendi" fecha e não volta. Suíte 83/83.
+
+## Criar conta: primeiro escolher como entrar (2026-10-20, pedido do Silvan)
+
+- `/cadastro` agora começa por `auth/cadastro_escolher.html`, que pergunta "Como você quer entrar no MedIA?" e mostra **Continuar com Google** e **E-mail e senha**. O formulário só abre depois: pela volta do Google (sessão `google_cadastro`) ou em `/cadastro?metodo=senha`.
+- Pensado para crescer: uma forma nova de entrar (Microsoft, Apple...) é mais um botão nessa tela e um retorno para `auth.cadastro`, como o Google já faz.
+- Sem Google configurado (sem GOOGLE_CLIENT_ID/SECRET), não há o que escolher e o formulário abre direto. POST de `/cadastro` não mudou.
+- No formulário saiu o botão do Google. No modo e-mail e senha aparece "Escolher outra forma de entrar"; no modo Google, "Cadastrar sem o Google" leva a `?metodo=senha`. No login, o link virou só "Ainda não tem conta? Crie sua conta", que leva à escolha.
+- Junto: no cadastro pelo Google o campo se chama só "CPF" (não "será seu login"), porque a conta nasce sem senha e o login por CPF exige senha.
+- Teste: `test_login_google.py` (escolha, formulário por e-mail e senha, rótulo do CPF). Suíte 83/83. Conferido no navegador (computador e celular, sem rolagem lateral).
+
+## Grupo: editar dados e criar outro + permissões (2026-10-20, pedido do Silvan)
+
+- Quem tem um grupo só cai direto em "Convidar membros" (atalho de `grupo.meus_grupos`) e não tinha como editar o grupo nem criar outro: o link "Meus grupos" voltava para a mesma tela. Agora:
+  - "Convidar membros" ganhou **"Dados do grupo"** (Dados Cadastrais, `medico.clinica_configuracoes`, só para o grupo ativo e para quem tem `perm_dados_clinica`) e **"Criar outro grupo"**;
+  - o link "Meus grupos" usa `?lista=1` e mostra a lista (com "Criar novo grupo"); a lista também ganhou "Dados do grupo" no grupo ativo.
+- **ATUALIZAÇÃO (mesmo dia, pedido do Silvan):** o menu "Grupos de trabalho" passou a abrir SEMPRE a lista "Meus grupos", mesmo com um grupo só (o atalho para "Convidar membros" e o `?lista=1` saíram; os botões em "Convidar membros" também). A lista é o centro: "Criar novo grupo", "Ver membros / Convidar" e "Dados do grupo".
+- **"Dados do grupo"** (`medico.clinica_configuracoes`, antes "Dados Cadastrais") ficou só com o **nome do grupo**. Razão social, CNPJ, telefone, e-mail de contato e endereço saíram, porque nada no sistema usava esses dados (as colunas do `grupos` continuam no banco, sem uso). Salvar volta para "Meus grupos". Também saiu o link para **Dados Fiscais** (NFS-e): a tela só guardava configuração, sem nenhuma emissão de nota; a rota continua existindo por URL. Com isso, a trava de endereço por CEP dessa tela também deixou de existir (`test_clinica_config_cep_nao_bloqueia.py` removido).
+- Tela de permissões: saiu **"Gerenciar filiais"**, porque filiais deixaram de existir e `perm_filiais` não controlava nada (a coluna fica no banco, sem uso). **"Editar dados da clínica"** virou **"Editar dados do grupo"**: continua controlando quem abre "Dados do grupo" (e Dados Fiscais por URL). O texto "em todas as filiais" virou "em todos os grupos".
+- Testes: `test_grupo_editar_criar.py`; ajustados test_smoke, test_dados_cadastrais_fecha_ao_salvar, test_dados_fiscais_menu, test_menu_cadastro_geral_unificado. Suíte 83/83.
+
+## Excluir grupo de trabalho (2026-10-21, pedido do Silvan - opção 1: só grupo vazio)
+
+- Em "Meus grupos", o **dono** do grupo tem o botão **"Excluir"** (com confirmação). A rota é `grupo.excluir` (POST `/grupos/<id>/excluir`).
+- Só exclui grupo **vazio**. Se tiver outras pessoas ativas, pacientes, agendamentos, exames, modelos de preparo, itens de FAQ ou perguntas de paciente, nada é apagado e a mensagem lista o que ainda existe (`_o_que_impede_excluir`, que cobre toda tabela com `grupo_id`).
+- Não conta: o próprio médico como paciente. `routes_medico._paciente_teste_do_medico` cria esse cadastro (com o CPF dele) e ele entra sozinho em todo grupo que o médico cria; sem essa exceção, nenhum grupo seria "vazio". Na exclusão sai só o vínculo; o cadastro dele continua.
+- Vão junto com o grupo: convites, vínculos de membro (do dono e de quem já saiu) e o vínculo do próprio médico como paciente. Se era o grupo ativo, a sessão deixa de apontar para ele.
+- Administrador que não é dono não exclui. A exclusão completa (grupo com dados) não foi feita: as opções 2 e 3 ficaram de fora.
+- Atenção: se o médico usou "Testar IA" dentro do grupo, o agendamento e o exame de teste fazem o grupo deixar de ser vazio.
+- Teste: `test_grupo_excluir.py` (11 checks).
+
+## Especialidade obrigatória no modelo de preparo (2026-10-21, relatado pelo Silvan)
+
+- O médico conseguia salvar "Novo modelo de preparo" (e editar) sem informar "Sua especialidade". Desde 2026-10-19 ela não é pedida no cadastro e é nesse formulário que o médico a informa, então passou a ser **obrigatória**: `required` no select e checagem no servidor (`_falta_especialidade_do_medico` em routes_medico, em `preparo_modelos_novo` e `preparo_modelos_editar`). Vazia ou fora da lista: "Informe a sua especialidade." e nada é salvo.
+- Só vale para médico e quando o campo aparece na tela (secretária não tem o campo).
+- Sobre a caixa "Mostrar exames de todas as especialidades": ela tira o filtro da lista "Tipo de exame" pela especialidade escolhida. Sem especialidade, não fazia nada; agora, com a especialidade obrigatória, sempre tem efeito.
+- Teste: `test_tipo_exame_nao_encontrado.py` (especialidade vazia e inventada recusadas).
+
+## WhatsApp: data de nascimento com ou sem "/" (2026-10-21, pedido do Silvan)
+
+- `whatsapp_conversa._extrair_data_nascimento` passou a aceitar, além de 16/11/1983 e 16-11-1983: os 8 números juntos (**16111983**), ponto (16.11.1983) e espaço (16 11 1983). Data inexistente (31/02/1990), ano com 2 dígitos e ordem ano-mês-dia continuam recusados.
+- Mensagens que pedem a data agora dizem "assim: 01/01/1990 (ou só os números: 01011990)".
+- Teste: `test_whatsapp_identificacao.py` (formatos aceitos e recusados, e a identificação completa com "12041985").
+
+## Telas em janela (popup) e tela única de exames agendados (2026-10-21, pedidos do Silvan)
+
+- **Telefone com máscara:** filtro Jinja `telefone` (app/__init__.py) mostra (27) 99999-9999 na lista, no detalhe, nas solicitações e no relatório de pacientes. "Telefone (login)" virou "Telefone": o login do paciente é CPF + nascimento.
+- **Pacientes (lista):**
+  - **"Editar"** abre uma janela e volta para a lista (`origem=lista` em `pacientes_editar`). O "Editar cadastro" saiu do detalhe. Na janela dá para editar nome, **CPF, telefone** (liberados a pedido do Silvan) e observações; a data de nascimento continua fixa. O cadastro do paciente é da plataforma inteira, então: CPF novo precisa ser válido e não pode ser de outro paciente; telefone novo vai também para a conta de acesso (`usuario.telefone` e os outros cadastros dela, como em `paciente.meus_dados`). Se o CPF não mudou, não é conferido, porque há cadastros antigos com CPF que não passa na conferência. Com erro, a lista volta com a janela de edição aberta (`session["editar_paciente_form"]`).
+  - **"Detalhes"** virou **"Todos os agendamentos"**: janela que carrega `medico.pacientes_agendamentos` (pedaço de HTML `_paciente_agendamentos.html`), com passados e futuros, médico e situação (Próximo/Passado), **só do grupo atual**. O detalhe antigo listava `paciente.agendamentos` de qualquer clínica. Médico sem perm_pacientes vê só os dele.
+  - **"Novo paciente"** numa janela em duas etapas. 1) CPF: `medico.pacientes_buscar_cpf` (JSON: invalido / ja_e_paciente / importar / novo); se já tem cadastro no MedIA, botão "Importar para este grupo" (POST `pacientes_importar`). 2) Nome, telefone e nascimento. Erro: `_voltar_com_erro` guarda os campos em `session["novo_paciente_form"]` e volta para `/equipe/pacientes?novo=1` com a janela aberta e o motivo dentro dela. O cadastro pela equipe passou a conferir o CPF (`validar_cpf`); vários testes usavam CPFs inventados e foram trocados por válidos.
+- **Exames agendados (tela única, `medico.medico_agenda_pessoal`):** o item de menu "Agendar exame" saiu e virou botão com janela nessa tela (POST em `agenda_novo` com `origem=agenda`; erro volta com `?agendar=1`, `session["agendar_form"]`). Ganhou a coluna **Médico**. **Médico vê só os dele** (mesmo com perm_equipe, a pedido do Silvan); **secretária vê os de todos os médicos do grupo**, com filtro opcional por médico. No menu: "Meus exames agendados" (médico) ou "Exames agendados" (secretária). Na janela, o select de médico mostra só quem atende o exame escolhido (`data-medicos`) e escolhe sozinho quando há um só. Links "Novo agendamento" do painel, dos primeiros passos e do detalhe do paciente apontam para `?agendar=1`. A rota `agenda_novo` (página inteira) continua existindo.
+- **Meu FAQ:** "Adicionar manualmente" abre uma janela (POST em `faq_novo` com `origem=lista`; erro volta com `?novo=1`, `session["faq_novo_form"]`). Função nova `_exames_para_faq`.
+- Testes novos: `test_exames_agendados_tela_unica.py`, `test_faq_adicionar_janela.py`; `test_paciente_da_empresa.py` cobre máscara, editar, agendamentos e novo paciente em janela. Suíte 86/86. Conferido no navegador: janela de agendar com o filtro de médico.
+
+## Meus grupos: "Dados do grupo" e "Ver membros / Convidar" em janela (2026-10-21, pedido do Silvan)
+
+- "Dados do grupo": janela com o nome, POST em `medico.clinica_configuracoes` (que já volta para "Meus grupos").
+- "Ver membros / Convidar": janela com um iframe da própria tela `grupo.convidar`, para não reescrever a busca por CPF, criar conta, permissões e remover. **Mecanismo novo em base.html:** um script no `<head>` marca `<html class="embutido">` quando a página está dentro de um iframe, e o CSS esconde menu lateral, topo, avisos de instalar e de notificações e tudo com a classe `so-fora-da-janela` (o caminho "Meus grupos > ..." do convidar). O popup de anúncios não abre dentro da janela. Ao fechar, se algo mudou lá dentro, a lista recarrega para atualizar a contagem. Serve para outras telas que precisem abrir em janela.
+
+## Meus grupos: "Selecionar" não trocava o grupo (2026-10-21, relatado pelo Silvan)
+
+- A lista "Meus grupos" usava uma marca própria de grupo ativo (`session["grupo_ativo_id"]`) que nada mais lia; o grupo de verdade (topo e todas as telas) é `clinica_utils.empresa_atual()` (`session["empresa_id"]`). Resultado: o topo dizia um grupo, a lista mostrava "Selecionar" nele, e clicar em "Selecionar" não trocava nada.
+- Agora `routes_grupo._grupo_ativo_id()` lê `empresa_atual()` e `grupo.selecionar` chama `selecionar_clinica()` (que grava `empresa_id`). "Sair do grupo" limpa as duas chaves. Teste em `test_grupo_editar_criar.py`.
+- Para que serve: quem participa de mais de um grupo escolhe com qual está trabalhando (pacientes, exames, agenda e perguntas mostrados são os do grupo selecionado). Com um grupo só, ele já vem selecionado.
+
+## Médicos por preparo (2026-10-21, pedido do Silvan)
+
+- Um mesmo exame, com o mesmo preparo, pode ser feito por mais de um médico. Item de menu novo **"Médicos por preparo"** (`medico.preparos_medicos`, logo abaixo de "Exames & preparo"): lista cada preparo com seus exames e médicos (principal em azul, associados em cinza); o botão "Médicos" abre uma janela com caixas de seleção (o principal fica marcado e travado). Salvar (`preparos_medicos_salvar`) grava os associados em `Exame.medicos_extra` de TODOS os exames que usam aquele preparo.
+- Reaproveita o que já existia: agenda, perguntas e listas do médico já usavam `medicos_extra` (`Exame.medico_pode_atender`).
+- **Regra nova de edição:** `PreparoModelo.pode_ser_editado_por` e `Exame.pode_ser_editado_por` passaram a aceitar também os médicos associados (antes, só quem criou). As listas do médico (Exames & preparo, exames, dropdowns de modelo) usam essa regra, então o associado passa a ver e editar o preparo. Saiu a trava antiga que impedia associar médicos a um exame com dono. Mensagens "Só fulano pode editar" viraram "Só fulano e os médicos associados podem editar".
+- Quem associa: secretária (qualquer preparo do grupo) e médico só nos preparos que ele pode editar. Conta sem grupo: aviso para criar um grupo e convidar colegas.
+- Teste: `test_medicos_por_preparo.py` (13 checks); `test_dono_conteudo_clinico.py` ajustado às mensagens novas.
+
+## Exames agendados em calendário (2026-10-21, pedido do Silvan)
+
+- A tabela de `medico/medico_agenda_pessoal.html` virou um calendário com **FullCalendar 6.1.15** (jsdelivr: `fullcalendar@6.1.15/index.global.min.js` e a tradução `@fullcalendar/core@6.1.15/locales/pt-br.global.min.js`). Visões: Mês, Semana, Dia e Lista; no celular abre na Lista da semana, com os botões embaixo.
+- Uma cor por médico (`medico_id % 8`); encerrado aparece apagado. A duração do exame (`Exame.duracao_minutos`), quando existe, define o fim do evento.
+- Clicar num exame abre a janela `#modalAgendamento` (paciente, exame, médico, Atendimento, Resultado e Encerrar, que estavam na tabela). Clicar num dia ou horário vazio abre "Agendar exame" com a data preenchida (no mês, às 08:00).
+- Os eventos são gerados no próprio template (`var eventos = [...]`); a rota passa `timedelta` para calcular o fim. Filtro por médico e regras de quem vê o quê não mudaram.
+- Testes ajustados: `test_exames_agendados_tela_unica.py` (lê os eventos) e `test_atendimento_encerrar_rapido.py`. Conferido no navegador (computador e celular).
+
+## Agendamento: conflito de horário do mesmo médico (2026-10-21, relatado pelo Silvan)
+
+- Dava para marcar dois exames do mesmo médico no mesmo dia e hora. `agenda_novo` agora chama `_agendamento_em_conflito(medico_id, inicio, duracao)`: cada exame ocupa da hora marcada até hora + `Exame.duracao_minutos` (sem duração cadastrada, só a hora exata). Se sobrepõe outro agendamento do MESMO médico (em qualquer grupo, porque é a agenda da pessoa), recusa com "Fulano já tem um exame nesse horário: <exame> com <paciente>, em dd/mm/aaaa às hh:mm" e a janela reabre com os dados. Outro médico no mesmo horário é aceito.
+- Teste em `test_exames_agendados_tela_unica.py` (mesmo horário, dentro da duração, terminando depois do início do outro, logo após o fim, outro médico).
+
+## Calendário: remarcar e cancelar exame (2026-10-21, pedido do Silvan)
+
+- Na janela de detalhes do exame (calendário de exames agendados): "Remarcar para" (data e hora) e "Cancelar exame" (com confirmação). Somem quando o atendimento já foi encerrado.
+- `medico.agenda_remarcar` (POST data_hora): mesma checagem de conflito do agendar (`_agendamento_em_conflito`, que ganhou `ignorar_id` para não conflitar com ele mesmo).
+- `medico.agenda_cancelar`: apaga o agendamento. Não cancela se encerrado ou com resultado anexado. Conversas do paciente (ChatMensagem, ConversaWhatsapp) ficam, só perdem o vínculo (`agendamento_id = NULL`).
+- Regra de acesso igual ao "Encerrar" (`_agendamento_do_escopo_ou_404`): grupo atual; médico só os dele.
+- O paciente NÃO é avisado pelo WhatsApp da remarcação nem do cancelamento (só existe aviso na criação).
+- Teste em `test_exames_agendados_tela_unica.py`.
+
+## Menu "Agenda de Exames" (2026-10-21, pedido do Silvan)
+
+- O item do menu lateral "Meus exames agendados" (médico) / "Exames agendados" (secretária e demais) passou a se chamar **"Agenda de Exames"** para todos. O título da tela (`medico/medico_agenda_pessoal.html`) também; o subtítulo continua dizendo se são os exames do médico ou os de todos os médicos do grupo.
+- Testes ajustados: `test_exames_agendados_tela_unica.py`, `test_menu_cadastro_geral_unificado.py` (ordem do menu).
+
+## Remarcar: aviso dentro da janela e conflito pela duração explicado (2026-10-21, pedido do Silvan)
+
+- Remarcar com erro (horário ocupado ou data inválida) não fecha mais a janela com o aviso no topo: `agenda_remarcar` guarda `session["remarcar_erro"]` (id, mensagem, data tentada) e volta com `?remarcar=<id>`; a tela reabre a janela desse exame (vai para o mês dele) com o aviso dentro (`#ag_erro`) e a data tentada no campo. `abrirDetalhes()` no JS é a mesma função do clique no exame.
+- Mensagem de conflito (`_mensagem_conflito`, usada no agendar e no remarcar): mesmo horário continua "já tem um exame nesse horário"; sobreposição pela duração diz "Não é possível marcar ... por causa da duração dos exames", mostra a duração e a previsão de término do outro exame e a deste, e sugere o horário ("a partir das HH:MM" ou "até as HH:MM ou a partir das HH:MM").
+- Teste: `test_exames_agendados_tela_unica.py`. Conferido no navegador (Playwright).
+
+## Permissão "Associar médicos aos exames" (2026-10-21, pedido do Silvan)
+
+- Nova permissão `Usuario.perm_medicos_preparo`, na tela de permissões da equipe: "Associar médicos aos exames (Médicos por preparo)". Sem ela, o menu "Médicos por preparo" some e as rotas `preparos_medicos`/`preparos_medicos_salvar` mandam de volta (`permissao_required`). Médico com ela continua só nos preparos que pode editar (`_pode_associar_medicos`).
+- Padrão: quem cria a conta (`conceder_todas_permissoes`) e secretária (`definir_permissoes_padrao`) têm; médico convidado não tem.
+- Migração (`migrar_banco.py`, em Python, logo depois do bloco SQL): só quando a coluna ainda não existe, cria a coluna e liga a permissão para TODOS os médicos e secretárias existentes (para ninguém perder o que já usava). Roda uma vez só - rodar de novo não desfaz quem tirou a permissão de alguém. INSERT do dono atualizado. Validado em PostgreSQL a partir do banco da versão anterior, duas vezes.
+- Teste: `test_medicos_por_preparo.py`.
+
+## WhatsApp: conversa presa em "Não encontramos nenhum exame em preparo" (2026-10-21, relatado pelo Silvan)
+
+- Causa: o paciente identificado (CPF + nascimento) sem nenhum agendamento ativo ficava com `conversa.paciente_id` preenchido; toda mensagem seguinte ("ok", "sair", outro CPF) caía no ramo "já identificado, falta escolher o exame" e repetia `MENSAGEM_SEM_EXAME_ATIVO` até a sessão expirar.
+- Correção (`app/whatsapp_conversa.py`): nova `_sem_exame_ativo(conversa)` desfaz a identificação (paciente, exame em foco e CPF pendente) - usada na identificação e quando o exame em foco some depois (encerrado/cancelado). A mensagem ganhou "Para consultar com outro CPF, é só enviar o CPF." A próxima mensagem recomeça pelo CPF. Não conta como tentativa de identificação errada.
+- Teste novo: `test_whatsapp_sem_exame_ativo.py`.
+
+## Modelos de preparo: coluna "Médico Criador" (2026-10-21, pedido do Silvan)
+
+- Na lista de modelos de preparo (`medico/preparo_modelos_lista.html`), a coluna "Médico" passou a se chamar "Médico Criador" (é o médico principal do exame; os associados ficam em "Médicos por preparo").
+
+## Linha do tempo do preparo agrupada por dia (2026-10-21, pedido do Silvan)
+
+- Página pública do preparo (`paciente/preparo_publico.html`) e PDF: a data aparece uma vez, com os itens do dia embaixo (antes repetia a mesma data em cada item). Quando há horário, ele aparece como "às HH:MM" uma vez antes dos itens daquele horário. O detalhe que só repetia a data (alimentos) some.
+- `app.preparo_publico.agrupar_por_dia()` monta `linha_do_tempo_por_dia` (a `linha_do_tempo` plana continua no documento). No PDF, uma linha da tabela por dia, com os itens em lista.
+- Teste: `test_preparo_publico.py`. Conferido no navegador.
+
+## Resposta pronta de alimento: "carro" casava com "claro" (2026-10-21, relatado pelo Silvan)
+
+- "Posso ir de carro?" recebeu o rascunho "Sim, Líquidos claros está entre os alimentos sugeridos...": a tolerância a erro de digitação (`faq_engine._palavras_correspondem`, SequenceMatcher >= 0.8) aceitou "carro" ~ "claro" (0.8), e 1 de 2 palavras do nome já atinge o limiar de 0.5. Como a resposta pronta de alimento vem antes das IAs no fluxo (validador -> FAQ exata -> alimento/medicamento por regras -> IAs de resposta), as IAs nem foram chamadas.
+- Correção: além do ratio, a palavra curta (até 6 letras) só aceita 1 letra de diferença (distância de edição); longas, até 2. "amendoin", "chocolatte" etc. continuam reconhecidos.
+- Teste novo: `test_alimento_palavra_parecida.py`.
+
+## Resposta pronta de alimento/medicamento removida: fora da FAQ, sempre as 2 IAs (2026-10-21, decisão do Silvan)
+
+- Regra do Silvan: toda pergunta deve passar pelas 2 IAs. A etapa "resposta pronta de alimento/medicamento" (comparação de palavras com o preparo, `faq_engine.buscar_resposta_alimento/buscar_resposta_medicamento`) vinha antes das IAs e as pulava quando casava - e errava ("carro" -> "Líquidos claros", "nimesulida" -> Clopidogrel). As IAs já recebem o preparo completo (alimentos, prazos, medicamentos).
+- Fluxo novo, igual no WhatsApp (`whatsapp_conversa._responder_pergunta`), no chat do paciente (`routes_paciente.chat`) e no Testar IA (`routes_medico.testar_ia`): IA validadora -> FAQ (pergunta IDÊNTICA já aprovada) -> 2 IAs. Regras de aprovação sem mudança.
+- Código removido de `app/faq_engine.py`: as duas funções, a tabela de categorias de alimento e os limiares delas. `_palavras_correspondem` (com a correção carro/claro) fica - é usada pela FAQ do MedIA (`base_conhecimento`). Telas: `chat.html`/`perguntas.html` continuam reconhecendo as origens antigas (`alimento_aguard` etc.) para o histórico; `testar_ia.html` limpou os textos de origem alimento/medicamento.
+- Custo: perguntas simples de alimento ("posso comer amendoim?") agora chamam as IAs.
+- Testes ajustados: `test_whatsapp_pergunta.py`, `test_aprovacao_configuravel.py` (IA simulada), `test_smoke.py`, `test_medicamento_nao_cadastrado_revisao.py`, `test_alimento_palavra_parecida.py`.
+
+## FAQ grava e procura a pergunta com a digitação corrigida (2026-10-21, pedido do Silvan)
+
+- Problema: "Posso ir de carrp?" foi aprovada e entrou no FAQ com o erro; depois "POsso ir de carro?" não achava a resposta (o FAQ só responde pergunta idêntica) e ia de novo para as IAs.
+- A IA validadora (`ia_preparo.validar_pergunta`, já chamada em toda pergunta do WhatsApp, sem custo de chamada extra) agora, quando VALIDA, devolve numa 2ª linha "PERGUNTA: ..." a mensagem só com ortografia/digitação/acentos corrigidos. `_extrair_pergunta_corrigida` descarta a correção se o tamanho mudar demais (ex.: IA completou com o histórico). Resultado em `pergunta_corrigida` (None = sem correção). max_tokens do validador 12 -> 200.
+- WhatsApp (`_responder_pergunta`): procura o FAQ pela versão corrigida e grava em `PerguntaPendente.pergunta_faq` (coluna nova, migração ADD COLUMN IF NOT EXISTS). Ao aprovar (manual em `perguntas_responder` ou automática em `aprovar_pergunta_automaticamente`), o FAQ recebe `pergunta_faq or pergunta`. O médico vê e o paciente recebe citado o texto original. Decisão do Silvan: sem campo de edição na janela de aprovação - se a correção sair errada, ajustar em Meu FAQ > Editar.
+- O chat web do paciente não passa pelo validador (já era assim): lá continua o texto original.
+- FAQ antigo com erro (ex.: "Posso ir de carrp?" no media-dev): corrigir em Meu FAQ > Editar.
+- Teste novo: `test_faq_pergunta_corrigida.py`.
+
+## Pergunta corrigida vai para as IAs e para o paciente; tela mostra as 2 IAs sempre (2026-10-21, pedido do Silvan)
+
+- WhatsApp: `responder_com_ia` recebe a pergunta já corrigida pela IA validadora (evita a IA interpretar errado "caro" em vez de "carro"). Ao aprovar, a mensagem ao paciente cita a versão corrigida ("Sobre sua pergunta \"Posso ir de carro?\""), também nas variáveis do template da Meta.
+- Portal de atendimento (janela da pergunta) e Perguntas pendentes: abaixo de "Pergunta", "Pergunta corrigida pela IA" quando difere do original.
+- As IAs escolhidas aparecem sempre na janela: a que respondeu com a sugestão; a que não respondeu com o motivo - "não soube responder com base no preparo cadastrado" (marcador NAO_SEI / recusa disfarçada), "deu erro" ou "não está configurada (sem chave de API)". `_responder_com_duas_ias` devolve `situacao` {nome: respondeu|nao_sabe|erro|nao_configurada} (inclui a reserva, se entrou); gravado em `PerguntaPendente.ias_situacao` (coluna nova, "Claude=respondeu;ChatGPT=nao_sabe") via `formatar_situacao_ias`; lido por `PerguntaPendente.situacao_ias`. Perguntas antigas (sem a coluna preenchida) continuam com a tela de antes.
+- Teste: `test_faq_pergunta_corrigida.py` (estendido).
+
+## Apagar pergunta sem responder (2026-10-21, pedido do Silvan)
+
+- Nova rota `medico.perguntas_excluir` (POST `/equipe/perguntas/<id>/excluir`): apaga uma PerguntaPendente ainda não respondida (pendente ou aguardando aprovação) - o paciente não recebe resposta e nada vai para o FAQ. Mesma regra de quem pode responder (médico só nos exames que atende; gerais com perm_pacientes). Já respondida: 404 (essas se apagam em Últimas respondidas). O histórico de conversa (ChatMensagem) fica.
+- Botão "Apagar pergunta" (com confirmação) na janela da pergunta do Portal de atendimento e em Perguntas pendentes.
+- Teste: `test_faq_pergunta_corrigida.py` (bloco no fim).
+
+## Botão "Usar" nas sugestões (2026-10-21, pedido do Silvan)
+
+- Portal de atendimento (janela da pergunta) e Perguntas pendentes: cada sugestão (Claude, ChatGPT, Gemini, FAQ do MedIA) tem o botão "Usar", que copia o texto dela para o "Rascunho final" da mesma pergunta; o médico ainda pode editar antes de aprovar. Macro `sugestao` em `portal/atendimento.html`; script no fim das duas telas (classe `usar-sugestao`, texto em `data-texto`). Conferido no navegador (inclusive texto com aspas e <>).
+
+## IAs respondem com conhecimento geral quando o preparo não cobre a dúvida (2026-10-21, pedido do Silvan)
+
+- Antes: "Que horas tenho que chegar na clínica?" -> as 2 IAs devolviam NAO_SEI, porque o PROMPT_SISTEMA manda responder SÓ com o preparo e o preparo não fala do horário.
+- Agora: nova regra no PROMPT_SISTEMA para dúvida prática sobre o exame/atendimento (horário de chegada, duração, o que levar, acompanhante, dirigir, recuperação) sem informação no preparo: a IA começa com `MARCADOR_CONHECIMENTO_GERAL` ("CONHECIMENTO_GERAL_REVISAR") e responde com o que em geral se pratica, dito como orientação geral. Nunca para diagnóstico, resultado, tratamento; medicamento continua com a regra própria. NAO_SEI fica para o resto.
+- Mesmo tratamento do marcador de medicamento não cadastrado (`_extrair_marcador_medicamento_nao_cadastrado` aceita os dois): sinal `exige_revisao_medicamento` -> SEMPRE vai para o médico, mesmo com aprovação automática desligada. Resposta com o marcador não é descartada como "recusa disfarçada".
+- `situacao` da IA: "respondeu_geral". Tela (portal e Perguntas pendentes): aviso "Resposta com conhecimento geral da IA - não está no preparo cadastrado" e rótulo "Sugestão do Claude (conhecimento geral)" (`PerguntaPendente.usou_conhecimento_geral`). Vale também para a resposta de medicamento não cadastrado (também é conhecimento geral).
+- Custo: nenhuma chamada a mais (mesma chamada, outra instrução). Depois de aprovada, entra no FAQ do médico e responde direto da próxima vez.
+- Teste novo: `test_ia_conhecimento_geral.py`.
+
+## Validador: "Que horas tenho que chegar na clínica?" bloqueada como fora do exame (2026-10-21, relatado pelo Silvan)
+
+- Sintoma no WhatsApp: "Que horas tenho que chegar na clinica?" e "Posso ir de caro/" receberam "Este chat é só para dúvidas sobre o preparo" (classificação fora_do_exame), embora o prompt diga que assuntos da clínica são VALIDA - e a mesma pergunta tinha passado minutos antes.
+- Causa provável (sem chave de IA aqui para reproduzir com a IA real): desde que o validador passou a devolver também a pergunta corrigida, o limite subiu de 12 para 200 tokens; com espaço, a IA às vezes explica a classificação (ex.: "Não se encaixa em FORA_DO_EXAME_ENCAMINHAR..."), e a leitura antiga procurava o marcador em qualquer ponto da 1ª linha.
+- Correção (`ia_preparo.validar_pergunta`): a categoria é a primeira linha que COMEÇA com um marcador (ignorando *, aspas, ponto); prompt reforça "1ª linha só a categoria, nunca explique" e cita "que horas chegar" e "ir de carro/acompanhante" como assuntos da clínica (VALIDA); limite 200 -> 120 tokens.
+- Teste: `test_ia_validador_pergunta.py` (casos com explicação antes/depois).
+
+## Validador: "fora do exame" não bloqueia mais sozinho (2026-10-21, relatado pelo Silvan)
+
+- Mesmo depois da leitura estrita da categoria, a validadora continuou classificando "Que horas tenho que chegar na clinica?" e "Posso ir de caro/" como fora do exame (no WhatsApp real). Causa exata não confirmada (sem chave de IA aqui).
+- Mudança (`whatsapp_conversa._responder_pergunta`): `fora_do_exame` da validadora vira só um indício - a pergunta segue para FAQ e as 2 IAs; o aviso "Este chat é só para dúvidas sobre o preparo" só sai se as IAs também não tiverem resposta (final None), sem criar pendente. `sem_sentido` continua encerrando direto. Custo: mensagens realmente fora do assunto passam a gastar as 2 chamadas das IAs (raras).
+- Log novo (`ia_preparo.validar_pergunta`, nível INFO): quando a validadora diz sem_sentido/fora_do_exame, registra provedor, pergunta e a resposta crua dela - ver nos logs do Render ("Validador (...) classificou como ...") para entender a causa.
+- Teste: `test_ia_conhecimento_geral.py` (2 casos novos).
+
+## Validador: exemplos no prompt (2026-10-21)
+
+- O log do Render mostrou a causa: a validadora em uso é o **ChatGPT (gpt-4o-mini)** e ela responde literalmente `FORA_DO_EXAME_ENCAMINHAR` para "Que horas tenho que chegar na clinica?" - é julgamento do modelo (pequeno), não leitura errada. `PROMPT_SISTEMA_VALIDADOR` ganhou exemplos explícitos (chegar na clínica, ir de carro, duração, documento, endereço, café -> VALIDA; jogo, chuva -> FORA; teclado -> SEM_SENTIDO) e a frase "FORA só quando for evidente que não tem nada a ver com saúde, exame, clínica ou atendimento". A rede de segurança anterior (fora do exame confirmado pelas 2 IAs) continua. Alternativa, se ainda errar: trocar a IA validadora para Claude em Painel do dono > Configurações.
+
+## Dados do paciente nas respostas via marcadores; FAQ fica genérico (2026-10-21, pedido do Silvan)
+
+- Problema: a resposta aprovada "No seu caso, o exame está marcado para 29/10/2026 às 11:40" entraria no FAQ e seria reenviada a outros pacientes. E bug encontrado junto: `ia_preparo._formatar_contexto_preparo` mandava às IAs a data do agendamento mais recente do TIPO de exame (de qualquer paciente), com todos os prazos calculados a partir dela.
+- Novo `app/marcadores_resposta.py`: marcadores `{data_exame}`, `{hora_exame}`, `{N dias antes}`, `{N horas antes}`; `preencher_marcadores(texto, agendamento)` (mesmas contas dos prazos do preparo; sem agendamento vira texto genérico, ex. "3 dias antes do exame"); `agendamento_do_paciente(paciente_id, exame_id)` (o em aberto mais recente, senão o mais recente); `resposta_para_paciente`.
+- IAs: o contexto não leva mais nenhuma data (só prazos relativos); o PROMPT_SISTEMA proíbe data/horário concreto do paciente e nome, e ensina os marcadores.
+- O FAQ e `PerguntaPendente.resposta` guardam o texto COM marcadores. Preenchidos na entrega: FAQ e aprovação automática no WhatsApp (`_responder_pergunta`, com o agendamento em foco) e no chat web (`routes_paciente.chat`); Testar IA; mensagem do WhatsApp ao aprovar (`perguntas_responder` usa `pergunta.resposta_para_paciente`); histórico da área do paciente (`chat.html` usa `resposta_para_paciente`). `ChatMensagem.resposta` grava o texto já preenchido (o que o paciente viu).
+- Janela de aprovação (portal e Perguntas pendentes): lembrete dos marcadores embaixo do rascunho e prévia ao vivo "Como o paciente vai receber" (JS com a mesma conta; data do exame em `data-agendamento`, de `PerguntaPendente.agendamento_iso`). Só aparece quando há marcador. Conferido no navegador.
+- Teste novo: `test_marcadores_resposta.py` (inclui 2 pacientes com horários diferentes recebendo a mesma resposta do FAQ, cada um com o seu).
+
+## Médico não vê marcador: aprova o texto com as datas do paciente (2026-10-21, pedido do Silvan)
+
+- Feedback: mostrar {hora_exame} no rascunho "induz muito ao erro do médico". Agora a janela de aprovação (portal e Perguntas pendentes) mostra sugestões e rascunho já preenchidos com as datas do paciente (`PerguntaPendente.para_paciente(texto)`; `situacao_ias` já devolve preenchido); o botão "Usar" copia o texto preenchido. Saíram o lembrete dos marcadores e a prévia ao vivo; ficou a nota "As datas deste paciente (29/10/2026, 11:40) são ajustadas automaticamente para cada paciente quando a resposta for reutilizada" (`datas_do_paciente`).
+- Ao aprovar (`perguntas_responder`) e ao editar em Últimas respondidas: `marcadores_resposta.generalizar_datas(texto, agendamento)` troca as datas deste paciente por marcadores antes de gravar (`PerguntaPendente.resposta` e FAQ): data do exame -> {data_exame}; horário igual ao do exame -> {hora_exame}; "dd/mm/aaaa às HH:MM" N horas antes -> {N horas antes}; data N dias antes -> {N dias antes}. Só dentro de 31 dias antes do exame (`JANELA_DIAS_GENERALIZAR`) - data sem relação fica como está. O WhatsApp leva exatamente o texto aprovado.
+- Telas sem paciente (Meu FAQ - lista, editar, adicionar): marcadores aparecem como "[data do exame]", "[horário do exame]", "[3 dias antes do exame]" (filtro Jinja `legivel` / `para_leitura`); ao salvar, `de_leitura` volta para marcador. Últimas respondidas mostra preenchido para o paciente da pergunta.
+- Teste: `test_marcadores_resposta.py` (atualizado). Conferido no navegador.
+
+## Opção "Salvar no Meu FAQ" na aprovação (2026-10-21, pedido do Silvan)
+
+- Portal de atendimento e Perguntas pendentes (aprovar rascunho e responder pergunta sem IA): caixa "Salvar no Meu FAQ", marcada por padrão. Desmarcada: a resposta vai ao paciente, mas `perguntas_responder` não cria FaqItem nem agenda o aprendizado do FAQ do MedIA (resposta só deste paciente). Forms sem a opção (sem o campo oculto `opcao_faq`) mantêm o padrão de salvar. Botão "Responder e ensinar a IA" virou "Responder". A aprovação automática (aprovação desligada) continua salvando sempre.
+- Correção junto: `_sincronizar_faq_da_pergunta_respondida` procurava o FAQ só pela pergunta original; desde a pergunta corrigida pela IA, o FAQ é gravado com `pergunta_faq` - agora procura pelas duas.
+- Teste novo: `test_salvar_faq_flag.py`; `test_portal_atendimento_resumo.py` ajustado.
+
+## WhatsApp: horário do exame nas listas (2026-10-21, pedido do Silvan)
+
+- `whatsapp_conversa`: a lista "Você tem mais de um exame em preparo", o "Exame em foco" e o "Você também tem agendado" mostram data E horário ("29/10/2026 às 11:40") - antes só a data, e exames iguais no mesmo dia ficavam indistinguíveis.
+- Teste: `test_marcadores_resposta.py`.
+
+## FAQ do MedIA: toda resposta de médico vira item; o vetor escolhe (2026-10-21, decisão do Silvan)
+
+- Antes (`base_aprendizado.aprender_com_resposta`): se a pergunta generalizada achava um item com nota >= 0,85, só ATUALIZAVA quando o médico tinha editado e o árbitro achava muito diferente (prazos não contavam) - na prática muita resposta não entrava (ex.: "Que horas tenho que chegar na clínica?").
+- Agora: depois de generalizar (Claude) e passar no filtro de dados pessoais, SEMPRE cria item novo (origem medico, não revisado), exceto se for praticamente idêntico - mesmo texto de pergunta e resposta, ou vetor de pergunta+resposta (mesmo formato do vetor dos itens) com similaridade >= 0,95 (`base_conhecimento.item_quase_identico`, `LIMIAR_QUASE_IDENTICO`). O vetor calculado já é gravado no item novo. Não há mais atualização automática de item existente (o dono corrige/desativa no painel); `editou` ficou sem efeito; `LIMIAR_ATUALIZACAO` saiu.
+- Busca (`buscar_na_base`): em empate de nota (2 casas), prefere item revisado e depois o mais recente (`_ordenar`).
+- Painel do dono: texto do interruptor "Aprender com as respostas dos médicos" atualizado.
+- Testes: `test_base_aprendizado.py` (cenários reescritos), `test_base_conhecimento.py` (desempate e quase idêntico).
+
+## Excluir médico apaga o Meu FAQ dos exames dele (2026-10-21, pedido do Silvan)
+
+- `exclusao_usuario.excluir_usuario_e_dados`: os FaqItem ligados aos exames próprios do médico (apagados junto) agora são APAGADOS - antes só perdiam o exame_id, e item sem exame vira FAQ geral do grupo (as respostas sobre o preparo dele passariam a responder perguntas de exames de outros médicos). FAQ geral do grupo criado por ele (sem exame) continua; FAQ do MedIA continua (só perde o vínculo do autor, decisão anterior).
+- Teste: `test_exclusao_usuario.py`.
+
+## Filtros nas telas de FAQ (2026-10-21, pedido do Silvan)
+
+- FAQ do MedIA (médico, `base_compartilhada`): o select de exame só lista tipos de exame com itens ativos (`tipos_com_itens`; o "Sugerir um item novo" continua com todos); busca por texto livre (`q`) na pergunta e na resposta. Corrigido também o `</form>` que faltava no filtro.
+- Meu FAQ (`faq_lista`): filtro por exame - só os exames do médico que têm item, mais "Geral (sem exame)" se houver - e busca por texto livre (`q`), que também acha o texto legível dos marcadores ("horário do exame"). "Limpar" volta à lista completa.
+- Busca (`routes_medico._contem_busca`): todas as palavras digitadas precisam aparecer, sem diferenciar acento, maiúscula e pontuação (`faq_engine.normalizar`).
+- Teste novo: `test_faq_filtros.py`.
+
+## Pedido de exclusão da conta (2026-10-21, pedido do Silvan)
+
+- Meus dados (médico/secretária, depois de confirmar a senha): card "Excluir minha conta" com o botão "Solicitar exclusão da conta" - janela com o motivo (obrigatório). Com pedido aberto, o card mostra a data e o motivo e permite "Cancelar pedido". Rotas `auth.solicitar_exclusao` / `auth.cancelar_solicitacao_exclusao` (404 para outros tipos de conta).
+- Modelo novo `SolicitacaoExclusao` (tabela `solicitacoes_exclusao`, criada pelo db.create_all na subida - conferido em PostgreSQL): usuario_id, nome e e-mail copiados, motivo, status pendente/concluida/descartada/cancelada, criado_em, resolvido_em. `Usuario.solicitacao_exclusao_pendente`.
+- Área do dono: aba Usuários (dashboard) e /dono/usuarios mostram "Pedidos de exclusão de conta" (`dono/_solicitacoes_exclusao.html`) com data, usuário, motivo, "Excluir conta" (mesma ação `dono.usuario_excluir`, com a senha do dono e os mesmos bloqueios) e "Descartar pedido" (`dono.solicitacao_exclusao_descartar`). Badge com a quantidade na aba Usuários.
+- Ao excluir a conta (`exclusao_usuario.excluir_usuario_e_dados`), o pedido fica "concluida", sem o vínculo com a conta (nome e motivo continuam como registro).
+- Teste novo: `test_solicitar_exclusao.py`.
+
+## Terceira IA desligada: some também das perguntas já na fila (2026-10-21, relatado pelo Silvan)
+
+- O interruptor "Usar a base de conhecimento como terceira IA" já era respeitado na hora em que a pergunta chega (`ia_preparo._aplicar_base_de_conhecimento` -> `base_ativa()`), mas a sugestão fica gravada na PerguntaPendente (`resposta_bruta_base`) - perguntas que chegaram com ela ligada continuavam mostrando "Sugestão do FAQ do MedIA" e o aviso de divergência depois de desligar.
+- Agora `PerguntaPendente.base_visivel` (sugestão gravada E base ligada agora) controla a exibição no portal e em Perguntas pendentes. O rascunho final não muda (se ele veio da base, continua como está).
+- Teste: `test_salvar_faq_flag.py`.
+
+## Carga inicial do FAQ do MedIA guardada à parte; o FAQ fica só com o que os médicos respondem (2026-10-21, decisão do Silvan)
+
+- Motivo: as respostas da carga inicial (baixadas da internet, origem "internet", ~866 itens) divergiam muito das respostas das IAs. Decisão: guardá-las numa tabela à parte, sem uso por enquanto, e deixar o FAQ do MedIA crescer só com as respostas dos médicos (aprendizado) e do dono; análise futura de como usar a terceira IA.
+- Tabela nova `base_conhecimento_arquivo` (modelo `BaseConhecimentoArquivo`, criada pelo db.create_all): cópia dos itens com texto, fonte, revisado, autor, vetor (embedding + modelo, para não recalcular se voltarem), vezes usada, criado_em, arquivado_em e o id original.
+- `base_conhecimento_padrao.arquivar_carga_inicial(db)`: move todos os itens origem "internet" para o arquivo e apaga da principal; antes solta as referências (PerguntaPendente.base_item_id -> NULL; sugestões de médicos de ALTERAÇÃO desses itens ficam com item_id NULL, ou seja, viram sugestão de item novo; histórico de edição desses itens é apagado). Idempotente. Itens de origem medico/dono ficam.
+- `migrar_banco.py`: NÃO semeia mais a carga inicial (`semear_base_conhecimento` continua existindo, só usado nos testes) e chama `arquivar_carga_inicial` a cada deploy. Validado em PostgreSQL: 866 movidos, principal 0; segunda execução move 0.
+- Atenção: vale para o media-prod também no próximo PR dev -> main.
+- Teste novo: `test_base_arquivo.py`.
+
+## Deploy do media-dev falhou na migração do arquivo do FAQ do MedIA - corrigido (2026-10-21)
+
+- Log do deploy (commit 6899df1): `INSERT INTO base_conhecimento_arquivo ... SELECT p0::INTEGER ... (425498 characters truncated)` -> `OperationalError: consuming input failed: SSL error: unexpected eof while reading`. A 1ª versão de `arquivar_carga_inicial` trazia os 866 itens para o Python e mandava UM INSERT com todos (cada vetor ~30 mil caracteres, ~26 MB num comando só); o Postgres do plano Free derrubou a conexão (o app no ar também recebeu "Connection refused" por alguns instantes). A transação voltou atrás - nada foi perdido.
+- Correção: tudo no próprio banco (`INSERT ... SELECT` + UPDATE/DELETE) em lotes de 50 ids, um commit por lote; se cair no meio, o próximo deploy continua de onde parou (só move o que ainda está na principal e não está no arquivo). Validado em PostgreSQL com vetores de 1536 posições nos 866 itens: 1,6 s, 866 no arquivo (todos com vetor), 0 na principal.
+
+## PENDENTE DE TESTE (Silvan) - lembrete, por tela
+
+Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
+
+**Site / Criar conta** - VALIDADO pelo Silvan em 2026-10-21
+- [x] "Criar conta" abre primeiro a escolha Google / E-mail e senha; "Escolher outra forma de entrar" volta para a escolha
+- [x] E-mail e senha: formulário sem endereço; CPF como "(será seu login)"
+- [x] Google: formulário sem senha, campo "CPF" com a explicação; "Cadastrar sem o Google" leva ao formulário com senha
+- [x] Sem o aviso de "Meus Locais de Atendimento"
+
+**Meus dados (equipe)** - VALIDADO pelo Silvan em 2026-10-21
+- [x] Sem endereço
+
+**Pacientes (lista)** - VALIDADO pelo Silvan em 2026-10-21
+- [x] Telefone com máscara; coluna "Telefone" (não mais "Telefone (login)") - validado 2026-10-21
+- "Novo paciente" (janela):
+  - [x] CPF novo: pede nome, telefone e nascimento e cadastra - validado 2026-10-21
+  - [x] CPF já existente no MedIA: oferece "Importar para este grupo" - validado 2026-10-21
+  - [x] CPF que já é paciente do grupo: avisa - validado 2026-10-21
+  - [x] CPF inválido: avisa - validado 2026-10-21
+  - [x] Sem e-mail, endereço e contato de emergência - validado 2026-10-21
+- [x] "Editar" (janela): nome, CPF, telefone e observações; CPF inválido ou de outro paciente é recusado; aviso de não registrar dados de saúde - validado 2026-10-21
+- [x] "Todos os agendamentos" (janela): passados e futuros, só deste grupo - validado 2026-10-21
+
+**Agenda de Exames (tela única)** - VALIDADO pelo Silvan em 2026-10-21
+- [x] Menu "Agenda de Exames" (sem "Agendar exame"); médico vê só os exames dele, secretária vê os de todos os médicos do grupo (com filtro) - validado 2026-10-21
+- [x] Calendário: Mês, Semana, Dia e Lista (no celular, Lista); cor por médico; clicar no exame abre os detalhes com Atendimento, Resultado e Encerrar; clicar num dia vazio abre "Agendar exame" com a data - validado 2026-10-21
+- [x] Botão "Agendar exame" (janela): o médico é filtrado pelo exame escolhido; sem os campos de acompanhante - validado 2026-10-21
+- [x] Dois exames do mesmo médico no mesmo horário (ou sobrepostos pela duração): recusado com o aviso; outro médico no mesmo horário: aceito - validado 2026-10-21
+- [x] Janela do exame: "Remarcar para" muda data e hora; horário ocupado é recusado com o aviso DENTRO da janela (pela duração: mostra a previsão de término); "Cancelar exame" apaga; os dois somem em exame encerrado - validado 2026-10-21
+
+**Exames & preparo (modelo de preparo / cadastro de exame)** - VALIDADO pelo Silvan em 2026-10-21
+- [x] Médico não salva sem "Sua especialidade"; com ela, aparece em "Meus dados" - validado 2026-10-21
+- [x] Sem a caixa "Precisa de acompanhante" - validado 2026-10-21
+
+**Médicos por preparo** - VALIDADO pelo Silvan em 2026-10-21
+- [x] Menu "Médicos por preparo": lista os preparos com o médico principal - validado 2026-10-21
+- [x] Associar um médico pela janela: ele passa a ver e editar o preparo e a atender (agendar) o exame - validado 2026-10-21
+- [x] Desmarcar: ele deixa de ver o preparo; o principal não sai - validado 2026-10-21
+- [x] Permissão "Associar médicos aos exames": sem ela, o menu "Médicos por preparo" some; marcar/desmarcar na tela de permissões da equipe (Ver membros / Convidar > Permissões) - validado 2026-10-21
+
+**Meu FAQ** - VALIDADO pelo Silvan em 2026-10-21
+- [x] "Adicionar manualmente" (janela) salva; com erro, reabre com o motivo - validado 2026-10-21
+
+**Grupos de trabalho** - VALIDADO pelo Silvan em 2026-10-21
+- [x] O menu abre "Meus grupos" mesmo com um grupo só - validado 2026-10-21
+- [x] O grupo do topo aparece como "Selecionado" na lista; com 2+ grupos, "Selecionar" troca o grupo do topo e das telas - validado 2026-10-21
+- [x] "Dados do grupo" abre numa janela: só o nome; salvar volta para "Meus grupos" - validado 2026-10-21
+- [x] "Criar novo grupo"; "Ver membros / Convidar" abre numa janela com a tela de membros dentro (buscar por CPF, criar conta, permissões, remover); ao fechar, a contagem de membros atualiza - validado 2026-10-21
+- [x] "Excluir": grupo vazio é excluído; grupo com dados mostra o que tem e não apaga - validado 2026-10-21
+- [x] Permissões: sem "Gerenciar filiais"; "Editar dados do grupo" - validado 2026-10-21
+
+**Área do paciente (autocadastro e Meus dados)** - VALIDADO pelo Silvan em 2026-10-21
+- [x] Sem e-mail, endereço e contato de emergência - validado 2026-10-21
+
+**WhatsApp** - VALIDADO pelo Silvan em 2026-10-21
+- [x] Identificação com a data de nascimento só em números (ex.: 16111983) - validado 2026-10-21 (no print do Silvan)
+- [ ] Lista de exames, "Exame em foco" e "Você também tem agendado" mostram data e horário
+- [x] Paciente sem exame em preparo: avisa uma vez e a próxima mensagem volta a pedir o CPF (dá para mandar outro CPF) - antes entrava em loop - validado 2026-10-21
+
+**Painel do dono** - VALIDADO pelo Silvan em 2026-10-21
+- [x] Menu lateral: "Configurações", "Usuários", "Grupos" e "Custo de IA" abrem a aba certa - validado 2026-10-21
+- [x] Anúncios: sem popup (só no sino); com popup (abre ao entrar, só fecha no "Entendi", também no celular e com médico de mais de um grupo) - validado 2026-10-21
+
+**Site público** - VALIDADO pelo Silvan em 2026-10-21
+- [x] /privacidade com a lista nova de dados - validado 2026-10-21
+
+**Preparo do paciente (link do WhatsApp)**
+- [ ] Linha do tempo: cada data aparece uma vez com os itens do dia embaixo (horário "às HH:MM" uma vez por horário); PDF igual
+
+**Portal de atendimento**
+- [ ] Pergunta sobre alimento/medicamento (ex.: "posso comer amendoim?", "Posso ir de carro?") chama as 2 IAs: o rascunho mostra a resposta de cada IA (não aparece mais "Automática (preparo cadastrado)" em perguntas novas). WhatsApp, chat do paciente e Testar IA
+
+**FAQ (WhatsApp)**
+- [ ] Pergunta com erro de digitação (ex.: "Posso ir de carrp?"), depois de aprovada, entra no Meu FAQ corrigida ("Posso ir de carro?"); a mesma pergunta escrita certa ou com outro erro recebe a resposta aprovada na hora
+
+**Portal de atendimento (janela da pergunta)**
+- [ ] Mostra a pergunta do paciente e, embaixo, "Pergunta corrigida pela IA" (quando houve correção)
+- [ ] Mostra as 2 IAs: a que respondeu com a sugestão e a que não respondeu com o motivo (não soube / erro / não configurada)
+- [ ] A resposta que chega ao paciente cita a pergunta corrigida; as IAs respondem à pergunta corrigida
+- [ ] "Apagar pergunta" (com confirmação) tira a pergunta da fila sem responder ao paciente nem gravar no FAQ; também em Perguntas pendentes
+- [ ] Botão "Usar" ao lado de cada sugestão (Claude, ChatGPT, FAQ do MedIA) copia o texto para o rascunho final; também em Perguntas pendentes
+- [ ] "Salvar no Meu FAQ" (marcado por padrão): desmarcado, o paciente recebe a resposta mas ela não aparece no Meu FAQ
+- [ ] "Que horas tenho que chegar na clínica?" (fora do preparo): as IAs respondem com orientação geral, com o aviso "conhecimento geral" na janela; vai para o médico mesmo com a aprovação automática desligada (antes disso, conferir que o WhatsApp não responde mais "Este chat é só para dúvidas sobre o preparo" para essa pergunta)
+
+**Respostas com dados do paciente (marcadores)**
+- [ ] Perguntas como "Que horas tenho que chegar?" ou "Quando suspendo o Xarelto?": a janela mostra sugestões e rascunho já com as datas do paciente (sem chaves {}), com a nota de que as datas são ajustadas para cada paciente
+- [ ] Meu FAQ mostra essas respostas com [data do exame], [horário do exame], [3 dias antes do exame]; editar mantendo esse formato funciona
+- [ ] Depois de aprovada, o paciente recebe com as datas dele; Meu FAQ guarda com os marcadores; outro paciente com a mesma pergunta recebe as datas DELE
+
+**Telas de FAQ (filtros)**
+- [ ] FAQ do MedIA: o filtro de exame só mostra exames com itens; a busca por texto livre (ex.: "dirigir") filtra os itens
+- [ ] Meu FAQ: filtro pelos seus exames (só os que têm item) e busca por texto livre (ex.: "cafe" acha "café")
+
+**FAQ do MedIA (aprendizado)**
+- [ ] Responder/aprovar como médico (com "Salvar no Meu FAQ" marcado) cria um item novo no FAQ do MedIA (não revisado, autor = médico), mesmo existindo pergunta parecida; responder de novo exatamente igual não duplica
+
+**Pedido de exclusão de conta**
+- [ ] Meus dados (médico/secretária): "Solicitar exclusão da conta" pede o motivo; depois mostra o pedido aguardando e permite cancelar
+- [ ] Painel do dono > Usuários: badge com a quantidade, lista com o motivo, "Excluir conta" (com sua senha) e "Descartar pedido"
+
+**FAQ do MedIA sem a carga inicial**
+- [ ] Depois do deploy: Painel do dono > FAQ do MedIA sem os itens da carga inicial (só os de médicos/dono); nas perguntas novas, a sugestão do FAQ do MedIA só aparece quando houver item vindo de médico
+
+**Banco (depois do deploy em produção)**
+- [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos
+- [ ] Depois de validado: pedir a fase 2 (DROP COLUMN das colunas vazias)
 
 ## Como continuar
 

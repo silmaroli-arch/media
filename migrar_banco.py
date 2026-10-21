@@ -57,10 +57,12 @@ with _app_para_create_all.app_context():
     from app.tipos_exame_padrao import semear_tipos_exame
     _novos_tipos = semear_tipos_exame(db, TipoExame)
     print(f"Tipos de exame: {_novos_tipos} novo(s) inserido(s) na lista padrao.")
-    # Conteudo inicial da base de conhecimento (so insere o que falta).
-    from app.base_conhecimento_padrao import semear_base_conhecimento
-    _novos_itens = semear_base_conhecimento(db)
-    print(f"Base de conhecimento: {_novos_itens} item(ns) inicial(is) inserido(s).")
+    # A carga inicial da base de conhecimento (baixada da internet) NAO e
+    # mais inserida: desde 2026-10-21 (pedido do Silvan) ela fica guardada
+    # a parte, sem uso, e o FAQ do MedIA tem so o que os medicos respondem.
+    from app.base_conhecimento_padrao import arquivar_carga_inicial
+    _arquivados = arquivar_carga_inicial(db)
+    print(f"Base de conhecimento: {_arquivados} item(ns) da carga inicial movido(s) para base_conhecimento_arquivo.")
 print("Schema de tabelas OK - seguindo para os ajustes de coluna (ALTER TABLE).")
 
 SQL = """
@@ -507,6 +509,24 @@ ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS base_divergiu BOOLEAN;
 -- Login com Google (so equipe, 2026-10-19): identificador fixo da conta Google ligada ao usuario.
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS google_sub VARCHAR(255);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_google_sub ON usuarios (google_sub);
+
+-- Anuncio do dono que abre como popup para o medico ou secretaria (2026-10-20).
+ALTER TABLE notificacoes ADD COLUMN IF NOT EXISTS popup BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS pergunta_faq TEXT;
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS ias_situacao VARCHAR(120);
+
+-- LGPD, minimizacao (pedido do Silvan, 2026-10-20): o sistema deixou de pedir
+-- o endereco pessoal da equipe e o e-mail, o endereco e o contato de emergencia
+-- do paciente, porque nao usava esses dados para nada. Aqui eles sao APAGADOS.
+-- Fase 1: so esvazia os valores. As colunas continuam existindo ate o proximo
+-- deploy porque a versao anterior do app, que ainda atende durante o deploy,
+-- le essas colunas em toda pagina. Fase 2 (deploy seguinte): DROP COLUMN.
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS email VARCHAR(150);
+UPDATE usuarios SET cep = NULL, rua = NULL, numero = NULL, complemento = NULL, bairro = NULL, cidade = NULL, uf = NULL WHERE cep IS NOT NULL OR rua IS NOT NULL OR numero IS NOT NULL OR complemento IS NOT NULL OR bairro IS NOT NULL OR cidade IS NOT NULL OR uf IS NOT NULL;
+UPDATE usuarios SET email = NULL WHERE tipo = 'paciente' AND email IS NOT NULL;
+-- Acompanhante do agendamento (nome e telefone) saiu em 2026-10-21 - mesma fase 1.
+UPDATE agendamentos SET acompanhante_nome = NULL, acompanhante_telefone = NULL WHERE acompanhante_nome IS NOT NULL OR acompanhante_telefone IS NOT NULL;
+UPDATE pacientes SET email = NULL, cep = NULL, rua = NULL, numero = NULL, complemento = NULL, bairro = NULL, cidade = NULL, uf = NULL, contato_emergencia_nome = NULL, contato_emergencia_telefone = NULL WHERE email IS NOT NULL OR cep IS NOT NULL OR rua IS NOT NULL OR numero IS NOT NULL OR complemento IS NOT NULL OR bairro IS NOT NULL OR cidade IS NOT NULL OR uf IS NOT NULL OR contato_emergencia_nome IS NOT NULL OR contato_emergencia_telefone IS NOT NULL;
 """
 
 conn = psycopg.connect(DATABASE_URL, autocommit=True)
@@ -544,6 +564,18 @@ for comando in sql_sem_comentarios.strip().split(";"):
     comando = comando.strip()
     if comando:
         conn.execute(comando)
+
+# Permissão "Associar médicos aos exames" (Médicos por preparo, 2026-10-21).
+# Feito em Python (não no SQL acima) porque o UPDATE só pode rodar UMA vez,
+# quando a coluna nasce: quem já usava a tela (médicos e secretárias)
+# continua podendo. Rodar de novo a cada deploy desfaria quem tirou a
+# permissão de alguém.
+if not conn.execute(
+    "SELECT 1 FROM information_schema.columns WHERE table_name = 'usuarios' AND column_name = 'perm_medicos_preparo'"
+).fetchone():
+    conn.execute("ALTER TABLE usuarios ADD COLUMN perm_medicos_preparo BOOLEAN NOT NULL DEFAULT FALSE")
+    conn.execute("UPDATE usuarios SET perm_medicos_preparo = TRUE WHERE tipo IN ('medico', 'secretaria')")
+    print("Permissão perm_medicos_preparo criada (ligada para médicos e secretárias existentes).")
 
 
 def _remover_constraint_unica(conn, tabela, coluna):
@@ -729,10 +761,10 @@ if not tem_dono:
     # INSERT também.
     conn.execute(
         "INSERT INTO usuarios (nome, email, senha_hash, tipo, ativo, "
-        "perm_pacientes, perm_equipe, perm_filiais, perm_dados_clinica, licenca_status, "
+        "perm_pacientes, perm_equipe, perm_filiais, perm_dados_clinica, perm_medicos_preparo, licenca_status, "
         "aprovacao_perguntas_paciente, ciclo_licenca) "
         "VALUES ('Dono da Plataforma', 'dono@plataforma.com', %s, 'dono', TRUE, "
-        "FALSE, FALSE, FALSE, FALSE, 'trial', TRUE, 'mensal')",
+        "FALSE, FALSE, FALSE, FALSE, FALSE, 'trial', TRUE, 'mensal')",
         (_gerar_hash_senha("123456"),),
     )
     print("Conta do dono recriada (dono@plataforma.com / 123456) - a base estava sem nenhum dono.")

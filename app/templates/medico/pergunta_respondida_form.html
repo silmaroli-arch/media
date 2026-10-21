@@ -27,7 +27,7 @@
     </div>
     <div class="mb-3">
       <label class="form-label">Resposta</label>
-      <textarea name="resposta" class="form-control" rows="3" required>{{ pergunta.resposta }}</textarea>
+      <textarea name="resposta" class="form-control" rows="3" required>{{ pergunta.resposta_para_paciente }}</textarea>
     </div>
     <button type="submit" class="btn btn-primary">Salvar</button>
     <a href="{{ url_for('medico.perguntas_respondidas') }}" class="btn btn-link">Cancelar</a>

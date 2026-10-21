@@ -1,0 +1,26 @@
+{# Conteúdo da janela "Todos os agendamentos" da lista de pacientes (pedido
+   do Silvan, 2026-10-21): só os agendamentos do paciente NESTE grupo,
+   passados e futuros - ver medico.pacientes_agendamentos. Carregado por
+   fetch dentro do modal de medico/pacientes_lista.html. #}
+{% if agendamentos %}
+<div class="table-responsive">
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Data/Hora</th><th>Exame</th><th>Médico</th><th>Situação</th></tr></thead>
+    <tbody>
+      {% for a in agendamentos %}
+      <tr>
+        <td class="text-nowrap">{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ a.exame.nome if a.exame else '-' }}</td>
+        <td>{{ a.medico.nome if a.medico else '-' }}</td>
+        <td>
+          {% if a.data_hora >= agora %}<span class="badge bg-primary">Próximo</span>
+          {% else %}<span class="badge bg-secondary">Passado</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted text-center mb-0">Nenhum agendamento deste paciente.</p>
+{% endif %}

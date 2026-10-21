@@ -14,7 +14,7 @@
       <td>{{ p.exame.nome if p.exame else "—" }}</td>
       <td class="text-nowrap">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
       <td>{{ p.pergunta }}</td>
-      <td>{{ p.resposta }}</td>
+      <td>{{ p.resposta_para_paciente }}</td>
       <td>{{ p.respondida_por }}</td>
       <td class="text-nowrap">
         <a href="{{ url_for('medico.pergunta_respondida_editar', pergunta_id=p.id) }}" class="btn btn-sm btn-outline-secondary">Editar</a>

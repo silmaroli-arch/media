@@ -1,8 +1,9 @@
 """Testa "Meus dados": o paciente edita os PRÓPRIOS dados ("Meus dados")
 e a mudança vale em TODOS os grupos/clínicas que ele frequenta.
 
-- Telefone, e-mail, endereço e contato de emergência são atualizados no
-  cadastro da conta de uma vez (são dados da pessoa).
+- O telefone é atualizado no cadastro da conta de uma vez (é dado da
+  pessoa). E-mail, endereço e contato de emergência saíram em 2026-10-20
+  (LGPD, ver test_lgpd_minimizacao.py).
 - Nome/CPF/data de nascimento não são editáveis pela tela (identidade
   verificada pela clínica).
 - O login é por CPF + data de nascimento (o CPF não muda): trocar o
@@ -91,11 +92,8 @@ with app.app_context():
     carla = Paciente.query.get(carla_id)
     tel_novo = normalizar_telefone("(27) 96060-0002")
     checar("A conta (login) ficou com o telefone novo", conta.telefone == tel_novo)
-    checar("O cadastro foi atualizado (telefone, e-mail, endereço)",
-           carla.telefone == tel_novo and carla.email == "carla@exemplo.com" and carla.rua == "Rua Nova")
-    checar("A cidade/UF do cadastro também foram atualizadas",
-           carla.cidade == "Vitória" and carla.uf == "ES")
-    checar("Contato de emergência salvo", carla.contato_emergencia_nome == "Mario Dados")
+    checar("O cadastro foi atualizado (telefone)", carla.telefone == tel_novo)
+    checar("E-mail enviado no POST não é guardado (LGPD)", conta.email is None)
     checar("O único cadastro continua associado aos DOIS grupos (não duplicou nada)",
            len(carla.grupos) == 2)
 
@@ -118,18 +116,6 @@ r = client.post("/paciente/meus-dados", data={
     "contato_emergencia_nome": "", "contato_emergencia_telefone": "",
 }, follow_redirects=True)
 checar("Telefone vazio é rejeitado", "obrigatório" in r.get_data(as_text=True))
-
-# CEP incompleto (ex.: "29055") é rejeitado - sem isso, salvava com
-# rua/bairro/cidade/UF sempre em branco.
-r = client.post("/paciente/meus-dados", data={
-    "telefone_original": normalizar_telefone("(27) 96060-0002"),
-    "telefone": "(27) 96060-0002", "email": "carla@exemplo.com",
-    "cep": "29055", "rua": "", "numero": "", "complemento": "", "bairro": "", "cidade": "", "uf": "",
-    "contato_emergencia_nome": "", "contato_emergencia_telefone": "",
-}, follow_redirects=True)
-checar("CEP incompleto é rejeitado", "CEP incompleto" in r.get_data(as_text=True))
-with app.app_context():
-    checar("O endereço não foi salvo pela metade", Paciente.query.get(carla_id).rua == "Rua Nova")
 
 client.get("/logout")
 print("\nTodos os testes de 'Meus dados' do paciente passaram.")

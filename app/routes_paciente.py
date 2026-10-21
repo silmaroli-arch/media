@@ -10,9 +10,10 @@ from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, GrupoPaciente, Grupo, Usuario, FaqItem, normalizar_telefone, formatar_nome_proprio, cep_incompleto, telefone_incompleto
-from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
-from app.ia_preparo import responder_com_ia
+from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, GrupoPaciente, Grupo, Usuario, FaqItem, normalizar_telefone, telefone_incompleto
+from app.faq_engine import buscar_resposta
+from app.marcadores_resposta import resposta_para_paciente
+from app.ia_preparo import responder_com_ia, formatar_situacao_ias
 from app.clinica_utils import verificar_vencimento_grupo
 from app.push_notificacoes import notificar_equipe_nova_pergunta
 from app.preparo_publico import montar_documento_preparo, gerar_pdf_preparo
@@ -101,7 +102,7 @@ def aprovar_pergunta_automaticamente(pergunta_pendente, resposta):
         grupo_id=pergunta_pendente.grupo_id,
         criado_por_id=pergunta_pendente.criado_por_id,
         exame_id=pergunta_pendente.exame_id,
-        pergunta=pergunta_pendente.pergunta,
+        pergunta=pergunta_pendente.pergunta_faq or pergunta_pendente.pergunta,
         resposta=resposta,
         criado_por="Sistema (aprovação automática desativada)",
     ))
@@ -374,67 +375,25 @@ def chat():
             # app.faq_engine.buscar_resposta), a resposta já cadastrada
             # volta direto pro paciente, sem chamar a IA de novo nem passar
             # pelo médico — é a ÚNICA fonte que pode responder direto, já
-            # que já foi revisada por alguém da equipe antes. As respostas
-            # prontas de alimento/medicamento (calculadas na hora a partir
-            # do preparo, sem depender de FAQ cadastrada) continuam vindo
-            # em seguida, antes da IA, mas (pedido do Silvan, 2026-09-11 —
-            # segurança do sistema) NUNCA vão direto pro paciente: mesmo
-            # vindo do preparo, entram como rascunho aguardando aprovação
-            # do médico igual à IA (ver bloco `elif resposta_alimento or
-            # resposta_medicamento` abaixo) — só depois de aprovada uma vez
-            # é que cai na base de FAQ e passa a responder direto da
-            # próxima vez (pelo caminho `faq_item` acima).
+            # que já foi revisada por alguém da equipe antes.
             faq_item, score = buscar_resposta(
                 pergunta_enviada,
                 grupo_id=grupo_id_ancora,
                 exame_id=exame_selecionado.id if exame_selecionado else None,
                 criado_por_id=criado_por_id_ancora,
             )
-            resposta_alimento = (
-                buscar_resposta_alimento(pergunta_enviada, exame_selecionado, paciente)
-                if not faq_item and exame_selecionado else None
-            )
-            resposta_medicamento = (
-                buscar_resposta_medicamento(pergunta_enviada, exame_selecionado, paciente)
-                if not faq_item and not resposta_alimento and exame_selecionado else None
-            )
-
+            # Resposta pronta de alimento/medicamento saiu (pedido do
+            # Silvan, 2026-10-21) - ver app.whatsapp_conversa: fora a FAQ,
+            # toda pergunta vai para as 2 IAs.
             if faq_item:
                 faq_item.vezes_utilizada += 1
                 db.session.commit()
-                resposta_ia = faq_item.resposta
+                # Marcadores ({data_exame}...) preenchidos com o agendamento
+                # deste paciente (ver app.marcadores_resposta).
+                resposta_ia = resposta_para_paciente(faq_item.resposta, paciente.id, exame_selecionado.id if exame_selecionado else None)
                 origem = "faq"
-            elif resposta_alimento or resposta_medicamento:
-                # Nomes curtos de propósito: ChatMensagem.origem é String(20), e
-                # "medicamento_aguardando" (22 caracteres) não caberia.
-                resposta_pronta = resposta_alimento if resposta_alimento else resposta_medicamento
-                origem = "alimento_aguard" if resposta_alimento else "medicamento_aguard"
-                pendente = PerguntaPendente(
-                    grupo_id=grupo_id_ancora,
-                    criado_por_id=criado_por_id_ancora,
-                    paciente_id=paciente.id,
-                    exame_id=exame_id_selecionado,
-                    pergunta=pergunta_enviada,
-                    status="aguardando_aprovacao",
-                    resposta_sugerida_ia=resposta_pronta,
-                )
-                db.session.add(pendente)
-                if exige_aprovacao:
-                    db.session.commit()
-                    notificar_equipe_nova_pergunta(pendente)
-                    encaminhada = True
-                else:
-                    # Pedido do Silvan (2026-09-13): aprovação desativada
-                    # para este Grupo/médico - responde direto, sem
-                    # esperar revisão humana (ver exige_aprovacao_pergunta/
-                    # aprovar_pergunta_automaticamente acima).
-                    aprovar_pergunta_automaticamente(pendente, resposta_pronta)
-                    db.session.commit()
-                    resposta_ia = resposta_pronta
-                    origem = "alimento" if resposta_alimento else "medicamento"
             else:
-                # Nada bateu na base de conhecimento nem nas respostas
-                # prontas — só agora a IA (quando configurada) é
+                # Nada bateu na base de conhecimento — só agora a IA (quando configurada) é
                 # consultada. A resposta dela NÃO vai direto para o
                 # paciente: fica como um rascunho (PerguntaPendente com
                 # status "aguardando_aprovacao") até o médico revisar,
@@ -475,6 +434,7 @@ def chat():
                         # quando a reserva "tapou o buraco" e o rascunho final
                         # saiu normal (ver medico/perguntas.html).
                         ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
+                        ias_situacao=formatar_situacao_ias(resultado_ia),
                     )
                     db.session.add(pendente)
                     # Pedido do Silvan (2026-09-28 - ver docstring de
@@ -505,7 +465,7 @@ def chat():
                         # desativada para este Grupo/médico.
                         aprovar_pergunta_automaticamente(pendente, resultado_ia["final"])
                         db.session.commit()
-                        resposta_ia = resultado_ia["final"]
+                        resposta_ia = resposta_para_paciente(resultado_ia["final"], paciente.id, exame_selecionado.id)
                         origem = "ia"
                 else:
                     pendente = PerguntaPendente(
@@ -519,6 +479,7 @@ def chat():
                         # porque alguma delas deu erro de chamada - ver
                         # app.ia_preparo.responder_com_ia.
                         ias_com_erro=(",".join(resultado_ia.get("falhas") or []) or None) if resultado_ia else None,
+                        ias_situacao=formatar_situacao_ias(resultado_ia),
                     )
                     db.session.add(pendente)
                     db.session.commit()
@@ -590,7 +551,6 @@ def meus_dados():
     if request.method == "POST":
         telefone_digitado = request.form.get("telefone", "").strip()
         telefone = normalizar_telefone(telefone_digitado)
-        email = request.form.get("email", "").strip().lower()
 
         if not telefone:
             flash("O telefone é obrigatório — é o contato que as clínicas usam com você.", "danger")
@@ -602,31 +562,11 @@ def meus_dados():
         if telefone_incompleto(telefone_digitado):
             flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
             return redirect(url_for("paciente.meus_dados"))
-        if telefone_incompleto(request.form.get("contato_emergencia_telefone", "")):
-            flash("Telefone do contato de emergência incompleto — digite o DDD e o número completos.", "danger")
-            return redirect(url_for("paciente.meus_dados"))
-
-        # CEP incompleto (ex.: "29055") não bloqueava o envio e ficava
-        # salvo pela metade, com rua/bairro/cidade/UF vazios.
-        if cep_incompleto(request.form.get("cep", "")):
-            flash("CEP incompleto — digite os 8 números.", "danger")
-            return redirect(url_for("paciente.meus_dados"))
 
         # Aplica na CONTA (login) e em TODOS os cadastros (todas as clínicas).
         current_user.telefone = telefone
-        current_user.email = email or None
         for p in current_user.pacientes:
             p.telefone = telefone
-            p.email = email or None
-            p.cep = request.form.get("cep", "").strip()
-            p.rua = request.form.get("rua", "").strip()
-            p.numero = request.form.get("numero", "").strip()
-            p.complemento = request.form.get("complemento", "").strip()
-            p.bairro = request.form.get("bairro", "").strip()
-            p.cidade = request.form.get("cidade", "").strip()
-            p.uf = request.form.get("uf", "").strip().upper() or None
-            p.contato_emergencia_nome = formatar_nome_proprio(request.form.get("contato_emergencia_nome", ""))
-            p.contato_emergencia_telefone = request.form.get("contato_emergencia_telefone", "").strip()
         db.session.commit()
 
         # O telefone deixou de ser credencial (o login é CPF + data de

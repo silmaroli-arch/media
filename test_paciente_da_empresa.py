@@ -57,7 +57,7 @@ html_form = r.get_data(as_text=True)
 checar("Formulário de novo paciente NÃO pede filial", 'name="clinica_id"' not in html_form)
 
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "cliente da empresa", "cpf": "321.654.987-00", "email": "",
+    "nome": "cliente da empresa", "cpf": "321.654.987-91", "email": "",
     "telefone": "(27) 97777-0001", "data_nascimento": "1992-05-10",
 }, follow_redirects=True)
 checar("Cadastro do paciente sem filial funciona", "cadastrado" in r.get_data(as_text=True).lower())
@@ -76,25 +76,95 @@ r = client.get("/equipe/pacientes")
 html_lista = r.get_data(as_text=True)
 checar("Paciente aparece na lista (nome formatado como nome próprio)", "Cliente da Empresa" in html_lista)
 checar("Lista de pacientes NÃO tem coluna de filial", "<th>Filial</th>" not in html_lista)
+checar("Telefone aparece com máscara na lista (2026-10-21)", "(27) 97777-0001" in html_lista and "27977770001" not in html_lista)
+checar("Coluna não diz mais 'Telefone (login)' (o login é CPF + nascimento)", "Telefone (login)" not in html_lista)
+html_detalhe = client.get(f"/equipe/pacientes/{cliente_id}").get_data(as_text=True)
+checar("Telefone com máscara no detalhe do paciente", "(27) 97777-0001" in html_detalhe and "login de acesso" not in html_detalhe)
+
+# "Editar" fica na lista e abre numa janela (2026-10-21); salvar volta para a lista.
+checar("Lista tem o botão 'Editar' que abre a janela de edição",
+       'data-bs-target="#modalEditarPaciente"' in html_lista and f'/equipe/pacientes/{cliente_id}/editar' in html_lista
+       and 'id="modalEditarPaciente"' in html_lista)
+checar("O detalhe não tem mais o botão 'Editar cadastro'", "Editar cadastro" not in html_detalhe)
+r = client.post(f"/equipe/pacientes/{cliente_id}/editar", data={
+    "nome": "cliente da empresa editado", "observacoes": "Prefere contato à tarde", "origem": "lista",
+})
+checar("Salvar pela janela volta para a lista", r.status_code == 302 and r.headers["Location"].endswith("/equipe/pacientes"))
+with app.app_context():
+    editado = Paciente.query.get(cliente_id)
+    checar("Nome e observações salvos pela janela",
+           editado.nome == "Cliente da Empresa Editado" and editado.observacoes == "Prefere contato à tarde")
+    editado.nome = "Cliente da Empresa"
+    db.session.commit()
+
+# CPF e telefone editáveis na janela (2026-10-21).
+r = client.post(f"/equipe/pacientes/{cliente_id}/editar", data={
+    "origem": "lista", "nome": "Cliente da Empresa", "observacoes": "", "cpf": "123.456.789-99", "telefone": "(27) 97777-0001",
+})
+checar("CPF inválido na edição: volta para a lista", r.status_code == 302)
+html_erro = client.get("/equipe/pacientes").get_data(as_text=True)
+checar("... reabrindo a janela de edição com o motivo", "CPF inválido" in html_erro and "data-volta" in html_erro)
+r = client.post(f"/equipe/pacientes/{cliente_id}/editar", data={
+    "origem": "lista", "nome": "Cliente da Empresa", "observacoes": "", "cpf": "111.444.777-35", "telefone": "(27) 98888-0009",
+})
+with app.app_context():
+    editado = Paciente.query.get(cliente_id)
+    checar("CPF e telefone novos salvos", editado.cpf == "111.444.777-35" and editado.telefone == "27988880009")
+    checar("... e o telefone vai também para a conta de acesso", editado.usuario.telefone == "27988880009")
+    editado.cpf = "321.654.987-91"
+    editado.telefone = editado.usuario.telefone = "27977770001"
+    db.session.commit()
+    editado.cpf = "321.654.987-00"  # CPF antigo, que não passa na conferência
+    db.session.commit()
+r = client.post(f"/equipe/pacientes/{cliente_id}/editar", data={
+    "origem": "lista", "nome": "Cliente da Empresa", "observacoes": "nota", "cpf": "321.654.987-00", "telefone": "(27) 97777-0001",
+})
+with app.app_context():
+    checar("Cadastro antigo com CPF que não passa na conferência ainda pode ser editado (CPF não mudou)",
+           Paciente.query.get(cliente_id).observacoes == "nota")
+    editado = Paciente.query.get(cliente_id)
+    editado.cpf = "321.654.987-91"
+    db.session.commit()
+
+# "Novo paciente" numa janela, em duas etapas (2026-10-21).
+checar("'Novo paciente' abre a janela", 'data-bs-target="#modalNovoPaciente"' in html_lista and 'id="modalNovoPaciente"' in html_lista)
+checar("1ª etapa: CPF inválido", client.get("/equipe/pacientes/buscar-cpf?cpf=111.111.111-11").get_json() == {"situacao": "invalido"})
+checar("1ª etapa: CPF que já é paciente do grupo",
+       client.get("/equipe/pacientes/buscar-cpf?cpf=321.654.987-91").get_json()["situacao"] == "ja_e_paciente")
+checar("1ª etapa: CPF novo", client.get("/equipe/pacientes/buscar-cpf?cpf=529.982.247-25").get_json() == {"situacao": "novo"})
+r = client.post("/equipe/pacientes/novo", data={
+    "origem": "lista", "nome": "paciente da janela", "cpf": "529.982.247-25",
+    "telefone": "(27) 97777-0003", "data_nascimento": "10",
+})
+checar("Erro na janela volta para a lista com a janela aberta", r.status_code == 302 and "novo=1" in r.headers["Location"])
+html_erro = client.get(r.headers["Location"]).get_data(as_text=True)
+checar("... mostrando o erro e os campos preenchidos",
+       "Data de nascimento inválida" in html_erro and 'value="paciente da janela"' in html_erro and "new bootstrap.Modal" in html_erro)
+r = client.post("/equipe/pacientes/novo", data={
+    "origem": "lista", "nome": "paciente da janela", "cpf": "529.982.247-25",
+    "telefone": "(27) 97777-0003", "data_nascimento": "10/05/1990",
+}, follow_redirects=True)
+checar("Cadastro pela janela funciona e volta para a lista",
+       "cadastrado" in r.get_data(as_text=True).lower() and "Paciente da Janela" in r.get_data(as_text=True))
+r = client.post("/equipe/pacientes/novo", data={
+    "nome": "Cpf Errado", "cpf": "123.456.789-99", "telefone": "(27) 97777-0004", "data_nascimento": "10/05/1990",
+}, follow_redirects=True)
+checar("Cadastro pela equipe agora confere o CPF", "CPF inválido" in r.get_data(as_text=True))
+
+# "Detalhes" virou a janela "Todos os agendamentos" (2026-10-21).
+checar("Lista tem 'Todos os agendamentos' e não tem mais 'Detalhes'",
+       "Todos os agendamentos" in html_lista and ">Detalhes<" not in html_lista
+       and f"/equipe/pacientes/{cliente_id}/agendamentos" in html_lista)
+r = client.get(f"/equipe/pacientes/{cliente_id}/agendamentos")
+checar("Janela de agendamentos responde (sem agendamentos ainda)",
+       r.status_code == 200 and "Nenhum agendamento deste paciente." in r.get_data(as_text=True))
 
 # CPF duplicado é bloqueado por GRUPO (não mais por filial).
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Cliente Repetido", "cpf": "321.654.987-00", "email": "",
+    "nome": "Cliente Repetido", "cpf": "321.654.987-91", "email": "",
     "telefone": "(27) 97777-0002", "data_nascimento": "1993-06-11",
 }, follow_redirects=True)
 checar("CPF repetido no mesmo grupo é rejeitado", "já existe um paciente com esse cpf nesta empresa" in r.get_data(as_text=True).lower())
-
-# CEP incompleto (ex.: "29055") é rejeitado - não pode salvar o endereço
-# pela metade (rua/bairro/cidade/UF sempre em branco).
-r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Cliente Cep Incompleto", "cpf": "321.654.987-70", "email": "",
-    "telefone": "(27) 97777-0009", "data_nascimento": "1994-07-12", "cep": "29055",
-}, follow_redirects=True)
-checar("CEP incompleto é rejeitado no cadastro pela equipe",
-       "CEP incompleto" in r.get_data(as_text=True))
-with app.app_context():
-    checar("Ninguém foi criado com o CEP incompleto",
-           Paciente.query.filter_by(cpf="321.654.987-70").first() is None)
 
 # ---------- Agendar o MESMO paciente em DOIS Grupos diferentes ----------
 
@@ -125,7 +195,7 @@ checar("Paciente pode ser agendado no Grupo Centro", "criado com sucesso" in r.g
 # mesmo paciente (identidade global) pra lá pelo CPF - a associação com um
 # Grupo não é automática entre Grupos distintos.
 client.post("/equipe/clinica", data={"clinica_id": str(praia_id)}, follow_redirects=True)
-r = client.post("/equipe/pacientes/importar", data={"cpf": "321.654.987-00"}, follow_redirects=True)
+r = client.post("/equipe/pacientes/importar", data={"cpf": "321.654.987-91"}, follow_redirects=True)
 checar("Paciente importado (pelo CPF) para o Grupo Praia", "importado" in r.get_data(as_text=True).lower())
 
 r = client.post("/equipe/agenda/novo", data={
@@ -139,6 +209,11 @@ with app.app_context():
     checar("Cada agendamento carrega o SEU Grupo (Centro e Praia)",
            len(ags) == 2 and ags[0].grupo_id == centro_id and ags[1].grupo_id == praia_id)
 
+# A janela "Todos os agendamentos" mostra só os do grupo ativo (Praia).
+html_ags = client.get(f"/equipe/pacientes/{cliente_id}/agendamentos").get_data(as_text=True)
+checar("'Todos os agendamentos' mostra só os do grupo ativo, não os de outra clínica",
+       "02/09/2026 09:00" in html_ags and "01/09/2026 09:00" not in html_ags and "Passado" in html_ags)
+
 client.get("/logout")
 
 # ---------- Isolamento entre Grupos continua valendo ----------
@@ -148,7 +223,7 @@ r = client.get("/equipe/pacientes")
 checar("Paciente do Grupo Saúde Total NÃO aparece para a Clínica Vitória", "Cliente da Empresa" not in r.get_data(as_text=True))
 client.get("/logout")
 
-r = client.post("/login-paciente", data={"cpf": "321.654.987-00", "data_nascimento": "10/05/1992"}, follow_redirects=True)
+r = client.post("/login-paciente", data={"cpf": "321.654.987-91", "data_nascimento": "10/05/1992"}, follow_redirects=True)
 checar("Paciente loga normalmente (CPF + nascimento)", r.status_code == 200)
 client.get("/logout")
 

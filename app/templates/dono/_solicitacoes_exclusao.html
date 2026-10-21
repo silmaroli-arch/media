@@ -1,0 +1,36 @@
+{# Pedidos de exclusão de conta feitos pelos próprios médicos/secretárias
+   em Meus dados (pedido do Silvan, 2026-10-21). O dono exclui com a mesma
+   ação da lista de usuários (senha do dono) ou descarta o pedido. #}
+{% if solicitacoes_exclusao %}
+<div class="card border-danger-subtle p-3 mb-3" id="solicitacoes-exclusao">
+  <h6 class="text-danger mb-2"><i class="bi bi-person-x me-1"></i>Pedidos de exclusão de conta ({{ solicitacoes_exclusao|length }})</h6>
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Pedido em</th><th>Usuário</th><th>Motivo</th><th></th></tr></thead>
+    <tbody>
+      {% for s in solicitacoes_exclusao %}
+      <tr>
+        <td class="text-nowrap">{{ s.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ s.nome }}<div class="small text-muted">{{ s.email or '' }}{% if s.usuario %} · {{ s.usuario.tipo }}{% endif %}</div></td>
+        <td style="white-space: pre-wrap;">{{ s.motivo }}</td>
+        <td class="text-nowrap">
+          {% if s.usuario %}
+          <form method="post" action="{{ url_for('dono.usuario_excluir', usuario_id=s.usuario_id) }}" class="d-flex gap-1 mb-1"
+                onsubmit="return confirm('Excluir permanentemente {{ s.nome }} e todos os dados associados? Essa ação não pode ser desfeita.');">
+            <input type="password" name="senha_confirmacao" class="form-control form-control-sm" style="width: 130px;"
+                   placeholder="sua senha" autocomplete="current-password" required>
+            <button type="submit" class="btn btn-sm btn-danger text-nowrap">Excluir conta</button>
+          </form>
+          {% endif %}
+          <form method="post" action="{{ url_for('dono.solicitacao_exclusao_descartar', solicitacao_id=s.id) }}"
+                onsubmit="return confirm('Descartar este pedido sem excluir a conta?');">
+            <button type="submit" class="btn btn-sm btn-link p-0">Descartar pedido</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}

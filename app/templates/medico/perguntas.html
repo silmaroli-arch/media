@@ -36,7 +36,7 @@
       <div class="accordion" id="accordionAguardando">
         {% for p in aguardando %}
         {% set eh_ia = p.resposta_bruta_claude or p.resposta_bruta_chatgpt or p.resposta_bruta_gemini or p.resposta_bruta_base %}
-        {% set col = 'col-md-3' if p.resposta_bruta_base else 'col-md-4' %}
+        {% set col = 'col-md-3' if p.base_visivel else 'col-md-4' %}
         <div class="accordion-item border-warning">
           <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#aguardando-{{ p.id }}" aria-expanded="false" aria-controls="aguardando-{{ p.id }}">
@@ -44,7 +44,7 @@
               {% if p.exame %}<span class="badge bg-light text-dark me-2">{{ p.exame.nome }}</span>{% endif %}
               {% if not eh_ia %}<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle me-2">Automática (preparo cadastrado)</span>{% endif %}
               {{ badge_filial(p) }}
-              {% if p.base_divergiu %}
+              {% if p.base_visivel and p.base_divergiu %}
               <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-2" title="O FAQ do MedIA diverge das IAs (ou respondeu sozinha) - revise com atenção">
                 <i class="bi bi-journal-medical"></i> FAQ do MedIA diverge
               </span>
@@ -59,6 +59,20 @@
           </h2>
           <div id="aguardando-{{ p.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionAguardando">
             <div class="accordion-body">
+              {# Pergunta corrigida pela IA validadora e IAs que não responderam
+                 (pedido do Silvan, 2026-10-21) - as que responderam aparecem
+                 nas colunas abaixo. #}
+              {% if p.pergunta_faq and p.pergunta_faq != p.pergunta %}
+              <p class="small mb-2"><strong>Pergunta corrigida pela IA:</strong> {{ p.pergunta_faq }}</p>
+              {% endif %}
+              {% if p.usou_conhecimento_geral %}
+              <div class="alert alert-warning py-2 small mb-2">
+                <i class="bi bi-lightbulb"></i> Resposta com <strong>conhecimento geral</strong> da IA - não está no preparo cadastrado. Revise e ajuste ao que vale na sua clínica.
+              </div>
+              {% endif %}
+              {% for nome, estado, texto in p.situacao_ias if not estado.startswith("respondeu") %}
+              <p class="small text-muted mb-2"><strong>{{ nome }}:</strong> <em>{{ texto }}</em></p>
+              {% endfor %}
               {% if p.ias_com_erro %}
               <div class="alert alert-warning py-2 small mb-3">
                 <i class="bi bi-exclamation-triangle-fill"></i>
@@ -67,7 +81,7 @@
                 (indisponibilidade momentânea do provedor) — o rascunho abaixo usa a resposta de outra IA disponível no momento.
               </div>
               {% endif %}
-              {% if p.base_divergiu %}
+              {% if p.base_visivel and p.base_divergiu %}
               <div class="alert alert-warning py-2 small mb-3">
                 <i class="bi bi-journal-medical"></i>
                 {% if not (p.resposta_bruta_claude or p.resposta_bruta_chatgpt or p.resposta_bruta_gemini) %}
@@ -86,35 +100,45 @@
                 <div class="row g-3 mb-2">
                   {% if p.resposta_bruta_gemini %}
                   <div class="{{ col }}">
-                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do Gemini</label>
-                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_gemini }}</div>
+                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do Gemini <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.para_paciente(p.resposta_bruta_gemini) }}" title="Copiar esta sugestão para o rascunho final">Usar</button></label>
+                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.para_paciente(p.resposta_bruta_gemini) }}</div>
                   </div>
                   {% endif %}
                   {% if p.resposta_bruta_chatgpt %}
                   <div class="{{ col }}">
-                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do ChatGPT</label>
-                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_chatgpt }}</div>
+                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do ChatGPT <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.para_paciente(p.resposta_bruta_chatgpt) }}" title="Copiar esta sugestão para o rascunho final">Usar</button></label>
+                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.para_paciente(p.resposta_bruta_chatgpt) }}</div>
                   </div>
                   {% endif %}
                   {% if p.resposta_bruta_claude %}
                   <div class="{{ col }}">
-                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do Claude</label>
-                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_claude }}</div>
+                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do Claude <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.para_paciente(p.resposta_bruta_claude) }}" title="Copiar esta sugestão para o rascunho final">Usar</button></label>
+                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.para_paciente(p.resposta_bruta_claude) }}</div>
                   </div>
                   {% endif %}
-                  {% if p.resposta_bruta_base %}
+                  {% if p.base_visivel %}
                   <div class="{{ col }}">
-                    <label class="form-label small text-muted mb-1 fw-semibold"><i class="bi bi-journal-medical"></i> FAQ do MedIA</label>
-                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_base }}
+                    <label class="form-label small text-muted mb-1 fw-semibold"><i class="bi bi-journal-medical"></i> FAQ do MedIA <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.para_paciente(p.resposta_bruta_base) }}" title="Copiar esta sugestão para o rascunho final">Usar</button></label>
+                    <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.para_paciente(p.resposta_bruta_base) }}
 {% if p.base_item and (p.base_item.fonte_nome or p.base_item.fonte_url) %}<div class="text-muted mt-1" style="white-space: normal;">Fonte: {% if p.base_item.fonte_url %}<a href="{{ p.base_item.fonte_url }}" target="_blank" rel="noopener">{{ p.base_item.fonte_nome or p.base_item.fonte_url }}</a>{% else %}{{ p.base_item.fonte_nome }}{% endif %}</div>{% endif %}</div>
                   </div>
                   {% endif %}
                   <div class="{{ col }}">
                     <label class="form-label small text-muted mb-1 fw-semibold">Resposta sugerida (edite se precisar)</label>
-                    <textarea name="resposta" class="form-control h-100" style="min-height: 8rem;" required>{{ p.resposta_sugerida_ia }}</textarea>
+                    <textarea name="resposta" class="form-control" style="min-height: 8rem;" required>{{ p.para_paciente(p.resposta_sugerida_ia) }}</textarea>
+                    {% if p.datas_do_paciente %}<div class="form-text">As datas deste paciente ({{ p.datas_do_paciente }}) são ajustadas automaticamente para cada paciente quando a resposta for reutilizada.</div>{% endif %}
                   </div>
                 </div>
-                <button type="submit" class="btn btn-info btn-sm">Aprovar e enviar ao paciente</button>
+                <div class="form-check mt-2">
+                  <input type="hidden" name="opcao_faq" value="1">
+                  <input class="form-check-input" type="checkbox" name="salvar_faq" id="salvar_faq_{{ p.id }}a" checked>
+                  <label class="form-check-label small" for="salvar_faq_{{ p.id }}a">Salvar no Meu FAQ <span class="text-muted">(responde sozinho quem perguntar o mesmo; desmarque se a resposta for só para este paciente)</span></label>
+                </div>
+                <button type="submit" class="btn btn-info btn-sm mt-2">Aprovar e enviar ao paciente</button>
+              </form>
+              <form method="post" action="{{ url_for('medico.perguntas_excluir', pergunta_id=p.id) }}" class="mt-2"
+                    onsubmit="return confirm('Apagar esta pergunta? O paciente não recebe resposta e nada vai para o FAQ.');">
+                <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Apagar pergunta</button>
               </form>
             </div>
           </div>
@@ -159,7 +183,16 @@
             <div class="mb-2">
               <textarea name="resposta" class="form-control" rows="2" placeholder="Digite a resposta que será enviada ao paciente e salva na base de conhecimento..." required></textarea>
             </div>
-            <button type="submit" class="btn btn-primary btn-sm">Responder e ensinar a IA</button>
+            <div class="form-check mt-2">
+              <input type="hidden" name="opcao_faq" value="1">
+              <input class="form-check-input" type="checkbox" name="salvar_faq" id="salvar_faq_{{ p.id }}p" checked>
+              <label class="form-check-label small" for="salvar_faq_{{ p.id }}p">Salvar no Meu FAQ <span class="text-muted">(responde sozinho quem perguntar o mesmo; desmarque se a resposta for só para este paciente)</span></label>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm mt-2">Responder</button>
+          </form>
+          <form method="post" action="{{ url_for('medico.perguntas_excluir', pergunta_id=p.id) }}" class="mt-2"
+                onsubmit="return confirm('Apagar esta pergunta? O paciente não recebe resposta e nada vai para o FAQ.');">
+            <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Apagar pergunta</button>
           </form>
         </div>
       </div>
@@ -167,4 +200,18 @@
     {% endfor %}
   </div>
 {% endif %}
+<script>
+  // "Usar" ao lado de cada sugestão: copia o texto para o rascunho final
+  // da mesma pergunta (pedido do Silvan, 2026-10-21).
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('.usar-sugestao');
+    if (!b) return;
+    var caixa = b.closest('.modal-content, .accordion-body');
+    var rascunho = caixa && caixa.querySelector('textarea[name=resposta]');
+    if (!rascunho) return;
+    rascunho.value = b.getAttribute('data-texto');
+    rascunho.focus();
+  });
+
+</script>
 {% endblock %}

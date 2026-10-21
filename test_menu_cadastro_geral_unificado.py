@@ -50,7 +50,10 @@ checar("Menu tem o item direto 'Pacientes'", "Pacientes" in menu)
 checar("Menu não contém mais 'Equipe' (virou redirect p/ Grupos de trabalho)", ">Equipe<" not in menu)
 checar("Menu não contém mais 'Meus locais de atendimento'", "Meus locais de atendimento" not in menu)
 checar("Menu 'Médico' não existe mais (virou item direto)", ">Médico<" not in menu)
-checar("Menu tem o item direto 'Meus exames agendados'", "Meus exames agendados" in menu)
+# Secretária vê "Exames agendados" (de todos os médicos); "Agendar exame"
+# saiu do menu e virou botão nessa tela (2026-10-21).
+checar("Menu tem o item direto 'Agenda de Exames' (renomeado em 2026-10-21)", "Agenda de Exames" in menu)
+checar("Menu não tem mais 'Agendar exame'", "Agendar exame" not in menu)
 checar("Menu não contém mais 'Minha agenda em todos os locais'", "Minha agenda em todos os locais" not in menu)
 checar("Menu 'Relatórios' não existe mais", ">Relatórios<" not in menu)
 # O submenu "Médico + IA" também deixou de existir (seus itens viraram
@@ -62,7 +65,7 @@ checar("Menu 'Médico + IA' não existe mais (nem o antigo 'IA')", "Médico + IA
 # "Minha licença", que são só do médico).
 ordem_esperada = [
     "Painel", "Meus dados", "Primeiros passos", "Exames &amp; preparo", "Pacientes",
-    "Agendar exame", "Meus exames agendados", "Portal de atendimento rápido",
+    "Agenda de Exames", "Portal de atendimento rápido",
     "Últimas respondidas", "Meu FAQ", "Grupos de trabalho", "Fale com a gente",
 ]
 posicoes = [menu.find(item) for item in ordem_esperada]
@@ -71,12 +74,13 @@ checar(
     -1 not in posicoes and posicoes == sorted(posicoes),
 )
 
-# Dados Cadastrais e Dados Fiscais têm botão "Cancelar" voltando pra lista de locais.
+# "Dados do grupo" tem botão "Cancelar" voltando pra "Meus grupos" (2026-10-20);
+# Dados Fiscais continua voltando pra URL antiga (que redireciona).
 r1 = client.get(f"/equipe/clinica/configuracoes/{clinica_id}")
 html1 = r1.get_data(as_text=True)
 checar(
-    "Dados Cadastrais tem o botão Cancelar apontando pra Meus locais",
-    'href="/equipe/filiais" class="btn btn-link">Cancelar</a>' in html1,
+    "Dados do grupo tem o botão Cancelar apontando pra Meus grupos",
+    'href="/grupos/" class="btn btn-link">Cancelar</a>' in html1,
 )
 
 r2 = client.get(f"/equipe/clinica/dados-fiscais/{clinica_id}")

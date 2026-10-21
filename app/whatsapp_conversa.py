@@ -184,12 +184,9 @@ from datetime import date, datetime
 from flask import current_app
 
 from app.extensions import db
-from app.faq_engine import (
-    buscar_resposta,
-    buscar_resposta_alimento,
-    buscar_resposta_medicamento,
-)
-from app.ia_preparo import responder_com_ia, validar_pergunta
+from app.faq_engine import buscar_resposta
+from app.marcadores_resposta import agendamento_do_paciente, preencher_marcadores
+from app.ia_preparo import responder_com_ia, validar_pergunta, formatar_situacao_ias
 from app.preparo_publico import montar_link_preparo
 from app.models import (
     Agendamento, ChatMensagem, ContagemPerguntasDia, ConversaWhatsapp, Paciente,
@@ -242,12 +239,16 @@ def _extrair_cpf(texto):
 
 
 def _extrair_data_nascimento(texto):
-    """Lê uma data de nascimento em formato dd/mm/aaaa (aceita "-" no
-    lugar de "/") de uma mensagem que contenha só a data. Retorna a data,
-    ou None se não reconhecer ou se a data não existir de verdade (ex.:
-    31/02/1990)."""
+    """Lê uma data de nascimento dd/mm/aaaa de uma mensagem que contenha só
+    a data. Aceita "/", "-", "." ou espaço como separador e também os 8
+    números juntos, ddmmaaaa (pedido do Silvan, 2026-10-21: "16111983").
+    Retorna a data, ou None se não reconhecer ou se a data não existir de
+    verdade (ex.: 31/02/1990)."""
     texto = (texto or "").strip()
-    data_match = re.fullmatch(r"(\d{1,2})\s*[/-]\s*(\d{1,2})\s*[/-]\s*(\d{4})", texto)
+    data_match = (
+        re.fullmatch(r"(\d{1,2})\s*[/.\s-]\s*(\d{1,2})\s*[/.\s-]\s*(\d{4})", texto)
+        or re.fullmatch(r"(\d{2})(\d{2})(\d{4})", texto)
+    )
     if not data_match:
         return None
     dia, mes, ano = (int(x) for x in data_match.groups())
@@ -294,7 +295,7 @@ def _agendamentos_ativos(paciente):
 
 def _texto_lista_exames(agendamentos, preambulo="Você tem mais de um exame em preparo. Sobre qual deles você quer falar?"):
     linhas = [
-        f"{i}) {a.exame.nome} — {a.data_hora.strftime('%d/%m/%Y')}"
+        f"{i}) {a.exame.nome} — {a.data_hora.strftime('%d/%m/%Y às %H:%M')}"
         for i, a in enumerate(agendamentos, start=1)
     ]
     return preambulo + "\n" + "\n".join(linhas)
@@ -330,13 +331,13 @@ def _texto_pedir_pergunta(paciente, agendamento, saudacao=True, outros_agendamen
     link_preparo = montar_link_preparo(agendamento)
     corpo = (
         f"{cabecalho}Exame em foco: *{agendamento.exame.nome}* — "
-        f"{agendamento.data_hora.strftime('%d/%m/%Y')}.\n\n"
+        f"{agendamento.data_hora.strftime('%d/%m/%Y às %H:%M')}.\n\n"
         f"Veja o preparo completo aqui: {link_preparo}\n\n"
         "Pode escrever sua pergunta sobre o preparo deste exame."
     )
     if outros_agendamentos:
         nomes = "; ".join(
-            f"{a.exame.nome} — {a.data_hora.strftime('%d/%m/%Y')}" for a in outros_agendamentos
+            f"{a.exame.nome} — {a.data_hora.strftime('%d/%m/%Y às %H:%M')}" for a in outros_agendamentos
         )
         corpo += f"\n\n(Você também tem agendado: {nomes}. Digite *trocar* para falar sobre outro exame.)"
     return corpo
@@ -354,9 +355,9 @@ MENSAGEM_CPF_DIGITO_INVALIDO = (
     "Esse CPF não parece válido (algum número deve estar errado). "
     "Confira e me envie de novo."
 )
-MENSAGEM_PEDIR_NASCIMENTO = "Certo! Agora me envie sua data de nascimento, assim: 01/01/1990"
+MENSAGEM_PEDIR_NASCIMENTO = "Certo! Agora me envie sua data de nascimento, assim: 01/01/1990 (ou só os números: 01011990)"
 MENSAGEM_NASCIMENTO_INVALIDA = (
-    "Não reconheci a data. Envie no formato dia/mês/ano, assim: 01/01/1990"
+    "Não reconheci a data. Envie no formato dia/mês/ano, assim: 01/01/1990 (ou só os números: 01011990)"
 )
 MENSAGEM_NAO_ENCONTRADO = (
     "Não encontramos um cadastro com esses dados. Vamos tentar de novo — "
@@ -399,7 +400,8 @@ MENSAGEM_REAGENDAMENTO_AVISADO = (
 )
 MENSAGEM_SEM_EXAME_ATIVO = (
     "Não encontramos nenhum exame em preparo no momento. Se acha que isso é "
-    "um engano, entre em contato com a clínica."
+    "um engano, entre em contato com a clínica. Para consultar com outro "
+    "CPF, é só enviar o CPF."
 )
 MENSAGEM_OPCAO_INVALIDA_EXAME = "Não entendi. Responda só com o número do exame na lista abaixo:"
 MENSAGEM_PERGUNTA_VAZIA = "Não recebi nenhum texto."
@@ -456,6 +458,17 @@ def _tem_pergunta_pendente(paciente):
     )
 
 
+def _sem_exame_ativo(conversa):
+    """Paciente identificado mas sem exame em preparo: desfaz a
+    identificação para a próxima mensagem recomeçar pelo CPF. Antes a
+    conversa ficava presa respondendo MENSAGEM_SEM_EXAME_ATIVO a qualquer
+    mensagem, inclusive a outro CPF (relatado pelo Silvan, 2026-10-21)."""
+    conversa.paciente_id = None
+    conversa.agendamento_id = None
+    conversa.cpf_pendente = None
+    return MENSAGEM_SEM_EXAME_ATIVO
+
+
 def _resolver_exame_em_foco(conversa, paciente, agendamentos):
     """Decide o próximo passo depois de identificar o paciente (na
     entrada) ou depois de "trocar" (já identificado): com um só exame
@@ -463,8 +476,7 @@ def _resolver_exame_em_foco(conversa, paciente, agendamentos):
     pra escolher (a escolha em si é tratada por processar_mensagem, na
     próxima mensagem que chegar)."""
     if not agendamentos:
-        conversa.agendamento_id = None
-        return MENSAGEM_SEM_EXAME_ATIVO
+        return _sem_exame_ativo(conversa)
     if len(agendamentos) == 1:
         conversa.agendamento_id = agendamentos[0].id
         return _texto_pedir_pergunta(paciente, agendamentos[0])
@@ -571,60 +583,43 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     )
     if resultado_validacao["classificacao"] == "sem_sentido":
         return MENSAGEM_MENSAGEM_SEM_SENTIDO, None, True
-    if resultado_validacao["classificacao"] == "fora_do_exame":
-        return MENSAGEM_PERGUNTA_FORA_DO_EXAME, None, True
+    # "Fora do exame" não encerra mais sozinho (2026-10-21: a validadora
+    # bloqueou "Que horas tenho que chegar na clínica?" várias vezes): a
+    # pergunta segue para as 2 IAs, e só recebe o aviso de "este chat é só
+    # para o preparo" se elas também não tiverem nada a responder.
+    validador_disse_fora = resultado_validacao["classificacao"] == "fora_do_exame"
 
     resposta_final = None
     origem = None
     pergunta_pendente_criada = None
+    agendamento_paciente = agendamento or (agendamento_do_paciente(paciente.id, exame.id) if exame else None)
 
+    # A FAQ é procurada pela pergunta com a digitação corrigida pela IA
+    # validadora ("carrp" acha a mesma resposta de "carro") - 2026-10-21.
+    pergunta_corrigida = resultado_validacao.get("pergunta_corrigida")
     faq_item, _score = buscar_resposta(
-        pergunta_texto,
+        pergunta_corrigida or pergunta_texto,
         grupo_id=grupo_id_ancora,
         exame_id=exame.id if exame else None,
         criado_por_id=criado_por_id_ancora,
     )
-    resposta_alimento = buscar_resposta_alimento(pergunta_texto, exame, paciente) if not faq_item and exame else None
-    resposta_medicamento = (
-        buscar_resposta_medicamento(pergunta_texto, exame, paciente)
-        if not faq_item and not resposta_alimento and exame else None
-    )
-
+    # Resposta pronta de alimento/medicamento por comparação de palavras
+    # saiu (pedido do Silvan, 2026-10-21): errava ("carro" virava "Líquidos
+    # claros", "nimesulida" virava Clopidogrel) e pulava as 2 IAs, que já
+    # recebem o preparo completo. Fora a FAQ (idêntica e já aprovada),
+    # toda pergunta vai para as IAs.
     if faq_item:
         faq_item.vezes_utilizada += 1
-        resposta_final = faq_item.resposta
+        # Marcadores ({data_exame}...) preenchidos com o agendamento deste
+        # paciente - o FAQ guarda o texto genérico (ver app.marcadores_resposta).
+        resposta_final = preencher_marcadores(faq_item.resposta, agendamento_paciente)
         origem = "faq"
-    elif resposta_alimento or resposta_medicamento:
-        # Resposta pronta (alimento ou medicamento) - vira rascunho
-        # aguardando aprovação do médico, igual à IA, em vez de ir direto
-        # pro paciente (ver docstring desta função).
-        resposta_pronta = resposta_alimento if resposta_alimento else resposta_medicamento
-        # Nomes curtos de propósito: ChatMensagem.origem é String(20), e
-        # "medicamento_aguardando" (22 caracteres) não caberia.
-        origem = "alimento_aguard" if resposta_alimento else "medicamento_aguard"
-        pergunta_pendente_criada = PerguntaPendente(
-            grupo_id=grupo_id_ancora,
-            criado_por_id=criado_por_id_ancora,
-            paciente_id=paciente.id,
-            exame_id=exame.id if exame else None,
-            pergunta=pergunta_texto,
-            status="aguardando_aprovacao",
-            resposta_sugerida_ia=resposta_pronta,
-            telefone_whatsapp=telefone,
-        )
-        db.session.add(pergunta_pendente_criada)
-        if not exige_aprovacao:
-            # Pedido do Silvan (2026-09-13): aprovação desativada para este
-            # Grupo/médico (ver exige_aprovacao_pergunta) - responde direto
-            # pelo WhatsApp, sem esperar o médico revisar.
-            aprovar_pergunta_automaticamente(pergunta_pendente_criada, resposta_pronta)
-            resposta_final = resposta_pronta
-            origem = "alimento" if resposta_alimento else "medicamento"
-            pergunta_pendente_criada = None
     else:
         resultado_ia = (
+            # As IAs recebem a pergunta já corrigida ("caro" -> "carro"),
+            # para não interpretarem errado a digitação (2026-10-21).
             responder_com_ia(
-                pergunta_texto, exame, paciente_id=paciente.id,
+                pergunta_corrigida or pergunta_texto, exame, paciente_id=paciente.id,
                 historico=_historico_recente_chat(paciente.id, exame.id),
             )
             if exame else None
@@ -639,6 +634,10 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             # ChatMensagem - não faz sentido registrar isso no histórico
             # nem na fila da equipe.
             return MENSAGEM_MENSAGEM_SEM_SENTIDO, None, True
+        if validador_disse_fora and not (resultado_ia and resultado_ia["final"]):
+            # A validadora disse "fora do exame" e as IAs confirmaram (não
+            # tinham nada a responder): aviso, sem ir para a fila da equipe.
+            return MENSAGEM_PERGUNTA_FORA_DO_EXAME, None, True
         if resultado_ia and resultado_ia["final"]:
             origem = "ia_aguardando"
             pergunta_pendente_criada = PerguntaPendente(
@@ -647,6 +646,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 paciente_id=paciente.id,
                 exame_id=exame.id,
                 pergunta=pergunta_texto,
+                pergunta_faq=pergunta_corrigida,
                 status="aguardando_aprovacao",
                 resposta_sugerida_ia=resultado_ia["final"],
                 resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
@@ -660,6 +660,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 # tela de aprovação, mesmo quando a reserva "tapou o buraco"
                 # e o rascunho final saiu normal (ver medico/perguntas.html).
                 ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
+                ias_situacao=formatar_situacao_ias(resultado_ia),
                 telefone_whatsapp=telefone,
             )
             db.session.add(pergunta_pendente_criada)
@@ -681,7 +682,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 # Pedido do Silvan (2026-09-13): aprovação desativada para
                 # este Grupo/médico.
                 aprovar_pergunta_automaticamente(pergunta_pendente_criada, resultado_ia["final"])
-                resposta_final = resultado_ia["final"]
+                resposta_final = preencher_marcadores(resultado_ia["final"], agendamento_paciente)
                 origem = "ia"
                 pergunta_pendente_criada = None
         else:
@@ -692,10 +693,12 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 paciente_id=paciente.id,
                 exame_id=exame.id if exame else None,
                 pergunta=pergunta_texto,
+                pergunta_faq=pergunta_corrigida,
                 # Mesmo sem nenhum rascunho da IA, vale registrar se foi
                 # porque alguma delas deu erro de chamada - ver
                 # app.ia_preparo.responder_com_ia.
                 ias_com_erro=(",".join(resultado_ia.get("falhas") or []) or None) if resultado_ia else None,
+                ias_situacao=formatar_situacao_ias(resultado_ia),
                 telefone_whatsapp=telefone,
             )
             db.session.add(pergunta_pendente_criada)
@@ -1176,8 +1179,9 @@ def processar_mensagem(telefone, corpo_mensagem):
         paciente = conversa.paciente
         agendamentos = _agendamentos_ativos(paciente)
         if not agendamentos:
+            resposta = _sem_exame_ativo(conversa)
             db.session.commit()
-            return MENSAGEM_SEM_EXAME_ATIVO
+            return resposta
 
         escolha = corpo_mensagem.strip() if corpo_mensagem else ""
         indice = int(escolha) if escolha.isdigit() else None

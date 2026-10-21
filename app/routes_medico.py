@@ -23,9 +23,10 @@ from app.models import (
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, PushSubscription, LicencaPagamento, garantir_meses_licenca,
     PlataformaConfig, MensagemSuporte, Notificacao, TipoExame, BaseConhecimentoItem, BaseConhecimentoSugestao,
+    ConversaWhatsapp,
     tipos_exame_ordenados, TipoExameSugestao,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
-    cep_incompleto, telefone_incompleto,
+    telefone_incompleto, validar_cpf,
 )
 from app.especialidades import ESPECIALIDADES, especialidade_valida
 from app.mercadopago_integration import (
@@ -40,8 +41,9 @@ from app.clinica_utils import (
 )
 from app.pdf_preparo import extrair_sugestao_de_pdf, extrair_sugestao_de_texto
 from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
-from app.ia_preparo import responder_com_ia
-from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
+from app.ia_preparo import responder_com_ia, formatar_situacao_ias
+from app.faq_engine import buscar_resposta
+from app.marcadores_resposta import de_leitura, generalizar_datas, para_leitura, resposta_para_paciente
 from app.custo_ia import registrar_chamada_ia
 from app.whatsapp_envio import (
     enviar_boas_vindas_whatsapp, enviar_preparo_cadastrado_whatsapp,
@@ -569,7 +571,33 @@ def pacientes_lista():
     # escondido à parte - agora é um Paciente real, incluído normalmente
     # em `pacientes` acima (via _filtro_pacientes_da_empresa), sem
     # tratamento especial nesta tela.
-    return render_template("medico/pacientes_lista.html", pacientes=pacientes)
+    # Janela "Novo paciente" (pedido do Silvan, 2026-10-21): depois de um
+    # erro no cadastro, a lista volta com a janela aberta e os campos
+    # preenchidos (ver _voltar_com_erro em pacientes_novo).
+    novo_form = session.pop("novo_paciente_form", None) if request.args.get("novo") else None
+    editar_form = session.pop("editar_paciente_form", None)
+    return render_template(
+        "medico/pacientes_lista.html", pacientes=pacientes, novo_form=novo_form, editar_form=editar_form,
+    )
+
+
+@medico_bp.route("/pacientes/buscar-cpf")
+@login_required
+@staff_required
+@permissao_required("perm_pacientes")
+def pacientes_buscar_cpf():
+    """1º passo da janela "Novo paciente": o CPF já é paciente deste grupo,
+    tem cadastro na plataforma (outra clínica ou autocadastro, e aí é só
+    importar) ou é novo? Devolve JSON."""
+    cpf = request.args.get("cpf", "").strip()
+    if not validar_cpf(cpf):
+        return {"situacao": "invalido"}
+    encontrado = _buscar_paciente_por_cpf_plataforma(cpf)
+    if not encontrado:
+        return {"situacao": "novo"}
+    if Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.id == encontrado.id).first():
+        return {"situacao": "ja_e_paciente", "nome": encontrado.nome}
+    return {"situacao": "importar", "nome": encontrado.nome}
 
 
 @medico_bp.route("/pacientes/solicitacoes")
@@ -621,21 +649,6 @@ def pacientes_cadastro_decidir(paciente_id):
     return redirect(url_for("medico.pacientes_solicitacoes"))
 
 
-def _preencher_endereco_emergencia(paciente, form):
-    """Preenche os campos de endereço (obtidos via busca por CEP no
-    formulário) e de contato de emergência a partir do form — usado tanto
-    no cadastro quanto na edição do paciente."""
-    paciente.cep = form.get("cep", "").strip()
-    paciente.rua = form.get("rua", "").strip()
-    paciente.numero = form.get("numero", "").strip()
-    paciente.complemento = form.get("complemento", "").strip()
-    paciente.bairro = form.get("bairro", "").strip()
-    paciente.cidade = form.get("cidade", "").strip()
-    paciente.uf = form.get("uf", "").strip().upper() or None
-    paciente.contato_emergencia_nome = formatar_nome_proprio(form.get("contato_emergencia_nome", ""))
-    paciente.contato_emergencia_telefone = form.get("contato_emergencia_telefone", "").strip()
-
-
 def _buscar_paciente_por_cpf_plataforma(cpf):
     """Acha o cadastro mais recente de um paciente na PLATAFORMA inteira
     pelo CPF (comparado só nos dígitos - o CPF é guardado como digitado).
@@ -680,50 +693,50 @@ def pacientes_novo():
         if not encontrado:
             flash("CPF não encontrado na plataforma — preencha o cadastro completo abaixo.", "info")
 
+    def _voltar_com_erro():
+        """Erro no cadastro. Veio da janela "Novo paciente" da lista (pedido
+        do Silvan, 2026-10-21)? Volta para a lista com a janela aberta e os
+        campos preenchidos (o motivo já foi para o flash). Senão, mostra o
+        formulário de página inteira, como sempre."""
+        if request.form.get("origem") == "lista":
+            session["novo_paciente_form"] = {
+                c: request.form.get(c, "") for c in ("nome", "cpf", "telefone", "data_nascimento")
+            }
+            return redirect(url_for("medico.pacientes_lista", novo=1))
+        return render_template(
+            "medico/pacientes_form.html", paciente=None,
+            cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
+        )
+
     if request.method == "POST":
         # O paciente é cadastrado na EMPRESA - não se escolhe filial aqui
         # ("o cliente é só cliente"). A filial só é escolhida na hora de
         # marcar cada consulta (medico.agenda_novo).
         nome = formatar_nome_proprio(request.form.get("nome", ""))
         cpf = request.form.get("cpf", "").strip()
-        email = request.form.get("email", "").strip().lower()
         telefone_digitado = request.form.get("telefone", "").strip()
         data_nascimento_str = request.form.get("data_nascimento", "").strip()
         telefone = normalizar_telefone(telefone_digitado)
 
         if not nome or not cpf or not telefone or not data_nascimento_str:
             flash("Nome, CPF, telefone e data de nascimento são obrigatórios.", "danger")
-            return render_template("medico/pacientes_form.html", paciente=None)
+            return _voltar_com_erro()
+
+        if not validar_cpf(cpf):
+            flash("CPF inválido — confira os números digitados.", "danger")
+            return _voltar_com_erro()
 
         # Telefone incompleto (ex.: "(27" digitado e enviado sem terminar)
         # não travava o envio - a máscara só formata o que foi digitado,
         # não garante que a pessoa terminou de digitar.
         if telefone_incompleto(telefone_digitado):
             flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
-            return render_template(
-                "medico/pacientes_form.html", paciente=None,
-                cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
-            )
-        if telefone_incompleto(request.form.get("contato_emergencia_telefone", "")):
-            flash("Telefone do contato de emergência incompleto — digite o DDD e o número completos.", "danger")
-            return render_template(
-                "medico/pacientes_form.html", paciente=None,
-                cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
-            )
+            return _voltar_com_erro()
 
         data_nascimento = _parse_data_nascimento(data_nascimento_str)
         if not data_nascimento:
             flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
-            return render_template("medico/pacientes_form.html", paciente=None)
-
-        # CEP incompleto (ex.: "29055") não bloqueava o envio e ficava
-        # salvo pela metade, com rua/bairro/cidade/UF vazios.
-        if cep_incompleto(request.form.get("cep", "")):
-            flash("CEP incompleto — digite os 8 números.", "danger")
-            return render_template(
-                "medico/pacientes_form.html", paciente=None,
-                cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
-            )
+            return _voltar_com_erro()
 
         # Telefone não é único por pessoa - é normal uma família inteira
         # (pais e filhos, por exemplo) compartilhar o mesmo telefone de
@@ -743,15 +756,7 @@ def pacientes_novo():
             .first()
         ):
             flash("Já existe um paciente cadastrado com esse telefone e data de nascimento nesta empresa.", "danger")
-            return render_template("medico/pacientes_form.html", paciente=None)
-
-        if email and (
-            Paciente.query.join(Usuario, Paciente.usuario_id == Usuario.id)
-            .filter(_filtro_pacientes_da_empresa(), Usuario.email == email)
-            .first()
-        ):
-            flash("Já existe um paciente com esse e-mail nesta empresa.", "danger")
-            return render_template("medico/pacientes_form.html", paciente=None)
+            return _voltar_com_erro()
 
         # Fatia 5: o cadastro (Paciente) é único e GLOBAL por CPF - não dá
         # mais para criar um cadastro novo se o CPF já existe em QUALQUER
@@ -768,7 +773,7 @@ def pacientes_novo():
                     "\"Buscar por CPF\" no topo desta página para importá-lo.",
                     "warning",
                 )
-            return render_template("medico/pacientes_form.html", paciente=None)
+            return _voltar_com_erro()
 
         # Paciente não usa e-mail/senha para entrar — o acesso é feito
         # informando telefone e data de nascimento (ver auth.login_paciente).
@@ -778,7 +783,7 @@ def pacientes_novo():
         # empresa é novo. Ver encontrar_conta_paciente em app/models.py.
         usuario = encontrar_conta_paciente_por_cpf(cpf) or encontrar_conta_paciente(telefone, data_nascimento)
         if not usuario:
-            usuario = Usuario(nome=nome, email=email or None, telefone=telefone, tipo="paciente")
+            usuario = Usuario(nome=nome, telefone=telefone, tipo="paciente")
             db.session.add(usuario)
             db.session.flush()
 
@@ -792,10 +797,8 @@ def pacientes_novo():
             nome=nome,
             cpf=cpf,
             data_nascimento=data_nascimento,
-            email=email or None,
             telefone=telefone,
         )
-        _preencher_endereco_emergencia(paciente, request.form)
         db.session.add(paciente)
         db.session.flush()
         _associar_paciente_ao_escopo_atual(paciente, empresa)
@@ -814,10 +817,7 @@ def pacientes_novo():
         )
         return redirect(url_for("medico.pacientes_lista"))
 
-    return render_template(
-        "medico/pacientes_form.html", paciente=None,
-        cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
-    )
+    return _voltar_com_erro()
 
 
 @medico_bp.route("/pacientes/importar", methods=["POST"])
@@ -846,8 +846,8 @@ def pacientes_importar():
     _associar_paciente_ao_escopo_atual(origem, empresa)
     db.session.commit()
     flash(
-        f"{origem.nome} foi importado(a) da plataforma para esta empresa - o cadastro (contato/"
-        "endereço) é o mesmo de sempre; o histórico dele(a) em outras clínicas continua lá (cada "
+        f"{origem.nome} foi importado(a) da plataforma para esta empresa - o cadastro (contato) "
+        "é o mesmo de sempre; o histórico dele(a) em outras clínicas continua lá (cada "
         "clínica vê só o que é dela).",
         "success",
     )
@@ -864,21 +864,58 @@ def pacientes_editar(paciente_id):
     ).first_or_404()
 
     if request.method == "POST":
-        # CEP incompleto (ex.: "29055") não bloqueava o envio e ficava
-        # salvo pela metade, com rua/bairro/cidade/UF vazios.
-        if cep_incompleto(request.form.get("cep", "")):
-            flash("CEP incompleto — digite os 8 números.", "danger")
-            return render_template("medico/pacientes_form.html", paciente=paciente)
-        if telefone_incompleto(request.form.get("contato_emergencia_telefone", "")):
-            flash("Telefone do contato de emergência incompleto — digite o DDD e o número completos.", "danger")
+        def _erro(msg):
+            flash(msg, "danger")
+            if request.form.get("origem") == "lista":
+                # Reabre a janela de edição com o que foi digitado.
+                session["editar_paciente_form"] = {
+                    "id": paciente.id,
+                    **{c: request.form.get(c, "") for c in ("nome", "cpf", "telefone", "observacoes")},
+                }
+                return redirect(url_for("medico.pacientes_lista"))
             return render_template("medico/pacientes_form.html", paciente=paciente)
 
+        # CPF e telefone editáveis pela janela da lista (pedido do Silvan,
+        # 2026-10-21). O cadastro do paciente é da plataforma inteira (vale
+        # em todas as clínicas dele): o CPF tem que ser válido e não pode
+        # ser de outro paciente; o telefone vai também para a conta de
+        # acesso dele, como em paciente.meus_dados. Só mexe quando o campo
+        # veio no formulário (a tela de página inteira não manda).
+        novo_cpf = request.form.get("cpf")
+        if novo_cpf is not None and re.sub(r"\D", "", novo_cpf) == re.sub(r"\D", "", paciente.cpf or ""):
+            # Não mudou: não confere (cadastros antigos podem ter CPF que não
+            # passa na conferência, e editar só o nome não pode travar).
+            novo_cpf = None
+        if novo_cpf is not None:
+            novo_cpf = novo_cpf.strip()
+            if not validar_cpf(novo_cpf):
+                return _erro("CPF inválido — confira os números digitados.")
+            outro = _buscar_paciente_por_cpf_plataforma(novo_cpf)
+            if outro and outro.id != paciente.id:
+                return _erro("Esse CPF já é de outro paciente cadastrado no MedIA.")
+        telefone_digitado = request.form.get("telefone")
+        novo_telefone = None
+        if telefone_digitado is not None:
+            novo_telefone = normalizar_telefone(telefone_digitado)
+            if not novo_telefone or telefone_incompleto(telefone_digitado):
+                return _erro("Telefone incompleto — digite o DDD e o número completos.")
+
         paciente.nome = formatar_nome_proprio(request.form.get("nome", "")) or paciente.nome
-        paciente.email = request.form.get("email", "").strip().lower() or None
         paciente.observacoes = request.form.get("observacoes", "").strip() or None
-        _preencher_endereco_emergencia(paciente, request.form)
+        if novo_cpf is not None:
+            paciente.cpf = novo_cpf
+        if novo_telefone:
+            paciente.telefone = novo_telefone
+            if paciente.usuario and paciente.usuario.tipo == "paciente":
+                paciente.usuario.telefone = novo_telefone
+                for outro_cadastro in paciente.usuario.pacientes:
+                    outro_cadastro.telefone = novo_telefone
         db.session.commit()
         flash("Cadastro do paciente atualizado.", "success")
+        # Editado pela janela da lista de pacientes (pedido do Silvan,
+        # 2026-10-21): volta para a lista, sem sair dela.
+        if request.form.get("origem") == "lista":
+            return redirect(url_for("medico.pacientes_lista"))
         return redirect(url_for("medico.pacientes_detalhe", paciente_id=paciente.id))
 
     return render_template("medico/pacientes_form.html", paciente=paciente)
@@ -901,6 +938,30 @@ def pacientes_detalhe(paciente_id):
             return redirect(url_for("medico.pacientes_lista"))
 
     return render_template("medico/pacientes_detalhe.html", paciente=paciente)
+
+
+@medico_bp.route("/pacientes/<int:paciente_id>/agendamentos")
+@login_required
+@staff_required
+def pacientes_agendamentos(paciente_id):
+    """Janela "Todos os agendamentos" da lista de pacientes (pedido do
+    Silvan, 2026-10-21): passados e futuros, só os deste grupo (ou da conta
+    solo) - o cadastro do paciente é da plataforma inteira, e os de outras
+    clínicas não aparecem. Médico sem perm_pacientes vê só os dele, mesma
+    regra da lista. Devolve só o pedaço de HTML do conteúdo da janela."""
+    paciente = Paciente.query.filter(
+        Paciente.id == paciente_id, _filtro_pacientes_da_empresa()
+    ).first_or_404()
+    consulta = Agendamento.query.filter(
+        Agendamento.paciente_id == paciente.id,
+        filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
+    )
+    if eh_medico() and not current_user.perm_pacientes:
+        consulta = consulta.filter(Agendamento.medico_id == current_user.id)
+    agendamentos = consulta.order_by(Agendamento.data_hora.desc()).all()
+    return render_template(
+        "medico/_paciente_agendamentos.html", agendamentos=agendamentos, agora=datetime.now(),
+    )
 
 
 # ---------- Exames e preparo ----------
@@ -938,7 +999,7 @@ def exames_novo():
     # (e, portanto, só vê no dropdown) os SEUS modelos de preparo ou os sem
     # dono registrado - não os de outro médico da empresa.
     if eh_medico():
-        modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
+        modelos = [m for m in modelos if m.pode_ser_editado_por(current_user)]
 
     # Último passo do checklist "Primeiros passos" (ver medico.atalhos
     # e preparo_modelos_novo, acessado pelo menu, não mais forçado após o
@@ -959,7 +1020,6 @@ def exames_novo():
         descricao = request.form.get("descricao", "").strip()
         preparo_modelo_raw = request.form.get("preparo_modelo_id", "").strip()
         duracao_minutos = request.form.get("duracao_minutos", type=int)
-        precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
 
         # medico_id continua obrigatório no banco (é quem aparece como
         # titular do exame) - se quem está cadastrando é médico, ele mesmo é
@@ -1009,7 +1069,6 @@ def exames_novo():
             grupo_id=filial.id if filial else None,
             medico_id=medico_id, nome=nome, descricao=descricao,
             preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos,
-            precisa_acompanhante=precisa_acompanhante,
             # medico_id acima é só um valor técnico/provisório pra passar
             # pela constraint do banco - não foi uma escolha de verdade
             # (nem quando é o próprio médico logado cadastrando, já que
@@ -1066,7 +1125,7 @@ def exames_editar(exame_id):
     # registrado (antigos) seguem o comportamento antigo.
     if not exame.pode_ser_editado_por(current_user):
         flash(
-            f"Só {exame.dono_medico.nome}, que criou este exame, pode editá-lo.",
+            f"Só {exame.dono_medico.nome}, que criou este exame, e os médicos associados a ele podem editá-lo.",
             "danger",
         )
         return redirect(url_for("medico.exames_lista"))
@@ -1077,7 +1136,7 @@ def exames_editar(exame_id):
         filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
     ).order_by(PreparoModelo.nome).all()
     if eh_medico():
-        modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
+        modelos = [m for m in modelos if m.pode_ser_editado_por(current_user)]
 
     if request.method == "POST":
         exame.nome = request.form.get("nome", "").strip()
@@ -1088,7 +1147,6 @@ def exames_editar(exame_id):
         # tela "Exames por filial" (medico.exames_por_filial_atualizar),
         # que deixa claro que é um valor por local, não do cadastro do
         # exame em si.
-        exame.precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
         # Reatribuir o médico RESPONSÁVEL principal saiu desta tela (fica
         # para uma funcionalidade própria, futura) - por ora só os médicos
         # EXTRAS continuam editáveis abaixo.
@@ -1097,16 +1155,9 @@ def exames_editar(exame_id):
         # médico editando o próprio exame - já que clínicas sem secretária
         # (só médicos) também precisam conseguir compartilhar um exame
         # entre colegas.
+        # Desde 2026-10-21 (pedido do Silvan) o exame com dono médico também
+        # pode ter outros médicos associados - ver "Médicos por preparo".
         medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != exame.medico_id}
-        if exame.dono_medico and medicos_extra_ids:
-            # Exame com dono médico é SÓ dele - outros médicos não podem
-            # ser associados (nem como extras).
-            flash(
-                f"Este exame pertence a {exame.dono_medico.nome} — outros médicos não podem ser "
-                "associados a ele.",
-                "danger",
-            )
-            return render_template("medico/exames_form.html", exame=exame, medicos=medicos, modelos=modelos)
         exame.medicos_extra = [m for m in medicos if m.id in medicos_extra_ids]
         preparo_modelo_id = request.form.get("preparo_modelo_id", type=int)
         if preparo_modelo_id:
@@ -1171,7 +1222,7 @@ def exames_por_filial():
     if current_user.tipo == "medico":
         exames_visiveis = [
             e for e in exames_do_grupo
-            if e.dono_medico is None or e.dono_medico.id == current_user.id
+            if e.pode_ser_editado_por(current_user)
         ]
     else:
         exames_visiveis = exames_do_grupo
@@ -1344,7 +1395,6 @@ def exames_por_filial_atualizar(exame_id):
         nome_origem = origem.nome
         descricao_origem = origem.descricao
         duracao_origem = origem.duracao_minutos
-        acompanhante_origem = origem.precisa_acompanhante
         # Fatia 5: `origem` e `exame` agora sempre vivem no MESMO Grupo (não
         # existe mais outra filial pra abrigar cada um) - copiar o nome de
         # `origem` para `exame` sem removê-lo violaria a constraint única
@@ -1360,7 +1410,6 @@ def exames_por_filial_atualizar(exame_id):
         exame.nome = nome_origem
         exame.descricao = descricao_origem
         exame.duracao_minutos = duracao_origem
-        exame.precisa_acompanhante = acompanhante_origem
         # O modelo de preparo era do exame antigo - com a associação
         # apontando pra outro exame, não vale mais; fica pra revisar.
         exame.preparo_modelo_id = None
@@ -1514,8 +1563,67 @@ def preparo_modelos_lista():
     # inteira não deveria nem mostrar o conteúdo clínico de outro médico.
     # Secretária/dono continuam vendo todos.
     if eh_medico():
-        modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
+        modelos = [m for m in modelos if m.pode_ser_editado_por(current_user)]
     return render_template("medico/preparo_modelos_lista.html", modelos=modelos)
+
+
+# ---------- Médicos por preparo (pedido do Silvan, 2026-10-21) ----------
+
+def _pode_associar_medicos(modelo):
+    """Secretária (e quem não é médico) associa médicos a qualquer preparo
+    do grupo; médico, só aos preparos que ele pode editar (o dele ou um
+    em que já foi associado)."""
+    return not eh_medico() or modelo.pode_ser_editado_por(current_user)
+
+
+@medico_bp.route("/preparos/medicos")
+@login_required
+@staff_required
+@permissao_required("perm_medicos_preparo")
+def preparos_medicos():
+    """Um mesmo exame, com o mesmo preparo, pode ser feito por mais de um
+    médico. Aqui se escolhe quais médicos fazem cada preparo: eles passam
+    a atender os exames que usam esse preparo (Exame.medicos_extra - agenda,
+    perguntas e listas já respeitam isso) e também podem editar o preparo
+    (PreparoModelo.pode_ser_editado_por)."""
+    grupo = empresa_atual()
+    modelos = (
+        PreparoModelo.query.filter(filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id))
+        .order_by(PreparoModelo.nome).all()
+    )
+    modelos = [m for m in modelos if _pode_associar_medicos(m)]
+    medicos = _medicos_do_escopo_atual(grupo) if grupo else []
+    linhas = []
+    for m in modelos:
+        principais = {e.medico_id for e in m.exames if e.medico_id}
+        associados = {u.id for e in m.exames for u in e.medicos_extra} - principais
+        linhas.append({"modelo": m, "principais": principais, "associados": associados})
+    return render_template("medico/preparos_medicos.html", linhas=linhas, medicos=medicos)
+
+
+@medico_bp.route("/preparos/<int:modelo_id>/medicos", methods=["POST"])
+@login_required
+@staff_required
+@permissao_required("perm_medicos_preparo")
+def preparos_medicos_salvar(modelo_id):
+    modelo = PreparoModelo.query.filter(
+        PreparoModelo.id == modelo_id, filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
+    ).first_or_404()
+    if not _pode_associar_medicos(modelo):
+        flash("Você não pode mudar os médicos deste preparo.", "danger")
+        return redirect(url_for("medico.preparos_medicos"))
+    if not modelo.exames:
+        flash("Este preparo ainda não tem exame - edite e salve o preparo uma vez para criar o exame.", "warning")
+        return redirect(url_for("medico.preparos_medicos"))
+    grupo = empresa_atual()
+    medicos = _medicos_do_escopo_atual(grupo) if grupo else []
+    escolhidos = set(request.form.getlist("medico_ids", type=int))
+    # O médico principal de cada exame continua sempre - só os associados mudam.
+    for exame in modelo.exames:
+        exame.medicos_extra = [m for m in medicos if m.id in escolhidos and m.id != exame.medico_id]
+    db.session.commit()
+    flash(f"Médicos do preparo \"{modelo.nome}\" atualizados.", "success")
+    return redirect(url_for("medico.preparos_medicos"))
 
 
 def _salvar_cortes_e_medicamentos(modelo, form):
@@ -1717,6 +1825,14 @@ def _ler_tipo_exame(form, obrigatorio, tipo_atual_id=None):
     return tipo_id, None
 
 
+def _falta_especialidade_do_medico(form):
+    """Médico precisa informar a especialidade no preparo (pedido do Silvan,
+    2026-10-21): desde 2026-10-19 ela não é mais pedida no cadastro e este
+    formulário é onde ele a informa. Só vale quando o campo está na tela
+    (médico, com a lista de tipos de exame)."""
+    return eh_medico() and "especialidade" in form and not especialidade_valida(form.get("especialidade"))
+
+
 def _atualizar_especialidade_do_medico(form):
     """O campo "Especialidade" do cadastro de preparo é a do PRÓPRIO médico
     logado: se ele escolheu outra (ou preencheu pela 1ª vez), atualiza o
@@ -1804,10 +1920,13 @@ def preparo_modelos_novo():
         # Campos do Exame (ver models.py) preenchidos direto nesta tela -
         # antes viviam só no cadastro de exame separado (exames_novo).
         duracao_minutos = request.form.get("duracao_minutos", type=int)
-        precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
 
         if not nome or not instrucoes:
             flash("Nome do modelo e instruções são obrigatórios.", "danger")
+            return _rerender_novo()
+
+        if _falta_especialidade_do_medico(request.form):
+            flash("Informe a sua especialidade.", "danger")
             return _rerender_novo()
 
         tipo_exame_id, erro_tipo = _ler_tipo_exame(request.form, obrigatorio=True)
@@ -1881,7 +2000,6 @@ def preparo_modelos_novo():
             medico_id=medico_id, nome=nome, descricao="",
             preparo_modelo_id=modelo.id,
             duracao_minutos=duracao_minutos,
-            precisa_acompanhante=precisa_acompanhante,
             medico_confirmado=medico_confirmado,
             associado=True,
             criado_por_id=current_user.id,
@@ -1938,7 +2056,7 @@ def preparo_modelos_editar(modelo_id):
     # POR ELE. Modelos sem dono registrado (antigos) seguem como antes.
     if not modelo.pode_ser_editado_por(current_user):
         flash(
-            f"Só {modelo.dono_medico.nome}, que criou este modelo de preparo, pode editá-lo.",
+            f"Só {modelo.dono_medico.nome}, que criou este modelo de preparo, e os médicos associados a ele podem editá-lo.",
             "danger",
         )
         return redirect(url_for("medico.preparo_modelos_lista"))
@@ -1972,6 +2090,10 @@ def preparo_modelos_editar(modelo_id):
             flash("Informe o nome do modelo.", "danger")
             return _rerender_editar()
 
+        if _falta_especialidade_do_medico(request.form):
+            flash("Informe a sua especialidade.", "danger")
+            return _rerender_editar()
+
         # Preparo antigo (sem tipo) não é obrigado a escolher agora - só
         # não pode "escolher e depois esvaziar" um tipo que já tinha.
         tipo_exame_id, erro_tipo = _ler_tipo_exame(
@@ -1983,7 +2105,6 @@ def preparo_modelos_editar(modelo_id):
             return _rerender_editar()
 
         duracao_minutos = request.form.get("duracao_minutos", type=int)
-        precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
         medico_id = None
         medico_confirmado = True
 
@@ -2038,7 +2159,6 @@ def preparo_modelos_editar(modelo_id):
             if exame_vinculado:
                 exame_vinculado.nome = nome
                 exame_vinculado.duracao_minutos = duracao_minutos
-                exame_vinculado.precisa_acompanhante = precisa_acompanhante
                 exame_vinculado.medico_id = medico_id
                 exame_vinculado.medico_confirmado = medico_confirmado
                 exame_vinculado.associado = True
@@ -2048,7 +2168,6 @@ def preparo_modelos_editar(modelo_id):
                     medico_id=medico_id, nome=nome, descricao="",
                     preparo_modelo_id=modelo.id,
                     duracao_minutos=duracao_minutos,
-                    precisa_acompanhante=precisa_acompanhante,
                     medico_confirmado=medico_confirmado, associado=True,
                     criado_por_id=current_user.id,
                 ))
@@ -2071,7 +2190,7 @@ def preparo_modelos_remover(modelo_id):
     # Mesma regra da edição: só o médico dono remove.
     if not modelo.pode_ser_editado_por(current_user):
         flash(
-            f"Só {modelo.dono_medico.nome}, que criou este modelo de preparo, pode removê-lo.",
+            f"Só {modelo.dono_medico.nome}, que criou este modelo de preparo, e os médicos associados a ele podem removê-lo.",
             "danger",
         )
         return redirect(url_for("medico.preparo_modelos_lista"))
@@ -2366,6 +2485,63 @@ def agenda():
     return redirect(url_for("medico.dashboard", _anchor="agenda-completa"))
 
 
+def _agendamento_em_conflito(medico_id, inicio, duracao_minutos, ignorar_id=None):
+    """Outro agendamento do MESMO médico que se sobrepõe a este horário
+    (pedido do Silvan, 2026-10-21: deixava marcar dois exames do mesmo
+    médico no mesmo dia e hora). Cada exame ocupa da hora marcada até
+    hora + duração do exame; sem duração cadastrada, só a hora exata.
+    Vale em qualquer grupo: é a agenda da pessoa."""
+    fim = inicio + timedelta(minutes=duracao_minutos or 0)
+    candidatos = Agendamento.query.filter(
+        Agendamento.medico_id == medico_id,
+        Agendamento.data_hora >= inicio - timedelta(days=1),
+        Agendamento.data_hora <= fim + timedelta(days=1),
+    ).all()
+    for outro in candidatos:
+        if ignorar_id and outro.id == ignorar_id:
+            continue
+        outro_fim = outro.data_hora + timedelta(minutes=(outro.exame.duracao_minutos if outro.exame else 0) or 0)
+        mesmo_inicio = outro.data_hora == inicio
+        sobrepoe = outro.data_hora < fim and inicio < outro_fim
+        if mesmo_inicio or sobrepoe:
+            return outro
+    return None
+
+
+def _mensagem_conflito(conflito, inicio, duracao_minutos):
+    """Texto do aviso de conflito de horário. Se o choque é pela duração
+    (não no mesmo horário), diz isso e mostra a previsão de término
+    (pedido do Silvan, 2026-10-21)."""
+    medico = conflito.medico.nome if conflito.medico else "O médico"
+    outro = f"{conflito.exame.nome if conflito.exame else 'exame'} com {conflito.paciente.nome}"
+    if conflito.data_hora == inicio:
+        return (
+            f"{medico} já tem um exame nesse horário: {outro}, em "
+            f"{conflito.data_hora.strftime('%d/%m/%Y às %H:%M')}. Escolha outro horário."
+        )
+    duracao_outro = (conflito.exame.duracao_minutos if conflito.exame else 0) or 0
+    outro_fim = conflito.data_hora + timedelta(minutes=duracao_outro)
+    partes = [f"Não é possível marcar em {inicio.strftime('%d/%m/%Y às %H:%M')} por causa da duração dos exames."]
+    if duracao_outro:
+        partes.append(
+            f"{medico} tem {outro} às {conflito.data_hora.strftime('%H:%M')}, com duração de {duracao_outro} min "
+            f"(previsão de término às {outro_fim.strftime('%H:%M')})."
+        )
+    else:
+        partes.append(f"{medico} tem {outro} às {conflito.data_hora.strftime('%H:%M')}.")
+    if duracao_minutos:
+        fim = inicio + timedelta(minutes=duracao_minutos)
+        partes.append(f"Este exame dura {duracao_minutos} min (previsão de término às {fim.strftime('%H:%M')}).")
+    if inicio > conflito.data_hora:
+        partes.append(f"Escolha um horário a partir das {outro_fim.strftime('%H:%M')}.")
+    else:
+        limite = conflito.data_hora - timedelta(minutes=duracao_minutos or 0)
+        partes.append(
+            f"Escolha um horário até as {limite.strftime('%H:%M')} ou a partir das {outro_fim.strftime('%H:%M')}."
+        )
+    return " ".join(partes)
+
+
 @medico_bp.route("/agenda/novo", methods=["GET", "POST"])
 @login_required
 @staff_required
@@ -2373,28 +2549,35 @@ def agenda_novo():
     filiais_disponiveis = filiais_atuais()
 
     if request.method == "POST":
+        def _voltar(destino_antigo):
+            """Veio da janela "Agendar exame" (tela única de exames
+            agendados, pedido do Silvan 2026-10-21)? Volta para ela com a
+            janela aberta e os campos preenchidos; senão, para o
+            formulário de página inteira, como antes."""
+            if request.form.get("origem") == "agenda":
+                session["agendar_form"] = {
+                    c: request.form.get(c, "")
+                    for c in ("paciente_id", "exame_id", "medico_id", "data_hora", "observacoes")
+                }
+                return redirect(url_for("medico.medico_agenda_pessoal", agendar=1))
+            return redirect(destino_antigo)
+
         filial_id = request.form.get("filial_id", type=int)
         paciente_id = request.form.get("paciente_id", type=int)
         exame_id = request.form.get("exame_id", type=int)
         data_hora_str = request.form.get("data_hora")
         observacoes = request.form.get("observacoes", "").strip()
-        acompanhante_nome = request.form.get("acompanhante_nome", "").strip()
-        acompanhante_telefone = request.form.get("acompanhante_telefone", "").strip()
-
-        if telefone_incompleto(acompanhante_telefone):
-            flash("Telefone do acompanhante incompleto — digite o DDD e o número completos.", "danger")
-            return redirect(url_for("medico.agenda_novo", filial_id=filial_id))
 
         # Fatia 6: sem Grupo (conta solo), `filiais_disponiveis` é vazia -
         # não há filial pra escolher, e não é mais um erro (era antes).
         filial = next((f for f in filiais_disponiveis if f.id == filial_id), None)
         if filiais_disponiveis and not filial:
             flash("Escolha uma filial válida.", "danger")
-            return redirect(url_for("medico.agenda_novo"))
+            return _voltar(url_for("medico.agenda_novo"))
 
         if not paciente_id or not exame_id:
             flash("Escolha um paciente e um exame válidos.", "danger")
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None))
+            return _voltar(url_for("medico.agenda_novo", filial_id=filial.id if filial else None))
 
         # O médico só pode agendar para os seus próprios exames (principal
         # ou associado). Quando o exame tem mais de um médico associado,
@@ -2421,7 +2604,7 @@ def agenda_novo():
         exame = exame_query.first()
         if not paciente or not exame:
             flash("Paciente ou exame inválido para a filial/médico escolhidos.", "danger")
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
+            return _voltar(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
 
         if eh_medico():
             medico_atende_id = current_user.id
@@ -2434,15 +2617,12 @@ def agenda_novo():
             data_hora = datetime.strptime(data_hora_str, "%Y-%m-%dT%H:%M")
         except (ValueError, TypeError):
             flash("Data/hora inválida.", "danger")
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
+            return _voltar(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
 
-        if exame.precisa_acompanhante and not acompanhante_nome:
-            flash(
-                f"O exame '{exame.nome}' exige acompanhante — informe o nome de quem vai acompanhar "
-                "o paciente no dia (pode ser alterado depois, se necessário).",
-                "danger",
-            )
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
+        conflito = _agendamento_em_conflito(medico_atende_id, data_hora, exame.duracao_minutos)
+        if conflito:
+            flash(_mensagem_conflito(conflito, data_hora, exame.duracao_minutos), "danger")
+            return _voltar(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
 
         agendamento = Agendamento(
             grupo_id=filial.id if filial else None,
@@ -2454,8 +2634,6 @@ def agenda_novo():
             medico_id=medico_atende_id,
             data_hora=data_hora,
             observacoes=observacoes,
-            acompanhante_nome=acompanhante_nome or None,
-            acompanhante_telefone=acompanhante_telefone or None,
         )
         db.session.add(agendamento)
         db.session.commit()
@@ -2469,6 +2647,8 @@ def agenda_novo():
         # _garantir_agendamento_teste, usado só por "Testar IA").
         enviar_agendamento_criado_whatsapp(agendamento)
         flash("Agendamento criado com sucesso.", "success")
+        if request.form.get("origem") == "agenda":
+            return redirect(url_for("medico.medico_agenda_pessoal"))
         return redirect(url_for("medico.agenda"))
 
     # GET — monta os campos dependentes (filial -> médico -> exame/paciente)
@@ -2542,29 +2722,53 @@ def _resolver_medico_alvo(filiais, medico_id):
 @login_required
 @staff_required
 def medico_agenda_pessoal(medico_id=None):
+    """Tela única de exames agendados (pedido do Silvan, 2026-10-21): lista
+    e "Agendar exame" numa janela - o item de menu "Agendar exame" saiu.
+    Médico vê só os exames dele; secretária vê os de todos os médicos do
+    grupo, com filtro opcional por médico (`medico_id`)."""
     filiais = filiais_atuais()
-    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(filiais, medico_id)
-    if not medico_alvo:
-        flash("Nenhum médico cadastrado ainda.", "danger")
-        return redirect(url_for("medico.equipe_lista"))
+    filial = clinica_atual()
+    consulta = Agendamento.query.filter(filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id))
+    medicos = []
+    medico_filtro = None
+    if eh_medico():
+        consulta = consulta.filter(Agendamento.medico_id == current_user.id)
+    else:
+        medicos = medicos_das_filiais(filiais)
+        medico_filtro = next((m for m in medicos if m.id == medico_id), None)
+        if medico_filtro:
+            consulta = consulta.filter(Agendamento.medico_id == medico_filtro.id)
 
-    # Lista de trabalho do médico — todos os exames agendados nas filiais
-    # atuais, sem filtro de status (não existe mais workflow de
-    # confirmação). Sem filtro de data: um exame de hoje que já passou do
-    # horário mas ainda não foi encerrado continua precisando aparecer aqui.
-    proximos = (
-        Agendamento.query.filter(
-            filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
-            Agendamento.medico_id == medico_alvo.id,
+    # Lista de trabalho — sem filtro de status nem de data: um exame de
+    # hoje que já passou do horário mas ainda não foi encerrado continua
+    # precisando aparecer aqui.
+    proximos = consulta.order_by(Agendamento.data_hora.asc()).all()
+
+    # Dados da janela "Agendar exame" (o POST vai para medico.agenda_novo).
+    pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).order_by(Paciente.nome).all()
+    exames_query = Exame.query.filter(_filtro_exame_por_filial(filial), Exame.associado.is_(True))
+    if eh_medico():
+        exames_query = exames_query.filter(
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
-        .order_by(Agendamento.data_hora.asc())
-        .all()
-    )
+    exames = exames_query.order_by(Exame.nome).all()
+    medicos_agendar = [] if eh_medico() else _medicos_do_escopo_atual(filial)
+    agendar_form = session.pop("agendar_form", None) if request.args.get("agendar") else None
+    remarcar_erro = session.pop("remarcar_erro", None) if request.args.get("remarcar") else None
     return render_template(
         "medico/medico_agenda_pessoal.html",
-        medico_alvo=medico_alvo,
-        medicos=(medicos_das_filiais(filiais) if pode_escolher_medico else []),
         proximos=proximos,
+        medicos=medicos,
+        medico_filtro=medico_filtro,
+        eh_medico=eh_medico(),
+        filial=filial,
+        pacientes=pacientes,
+        exames=exames,
+        medicos_agendar=medicos_agendar,
+        agendar_form=agendar_form,
+        abrir_agendar=bool(request.args.get("agendar")),
+        remarcar_erro=remarcar_erro,
+        timedelta=timedelta,
     )
 
 
@@ -2700,6 +2904,79 @@ def atendimento_encerrar_rapido(agendamento_id):
         flash("Atendimento encerrado.", "success")
 
     return redirect(request.referrer or url_for("medico.medico_agenda_pessoal"))
+
+
+def _agendamento_do_escopo_ou_404(agendamento_id):
+    """Agendamento do grupo atual; médico só mexe nos dele (mesma regra de
+    atendimento_encerrar_rapido)."""
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
+    )
+    if eh_medico():
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    return query.first_or_404()
+
+
+@medico_bp.route("/agenda/<int:agendamento_id>/cancelar", methods=["POST"])
+@login_required
+@staff_required
+def agenda_cancelar(agendamento_id):
+    """Cancela (apaga) um agendamento - pelo calendário de exames agendados
+    (pedido do Silvan, 2026-10-21). Não cancela exame já encerrado nem com
+    resultado anexado. As conversas do paciente ficam (só perdem o vínculo
+    com este agendamento)."""
+    agendamento = _agendamento_do_escopo_ou_404(agendamento_id)
+    if agendamento.encerrado_em:
+        flash("Este atendimento já foi encerrado - não dá para cancelar.", "danger")
+        return redirect(url_for("medico.medico_agenda_pessoal"))
+    if ResultadoExame.query.filter_by(agendamento_id=agendamento.id).first():
+        flash("Este exame já tem resultado anexado - não dá para cancelar.", "danger")
+        return redirect(url_for("medico.medico_agenda_pessoal"))
+    descricao = (
+        f"{agendamento.exame.nome if agendamento.exame else 'Exame'} de {agendamento.paciente.nome} "
+        f"em {agendamento.data_hora.strftime('%d/%m/%Y às %H:%M')}"
+    )
+    ChatMensagem.query.filter_by(agendamento_id=agendamento.id).update({"agendamento_id": None})
+    ConversaWhatsapp.query.filter_by(agendamento_id=agendamento.id).update({"agendamento_id": None})
+    db.session.delete(agendamento)
+    db.session.commit()
+    flash(f"Agendamento cancelado: {descricao}.", "success")
+    return redirect(url_for("medico.medico_agenda_pessoal"))
+
+
+@medico_bp.route("/agenda/<int:agendamento_id>/remarcar", methods=["POST"])
+@login_required
+@staff_required
+def agenda_remarcar(agendamento_id):
+    """Muda a data e a hora de um agendamento (pedido do Silvan,
+    2026-10-21), com a mesma checagem de conflito do agendar."""
+    agendamento = _agendamento_do_escopo_ou_404(agendamento_id)
+    if agendamento.encerrado_em:
+        flash("Este atendimento já foi encerrado - não dá para remarcar.", "danger")
+        return redirect(url_for("medico.medico_agenda_pessoal"))
+
+    def _voltar_com_erro(mensagem):
+        """Reabre a janela do exame com o aviso dentro dela e a data
+        tentada (pedido do Silvan, 2026-10-21 - antes a janela fechava e o
+        aviso ia para o topo da tela)."""
+        session["remarcar_erro"] = {
+            "id": agendamento.id, "mensagem": mensagem, "data_hora": request.form.get("data_hora", ""),
+        }
+        return redirect(url_for("medico.medico_agenda_pessoal", remarcar=agendamento.id))
+
+    try:
+        nova = datetime.strptime(request.form.get("data_hora", ""), "%Y-%m-%dT%H:%M")
+    except ValueError:
+        return _voltar_com_erro("Data/hora inválida.")
+    duracao = agendamento.exame.duracao_minutos if agendamento.exame else None
+    conflito = _agendamento_em_conflito(agendamento.medico_id, nova, duracao, ignorar_id=agendamento.id)
+    if conflito:
+        return _voltar_com_erro(_mensagem_conflito(conflito, nova, duracao))
+    agendamento.data_hora = nova
+    db.session.commit()
+    flash(f"Agendamento remarcado para {nova.strftime('%d/%m/%Y às %H:%M')}.", "success")
+    return redirect(url_for("medico.medico_agenda_pessoal"))
 
 
 # ---------- Resultado de exame (upload de PDF) ----------
@@ -2889,7 +3166,8 @@ def _sincronizar_faq_da_pergunta_respondida(pergunta_pendente, pergunta_nova, re
     texto ORIGINAL de `pergunta_pendente.pergunta` (antes de qualquer
     edição), já que é esse o texto com que o item de FAQ foi criado."""
     query_faq = FaqItem.query.filter(
-        FaqItem.pergunta == pergunta_pendente.pergunta,
+        # O FAQ é gravado com a pergunta corrigida pela IA, quando houver.
+        FaqItem.pergunta.in_({pergunta_pendente.pergunta, pergunta_pendente.pergunta_faq or pergunta_pendente.pergunta}),
         FaqItem.exame_id == pergunta_pendente.exame_id,
         FaqItem.grupo_id == pergunta_pendente.grupo_id,
         FaqItem.criado_por_id == pergunta_pendente.criado_por_id,
@@ -2920,6 +3198,8 @@ def pergunta_respondida_editar(pergunta_id):
             flash("Pergunta e resposta são obrigatórias.", "danger")
             return render_template("medico/pergunta_respondida_form.html", pergunta=pergunta)
 
+        # A tela mostra as datas deste paciente; o FAQ volta a ter marcadores.
+        resposta_texto = generalizar_datas(resposta_texto, pergunta.agendamento_do_paciente)
         _sincronizar_faq_da_pergunta_respondida(pergunta, pergunta_texto, resposta_texto)
         pergunta.pergunta = pergunta_texto
         pergunta.resposta = resposta_texto
@@ -3034,16 +3314,41 @@ def base_compartilhada():
         return redirect(url_for("medico.dashboard"))
     tipos = _tipos_exame_da_especialidade()
     tipo_id = request.args.get("tipo", type=int)
+    busca = request.args.get("q", "").strip()
     ids = [t.id for t in tipos]
     itens = []
+    tipos_com_itens = []
     if ids:
+        # O filtro só lista exames que têm itens no FAQ (pedido do Silvan,
+        # 2026-10-21); "Sugerir um item novo" continua com todos.
+        com_itens = {
+            linha[0] for linha in db.session.query(BaseConhecimentoItem.tipo_exame_id).filter(
+                BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.tipo_exame_id.in_(ids)
+            ).distinct()
+        }
+        tipos_com_itens = [t for t in tipos if t.id in com_itens]
         consulta = BaseConhecimentoItem.query.filter(
             BaseConhecimentoItem.status == "ativo", BaseConhecimentoItem.tipo_exame_id.in_([tipo_id] if tipo_id in ids else ids)
         )
-        itens = consulta.order_by(BaseConhecimentoItem.tipo_exame_id, BaseConhecimentoItem.id).limit(300).all()
+        itens = consulta.order_by(BaseConhecimentoItem.tipo_exame_id, BaseConhecimentoItem.id).all()
+        itens = [i for i in itens if _contem_busca(busca, i.pergunta, i.resposta)][:300]
     minhas = BaseConhecimentoSugestao.query.filter_by(autor_usuario_id=current_user.id).order_by(
         BaseConhecimentoSugestao.criado_em.desc()).limit(30).all()
-    return render_template("medico/base_compartilhada.html", tipos=tipos, itens=itens, filtro_tipo=tipo_id, minhas=minhas)
+    return render_template("medico/base_compartilhada.html", tipos=tipos, tipos_com_itens=tipos_com_itens,
+                           itens=itens, filtro_tipo=tipo_id, busca=busca, minhas=minhas)
+
+
+def _contem_busca(busca, *textos):
+    """Busca por texto livre nas telas de FAQ (pedido do Silvan, 2026-10-21):
+    todas as palavras digitadas aparecem em algum dos textos, sem diferenciar
+    acento, maiúscula e pontuação."""
+    from app.faq_engine import normalizar
+
+    palavras = normalizar(busca).split()
+    if not palavras:
+        return True
+    alvo = normalizar(" ".join(t or "" for t in textos))
+    return all(p in alvo for p in palavras)
 
 
 @medico_bp.route("/base-compartilhada/sugerir", methods=["POST"])
@@ -3691,6 +3996,7 @@ def testar_ia():
                     base_item_id=(resultado_ia.get("base") or {}).get("item_id"),
                     base_divergiu=(resultado_ia.get("base") or {}).get("divergiu"),
                     ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
+                    ias_situacao=formatar_situacao_ias(resultado_ia),
                 )
                 db.session.add(pendente)
                 db.session.commit()
@@ -3705,14 +4011,8 @@ def testar_ia():
                 if faq_item:
                     faq_item.vezes_utilizada += 1
                     db.session.commit()
-                    resposta_ia = faq_item.resposta
+                    resposta_ia = resposta_para_paciente(faq_item.resposta, paciente_teste.id, exame_selecionado.id)
                     origem = "faq"
-                elif (resposta_alimento := buscar_resposta_alimento(pergunta_enviada, exame_selecionado, paciente_teste)):
-                    resposta_ia = resposta_alimento
-                    origem = "alimento"
-                elif (resposta_medicamento := buscar_resposta_medicamento(pergunta_enviada, exame_selecionado, paciente_teste)):
-                    resposta_ia = resposta_medicamento
-                    origem = "medicamento"
                 else:
                     pendente = PerguntaPendente(
                         grupo_id=grupo_id_ancora,
@@ -3721,6 +4021,7 @@ def testar_ia():
                         exame_id=exame_selecionado.id,
                         pergunta=pergunta_enviada,
                         ias_com_erro=(",".join(resultado_ia.get("falhas") or []) or None) if resultado_ia else None,
+                        ias_situacao=formatar_situacao_ias(resultado_ia),
                     )
                     db.session.add(pendente)
                     db.session.commit()
@@ -3745,6 +4046,33 @@ def testar_ia():
         origem=origem,
         encaminhada=encaminhada,
     )
+
+
+@medico_bp.route("/perguntas/<int:pergunta_id>/excluir", methods=["POST"])
+@login_required
+@staff_required
+def perguntas_excluir(pergunta_id):
+    """Apaga uma pergunta ainda sem resposta (pendente ou aguardando
+    aprovação) sem responder ao paciente nem gravar no FAQ (pedido do
+    Silvan, 2026-10-21: perguntas de teste/repetidas ficavam presas na
+    fila). Mesma regra de quem pode responder. O histórico de conversa do
+    paciente (ChatMensagem) fica como está."""
+    destino = "medico.portal_atendimento" if request.form.get("origem") == "portal" else "medico.perguntas_pendentes"
+    pergunta = PerguntaPendente.query.filter(
+        PerguntaPendente.id == pergunta_id,
+        PerguntaPendente.status != "respondida",
+        filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id),
+    ).first_or_404()
+    if eh_medico():
+        exame_proprio = pergunta.exame is not None and pergunta.exame.medico_pode_atender(current_user.id)
+        geral_administravel = pergunta.exame is None and current_user.perm_pacientes
+        if not exame_proprio and not geral_administravel:
+            flash("Você só pode apagar perguntas sobre os seus próprios exames.", "danger")
+            return redirect(url_for(destino))
+    db.session.delete(pergunta)
+    db.session.commit()
+    flash("Pergunta apagada (o paciente não recebe resposta e nada vai para o FAQ).", "success")
+    return redirect(url_for(destino))
 
 
 @medico_bp.route("/perguntas/<int:pergunta_id>/responder", methods=["POST"])
@@ -3794,26 +4122,43 @@ def perguntas_responder(pergunta_id):
         if pergunta.status == "pendente":
             aprender = {"editou": True}
         elif pergunta.status == "aguardando_aprovacao" and veio_de_ia:
-            aprender = {"editou": " ".join(resposta.lower().split()) != " ".join((pergunta.resposta_sugerida_ia or "").lower().split())}
+            sugerida = pergunta.para_paciente(pergunta.resposta_sugerida_ia) or ""
+            aprender = {"editou": " ".join(resposta.lower().split()) != " ".join(sugerida.lower().split())}
 
+    # O médico aprova o texto já com as datas deste paciente; o que fica
+    # guardado (e vai para o FAQ) volta a ter marcadores no lugar delas,
+    # para valer para outros pacientes (pedido do Silvan, 2026-10-21).
+    resposta_paciente = resposta
+    resposta = generalizar_datas(resposta, pergunta.agendamento_do_paciente)
     pergunta.resposta = resposta
     pergunta.status = "respondida"
     pergunta.respondida_por = current_user.nome
     pergunta.respondida_em = datetime.utcnow()
 
+    # Flag "Salvar no Meu FAQ" (pedido do Silvan, 2026-10-21): o médico
+    # escolhe se a resposta entra no FAQ (e responde sozinha da próxima
+    # vez). Forms sem a opção (campo oculto "opcao_faq") mantêm o padrão
+    # de sempre, salvar.
+    salvar_faq = not request.form.get("opcao_faq") or request.form.get("salvar_faq") == "on"
+    if not salvar_faq:
+        # Resposta só para este paciente: também não ensina o FAQ do MedIA.
+        aprender = None
+
     # "Aprendizado": a pergunta+resposta entra na base de FAQ para uso futuro
-    novo_faq = FaqItem(
+    novo_faq = None if not salvar_faq else FaqItem(
         # O item de FAQ nasce no MESMO escopo (filial/grupo, ou dono
         # pessoal se a pergunta era de uma conta solo) da pergunta respondida.
         clinica_id=pergunta.clinica_id,
         grupo_id=pergunta.grupo_id,
         criado_por_id=pergunta.criado_por_id,
         exame_id=pergunta.exame_id,
-        pergunta=pergunta.pergunta,
+        # Com a digitação corrigida pela IA validadora, quando houver.
+        pergunta=pergunta.pergunta_faq or pergunta.pergunta,
         resposta=resposta,
         criado_por=current_user.nome,
     )
-    db.session.add(novo_faq)
+    if novo_faq:
+        db.session.add(novo_faq)
     db.session.commit()
 
     # Fatia 7 (ajuste): se a pergunta veio pelo WhatsApp, manda a resposta
@@ -3834,8 +4179,10 @@ def perguntas_responder(pergunta_id):
         # app.whatsapp_conversa._tem_pergunta_pendente).
         enviar_mensagem_whatsapp(
             pergunta.telefone_whatsapp,
-            f"Sobre sua pergunta \"{pergunta.pergunta}\":\n\n{resposta}",
-            content_variables=[pergunta.pergunta, resposta],
+            # Já com a digitação corrigida pela IA validadora, quando houver
+            # (pedido do Silvan, 2026-10-21).
+            f"Sobre sua pergunta \"{pergunta.pergunta_faq or pergunta.pergunta}\":\n\n{resposta_paciente}",
+            content_variables=[pergunta.pergunta_faq or pergunta.pergunta, resposta_paciente],
         )
 
     if aprender is not None:
@@ -3843,7 +4190,10 @@ def perguntas_responder(pergunta_id):
 
         agendar_aprendizado(pergunta.id, resposta, current_user.id, aprender["editou"])
 
-    flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
+    if salvar_faq:
+        flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
+    else:
+        flash("Resposta enviada ao paciente (não foi salva no Meu FAQ).", "success")
     return redirect(url_for(destino))
 
 
@@ -3859,7 +4209,36 @@ def faq_lista():
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
     itens = query.order_by(FaqItem.criado_em.desc()).all()
-    return render_template("medico/faq_lista.html", itens=itens)
+    # Filtro por exame (só os que têm item) e busca por texto livre
+    # (pedido do Silvan, 2026-10-21). "geral" = itens sem exame.
+    exames_com_itens = sorted({i.exame for i in itens if i.exame}, key=lambda e: e.nome)
+    tem_gerais = any(not i.exame_id for i in itens)
+    filtro_exame = request.args.get("exame", "")
+    busca = request.args.get("q", "").strip()
+    if filtro_exame == "geral":
+        itens = [i for i in itens if not i.exame_id]
+    elif filtro_exame.isdigit():
+        itens = [i for i in itens if i.exame_id == int(filtro_exame)]
+    itens = [i for i in itens if _contem_busca(busca, i.pergunta, para_leitura(i.resposta))]
+    # Janela "Adicionar manualmente" (pedido do Silvan, 2026-10-21): os
+    # exames do select e, depois de um erro, os campos preenchidos.
+    faq_form = session.pop("faq_novo_form", None) if request.args.get("novo") else None
+    return render_template(
+        "medico/faq_lista.html", itens=itens, exames=_exames_para_faq(),
+        faq_form=faq_form, abrir_novo=bool(request.args.get("novo")),
+        exames_com_itens=exames_com_itens, tem_gerais=tem_gerais, filtro_exame=filtro_exame, busca=busca,
+    )
+
+
+def _exames_para_faq():
+    """Exames que podem receber um item do FAQ: os do escopo atual; para o
+    médico, só os dele."""
+    exames_query = Exame.query.filter(filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id))
+    if eh_medico():
+        exames_query = exames_query.filter(
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
+        )
+    return exames_query.order_by(Exame.nome).all()
 
 
 @medico_bp.route("/faq/novo", methods=["GET", "POST"])
@@ -3867,14 +4246,19 @@ def faq_lista():
 @staff_required
 def faq_novo():
     filiais = filiais_atuais()
-    exames_query = Exame.query.filter(filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id))
-    if eh_medico():
-        exames_query = exames_query.filter(
-            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
-        )
-    exames = exames_query.order_by(Exame.nome).all()
+    exames = _exames_para_faq()
 
     if request.method == "POST":
+        def _voltar_com_erro():
+            """Veio da janela da lista? Volta para ela aberta, com os campos
+            preenchidos (o motivo já foi para o flash)."""
+            if request.form.get("origem") == "lista":
+                session["faq_novo_form"] = {
+                    c: request.form.get(c, "") for c in ("exame_id", "pergunta", "resposta", "clinica_id")
+                }
+                return redirect(url_for("medico.faq_lista", novo=1))
+            return render_template("medico/faq_form.html", exames=exames)
+
         exame_id = request.form.get("exame_id", type=int)
         exame_escolhido = next((e for e in exames if e.id == exame_id), None)
         # Item vinculado a um exame nasce no Grupo DESSE exame; item geral
@@ -3889,25 +4273,25 @@ def faq_novo():
             exame_valido = exame_id and any(e.id == exame_id for e in exames)
             if not exame_valido:
                 flash("Escolha um dos seus exames para vincular a pergunta.", "danger")
-                return render_template("medico/faq_form.html", exames=exames)
+                return _voltar_com_erro()
 
         pergunta = request.form.get("pergunta", "").strip()
         resposta = request.form.get("resposta", "").strip()
 
         if not pergunta or not resposta:
             flash("Pergunta e resposta são obrigatórias.", "danger")
-            return render_template("medico/faq_form.html", exames=exames)
+            return _voltar_com_erro()
 
         if filiais and not filial:
             flash("Escolha a filial em que este item será cadastrado.", "danger")
-            return render_template("medico/faq_form.html", exames=exames)
+            return _voltar_com_erro()
 
         item = FaqItem(
             grupo_id=filial.id if filial else None,
             criado_por_id=current_user.id if not filial else None,
             exame_id=exame_id,
             pergunta=pergunta,
-            resposta=resposta,
+            resposta=de_leitura(resposta),
             criado_por=current_user.nome,
         )
         db.session.add(item)
@@ -3946,7 +4330,7 @@ def faq_editar(item_id):
             return render_template("medico/faq_form.html", item=item)
 
         item.pergunta = pergunta
-        item.resposta = resposta
+        item.resposta = de_leitura(resposta)
         db.session.commit()
         flash("Item da base de conhecimento atualizado.", "success")
         return redirect(url_for("medico.faq_lista"))
@@ -3988,41 +4372,18 @@ def clinica_configuracoes(filial_id=None):
         return redirect(url_for("medico.filiais_lista"))
 
     if request.method == "POST":
-        # Dados gerais
+        # Pedido do Silvan (2026-10-20): "Dados do grupo" ficou só com o
+        # nome. Razão social, CNPJ, telefone, e-mail de contato e endereço
+        # não eram usados em lugar nenhum do sistema (as colunas continuam
+        # no banco, sem uso).
         nome = request.form.get("nome", "").strip()
-        if nome:
-            clinica.nome = nome
-        clinica.razao_social = request.form.get("razao_social", "").strip()
-        clinica.cnpj = request.form.get("cnpj", "").strip()
-        telefone = request.form.get("telefone", "").strip()
-        if telefone_incompleto(telefone):
-            flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
+        if not nome:
+            flash("Informe o nome do grupo.", "danger")
             return redirect(url_for("medico.clinica_configuracoes", filial_id=filial_id))
-        if telefone:
-            clinica.telefone = telefone
-        email_contato = request.form.get("email_contato", "").strip()
-        if email_contato:
-            clinica.email_contato = email_contato
-
-        # Endereço
-        clinica.cep = request.form.get("cep", "").strip()
-        clinica.rua = request.form.get("rua", "").strip()
-        clinica.numero = request.form.get("numero", "").strip()
-        clinica.complemento = request.form.get("complemento", "").strip()
-        clinica.bairro = request.form.get("bairro", "").strip()
-        clinica.cidade = request.form.get("cidade", "").strip()
-        clinica.uf = request.form.get("uf", "").strip().upper() or None
-        # O código IBGE do município continua sendo preenchido aqui (a
-        # partir da busca automática do CEP, feita nesta mesma tela) mesmo
-        # com os demais campos fiscais tendo se mudado para a tela "Dados
-        # Fiscais" — ele é derivado do endereço, não é digitado à mão.
-        clinica.codigo_ibge_municipio = request.form.get("codigo_ibge_municipio", "").strip()
-
+        clinica.nome = nome
         db.session.commit()
-        flash(f"Dados Cadastrais de '{clinica.nome}' atualizados com sucesso.", "success")
-        # Salvou -> FECHA a tela, voltando pra lista de locais (ou pro
-        # assistente, se veio de lá) - em vez de continuar no formulário.
-        return redirect(url_for("medico.filiais_lista"))
+        flash(f"Dados do grupo '{clinica.nome}' atualizados.", "success")
+        return redirect(url_for("grupo.meus_grupos"))
 
     return render_template(
         "medico/clinica_configuracoes.html",
@@ -4271,8 +4632,8 @@ def equipe_permissoes(usuario_id):
     if request.method == "POST":
         usuario_alvo.perm_pacientes = request.form.get("perm_pacientes") == "on"
         usuario_alvo.perm_equipe = request.form.get("perm_equipe") == "on"
-        usuario_alvo.perm_filiais = request.form.get("perm_filiais") == "on"
         usuario_alvo.perm_dados_clinica = request.form.get("perm_dados_clinica") == "on"
+        usuario_alvo.perm_medicos_preparo = request.form.get("perm_medicos_preparo") == "on"
         db.session.commit()
         flash(f"Permissões de {usuario_alvo.nome} atualizadas.", "success")
         return redirect(url_for("medico.equipe_lista"))
@@ -4397,6 +4758,27 @@ def notificacao_abrir(notificacao_id):
         return redirect(url_for(destino))
     except Exception:
         return redirect(url_for("medico.dashboard"))
+
+
+@medico_bp.route("/notificacoes/popup/entendi", methods=["POST"])
+@login_required
+def notificacoes_popup_entendi():
+    """"Entendi" do popup de anúncios (ver base.html e
+    app.injetar_notificacoes): marca como lidos os anúncios que estavam no
+    popup - só os do próprio usuário, e só os de popup. Sem @staff_required
+    de propósito: o popup também aparece na tela de escolher o grupo (quem
+    tem 2+ grupos ainda não escolheu nenhum), e o staff_required mandaria o
+    "Entendi" de volta para essa escolha sem marcar nada. Anúncio não
+    depende de grupo."""
+    if not current_user.is_staff:
+        return redirect(url_for("index"))
+    ids = [int(i) for i in request.form.getlist("notificacao_id") if i.isdigit()]
+    if ids:
+        Notificacao.query.filter(
+            Notificacao.id.in_(ids), Notificacao.usuario_id == current_user.id, Notificacao.popup.is_(True)
+        ).update({"lida": True}, synchronize_session=False)
+        db.session.commit()
+    return redirect(request.referrer or url_for("medico.dashboard"))
 
 
 @medico_bp.route("/notificacoes/marcar-todas-lidas", methods=["POST"])

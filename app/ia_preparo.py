@@ -141,6 +141,13 @@ MARCADOR_FORA_DO_EXAME = "FORA_DO_EXAME_ENCAMINHAR"
 # `exige_aprovacao_pergunta()`.
 MARCADOR_MEDICAMENTO_NAO_CADASTRADO = "MEDICAMENTO_NAO_CADASTRADO_REVISAR"
 
+# Mesmo tratamento, para qualquer dúvida sobre o exame que o preparo não
+# cobre (horário de chegada, o que levar, quanto tempo dura, ir dirigindo...)
+# - pedido do Silvan, 2026-10-21: em vez de "não sei", a IA responde com
+# conhecimento geral, dito como tal, e a resposta SEMPRE passa pelo médico
+# (mesmo sinal "exige_revisao_medicamento" do marcador acima).
+MARCADOR_CONHECIMENTO_GERAL = "CONHECIMENTO_GERAL_REVISAR"
+
 # Ver docstring do módulo ("Rede de segurança contra recusa disfarçada").
 # Primeiro grupo: a IA declarando que não tem a informação. Segundo grupo:
 # a IA recomendando falar com alguém da clínica. Só conta como recusa
@@ -268,7 +275,8 @@ Regras importantes:
 - Preste atenção especial a essa identidade quando a pergunta for sobre um MEDICAMENTO citado por nome comercial/marca (ex.: "Ecasil", "Somalgin", "AAS", "Aspirina" são todos nomes comerciais de ácido acetilsalicílico no Brasil) — use seu conhecimento geral de farmácia para identificar o princípio ativo ou a classe do medicamento perguntado, e então verifique se esse princípio ativo/classe corresponde a algum item já cadastrado no preparo (pelo nome ou pela categoria informada), mesmo que o nome comercial citado pelo paciente seja diferente do nome cadastrado.
 - Quando a pergunta for sobre um MEDICAMENTO que você consegue identificar (nome, princípio ativo ou classe), mas que não corresponde a NENHUM item cadastrado neste preparo (nem pelo nome, nem pela categoria) — por exemplo, um anticoagulante que não está na lista —, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto MEDICAMENTO_NAO_CADASTRADO_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta que: (1) diga claramente que esse medicamento específico não está cadastrado no preparo deste exame; e (2) compartilhe, de forma genérica, o que normalmente se sabe sobre esse tipo de medicamento em relação a exames como este (ex.: "anticoagulantes geralmente precisam ser suspensos antes de exames com risco de sangramento, como colonoscopia"). NUNCA afirme um prazo de suspensão específico (em dias/horas) para um medicamento que não está cadastrado — isso continua proibido mesmo nesse tipo de resposta. Não é preciso terminar orientando o paciente a confirmar com a secretaria/médico — essa resposta sempre passa pela revisão e aprovação do médico antes de chegar ao paciente (o marcador MEDICAMENTO_NAO_CADASTRADO_REVISAR garante isso, mesmo quando a aprovação geral está desativada), então essa recomendação final é redundante; o médico que revisa decide se quer complementar a resposta. O marcador é removido automaticamente antes de qualquer exibição — nunca omita-o quando esta regra se aplicar, mesmo que pareça repetitivo.
 - NUNCA faça o raciocínio de identidade acima sobre uma CARACTERÍSTICA do produto que os dados não informam (ex.: qual é a cor de um sabor específico de bebida, se um alimento tem ou não determinado ingrediente). Isso é inventar informação, mesmo que pareça um "senso comum" — cores de sabores variam por marca/país e você pode errar. Nesses casos, explique a regra cadastrada (ex.: "só é permitido líquido de cor clara") e oriente o paciente a verificar essa característica específica por conta própria (observando a embalagem) ou perguntar à secretaria — nunca afirme se aquele sabor/produto específico atende ou não à regra quando isso não estiver explícito nos dados.
-- Quando o item tiver um prazo/data calculado nos dados fornecidos, cite esse prazo/data na resposta.
+- Cite os prazos do jeito que estão nos dados (ex.: "3 dias antes do exame", "12 horas antes do exame"). NUNCA escreva uma data ou um horário concreto do paciente (dia ou hora do exame dele, ou a data de um prazo), nem o nome dele: a resposta aprovada é reaproveitada para outros pacientes. Quando a data concreta ajudar, use estes marcadores, que o sistema troca pelos dados de cada paciente na hora de enviar: {data_exame} (dia do exame), {hora_exame} (horário do exame), {N dias antes} e {N horas antes} (ex.: "suspenda 3 dias antes do exame, a partir de {3 dias antes}"; "chegue de 30 a 60 minutos antes do horário do exame ({hora_exame} do dia {data_exame})").
+- Quando a pergunta for uma dúvida prática sobre ESTE exame ou o atendimento dele (ex.: que horas chegar, quanto tempo dura, o que levar, se precisa de acompanhante, se pode ir dirigindo, como é a recuperação) e os dados do preparo NÃO trazem essa informação, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto CONHECIMENTO_GERAL_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta com o que normalmente se pratica para esse tipo de exame, dita claramente como orientação geral (ex.: "Em geral, pede-se para chegar de 30 a 60 minutos antes da colonoscopia, para a recepção e o preparo."). Não afirme isso como regra desta clínica, não diga que "não tem a informação" e não oriente a confirmar com a secretaria/médico - a resposta sempre passa pela revisão do médico antes de chegar ao paciente (o marcador garante isso), e ele ajusta o que for desta clínica. Nunca use este caminho para diagnóstico, resultado de exame, tratamento ou medicamento (para medicamento, siga a regra própria acima). O marcador é removido automaticamente antes de qualquer exibição.
 - Reserve o texto NAO_SEI_ENCAMINHAR só para perguntas que genuinamente não têm nenhuma informação útil a dar (ex.: assunto totalmente fora do preparo, ou um item que você não consegue identificar de jeito nenhum) — nesse caso, responda EXATAMENTE com esse texto, nada mais, nenhuma outra palavra, nenhuma pontuação extra.
 - Antes de aplicar qualquer regra acima, avalie se o texto do paciente é sequer uma pergunta ou comentário coerente (mesmo que informal, curto ou com erros de digitação/ortografia). Se o texto for palavras reais mas sem nenhum sentido coerente entre si, ou for sobre um assunto qualquer que nem chega a formar uma pergunta/comentário compreensível, responda EXATAMENTE com o texto SEM_SENTIDO_ENCAMINHAR, nada mais. NÃO use SEM_SENTIDO_ENCAMINHAR para uma pergunta coerente que só está fora do preparo ou que você não consegue identificar (esses casos usam NAO_SEI_ENCAMINHAR, acima) — a diferença é: NAO_SEI_ENCAMINHAR é "entendi a pergunta, mas não tenho a informação"; SEM_SENTIDO_ENCAMINHAR é "isso nem é uma pergunta/comentário que eu consiga entender". Na dúvida entre os dois, ou na dúvida entre usar SEM_SENTIDO_ENCAMINHAR e simplesmente responder, prefira responder normalmente ou usar NAO_SEI_ENCAMINHAR — evite usar SEM_SENTIDO_ENCAMINHAR para um texto que dá pra entender, mesmo que mal escrito.
 - NUNCA termine (nem inclua em nenhum ponto) uma resposta recomendando que o paciente "confirme/consulte/converse/fale com o médico" - isso não faz sentido neste contexto: esta própria pergunta já está sendo respondida pelo médico (ela passa pela revisão/aprovação dele antes de chegar ao paciente), então pedir para o paciente confirmar com o médico por fora é redundante e confuso. Se realmente não houver informação suficiente para responder, use o marcador NAO_SEI_ENCAMINHAR (abaixo) em vez de tentar responder e sugerir que o paciente pergunte ao médico.
@@ -332,21 +340,21 @@ def _cliente_gemini():
 
 
 def _formatar_contexto_preparo(exame):
-    """Serializa o preparo do exame (e o agendamento mais recente do
-    paciente, se houver) num texto simples — os prazos já vêm calculados
-    aqui (mesmas contas que a tela do paciente e o chat por palavra-chave
-    já fazem), pra IA não precisar (e não arriscar errar) fazer aritmética
-    de data por conta própria."""
+    """Serializa o preparo do exame num texto simples, com os prazos
+    RELATIVOS ("3 dias antes do exame").
+
+    Sem nenhuma data concreta (2026-10-21, pedido do Silvan): antes ia a
+    data do agendamento mais recente DESTE TIPO DE EXAME - de qualquer
+    paciente, não necessariamente de quem perguntou - e as datas
+    calculadas a partir dela; e a resposta aprovada, com essas datas,
+    virava FAQ para todos. Agora a IA usa marcadores ({data_exame},
+    {3 dias antes}...) e o sistema preenche com o agendamento de cada
+    paciente na hora de enviar (ver app.marcadores_resposta)."""
     preparo = exame.preparo
     partes = [f"Exame: {exame.nome}"]
     if exame.descricao:
         partes.append(f"Descrição do exame: {exame.descricao}")
 
-    agendamento = None
-    if exame.agendamentos:
-        agendamento = sorted(exame.agendamentos, key=lambda a: a.data_hora)[-1]
-    if agendamento:
-        partes.append(f"Data/hora do exame agendado: {agendamento.data_hora.strftime('%d/%m/%Y às %H:%M')}")
 
     if not preparo:
         partes.append("Nenhuma instrução de preparo cadastrada para este exame.")
@@ -355,10 +363,7 @@ def _formatar_contexto_preparo(exame):
     if preparo.cortes:
         partes.append("\nCortes de alimentação/líquido:")
         for c in preparo.cortes:
-            linha = f"- {c.descricao}: proibido a partir de {c.horas_antes} horas antes do exame"
-            if agendamento:
-                linha += f" (ou seja, a partir de {c.limite(agendamento.data_hora).strftime('%d/%m/%Y às %H:%M')})"
-            partes.append(linha)
+            partes.append(f"- {c.descricao}: proibido a partir de {c.horas_antes} horas antes do exame")
 
     if preparo.medicamentos_suspensos:
         partes.append("\nMedicamentos que precisam ser suspensos:")
@@ -369,8 +374,6 @@ def _formatar_contexto_preparo(exame):
             if categoria:
                 linha += f" (categoria: {categoria})"
             linha += f": suspender {ms.dias_antes} dias antes do exame"
-            if agendamento:
-                linha += f" (a partir de {ms.limite(agendamento.data_hora).strftime('%d/%m/%Y')})"
             if ms.observacao:
                 linha += f". Observação: {ms.observacao}"
             partes.append(linha)
@@ -393,10 +396,10 @@ def _formatar_contexto_preparo(exame):
             partes.append("\nAlimentos/bebidas PROIBIDOS:")
             for a in proibidos:
                 linha = f"- {a.nome}"
-                if (a.horas_antes is not None or a.dias_antes is not None) and agendamento:
+                if a.horas_antes is not None or a.dias_antes is not None:
                     prazo = a.horas_antes if a.horas_antes is not None else a.dias_antes
                     unidade = "horas" if a.horas_antes is not None else "dias"
-                    linha += f": evitar a partir de {a.limite_formatado(agendamento.data_hora)} ({prazo} {unidade} antes do exame)"
+                    linha += f": evitar a partir de {prazo} {unidade} antes do exame"
                 partes.append(linha)
         if permitidos:
             partes.append("\nAlimentos/bebidas PERMITIDOS (sugestão de consumo):")
@@ -407,21 +410,18 @@ def _formatar_contexto_preparo(exame):
         partes.append("\nExames/procedimentos que o paciente NÃO pode ter feito recentemente:")
         for e in preparo.exames_anteriores_proibidos:
             linha = f"- {e.nome}"
-            if e.dias_antes is not None and agendamento:
-                linha += (
-                    f": não deve ter sido feito desde {e.limite(agendamento.data_hora).strftime('%d/%m/%Y')} "
-                    f"({e.dias_antes} dias antes do exame)"
-                )
+            if e.dias_antes is not None:
+                linha += f": não deve ter sido feito nos {e.dias_antes} dias antes do exame"
             partes.append(linha)
 
     if preparo.informacoes_gerais:
         partes.append("\nOutras orientações:")
         for info in preparo.informacoes_gerais:
             linha = f"- {info.texto}"
-            if agendamento:
-                limite_info = info.limite(agendamento.data_hora)
-                if limite_info:
-                    linha += f" (prazo: {limite_info.strftime('%d/%m/%Y às %H:%M')})"
+            if info.horas_antes is not None:
+                linha += f" (prazo: {info.horas_antes} horas antes do exame)"
+            elif info.dias_antes is not None and info.hora_exata is not None:
+                linha += f" (prazo: {info.dias_antes} dia(s) antes do exame, às {info.hora_exata.strftime('%H:%M')})"
             partes.append(linha)
 
     if preparo.instrucoes:
@@ -473,9 +473,11 @@ def _extrair_marcador_medicamento_nao_cadastrado(texto):
     às vezes deixa um espaço/quebra de linha antes por conta própria), por
     isso usa `lstrip()` antes de checar."""
     texto_lstrip = texto.lstrip()
-    if texto_lstrip.startswith(MARCADOR_MEDICAMENTO_NAO_CADASTRADO):
-        resto = texto_lstrip[len(MARCADOR_MEDICAMENTO_NAO_CADASTRADO):].lstrip("\n ")
-        return resto, True
+    # Conhecimento geral sobre o exame (2026-10-21) tem o mesmo efeito.
+    for marcador in (MARCADOR_MEDICAMENTO_NAO_CADASTRADO, MARCADOR_CONHECIMENTO_GERAL):
+        if texto_lstrip.startswith(marcador):
+            resto = texto_lstrip[len(marcador):].lstrip("\n ")
+            return resto, True
     return texto, False
 
 
@@ -526,7 +528,9 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
         sucesso=True, paciente_id=paciente_id,
     )
     texto = "".join(getattr(bloco, "text", "") for bloco in mensagem.content).strip()
-    if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
+    if not texto or MARCADOR_NAO_SEI in texto or (
+        _eh_recusa_generica_disfarcada(texto) and MARCADOR_CONHECIMENTO_GERAL not in texto
+    ):
         return None, chamada, False, False
     if MARCADOR_SEM_SENTIDO in texto:
         return None, chamada, True, False
@@ -564,7 +568,9 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
         sucesso=True, paciente_id=paciente_id,
     )
     texto = (resposta.choices[0].message.content or "").strip()
-    if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
+    if not texto or MARCADOR_NAO_SEI in texto or (
+        _eh_recusa_generica_disfarcada(texto) and MARCADOR_CONHECIMENTO_GERAL not in texto
+    ):
         return None, chamada, False, False
     if MARCADOR_SEM_SENTIDO in texto:
         return None, chamada, True, False
@@ -605,7 +611,9 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
         sucesso=True, paciente_id=paciente_id,
     )
     texto = (getattr(resposta, "text", None) or "").strip()
-    if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
+    if not texto or MARCADOR_NAO_SEI in texto or (
+        _eh_recusa_generica_disfarcada(texto) and MARCADOR_CONHECIMENTO_GERAL not in texto
+    ):
         return None, chamada, False, False
     if MARCADOR_SEM_SENTIDO in texto:
         return None, chamada, True, False
@@ -899,9 +907,27 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
     if not tentou_a and not tentou_b:
         # Nenhuma das duas escolhidas tem API key configurada - não é
         # "falha", é "não configurada", não faz sentido acionar reserva.
-        return {"final": None, "por_provedor": respostas_por_provedor, "falhas": [], "sem_sentido": False, "exige_revisao_medicamento": False}
+        return {"final": None, "por_provedor": respostas_por_provedor, "falhas": [], "sem_sentido": False,
+                "exige_revisao_medicamento": False,
+                "situacao": {provedor_a: "nao_configurada", provedor_b: "nao_configurada"}}
 
     nome_efetivo_a, nome_efetivo_b = provedor_a, provedor_b
+
+    def _situacao(tentou, resposta, chamada, exige_revisao=False):
+        if not tentou:
+            return "nao_configurada"
+        if resposta:
+            # Respondeu com conhecimento geral (fora do preparo cadastrado).
+            return "respondeu_geral" if exige_revisao else "respondeu"
+        return "nao_sabe" if chamada is not None else "erro"
+
+    # O que aconteceu com cada IA escolhida (e com a reserva, se entrou) -
+    # mostrado ao médico na aprovação (pedido do Silvan, 2026-10-21: a IA
+    # que não respondia simplesmente sumia da tela).
+    situacao = {
+        provedor_a: _situacao(tentou_a, resposta_a, chamada_a, exige_revisao_a),
+        provedor_b: _situacao(tentou_b, resposta_b, chamada_b, exige_revisao_b),
+    }
 
     # Uma IA "falhou de verdade" quando tinha cliente (tentou_x=True) mas
     # não voltou nem resposta nem ChamadaIA registrado - ver
@@ -935,6 +961,8 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
             # A reserva também falhou de verdade - registra pra aparecer
             # na tela do médico igual às outras.
             falhas.append(provedor_c)
+        if tentou_c:
+            situacao[provedor_c] = _situacao(tentou_c, resposta_c, chamada_c, exige_revisao_c)
         if reserva_respondeu and falhou_a:
             resposta_a, chamada_a, nome_efetivo_a, sem_sentido_a, exige_revisao_a = resposta_c, chamada_c, provedor_c, sem_sentido_c, exige_revisao_c
         elif reserva_respondeu and falhou_b:
@@ -1049,7 +1077,15 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
         "falhas": falhas,
         "sem_sentido": sem_sentido,
         "exige_revisao_medicamento": exige_revisao_medicamento,
+        "situacao": situacao,
     }
+
+
+def formatar_situacao_ias(resultado_ia):
+    """"Claude=respondeu;ChatGPT=nao_sabe" para PerguntaPendente.ias_situacao
+    (None sem resultado). Ver PerguntaPendente.situacao_ias."""
+    situacao = (resultado_ia or {}).get("situacao") or {}
+    return ";".join(f"{nome}={estado}" for nome, estado in situacao.items()) or None
 
 
 def _aplicar_base_de_conhecimento(resultado, pergunta_usuario, exame, paciente_id=None):
@@ -1135,13 +1171,27 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
 # "aproveitar" e já responder, o que quebraria o parsing do marcador).
 PROMPT_SISTEMA_VALIDADOR = """Você é um validador de mensagens recebidas de pacientes no chat de dúvidas sobre preparo de um exame médico. Sua ÚNICA tarefa é CLASSIFICAR a mensagem do paciente - nunca respondê-la.
 
-Classifique em exatamente uma das 3 categorias abaixo, e responda SOMENTE com o texto exato da categoria escolhida (nenhuma outra palavra, pontuação ou explicação):
+Classifique em exatamente uma das 3 categorias abaixo. A PRIMEIRA linha da sua resposta deve ser SOMENTE o texto exato da categoria escolhida (nenhuma outra palavra, pontuação ou explicação - nunca explique a classificação):
 
 - SEM_SENTIDO_ENCAMINHAR: o texto não é uma pergunta ou comentário coerente (ex.: palavras reais em ordem sem nenhum sentido entre si, teclado travado, texto que nem chega a formar uma ideia compreensível) - mesmo que informal, curto ou com erros de digitação/ortografia, se dá para entender a intenção, NÃO é este caso.
-- FORA_DO_EXAME_ENCAMINHAR: o texto É coerente, mas não tem NENHUMA relação com exame médico nenhum (ex.: futebol, previsão do tempo, assunto pessoal, pedido sobre outro serviço qualquer sem nenhuma ligação com exames). Perguntas sobre outros assuntos da própria clínica (horário de atendimento, endereço, agendamento, valores) NÃO se encaixam aqui - são relacionadas à clínica/exame, mesmo que não sejam sobre o preparo específico deste exame.
+- FORA_DO_EXAME_ENCAMINHAR: o texto É coerente, mas não tem NENHUMA relação com exame médico nenhum (ex.: futebol, previsão do tempo, assunto pessoal, pedido sobre outro serviço qualquer sem nenhuma ligação com exames). Perguntas sobre outros assuntos da própria clínica ou do atendimento (horário de atendimento, que horas chegar, endereço, agendamento, valores, ir de carro/acompanhante) NÃO se encaixam aqui - são relacionadas à clínica/exame, mesmo que não sejam sobre o preparo específico deste exame.
 - VALIDA: qualquer pergunta ou comentário coerente relacionado a exame médico ou à clínica, incluindo dúvidas sobre o preparo deste exame específico, mesmo que a resposta não esteja disponível nos dados fornecidos - a checagem de "temos a informação?" é feita depois, por outra parte do sistema, não é sua tarefa aqui.
 
-Quando houver um "Histórico recente desta conversa" listado antes da mensagem atual, use-o para entender o CONTEXTO (ex.: uma mensagem de acompanhamento curta só faz sentido em conjunto com a anterior). Na dúvida entre duas categorias, prefira sempre VALIDA - é mais seguro deixar uma pergunta ambígua seguir o fluxo normal do que rejeitá-la por engano."""
+Exemplos (2026-10-21 - o validador gpt-4o-mini classificava perguntas de atendimento como fora do exame):
+- "Que horas tenho que chegar na clínica?" -> VALIDA
+- "Posso ir de carro?" -> VALIDA
+- "Quanto tempo dura o exame?" -> VALIDA
+- "Preciso levar algum documento?" -> VALIDA
+- "Onde fica a clínica?" -> VALIDA
+- "Posso tomar café?" -> VALIDA
+- "Quem ganha o jogo hoje?" -> FORA_DO_EXAME_ENCAMINHAR
+- "Vai chover amanhã?" -> FORA_DO_EXAME_ENCAMINHAR
+- "asdf qwer zxcv" -> SEM_SENTIDO_ENCAMINHAR
+Use FORA_DO_EXAME_ENCAMINHAR só quando for evidente que o assunto não tem nada a ver com saúde, exame, clínica ou atendimento.
+
+Quando houver um "Histórico recente desta conversa" listado antes da mensagem atual, use-o para entender o CONTEXTO (ex.: uma mensagem de acompanhamento curta só faz sentido em conjunto com a anterior). Na dúvida entre duas categorias, prefira sempre VALIDA - é mais seguro deixar uma pergunta ambígua seguir o fluxo normal do que rejeitá-la por engano.
+
+Quando a categoria for VALIDA, escreva numa SEGUNDA linha "PERGUNTA: " seguido da mensagem do paciente só com a ortografia, a digitação, os acentos, as maiúsculas e a pontuação corrigidos - mesmas palavras, mesma ordem e mesmo sentido, sem completar com o histórico, sem resumir e sem acrescentar nada (ex.: "POsso ir de carrp" vira "PERGUNTA: Posso ir de carro?"; "e frita" vira "PERGUNTA: E frita?"). Nas outras categorias, responda só a primeira linha."""
 
 
 def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
@@ -1153,7 +1203,10 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
     do paciente em sem_sentido / fora_do_exame / válida, numa chamada
     separada e mais barata (só classificação, sem tentar responder).
 
-    Retorna um dicionário {"classificacao": ..., "chamada": ...} -
+    Retorna um dicionário {"classificacao": ..., "chamada": ...,
+    "pergunta_corrigida": ...} (esta última: a mensagem só com a digitação
+    corrigida, quando "valida" - usada para procurar e gravar no FAQ; pode
+    faltar ou vir None, e aí vale o texto original) -
     "classificacao" é "sem_sentido", "fora_do_exame", "valida" ou None
     (sem julgamento possível: `exame` ausente, a IA escolhida não está
     configurada/disponível, a chamada falhou, ou a resposta não bateu com
@@ -1190,7 +1243,7 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
     try:
         if provedor == "Claude":
             resposta = cliente.messages.create(
-                model=MODELO_PADRAO, max_tokens=12, system=PROMPT_SISTEMA_VALIDADOR,
+                model=MODELO_PADRAO, max_tokens=120, system=PROMPT_SISTEMA_VALIDADOR,
                 messages=[{"role": "user", "content": conteudo}],
             )
             uso = getattr(resposta, "usage", None)
@@ -1202,7 +1255,7 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
             texto = "".join(getattr(bloco, "text", "") for bloco in resposta.content).strip()
         elif provedor == "ChatGPT":
             resposta = cliente.chat.completions.create(
-                model=MODELO_OPENAI_PADRAO, max_tokens=12,
+                model=MODELO_OPENAI_PADRAO, max_tokens=120,
                 messages=[
                     {"role": "system", "content": PROMPT_SISTEMA_VALIDADOR},
                     {"role": "user", "content": conteudo},
@@ -1220,7 +1273,7 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
             resposta = cliente.models.generate_content(
                 model=MODELO_GEMINI_PADRAO, contents=conteudo,
                 config=genai_types.GenerateContentConfig(
-                    system_instruction=PROMPT_SISTEMA_VALIDADOR, max_output_tokens=12,
+                    system_instruction=PROMPT_SISTEMA_VALIDADOR, max_output_tokens=120,
                 ),
             )
             uso = getattr(resposta, "usage_metadata", None)
@@ -1236,17 +1289,53 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
         )
         return {"classificacao": None, "chamada": None}
 
-    texto_normalizado = texto.upper()
-    if MARCADOR_SEM_SENTIDO in texto_normalizado:
-        classificacao = "sem_sentido"
-    elif MARCADOR_FORA_DO_EXAME in texto_normalizado:
-        classificacao = "fora_do_exame"
-    elif "VALIDA" in texto_normalizado:
-        classificacao = "valida"
-    else:
+    # A categoria é a primeira linha que COMEÇA com um dos marcadores - não
+    # basta o marcador aparecer no meio de uma frase (2026-10-21: com mais
+    # tokens, a IA às vezes explica antes, ex.: "Não é FORA_DO_EXAME_
+    # ENCAMINHAR, é sobre a clínica: VALIDA", e a busca por "contém"
+    # bloqueava "Que horas tenho que chegar na clínica?").
+    classificacao = None
+    for linha in texto.splitlines():
+        linha_normalizada = linha.strip().strip("*`\"'.:- ").upper()
+        for marcador, categoria in (
+            (MARCADOR_SEM_SENTIDO, "sem_sentido"), (MARCADOR_FORA_DO_EXAME, "fora_do_exame"), ("VALIDA", "valida"),
+        ):
+            if linha_normalizada.startswith(marcador):
+                classificacao = categoria
+                break
+        if classificacao:
+            break
+    if classificacao in ("sem_sentido", "fora_do_exame"):
+        # Registro para investigar bloqueios estranhos nos logs do Render.
+        current_app.logger.info(
+            "Validador (%s) classificou como %s: pergunta=%r resposta=%r",
+            provedor, classificacao, pergunta_usuario, texto[:300],
+        )
+    if classificacao is None:
         # Resposta que não bateu com nenhum marcador esperado (a IA não
         # seguiu a instrução à risca) - mais seguro tratar como "valida" e
         # deixar a pergunta seguir o fluxo normal do que arriscar bloquear
         # uma pergunta legítima por um formato de resposta inesperado.
         classificacao = "valida"
-    return {"classificacao": classificacao, "chamada": chamada}
+    resto = texto
+    pergunta_corrigida = (
+        _extrair_pergunta_corrigida(resto, pergunta_usuario) if classificacao == "valida" else None
+    )
+    return {"classificacao": classificacao, "chamada": chamada, "pergunta_corrigida": pergunta_corrigida}
+
+
+def _extrair_pergunta_corrigida(resto, original):
+    """A linha "PERGUNTA: ..." da resposta do validador (pedido do Silvan,
+    2026-10-21: a pergunta ia para o FAQ com erro de digitação). Descarta
+    a correção se ela não parecer só uma correção (tamanho muito diferente
+    do original - a IA pode ter completado com o histórico): na dúvida, o
+    original vale, como antes."""
+    for linha in resto.splitlines():
+        linha = linha.strip()
+        if linha.upper().startswith("PERGUNTA:"):
+            corrigida = linha[len("PERGUNTA:"):].strip().strip('"').strip()
+            tamanho = len(original.strip())
+            if corrigida and tamanho and 0.6 * tamanho <= len(corrigida) <= 1.5 * tamanho + 3:
+                return corrigida
+            return None
+    return None

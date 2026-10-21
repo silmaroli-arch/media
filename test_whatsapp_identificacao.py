@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 
 from app import create_app, db
 from app.models import Agendamento, ConversaWhatsapp, Paciente, PerguntaPendente
-from app.whatsapp_conversa import normalizar_telefone_whatsapp, processar_mensagem
+from app.whatsapp_conversa import normalizar_telefone_whatsapp, processar_mensagem, _extrair_data_nascimento
 
 app = create_app()
 
@@ -169,7 +169,8 @@ with app.app_context():
 
     telefone_joao2 = "+5527900002222"
     processar_mensagem(telefone_joao2, "123.456.789-00")
-    resposta = processar_mensagem(telefone_joao2, "12/04/1985")
+    # Data só com os números (ddmmaaaa) também é aceita (2026-10-21).
+    resposta = processar_mensagem(telefone_joao2, "12041985")
     checar("Múltiplos exames ativos: mostra lista numerada", "1)" in resposta and "2)" in resposta)
 
     conversa2 = ConversaWhatsapp.query.filter_by(telefone=telefone_joao2).first()
@@ -215,5 +216,12 @@ with app.app_context():
     checar("Conversa expirada volta a pedir identificação", "CPF" in resposta)
     conversa_expirada = ConversaWhatsapp.query.filter_by(telefone=telefone_joao).first()
     checar("Conversa expirada: paciente_id foi limpo", conversa_expirada.paciente_id is None)
+
+    # Formatos de data aceitos (pedido do Silvan, 2026-10-21: com ou sem "/").
+    from datetime import date as _date
+    for texto in ("16/11/1983", "16111983", "16-11-1983", "16.11.1983", "16 11 1983", " 16/11/1983 "):
+        checar(f"Data {texto!r} é aceita", _extrair_data_nascimento(texto) == _date(1983, 11, 16))
+    for texto in ("31021990", "31/02/1990", "1611983", "161119830", "16/11/83", "1983-11-16"):
+        checar(f"Data {texto!r} é recusada", _extrair_data_nascimento(texto) is None)
 
     print("\nTodos os testes de identificação e convite direto à pergunta por WhatsApp (passos 3 e 4) passaram.")

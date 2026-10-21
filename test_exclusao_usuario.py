@@ -27,7 +27,7 @@ from app import create_app
 from app.extensions import db
 from app.models import (
     Usuario, Grupo, GrupoMembro, Paciente, GrupoPaciente,
-    Exame, Agendamento, LicencaPagamento, PushSubscription,
+    Exame, Agendamento, LicencaPagamento, PushSubscription, FaqItem,
 )
 from app.exclusao_usuario import verificar_bloqueios_exclusao, excluir_usuario_e_dados
 
@@ -86,7 +86,11 @@ with app.app_context():
     )
     db.session.add(agendamento_do_solo)
     db.session.add(PushSubscription(usuario_id=medico_solo.id, endpoint="https://push.teste/x", p256dh="a", auth="b"))
+    faq_do_exame = FaqItem(grupo_id=grupo_solo.id, exame_id=exame_do_solo.id, pergunta="Posso tomar café?",
+                           resposta="Só até 8 horas antes.", criado_por="Dr. Solo")
+    db.session.add(faq_do_exame)
     db.session.commit()
+    faq_do_exame_id = faq_do_exame.id
 
     mes_atual = date.today().replace(day=1)
     db.session.add(LicencaPagamento(usuario_id=medico_solo.id, mes=mes_atual, pago=False, valor=100.00))
@@ -108,6 +112,8 @@ with app.app_context():
     checar("Grupo em que ele era o ÚNICO membro ativo foi apagado junto", Grupo.query.get(grupo_solo_id) is None)
     checar("Exame dele foi apagado", Exame.query.get(exame_do_solo_id) is None)
     checar("Agendamento dele foi apagado", Agendamento.query.get(agendamento_do_solo_id) is None)
+    checar("Meu FAQ do exame dele foi apagado (não vira FAQ geral do grupo - 2026-10-21)",
+           FaqItem.query.get(faq_do_exame_id) is None)
     checar("LicencaPagamento dele foi apagada", LicencaPagamento.query.filter_by(usuario_id=medico_solo_id).count() == 0)
     checar("PushSubscription dele foi apagada", PushSubscription.query.filter_by(usuario_id=medico_solo_id).count() == 0)
     paciente_sobrevivente = Paciente.query.get(paciente_do_solo_id)

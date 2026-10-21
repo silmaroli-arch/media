@@ -2,6 +2,16 @@
 <html lang="pt-br">
 <head>
   <meta charset="utf-8">
+  {# Tela aberta DENTRO de uma janela (iframe), ex.: "Ver membros / Convidar"
+     em Meus grupos (pedido do Silvan, 2026-10-21): sem menu, topo, avisos
+     nem popups - só o conteúdo. Marcado já no <head> para não piscar. #}
+  <script>if (window.self !== window.top) document.documentElement.classList.add('embutido');</script>
+  <style>
+    html.embutido .app-sidebar, html.embutido .sidebar-backdrop, html.embutido .app-topbar,
+    html.embutido #appAvisoInstalarIos, html.embutido #appAvisoInstalarAndroid, html.embutido #pushAtivarBanner,
+    html.embutido .so-fora-da-janela { display: none !important; }
+    html.embutido body { background: #fff; }
+  </style>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block titulo %}Media{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/icone-quadrado.svg') }}">
@@ -247,6 +257,16 @@
       </li>
       {% endif %}
 
+      {# Quais médicos fazem cada preparo/exame (pedido do Silvan, 2026-10-21);
+         só com a permissão "Associar médicos aos exames". #}
+      {% if current_user.perm_medicos_preparo %}
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparos_medicos') %}active{% endif %}" href="{{ url_for('medico.preparos_medicos') }}">
+          <i class="bi bi-people me-2"></i>Médicos por preparo
+        </a>
+      </li>
+      {% endif %}
+
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">
           <i class="bi bi-journal-plus me-2"></i>Pacientes
@@ -262,19 +282,11 @@
            link no menu. #}
       </li>
 
-      {# Pedido do Silvan (2026-09-10): atalho direto no menu para criar um
-         novo agendamento — antes só se chegava em medico.agenda_novo pelo
-         botão dentro do Painel ("agenda completa"); a rota em si não
-         mudou, só ganhou este link fixo logo abaixo de "Pacientes". #}
-      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
-        <a class="nav-link {% if request.endpoint == 'medico.agenda_novo' %}active{% endif %}" href="{{ url_for('medico.agenda_novo') }}">
-          <i class="bi bi-calendar-plus me-2"></i>Agendar exame
-        </a>
-      </li>
-
+      {# "Agendar exame" saiu do menu (pedido do Silvan, 2026-10-21): agendar
+         virou um botão (com janela) na própria tela de exames agendados. #}
       <li class="nav-item mb-1">
-        <a class="nav-link {% if request.endpoint == 'medico.medico_agenda_pessoal' %}active{% endif %}" href="{{ url_for('medico.medico_agenda_pessoal') }}">
-          <i class="bi bi-clipboard2-pulse me-2"></i>Meus exames agendados
+        <a class="nav-link {% if request.endpoint in ('medico.medico_agenda_pessoal', 'medico.agenda_novo') %}active{% endif %}" href="{{ url_for('medico.medico_agenda_pessoal') }}">
+          <i class="bi bi-clipboard2-pulse me-2"></i>Agenda de Exames
         </a>
         {# Reorganização de menus: o menu "Médico" (que só tinha "Meus
            exames agendados" e "Minha agenda em todos os locais") deixou
@@ -576,7 +588,48 @@
   </div>
 </div>
 {% endif %}
+{# Anúncios do dono marcados como popup (2026-10-20, ver
+   app.injetar_notificacoes): abre na tela que a pessoa abrir e só fecha
+   pelo "Entendi", que marca como lidos. Não abre junto com o popup de
+   boas-vindas - aparece na tela seguinte. #}
+{% if notificacoes_popup and not popup_boas_vindas %}
+<div class="modal fade" id="modalAnuncios" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false"
+     aria-labelledby="modalAnunciosTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalAnunciosTitulo"><i class="bi bi-megaphone me-2"></i>
+          {% if notificacoes_popup|length == 1 %}{{ notificacoes_popup[0].titulo }}{% else %}Avisos do MedIA{% endif %}
+        </h5>
+      </div>
+      <div class="modal-body">
+        {% for n in notificacoes_popup %}
+        <div class="{% if not loop.last %}mb-3 pb-3 border-bottom{% endif %}">
+          {% if notificacoes_popup|length > 1 %}<h6 class="mb-1">{{ n.titulo }}</h6>{% endif %}
+          <p class="mb-1" style="white-space: pre-line;">{{ n.mensagem }}</p>
+          <div class="text-muted small">{{ n.criado_em.strftime('%d/%m/%Y') }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="modal-footer">
+        <form method="post" action="{{ url_for('medico.notificacoes_popup_entendi') }}" class="mb-0">
+          {% for n in notificacoes_popup %}<input type="hidden" name="notificacao_id" value="{{ n.id }}">{% endfor %}
+          <button type="submit" class="btn btn-primary">Entendi</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+{% if notificacoes_popup and not popup_boas_vindas %}
+<script>
+window.addEventListener('load', function () {
+  var el = document.getElementById('modalAnuncios');
+  if (el && window.bootstrap && !document.documentElement.classList.contains('embutido')) { new bootstrap.Modal(el).show(); }
+});
+</script>
+{% endif %}
 {% if popup_boas_vindas %}
 <script>
 window.addEventListener('load', function () {

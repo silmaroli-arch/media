@@ -92,4 +92,18 @@ with app.app_context():
             resultado["classificacao"] is None,
         )
 
+# Explicação antes/depois da categoria não pode virar bloqueio (2026-10-21:
+# "Que horas tenho que chegar na clínica?" foi bloqueada como fora do exame).
+with app.app_context():
+    exame = Exame.query.first()
+    for texto, esperado in [
+        ("Não se encaixa em FORA_DO_EXAME_ENCAMINHAR, é sobre a clínica.\nVALIDA\nPERGUNTA: Que horas tenho que chegar na clínica?", "valida"),
+        ("**VALIDA**\nPERGUNTA: Posso ir de carro?", "valida"),
+        ("FORA_DO_EXAME_ENCAMINHAR", "fora_do_exame"),
+        ("SEM_SENTIDO_ENCAMINHAR.", "sem_sentido"),
+    ]:
+        with patch.dict("app.ia_preparo._PROVEDORES_CHAT", {"Claude": (lambda t=texto: _cliente_fake(t), None)}):
+            resultado = validar_pergunta("Que horas tenho que chegar na clinica?", exame)
+        checar(f"Classificação '{esperado}' lida certo de: {texto[:45]!r}", resultado["classificacao"] == esperado)
+
 print("\nTodos os testes do validador de pergunta dedicado passaram.")

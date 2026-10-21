@@ -1,8 +1,9 @@
 """Testa o novo fluxo de entrada do paciente:
 
 1) O paciente se cadastra na PLATAFORMA, independente de clínica
-   (/cadastro-paciente) - formulário completo (com endereço e contato de
-   emergência, que faltavam no cadastro antigo pelo link).
+   (/cadastro-paciente) - só nome, CPF, data de nascimento e telefone
+   (e-mail, endereço e contato de emergência saíram em 2026-10-20 - LGPD,
+   ver test_lgpd_minimizacao.py).
 2) Na clínica, a secretária IMPORTA o paciente digitando o CPF: se o CPF
    existe na base, os dados vêm na hora; se não existe, ela cadastra do
    zero pelo formulário completo.
@@ -43,13 +44,8 @@ r = client.get("/cadastro-paciente")
 html = r.get_data(as_text=True)
 checar("A tela de cadastro global abre (sem clínica no título)",
        "Cadastro de paciente" in html and "qualquer clínica" in html)
-checar("Tem os campos de endereço (faltavam no cadastro antigo)",
-       'name="cep"' in html and 'name="rua"' in html and 'name="cidade"' in html)
-checar("Tem os campos de contato de emergência",
-       'name="contato_emergencia_nome"' in html and 'name="contato_emergencia_telefone"' in html)
-checar("O CEP busca o endereço automaticamente (ViaCEP), com rua/bairro/cidade/UF travados",
-       "viacep.com.br" in html and 'id="cep_status"' in html
-       and 'name="rua" id="rua"' in html and 'readonly' in html)
+checar("Não pede e-mail, endereço nem contato de emergência (LGPD)",
+       'name="email"' not in html and 'name="cep"' not in html and 'name="contato_emergencia_nome"' not in html)
 
 # CPF INVÁLIDO (número inventado) é barrado antes de qualquer coisa.
 r = client.post("/cadastro-paciente", data={
@@ -77,18 +73,6 @@ with app.app_context():
     checar("Ninguém foi criado com a data incompleta",
            Paciente.query.filter_by(cpf="998.887.776-53").first() is None)
 
-# CEP incompleto (ex.: "29055", faltando os 3 últimos números) é barrado -
-# sem isso, o cadastro salvava com rua/bairro/cidade/UF sempre em branco.
-r = client.post("/cadastro-paciente", data={
-    "nome": "Cep Incompleto", "cpf": "998.887.776-53", "telefone": "(27) 93030-0011",
-    "data_nascimento": "01/01/1990", "cep": "29055",
-}, follow_redirects=True)
-checar("CEP incompleto ('29055') é barrado",
-       "CEP incompleto" in r.get_data(as_text=True))
-with app.app_context():
-    checar("Ninguém foi criado com o CEP incompleto",
-           Paciente.query.filter_by(cpf="998.887.776-53").first() is None)
-
 # Telefone incompleto (ex.: só o DDD, "(27") é barrado - a máscara deixava
 # apagar/editar livremente, mas não garantia que a pessoa terminou de
 # digitar os 10 ou 11 dígitos de um telefone de verdade.
@@ -104,10 +88,7 @@ with app.app_context():
 
 r = client.post("/cadastro-paciente", data={
     "nome": "Diego Plataforma", "cpf": CPF, "telefone": "(27) 93030-0001",
-    "data_nascimento": "12/12/1990", "email": "diego@exemplo.com",
-    "cep": "29000-111", "rua": "Rua Global", "numero": "10", "complemento": "",
-    "bairro": "Centro", "cidade": "Vitória", "uf": "ES",
-    "contato_emergencia_nome": "Irma Plataforma", "contato_emergencia_telefone": "(27) 93030-0002",
+    "data_nascimento": "12/12/1990",
 }, follow_redirects=True)
 checar("Cadastro global cria a conta e já loga", "Diego Plataforma" in r.get_data(as_text=True))
 
@@ -117,14 +98,11 @@ r_nome = client.get("/logout")
 r_nome = client.post("/cadastro-paciente", data={
     "nome": "  maria das graças de   oliveira", "cpf": "222.333.444-05",
     "telefone": "(27) 93030-0055", "data_nascimento": "05/05/1995",
-    "contato_emergencia_nome": "josé d'ávila", "contato_emergencia_telefone": "",
 }, follow_redirects=True)
 with app.app_context():
     p_nome = Paciente.query.filter_by(cpf="222.333.444-05").first()
     checar("Nome digitado minúsculo vira Nome Próprio ('Maria das Graças de Oliveira')",
            p_nome is not None and p_nome.nome == "Maria das Graças de Oliveira")
-    checar("Contato de emergência também é formatado (José D'Ávila)",
-           p_nome.contato_emergencia_nome == "José D'Ávila")
 client.get("/logout")
 checar("A mensagem orienta informar o CPF na clínica", "CPF" in r.get_data(as_text=True))
 
@@ -133,8 +111,8 @@ with app.app_context():
     checar("O cadastro global NÃO pertence a nenhum grupo (só GrupoPaciente cria essa associação)",
            perfil is not None and perfil.empresa_id is None and perfil.clinica_id is None
            and len(perfil.grupos) == 0)
-    checar("Endereço e emergência salvos no cadastro global",
-           perfil.rua == "Rua Global" and perfil.contato_emergencia_nome == "Irma Plataforma")
+    checar("Telefone e nascimento salvos no cadastro global",
+           perfil.telefone == "27930300001" and perfil.data_nascimento == date(1990, 12, 12))
 client.get("/logout")
 
 # CPF repetido no cadastro global é barrado.
@@ -189,9 +167,8 @@ with app.app_context():
            Paciente.query.filter_by(cpf=CPF).count() == 1)
     checar("O Grupo Vitória agora enxerga esse paciente via GrupoPaciente",
            GrupoPaciente.query.filter_by(grupo_id=grupo_vitoria_id, paciente_id=perfil.id).first() is not None)
-    checar("Dados continuam os mesmos (endereço/emergência/nascimento) - é o mesmo registro",
-           perfil.rua == "Rua Global" and perfil.contato_emergencia_nome == "Irma Plataforma"
-           and perfil.data_nascimento == date(1990, 12, 12))
+    checar("Dados continuam os mesmos (telefone/nascimento) - é o mesmo registro",
+           perfil.telefone == "27930300001" and perfil.data_nascimento == date(1990, 12, 12))
     checar("Importado pela equipe entra/continua APROVADO (sem fila de pendentes)",
            perfil.status_cadastro == "aprovado")
 

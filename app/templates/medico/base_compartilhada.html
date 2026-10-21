@@ -15,14 +15,22 @@
 {% elif not tipos %}
 <div class="alert alert-light border">Ainda não há tipos de exame ligados à especialidade {{ current_user.especialidade }}.</div>
 {% else %}
+{# Só exames com itens no FAQ + busca por texto livre (2026-10-21) #}
 <form method="get" class="row g-2 mb-3">
-  <div class="col-md-5">
+  <div class="col-md-4">
     <select name="tipo" class="form-select form-select-sm" onchange="this.form.submit()">
       <option value="">Todos os exames da minha especialidade</option>
-      {% for t in tipos %}<option value="{{ t.id }}" {% if filtro_tipo == t.id %}selected{% endif %}>{{ t.nome }}</option>{% endfor %}
+      {% for t in tipos_com_itens %}<option value="{{ t.id }}" {% if filtro_tipo == t.id %}selected{% endif %}>{{ t.nome }}</option>{% endfor %}
     </select>
   </div>
-</div>
+  <div class="col-md-6">
+    <div class="input-group input-group-sm">
+      <input type="search" name="q" class="form-control" value="{{ busca }}" placeholder="Buscar na pergunta ou na resposta (ex.: dirigir, café)">
+      <button class="btn btn-outline-primary"><i class="bi bi-search"></i> Buscar</button>
+    </div>
+  </div>
+  {% if busca or filtro_tipo %}<div class="col-auto"><a href="{{ url_for('medico.base_compartilhada') }}" class="btn btn-sm btn-link">Limpar</a></div>{% endif %}
+</form>
 
 <details class="card card-body mb-3">
   <summary class="fw-semibold">Sugerir um item novo</summary>

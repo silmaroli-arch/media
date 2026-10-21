@@ -12,7 +12,7 @@
       <tr>
         <td>{{ p.nome }}</td>
         <td>{{ p.cpf }}</td>
-        <td>{{ p.telefone or '-' }}</td>
+        <td>{{ p.telefone|telefone or '-' }}</td>
         <td>{{ p.data_nascimento.strftime('%d/%m/%Y') if p.data_nascimento else '-' }}</td>
         <td>{{ p.criado_em.strftime('%d/%m/%Y %H:%M') if p.criado_em else '-' }}</td>
         <td class="d-flex gap-2">

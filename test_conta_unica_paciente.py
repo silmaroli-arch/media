@@ -39,8 +39,8 @@ def login_equipe(email, senha="123456", grupo_id=None):
 
 TEL = "(27) 98888-7001"
 TEL_NORM = normalizar_telefone(TEL)
-CPF_ANA = "710.820.930-04"
-CPF_FILHO = "710.820.930-15"
+CPF_ANA = "710.820.930-68"
+CPF_FILHO = "710.820.931-49"
 
 with app.app_context():
     grupo_centro = Grupo.query.filter_by(nome="Grupo Saúde Total - Centro").first()

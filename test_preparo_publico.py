@@ -98,6 +98,20 @@ with app.app_context():
     nomes_permitidos = [a.nome for a in documento["sem_data"]["alimentos_permitidos"]]
     checar("Alimento permitido (ex.: Água de coco) vai para 'sem_data'", "Água de coco" in nomes_permitidos)
 
+    # Data uma vez só, com os itens do dia embaixo (pedido do Silvan, 2026-10-21).
+    dias = documento["linha_do_tempo_por_dia"]
+    datas = [d["data"] for d in dias]
+    checar("Linha do tempo por dia: cada data aparece uma vez só", len(datas) == len(set(datas)))
+    checar("... sem perder nenhum item", sum(len(d["itens"]) for d in dias) == len(documento["linha_do_tempo"]))
+    checar("... e o detalhe que só repetia a data some",
+           not any(i["detalhe"] and i["detalhe"].startswith(d["data"]) for d in dias for i in d["itens"]))
+    from datetime import datetime
+    from flask import render_template
+    with app.test_request_context():
+        html = render_template("paciente/preparo_publico.html", agora=datetime.utcnow(), **documento)
+    checar("... e na página cada data aparece uma vez na linha do tempo",
+           all(html.count(f'<div class="data-item">{d}</div>') == 1 for d in datas))
+
     # --- gerar_pdf_preparo ---
     resposta_pdf = gerar_pdf_preparo(documento)
     checar("gerar_pdf_preparo devolve mimetype application/pdf", resposta_pdf.mimetype == "application/pdf")

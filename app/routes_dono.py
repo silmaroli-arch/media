@@ -6,7 +6,7 @@ from sqlalchemy import func
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico, BaseConhecimentoSugestao, tipos_exame_ordenados, TipoExameSugestao
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico, BaseConhecimentoSugestao, tipos_exame_ordenados, TipoExameSugestao, SolicitacaoExclusao
 from app.base_conhecimento import (
     PROVEDORES_BUSCA, PROVEDOR_PALAVRA_CHAVE, provedor_configurado, atualizar_embedding_do_item, buscar_na_base,
     itens_sem_vetor_query,
@@ -182,6 +182,7 @@ def dashboard():
         hoje=date.today(), config=config,
         linhas_usuarios=linhas_usuarios, custo_total_usuarios=custo_total_usuarios,
         mensagens_suporte_novas=mensagens_suporte_novas,
+        solicitacoes_exclusao=_solicitacoes_exclusao_pendentes(),
     )
 
 
@@ -746,7 +747,25 @@ def usuarios():
     Desde que essa lista passou a aparecer também direto no dashboard
     principal (ver `dashboard` acima), esta rota serve como um link pra
     ver SÓ essa lista, sem o restante da tela de Grupos."""
-    return render_template("dono/usuarios.html", linhas=_usuarios_com_custo())
+    return render_template("dono/usuarios.html", linhas=_usuarios_com_custo(),
+                           solicitacoes_exclusao=_solicitacoes_exclusao_pendentes())
+
+
+def _solicitacoes_exclusao_pendentes():
+    return SolicitacaoExclusao.query.filter_by(status="pendente").order_by(SolicitacaoExclusao.criado_em).all()
+
+
+@dono_bp.route("/solicitacoes-exclusao/<int:solicitacao_id>/descartar", methods=["POST"])
+@login_required
+@dono_required
+def solicitacao_exclusao_descartar(solicitacao_id):
+    """O dono decide não excluir a conta (pedido do Silvan, 2026-10-21)."""
+    pedido = SolicitacaoExclusao.query.get_or_404(solicitacao_id)
+    pedido.status = "descartada"
+    pedido.resolvido_em = datetime.utcnow()
+    db.session.commit()
+    flash(f'Pedido de exclusão de "{pedido.nome}" descartado (a conta continua).', "success")
+    return redirect(request.referrer or url_for("dono.dashboard"))
 
 
 @dono_bp.route("/usuarios/aplicar-valor-padrao", methods=["POST"])
@@ -1541,6 +1560,7 @@ def anuncio_enviar():
     destinatario = request.form.get("destinatario", "todos")
     titulo = request.form.get("titulo", "").strip()
     mensagem = request.form.get("mensagem", "").strip()
+    popup = bool(request.form.get("popup"))
     if not titulo or not mensagem:
         flash("Preencha o título e a mensagem antes de enviar.", "danger")
         return redirect(url_for("dono.anuncios"))
@@ -1557,11 +1577,12 @@ def anuncio_enviar():
 
     for usuario in destinatarios:
         db.session.add(Notificacao(
-            usuario_id=usuario.id, tipo="anuncio", titulo=titulo, mensagem=mensagem,
+            usuario_id=usuario.id, tipo="anuncio", titulo=titulo, mensagem=mensagem, popup=popup,
         ))
     db.session.commit()
     flash(
-        f"Anúncio enviado para {len(destinatarios)} pessoa{'s' if len(destinatarios) != 1 else ''}.",
+        f"Anúncio enviado para {len(destinatarios)} pessoa{'s' if len(destinatarios) != 1 else ''}"
+        f"{' (abre como popup)' if popup else ''}.",
         "success",
     )
     return redirect(url_for("dono.anuncios"))
