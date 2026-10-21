@@ -2636,6 +2636,11 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Correção junto: `_sincronizar_faq_da_pergunta_respondida` procurava o FAQ só pela pergunta original; desde a pergunta corrigida pela IA, o FAQ é gravado com `pergunta_faq` - agora procura pelas duas.
 - Teste novo: `test_salvar_faq_flag.py`; `test_portal_atendimento_resumo.py` ajustado.
 
+## WhatsApp: horário do exame nas listas (2026-10-21, pedido do Silvan)
+
+- `whatsapp_conversa`: a lista "Você tem mais de um exame em preparo", o "Exame em foco" e o "Você também tem agendado" mostram data E horário ("29/10/2026 às 11:40") - antes só a data, e exames iguais no mesmo dia ficavam indistinguíveis.
+- Teste: `test_marcadores_resposta.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2693,6 +2698,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 
 **WhatsApp** - VALIDADO pelo Silvan em 2026-10-21
 - [x] Identificação com a data de nascimento só em números (ex.: 16111983) - validado 2026-10-21 (no print do Silvan)
+- [ ] Lista de exames, "Exame em foco" e "Você também tem agendado" mostram data e horário
 - [x] Paciente sem exame em preparo: avisa uma vez e a próxima mensagem volta a pedir o CPF (dá para mandar outro CPF) - antes entrava em loop - validado 2026-10-21
 
 **Painel do dono** - VALIDADO pelo Silvan em 2026-10-21

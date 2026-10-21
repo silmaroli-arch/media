@@ -64,6 +64,7 @@ with app.app_context():
     with patch("app.whatsapp_conversa.validar_pergunta", return_value=sem_validador):
         processar_mensagem("+5527900002020", "123.456.789-00")
         r = processar_mensagem("+5527900002020", "12041985")
+        checar("Lista de exames no WhatsApp mostra data e horário (2026-10-21)", "Hemograma completo — 20/11/2026 às 14:30" in r)
         if "Hemograma" in r and "1)" in r:
             linha = next(l for l in r.splitlines() if "Hemograma" in l)
             processar_mensagem("+5527900002020", linha.strip()[0])

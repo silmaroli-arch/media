@@ -295,7 +295,7 @@ def _agendamentos_ativos(paciente):
 
 def _texto_lista_exames(agendamentos, preambulo="Você tem mais de um exame em preparo. Sobre qual deles você quer falar?"):
     linhas = [
-        f"{i}) {a.exame.nome} — {a.data_hora.strftime('%d/%m/%Y')}"
+        f"{i}) {a.exame.nome} — {a.data_hora.strftime('%d/%m/%Y às %H:%M')}"
         for i, a in enumerate(agendamentos, start=1)
     ]
     return preambulo + "\n" + "\n".join(linhas)
@@ -331,13 +331,13 @@ def _texto_pedir_pergunta(paciente, agendamento, saudacao=True, outros_agendamen
     link_preparo = montar_link_preparo(agendamento)
     corpo = (
         f"{cabecalho}Exame em foco: *{agendamento.exame.nome}* — "
-        f"{agendamento.data_hora.strftime('%d/%m/%Y')}.\n\n"
+        f"{agendamento.data_hora.strftime('%d/%m/%Y às %H:%M')}.\n\n"
         f"Veja o preparo completo aqui: {link_preparo}\n\n"
         "Pode escrever sua pergunta sobre o preparo deste exame."
     )
     if outros_agendamentos:
         nomes = "; ".join(
-            f"{a.exame.nome} — {a.data_hora.strftime('%d/%m/%Y')}" for a in outros_agendamentos
+            f"{a.exame.nome} — {a.data_hora.strftime('%d/%m/%Y às %H:%M')}" for a in outros_agendamentos
         )
         corpo += f"\n\n(Você também tem agendado: {nomes}. Digite *trocar* para falar sobre outro exame.)"
     return corpo
