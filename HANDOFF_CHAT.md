@@ -2504,6 +2504,15 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Dava para marcar dois exames do mesmo médico no mesmo dia e hora. `agenda_novo` agora chama `_agendamento_em_conflito(medico_id, inicio, duracao)`: cada exame ocupa da hora marcada até hora + `Exame.duracao_minutos` (sem duração cadastrada, só a hora exata). Se sobrepõe outro agendamento do MESMO médico (em qualquer grupo, porque é a agenda da pessoa), recusa com "Fulano já tem um exame nesse horário: <exame> com <paciente>, em dd/mm/aaaa às hh:mm" e a janela reabre com os dados. Outro médico no mesmo horário é aceito.
 - Teste em `test_exames_agendados_tela_unica.py` (mesmo horário, dentro da duração, terminando depois do início do outro, logo após o fim, outro médico).
 
+## Calendário: remarcar e cancelar exame (2026-10-21, pedido do Silvan)
+
+- Na janela de detalhes do exame (calendário de exames agendados): "Remarcar para" (data e hora) e "Cancelar exame" (com confirmação). Somem quando o atendimento já foi encerrado.
+- `medico.agenda_remarcar` (POST data_hora): mesma checagem de conflito do agendar (`_agendamento_em_conflito`, que ganhou `ignorar_id` para não conflitar com ele mesmo).
+- `medico.agenda_cancelar`: apaga o agendamento. Não cancela se encerrado ou com resultado anexado. Conversas do paciente (ChatMensagem, ConversaWhatsapp) ficam, só perdem o vínculo (`agendamento_id = NULL`).
+- Regra de acesso igual ao "Encerrar" (`_agendamento_do_escopo_ou_404`): grupo atual; médico só os dele.
+- O paciente NÃO é avisado pelo WhatsApp da remarcação nem do cancelamento (só existe aviso na criação).
+- Teste em `test_exames_agendados_tela_unica.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2533,6 +2542,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Calendário: Mês, Semana, Dia e Lista (no celular, Lista); cor por médico; clicar no exame abre os detalhes com Atendimento, Resultado e Encerrar; clicar num dia vazio abre "Agendar exame" com a data
 - [ ] Botão "Agendar exame" (janela): o médico é filtrado pelo exame escolhido; sem os campos de acompanhante
 - [ ] Dois exames do mesmo médico no mesmo horário (ou sobrepostos pela duração): recusado com o aviso; outro médico no mesmo horário: aceito
+- [ ] Janela do exame: "Remarcar para" muda data e hora (recusa horário ocupado); "Cancelar exame" apaga; os dois somem em exame encerrado
 
 **Exames & preparo (modelo de preparo / cadastro de exame)**
 - [ ] Médico não salva sem "Sua especialidade"; com ela, aparece em "Meus dados"

@@ -65,6 +65,19 @@
         <p class="mb-1"><strong>Exame:</strong> <span id="ag_exame"></span></p>
         <p class="mb-1"><strong>Médico:</strong> <span id="ag_medico"></span></p>
         <p class="mb-0 small text-muted d-none" id="ag_encerrado">Atendimento encerrado.</p>
+        {# Remarcar e cancelar (pedido do Silvan, 2026-10-21) - somem quando já encerrado. #}
+        <div id="ag_mudar" class="border-top mt-3 pt-3">
+          <form method="post" id="ag_remarcar" class="mb-2">
+            <label class="form-label small mb-1" for="ag_nova_data">Remarcar para</label>
+            <div class="input-group">
+              <input type="datetime-local" name="data_hora" id="ag_nova_data" class="form-control" required>
+              <button type="submit" class="btn btn-outline-primary">Remarcar</button>
+            </div>
+          </form>
+          <form method="post" id="ag_cancelar" onsubmit="return confirm('Cancelar este exame? O agendamento será apagado.');">
+            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle me-1"></i>Cancelar exame</button>
+          </form>
+        </div>
       </div>
       <div class="modal-footer justify-content-start">
         <a id="ag_atendimento" class="btn btn-outline-secondary btn-sm">Atendimento</a>
@@ -164,7 +177,10 @@
           encerrada: {{ 'true' if a.encerrada else 'false' }},
           atendimento: '{{ url_for('medico.atendimento', agendamento_id=a.id) }}',
           resultado: '{{ url_for('medico.resultado_upload', agendamento_id=a.id) }}',
-          encerrar: '{{ '' if a.encerrada else url_for('medico.atendimento_encerrar_rapido', agendamento_id=a.id) }}'
+          encerrar: '{{ '' if a.encerrada else url_for('medico.atendimento_encerrar_rapido', agendamento_id=a.id) }}',
+          remarcar: '{{ url_for('medico.agenda_remarcar', agendamento_id=a.id) }}',
+          cancelar: '{{ url_for('medico.agenda_cancelar', agendamento_id=a.id) }}',
+          inicio: '{{ a.data_hora.strftime('%Y-%m-%dT%H:%M') }}'
         }
       }{% if not loop.last %},{% endif %}
       {% endfor %}
@@ -204,6 +220,10 @@
           document.getElementById('ag_encerrar').action = p.encerrar;
           document.getElementById('ag_encerrar').classList.toggle('d-none', p.encerrada);
           document.getElementById('ag_encerrado').classList.toggle('d-none', !p.encerrada);
+          document.getElementById('ag_mudar').classList.toggle('d-none', p.encerrada);
+          document.getElementById('ag_remarcar').action = p.remarcar;
+          document.getElementById('ag_cancelar').action = p.cancelar;
+          document.getElementById('ag_nova_data').value = p.inicio;
           bootstrap.Modal.getOrCreateInstance(document.getElementById('modalAgendamento')).show();
         },
         // Dia/horário vazio: abre "Agendar exame" com a data (e a hora, nas

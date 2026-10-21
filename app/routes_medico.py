@@ -23,6 +23,7 @@ from app.models import (
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
     ChatMensagem, ResultadoExame, PushSubscription, LicencaPagamento, garantir_meses_licenca,
     PlataformaConfig, MensagemSuporte, Notificacao, TipoExame, BaseConhecimentoItem, BaseConhecimentoSugestao,
+    ConversaWhatsapp,
     tipos_exame_ordenados, TipoExameSugestao,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
     telefone_incompleto, validar_cpf,
@@ -2481,7 +2482,7 @@ def agenda():
     return redirect(url_for("medico.dashboard", _anchor="agenda-completa"))
 
 
-def _agendamento_em_conflito(medico_id, inicio, duracao_minutos):
+def _agendamento_em_conflito(medico_id, inicio, duracao_minutos, ignorar_id=None):
     """Outro agendamento do MESMO médico que se sobrepõe a este horário
     (pedido do Silvan, 2026-10-21: deixava marcar dois exames do mesmo
     médico no mesmo dia e hora). Cada exame ocupa da hora marcada até
@@ -2494,6 +2495,8 @@ def _agendamento_em_conflito(medico_id, inicio, duracao_minutos):
         Agendamento.data_hora <= fim + timedelta(days=1),
     ).all()
     for outro in candidatos:
+        if ignorar_id and outro.id == ignorar_id:
+            continue
         outro_fim = outro.data_hora + timedelta(minutes=(outro.exame.duracao_minutos if outro.exame else 0) or 0)
         mesmo_inicio = outro.data_hora == inicio
         sobrepoe = outro.data_hora < fim and inicio < outro_fim
@@ -2868,6 +2871,76 @@ def atendimento_encerrar_rapido(agendamento_id):
         flash("Atendimento encerrado.", "success")
 
     return redirect(request.referrer or url_for("medico.medico_agenda_pessoal"))
+
+
+def _agendamento_do_escopo_ou_404(agendamento_id):
+    """Agendamento do grupo atual; médico só mexe nos dele (mesma regra de
+    atendimento_encerrar_rapido)."""
+    query = Agendamento.query.filter(
+        Agendamento.id == agendamento_id,
+        filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
+    )
+    if eh_medico():
+        query = query.filter(Agendamento.medico_id == current_user.id)
+    return query.first_or_404()
+
+
+@medico_bp.route("/agenda/<int:agendamento_id>/cancelar", methods=["POST"])
+@login_required
+@staff_required
+def agenda_cancelar(agendamento_id):
+    """Cancela (apaga) um agendamento - pelo calendário de exames agendados
+    (pedido do Silvan, 2026-10-21). Não cancela exame já encerrado nem com
+    resultado anexado. As conversas do paciente ficam (só perdem o vínculo
+    com este agendamento)."""
+    agendamento = _agendamento_do_escopo_ou_404(agendamento_id)
+    if agendamento.encerrado_em:
+        flash("Este atendimento já foi encerrado - não dá para cancelar.", "danger")
+        return redirect(url_for("medico.medico_agenda_pessoal"))
+    if ResultadoExame.query.filter_by(agendamento_id=agendamento.id).first():
+        flash("Este exame já tem resultado anexado - não dá para cancelar.", "danger")
+        return redirect(url_for("medico.medico_agenda_pessoal"))
+    descricao = (
+        f"{agendamento.exame.nome if agendamento.exame else 'Exame'} de {agendamento.paciente.nome} "
+        f"em {agendamento.data_hora.strftime('%d/%m/%Y às %H:%M')}"
+    )
+    ChatMensagem.query.filter_by(agendamento_id=agendamento.id).update({"agendamento_id": None})
+    ConversaWhatsapp.query.filter_by(agendamento_id=agendamento.id).update({"agendamento_id": None})
+    db.session.delete(agendamento)
+    db.session.commit()
+    flash(f"Agendamento cancelado: {descricao}.", "success")
+    return redirect(url_for("medico.medico_agenda_pessoal"))
+
+
+@medico_bp.route("/agenda/<int:agendamento_id>/remarcar", methods=["POST"])
+@login_required
+@staff_required
+def agenda_remarcar(agendamento_id):
+    """Muda a data e a hora de um agendamento (pedido do Silvan,
+    2026-10-21), com a mesma checagem de conflito do agendar."""
+    agendamento = _agendamento_do_escopo_ou_404(agendamento_id)
+    if agendamento.encerrado_em:
+        flash("Este atendimento já foi encerrado - não dá para remarcar.", "danger")
+        return redirect(url_for("medico.medico_agenda_pessoal"))
+    try:
+        nova = datetime.strptime(request.form.get("data_hora", ""), "%Y-%m-%dT%H:%M")
+    except ValueError:
+        flash("Data/hora inválida.", "danger")
+        return redirect(url_for("medico.medico_agenda_pessoal"))
+    duracao = agendamento.exame.duracao_minutos if agendamento.exame else None
+    conflito = _agendamento_em_conflito(agendamento.medico_id, nova, duracao, ignorar_id=agendamento.id)
+    if conflito:
+        flash(
+            f"{conflito.medico.nome if conflito.medico else 'O médico'} já tem um exame nesse horário: "
+            f"{conflito.exame.nome if conflito.exame else 'exame'} com {conflito.paciente.nome}, em "
+            f"{conflito.data_hora.strftime('%d/%m/%Y às %H:%M')}. Escolha outro horário.",
+            "danger",
+        )
+        return redirect(url_for("medico.medico_agenda_pessoal"))
+    agendamento.data_hora = nova
+    db.session.commit()
+    flash(f"Agendamento remarcado para {nova.strftime('%d/%m/%Y às %H:%M')}.", "success")
+    return redirect(url_for("medico.medico_agenda_pessoal"))
 
 
 # ---------- Resultado de exame (upload de PDF) ----------

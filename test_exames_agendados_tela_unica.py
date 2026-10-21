@@ -120,4 +120,28 @@ r = sec.post("/equipe/agenda/novo", data={
 }, follow_redirects=True)
 checar("Outro médico no mesmo horário: aceito", "Agendamento criado com sucesso." in r.get_data(as_text=True))
 
+# ---------- Remarcar e cancelar (2026-10-21) ----------
+with app.app_context():
+    ag = Agendamento.query.filter_by(medico_id=fernanda_id).order_by(Agendamento.data_hora.desc()).first()
+    ag_id = ag.id
+html = sec.get("/equipe/medico-agenda").get_data(as_text=True)
+checar("A janela do exame tem Remarcar e Cancelar", f"/equipe/agenda/{ag_id}/remarcar" in html and f"/equipe/agenda/{ag_id}/cancelar" in html)
+r = sec.post(f"/equipe/agenda/{ag_id}/remarcar", data={"data_hora": "2026-12-01T09:40"}, follow_redirects=True)
+checar("Remarcar para um horário ocupado: recusado", "já tem um exame nesse horário" in r.get_data(as_text=True))
+r = sec.post(f"/equipe/agenda/{ag_id}/remarcar", data={"data_hora": "2026-12-02T15:00"}, follow_redirects=True)
+with app.app_context():
+    checar("Remarcar para um horário livre muda a data", "remarcado para 02/12/2026 às 15:00" in r.get_data(as_text=True)
+           and Agendamento.query.get(ag_id).data_hora.strftime("%d/%m %H:%M") == "02/12 15:00")
+r = sec.post(f"/equipe/agenda/{ag_id}/remarcar", data={"data_hora": "2026-12-02T15:00"}, follow_redirects=True)
+checar("Remarcar para o mesmo horário dele não conflita com ele mesmo", "remarcado" in r.get_data(as_text=True))
+r = med.post(f"/equipe/agenda/{ag_id}/cancelar")
+checar("Médica pode cancelar o próprio exame", r.status_code == 302)
+with app.app_context():
+    checar("... e o agendamento sumiu", Agendamento.query.get(ag_id) is None)
+    outro = Agendamento.query.filter_by(medico_id=carlos_id).first()
+    outro_id = outro.id
+r = med.post(f"/equipe/agenda/{outro_id}/cancelar")
+with app.app_context():
+    checar("Médica não cancela exame do colega", r.status_code == 404 and Agendamento.query.get(outro_id) is not None)
+
 print("\nTodos os testes da tela única de exames agendados passaram.")
