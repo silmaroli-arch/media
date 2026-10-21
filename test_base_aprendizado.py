@@ -67,7 +67,7 @@ with app.app_context():
     db.session.commit()
 
 cenario = {"geral": {"pergunta": "Posso mascar chiclete no preparo?", "resposta": "Não, chiclete quebra a restrição do preparo."},
-           "achado": None, "diverge": True}
+           "achado": None, "diverge": True, "identico": None}
 chamadas_arbitro = []
 originais = (ba.generalizar_com_ia, bc.buscar_na_base, ia._respostas_divergem, ia._cliente_anthropic)
 ba.generalizar_com_ia = lambda p, r, usuario_id=None: cenario["geral"]
@@ -83,6 +83,16 @@ def busca_falsa(pergunta, tipo_exame_id=None, limite=3, provedor=None):
 
 
 bc.buscar_na_base = busca_falsa
+originais_identico = bc.item_quase_identico
+
+
+def identico_falso(pergunta, resposta, tipo_exame_id, provedor=None):
+    if not cenario["identico"]:
+        return None, None
+    return db.session.get(BaseConhecimentoItem, cenario["identico"]), None
+
+
+bc.item_quase_identico = identico_falso
 
 
 def arbitro_falso(cliente, a, b, paciente_id=None, ignorar_prazos=False):
@@ -153,34 +163,23 @@ try:
     responder(nova_pergunta(ex_sem_id), "Não pode.")
     checar("Preparo sem tipo de exame: nada criado", total_itens() == antes)
 
-    # ---------- 5. Rascunho aprovado sem editar ----------
-    cenario["achado"] = None
-    with app.app_context():
-        cenario["achado"] = {"item_id": novo_id, "score": 0.95, "metodo": "palavra_chave"}
+    # ---------- 5. Toda resposta de médico vira item (2026-10-21) ----------
+    antes = total_itens()
+    cenario["geral"] = {"pergunta": "Posso mascar chiclete no preparo?", "resposta": "Pode, desde que sem açúcar."}
     responder(nova_pergunta(ex_tipo_id, "aguardando_aprovacao", ia_rascunho=True), "Rascunho da IA.")
     with app.app_context():
-        checar("Aprovar sem editar nao sobrescreve", BaseConhecimentoItem.query.get(novo_id).resposta == "Não, chiclete quebra a restrição do preparo."
+        checar("Mesmo com pergunta parecida na base e sem editar: cria item novo", total_itens() == antes + 1)
+        checar("... e o item antigo continua igual",
+               BaseConhecimentoItem.query.get(novo_id).resposta == "Não, chiclete quebra a restrição do preparo."
                and BaseConhecimentoHistorico.query.filter_by(item_id=novo_id).count() == 0)
 
-    # ---------- 6. Medico edita e diverge ----------
-    cenario["geral"] = {"pergunta": "Posso mascar chiclete no preparo?", "resposta": "Pode, desde que sem açúcar."}
-    cenario["diverge"] = False
-    responder(nova_pergunta(ex_tipo_id, "aguardando_aprovacao", ia_rascunho=True), "Pode, sem açúcar.")
+    # ---------- 6. Praticamente idêntico não duplica ----------
+    antes = total_itens()
+    cenario["identico"] = novo_id
+    responder(nova_pergunta(ex_tipo_id), "Não pode.")
     with app.app_context():
-        checar("Editou mas nao diverge: nada muda", BaseConhecimentoItem.query.get(novo_id).resposta.startswith("Não"))
-    cenario["diverge"] = True
-    chamadas_arbitro.clear()
-    with app.app_context():
-        BaseConhecimentoItem.query.get(novo_id).revisado = True
-        db.session.commit()
-    responder(nova_pergunta(ex_tipo_id, "aguardando_aprovacao", ia_rascunho=True), "Pode, sem açúcar.")
-    with app.app_context():
-        item = BaseConhecimentoItem.query.get(novo_id)
-        hist = BaseConhecimentoHistorico.query.filter_by(item_id=novo_id).all()
-        checar("Editou e diverge: atualiza a resposta", item.resposta == "Pode, desde que sem açúcar.")
-        checar("Guarda a versao anterior no historico", len(hist) == 1 and hist[0].resposta.startswith("Não"))
-        checar("Volta a nao revisado", not item.revisado)
-        checar("Arbitro foi chamado ignorando prazos", chamadas_arbitro and all(chamadas_arbitro))
+        checar("Praticamente idêntico a um item: não cria outro", total_itens() == antes)
+    cenario["identico"] = None
 
     # ---------- 7. Secretaria ----------
     cenario["achado"] = None
@@ -213,5 +212,6 @@ try:
         checar("Medico excluido: item continua na base", item is not None and item.autor_usuario_id is None and item.autor_nome == "Dr. Aprende")
 finally:
     ba.generalizar_com_ia, bc.buscar_na_base, ia._respostas_divergem, ia._cliente_anthropic = originais
+    bc.item_quase_identico = originais_identico
 
 print("\nTodos os testes passaram.")

@@ -49,6 +49,9 @@ VERSAO_TEXTO_VETOR = "v2"
 # Embeddings: similaridade do cosseno.
 LIMIAR_PALAVRA_CHAVE = 0.6
 LIMIAR_EMBEDDING = 0.70
+# Aprendizado (2026-10-21): toda resposta de médico vira item; só não entra
+# a que for praticamente idêntica (pergunta E resposta) a um item ativo.
+LIMIAR_QUASE_IDENTICO = 0.95
 
 
 def base_ativa():
@@ -274,8 +277,45 @@ def _buscar_por_palavra_chave(pergunta, itens, limite, ignorar_genericas=False):
         pontuacao = _quantidade_correspondencias(kw_pergunta, kw_item) / len(kw_pergunta)
         if pontuacao >= LIMIAR_PALAVRA_CHAVE:
             resultados.append({"item": item, "score": pontuacao, "metodo": PROVEDOR_PALAVRA_CHAVE})
-    resultados.sort(key=lambda r: r["score"], reverse=True)
-    return resultados[:limite]
+    return _ordenar(resultados)[:limite]
+
+
+def _ordenar(resultados):
+    """Do mais para o menos parecido; em empate (mesma nota em 2 casas),
+    prefere o item já revisado pelo dono e depois o mais recente - com o
+    aprendizado criando um item por resposta, pode haver várias versões
+    da mesma dúvida (pedido do Silvan, 2026-10-21)."""
+    return sorted(resultados, key=lambda r: (round(r["score"], 2), r["item"].revisado, r["item"].id), reverse=True)
+
+
+def item_quase_identico(pergunta, resposta, tipo_exame_id, provedor=None):
+    """Item ATIVO do tipo de exame praticamente igual a esta pergunta+
+    resposta (mesmo texto, ou vetor com similaridade >= LIMIAR_QUASE_
+    IDENTICO). Devolve (item_ou_None, vetor_calculado_ou_None) - o vetor já
+    serve para gravar no item novo, sem outra chamada de API."""
+    from types import SimpleNamespace
+
+    itens = BaseConhecimentoItem.query.filter_by(status="ativo", tipo_exame_id=tipo_exame_id).all()
+    normal = lambda t: " ".join((t or "").lower().split())
+    for item in itens:
+        if normal(item.pergunta) == normal(pergunta) and normal(item.resposta) == normal(resposta):
+            return item, None
+    provedor = provedor or provedor_configurado()
+    if provedor not in (PROVEDOR_OPENAI, PROVEDOR_GEMINI):
+        return None, None
+    candidato = SimpleNamespace(pergunta=pergunta, resposta=resposta, tipo_exame_id=tipo_exame_id)
+    vetor = gerar_embedding(texto_do_item_para_vetor(candidato), provedor)
+    if not vetor:
+        return None, None
+    valores, modelo = vetor
+    for item in itens:
+        if item.embedding and item.embedding_modelo == modelo:
+            try:
+                if _cosseno(valores, json.loads(item.embedding)) >= LIMIAR_QUASE_IDENTICO:
+                    return item, vetor
+            except ValueError:
+                continue
+    return None, vetor
 
 
 def _pergunta_com_exame(pergunta, tipo_exame_id):
@@ -328,7 +368,6 @@ def buscar_na_base(pergunta, tipo_exame_id=None, limite=3, provedor=None):
                     continue
                 if similaridade >= LIMIAR_EMBEDDING:
                     resultados.append({"item": item, "score": similaridade, "metodo": provedor})
-            resultados.sort(key=lambda r: r["score"], reverse=True)
-            return resultados[:limite]
+            return _ordenar(resultados)[:limite]
 
     return _buscar_por_palavra_chave(pergunta, itens, limite, ignorar_genericas=bool(tipo_exame_id))

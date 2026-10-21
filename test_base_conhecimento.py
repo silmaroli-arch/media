@@ -223,3 +223,20 @@ with app.app_context():
     checar("Nome do autor ficou guardado como texto", sobrou.autor_nome == "Dr. Base Teste")
 
 print("\nTodos os testes passaram.")
+
+# ---------- Aprendizado 2026-10-21: quase idêntico e desempate ----------
+from types import SimpleNamespace as _NS
+from app.base_conhecimento import _ordenar, item_quase_identico
+
+_a = _NS(revisado=False, id=10)
+_b = _NS(revisado=True, id=5)
+_c = _NS(revisado=False, id=20)
+_ordem = _ordenar([{"item": _a, "score": 0.901}, {"item": _b, "score": 0.899}, {"item": _c, "score": 0.904}])
+checar("Empate de nota: revisado primeiro, depois o mais recente", [r["item"] for r in _ordem] == [_b, _c, _a])
+checar("Nota maior vence o revisado", _ordenar([{"item": _b, "score": 0.80}, {"item": _a, "score": 0.90}])[0]["item"] is _a)
+with app.app_context():
+    _item = BaseConhecimentoItem.query.filter_by(status="ativo").first()
+    _igual, _ = item_quase_identico(f"  {_item.pergunta.upper()} ", _item.resposta, _item.tipo_exame_id, provedor="palavra_chave")
+    checar("Mesmo texto (ignorando maiúsculas/espaços) é quase idêntico", _igual is not None and _igual.id == _item.id)
+    _outro, _ = item_quase_identico(_item.pergunta, "Outra resposta qualquer.", _item.tipo_exame_id, provedor="palavra_chave")
+    checar("Mesma pergunta com outra resposta não é idêntico", _outro is None)

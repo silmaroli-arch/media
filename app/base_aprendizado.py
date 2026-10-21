@@ -7,14 +7,14 @@ Quando um MÉDICO responde ou aprova uma pergunta de paciente
    telefone, dados da clínica, valores e prazos/horas/doses específicos (a
    base é global, vale para todas as clínicas - LGPD). O que não é uma
    dúvida geral de preparo é descartado.
-2. Procura na base a MESMA pergunta (similaridade alta, `LIMIAR_ATUALIZACAO`):
-   - não achou -> CRIA um item novo (origem "medico", não revisado);
-   - achou e o médico EDITOU a resposta (ou respondeu à mão) e o árbitro diz
-     que ela é "muito diferente" da que está na base, IGNORANDO diferenças só
-     de prazo -> ATUALIZA o item (a versão anterior vai para o histórico e o
-     dono pode desfazer) e o marca como não revisado;
-   - achou e nada disso -> não faz nada. Aprovar o rascunho das IAs sem
-     editar NUNCA sobrescreve um item existente.
+2. CRIA um item novo (origem "medico", não revisado) - toda resposta de
+   médico entra (pedido do Silvan, 2026-10-21); a busca por vetor escolhe
+   o item mais parecido a cada pergunta nova, preferindo, em empate, o
+   revisado e depois o mais recente (ver base_conhecimento._ordenar). Só
+   não entra o que for praticamente idêntico (pergunta E resposta) a um
+   item ativo (`base_conhecimento.item_quase_identico`). Itens antigos não
+   são mais sobrescritos - o dono corrige/desativa no painel.
+   `editou` continua sendo recebido, mas não muda mais nada.
 
 Só roda com o "aprendizado" ligado pelo dono (PlataformaConfig.
 base_aprendizado_ativo) e só para respostas de MÉDICO. Nunca derruba nem
@@ -28,11 +28,6 @@ import threading
 from flask import current_app
 
 from app.extensions import db
-
-# Pergunta da base tão parecida que é "a mesma pergunta" - só nesse caso a
-# resposta da base pode ser ATUALIZADA (evita sobrescrever "posso comer
-# arroz" por causa de "posso comer batata"). Abaixo disso, vira item novo.
-LIMIAR_ATUALIZACAO = 0.85
 
 MAX_PERGUNTA = 300
 MAX_RESPOSTA = 900
@@ -118,9 +113,8 @@ def aprender_com_resposta(pergunta_pendente, resposta_medico, medico, editou):
     """Aplica as regras do módulo (ver docstring). NÃO faz commit - quem
     chama decide. Devolve {"acao": "criou"|"atualizou"|"ignorou", "motivo",
     "item_id"} (usado nos testes e no log)."""
-    import app.ia_preparo as ia
-    from app.base_conhecimento import buscar_na_base, atualizar_embedding_do_item
-    from app.models import BaseConhecimentoItem, BaseConhecimentoHistorico
+    from app.base_conhecimento import atualizar_embedding_do_item, item_quase_identico
+    from app.models import BaseConhecimentoItem
 
     def ignorar(motivo):
         return {"acao": "ignorou", "motivo": motivo, "item_id": None}
@@ -139,38 +133,24 @@ def aprender_com_resposta(pergunta_pendente, resposta_medico, medico, editou):
     if not geral:
         return ignorar("conteúdo não aproveitável ou IA indisponível")
 
-    achados = buscar_na_base(geral["pergunta"], tipo_exame_id=tipo_exame_id, limite=1)
-    mesma = achados[0] if achados and achados[0]["score"] >= LIMIAR_ATUALIZACAO else None
-
-    if not mesma:
-        item = BaseConhecimentoItem(
-            tipo_exame_id=tipo_exame_id, pergunta=geral["pergunta"], resposta=geral["resposta"],
-            origem="medico", status="ativo", revisado=False,
-            autor_usuario_id=medico.id, autor_nome=medico.nome,
-        )
-        db.session.add(item)
-        db.session.flush()
-        atualizar_embedding_do_item(item)
-        return {"acao": "criou", "motivo": "pergunta nova", "item_id": item.id}
-
-    item = mesma["item"]
-    if not editou:
-        return ignorar("aprovado sem edição não sobrescreve item existente")
-    diverge = ia._respostas_divergem(
-        ia._cliente_anthropic(), item.resposta, geral["resposta"],
-        paciente_id=pergunta_pendente.paciente_id, ignorar_prazos=True,
+    # Toda resposta de médico vira um item (pedido do Silvan, 2026-10-21) -
+    # a busca por vetor escolhe o mais parecido a cada pergunta nova. Só
+    # não entra o que for praticamente idêntico a um item que já existe.
+    igual, vetor = item_quase_identico(geral["pergunta"], geral["resposta"], tipo_exame_id)
+    if igual:
+        return ignorar("praticamente idêntico a um item da base")
+    item = BaseConhecimentoItem(
+        tipo_exame_id=tipo_exame_id, pergunta=geral["pergunta"], resposta=geral["resposta"],
+        origem="medico", status="ativo", revisado=False,
+        autor_usuario_id=medico.id, autor_nome=medico.nome,
     )
-    if not diverge:
-        return ignorar("resposta do médico não é muito diferente da base")
-
-    db.session.add(BaseConhecimentoHistorico(
-        item_id=item.id, pergunta=item.pergunta, resposta=item.resposta,
-        alterado_por_nome=medico.nome,
-        motivo=f"Atualizado a partir da edição do médico (pergunta #{pergunta_pendente.id})",
-    ))
-    item.resposta = geral["resposta"]
-    item.revisado = False
-    return {"acao": "atualizou", "motivo": "edição do médico muito diferente da base", "item_id": item.id}
+    db.session.add(item)
+    db.session.flush()
+    if vetor:
+        item.embedding, item.embedding_modelo = json.dumps(vetor[0]), vetor[1]
+    else:
+        atualizar_embedding_do_item(item)
+    return {"acao": "criou", "motivo": "resposta do médico", "item_id": item.id}
 
 
 def _executar(pergunta_id, resposta_medico, medico_id, editou):

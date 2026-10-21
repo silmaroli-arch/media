@@ -2641,6 +2641,14 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - `whatsapp_conversa`: a lista "Você tem mais de um exame em preparo", o "Exame em foco" e o "Você também tem agendado" mostram data E horário ("29/10/2026 às 11:40") - antes só a data, e exames iguais no mesmo dia ficavam indistinguíveis.
 - Teste: `test_marcadores_resposta.py`.
 
+## FAQ do MedIA: toda resposta de médico vira item; o vetor escolhe (2026-10-21, decisão do Silvan)
+
+- Antes (`base_aprendizado.aprender_com_resposta`): se a pergunta generalizada achava um item com nota >= 0,85, só ATUALIZAVA quando o médico tinha editado e o árbitro achava muito diferente (prazos não contavam) - na prática muita resposta não entrava (ex.: "Que horas tenho que chegar na clínica?").
+- Agora: depois de generalizar (Claude) e passar no filtro de dados pessoais, SEMPRE cria item novo (origem medico, não revisado), exceto se for praticamente idêntico - mesmo texto de pergunta e resposta, ou vetor de pergunta+resposta (mesmo formato do vetor dos itens) com similaridade >= 0,95 (`base_conhecimento.item_quase_identico`, `LIMIAR_QUASE_IDENTICO`). O vetor calculado já é gravado no item novo. Não há mais atualização automática de item existente (o dono corrige/desativa no painel); `editou` ficou sem efeito; `LIMIAR_ATUALIZACAO` saiu.
+- Busca (`buscar_na_base`): em empate de nota (2 casas), prefere item revisado e depois o mais recente (`_ordenar`).
+- Painel do dono: texto do interruptor "Aprender com as respostas dos médicos" atualizado.
+- Testes: `test_base_aprendizado.py` (cenários reescritos), `test_base_conhecimento.py` (desempate e quase idêntico).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2730,6 +2738,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Perguntas como "Que horas tenho que chegar?" ou "Quando suspendo o Xarelto?": a janela mostra sugestões e rascunho já com as datas do paciente (sem chaves {}), com a nota de que as datas são ajustadas para cada paciente
 - [ ] Meu FAQ mostra essas respostas com [data do exame], [horário do exame], [3 dias antes do exame]; editar mantendo esse formato funciona
 - [ ] Depois de aprovada, o paciente recebe com as datas dele; Meu FAQ guarda com os marcadores; outro paciente com a mesma pergunta recebe as datas DELE
+
+**FAQ do MedIA (aprendizado)**
+- [ ] Responder/aprovar como médico (com "Salvar no Meu FAQ" marcado) cria um item novo no FAQ do MedIA (não revisado, autor = médico), mesmo existindo pergunta parecida; responder de novo exatamente igual não duplica
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos
