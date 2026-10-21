@@ -97,6 +97,35 @@ with app.app_context():
     editado.nome = "Cliente da Empresa"
     db.session.commit()
 
+# CPF e telefone editáveis na janela (2026-10-21).
+r = client.post(f"/equipe/pacientes/{cliente_id}/editar", data={
+    "origem": "lista", "nome": "Cliente da Empresa", "observacoes": "", "cpf": "123.456.789-99", "telefone": "(27) 97777-0001",
+})
+checar("CPF inválido na edição: volta para a lista", r.status_code == 302)
+html_erro = client.get("/equipe/pacientes").get_data(as_text=True)
+checar("... reabrindo a janela de edição com o motivo", "CPF inválido" in html_erro and "data-volta" in html_erro)
+r = client.post(f"/equipe/pacientes/{cliente_id}/editar", data={
+    "origem": "lista", "nome": "Cliente da Empresa", "observacoes": "", "cpf": "111.444.777-35", "telefone": "(27) 98888-0009",
+})
+with app.app_context():
+    editado = Paciente.query.get(cliente_id)
+    checar("CPF e telefone novos salvos", editado.cpf == "111.444.777-35" and editado.telefone == "27988880009")
+    checar("... e o telefone vai também para a conta de acesso", editado.usuario.telefone == "27988880009")
+    editado.cpf = "321.654.987-91"
+    editado.telefone = editado.usuario.telefone = "27977770001"
+    db.session.commit()
+    editado.cpf = "321.654.987-00"  # CPF antigo, que não passa na conferência
+    db.session.commit()
+r = client.post(f"/equipe/pacientes/{cliente_id}/editar", data={
+    "origem": "lista", "nome": "Cliente da Empresa", "observacoes": "nota", "cpf": "321.654.987-00", "telefone": "(27) 97777-0001",
+})
+with app.app_context():
+    checar("Cadastro antigo com CPF que não passa na conferência ainda pode ser editado (CPF não mudou)",
+           Paciente.query.get(cliente_id).observacoes == "nota")
+    editado = Paciente.query.get(cliente_id)
+    editado.cpf = "321.654.987-91"
+    db.session.commit()
+
 # "Novo paciente" numa janela, em duas etapas (2026-10-21).
 checar("'Novo paciente' abre a janela", 'data-bs-target="#modalNovoPaciente"' in html_lista and 'id="modalNovoPaciente"' in html_lista)
 checar("1ª etapa: CPF inválido", client.get("/equipe/pacientes/buscar-cpf?cpf=111.111.111-11").get_json() == {"situacao": "invalido"})

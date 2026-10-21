@@ -229,15 +229,28 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
+        {% if editar_form %}
+        {% for categoria, msg in get_flashed_messages(with_categories=true) if categoria in ('danger', 'warning') %}
+        <div class="alert alert-{{ categoria }} py-2 small">{{ msg }}</div>
+        {% endfor %}
+        {% endif %}
         <div class="mb-3">
           <label class="form-label" for="editar_nome">Nome</label>
           <input type="text" name="nome" id="editar_nome" class="form-control" required>
         </div>
-        <div class="row g-2 mb-3 small text-muted">
-          <div class="col-6">CPF: <span id="editar_cpf"></span></div>
-          <div class="col-6">Nascimento: <span id="editar_nascimento"></span></div>
-          <div class="col-12">Telefone: <span id="editar_telefone"></span></div>
-          <div class="col-12">CPF, nascimento e telefone são a identificação do paciente e não mudam por aqui.</div>
+        <div class="row g-3 mb-3">
+          <div class="col-sm-6">
+            <label class="form-label" for="editar_cpf">CPF</label>
+            <input type="text" inputmode="numeric" name="cpf" id="editar_cpf" class="form-control" required>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="editar_telefone">Telefone (WhatsApp)</label>
+            <input type="text" inputmode="numeric" name="telefone" id="editar_telefone" class="form-control" required>
+          </div>
+          <div class="col-12 small text-muted">
+            Nascimento: <span id="editar_nascimento"></span>.
+            O cadastro vale em todas as clínicas do paciente: CPF e telefone novos passam a valer para todas.
+          </div>
         </div>
         <label class="form-label" for="editar_observacoes">Observações</label>
         <textarea name="observacoes" id="editar_observacoes" class="form-control" rows="3"></textarea>
@@ -257,10 +270,36 @@
     document.getElementById('formEditarPaciente').action = b.getAttribute('data-acao');
     document.getElementById('editar_nome').value = b.getAttribute('data-nome');
     document.getElementById('editar_observacoes').value = b.getAttribute('data-observacoes');
-    document.getElementById('editar_cpf').textContent = b.getAttribute('data-cpf');
+    document.getElementById('editar_cpf').value = b.getAttribute('data-cpf');
     document.getElementById('editar_nascimento').textContent = b.getAttribute('data-nascimento');
-    document.getElementById('editar_telefone').textContent = b.getAttribute('data-telefone');
+    document.getElementById('editar_telefone').value = b.getAttribute('data-telefone') === '-' ? '' : b.getAttribute('data-telefone');
+    // Voltou de um erro: usa o que foi digitado (ver pacientes_editar).
+    var volta = b.getAttribute('data-volta');
+    if (volta) {
+      var d = JSON.parse(volta);
+      ['nome', 'cpf', 'telefone', 'observacoes'].forEach(function (c) { document.getElementById('editar_' + c).value = d[c] || ''; });
+    }
   });
+  (function () {
+    function mascara(campo, padrao) {
+      var max = (padrao.match(/9/g) || []).length;
+      campo.addEventListener('input', function () {
+        var d = campo.value.replace(/\D/g, '').slice(0, max), r = '', p = 0;
+        for (var i = 0; i < padrao.length && p < d.length; i++) { r += padrao[i] === '9' ? d[p++] : padrao[i]; }
+        campo.value = r;
+      });
+    }
+    mascara(document.getElementById('editar_cpf'), '999.999.999-99');
+    mascara(document.getElementById('editar_telefone'), '(99) 99999-9999');
+    {% if editar_form %}
+    window.addEventListener('load', function () {
+      var botao = document.querySelector('[data-acao$="/pacientes/{{ editar_form.id }}/editar"]');
+      if (!botao || !window.bootstrap) return;
+      botao.setAttribute('data-volta', JSON.stringify({{ editar_form|tojson }}));
+      new bootstrap.Modal(document.getElementById('modalEditarPaciente')).show(botao);
+    });
+    {% endif %}
+  })();
 </script>
 {% endif %}
 {% endblock %}

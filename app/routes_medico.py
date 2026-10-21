@@ -573,7 +573,10 @@ def pacientes_lista():
     # erro no cadastro, a lista volta com a janela aberta e os campos
     # preenchidos (ver _voltar_com_erro em pacientes_novo).
     novo_form = session.pop("novo_paciente_form", None) if request.args.get("novo") else None
-    return render_template("medico/pacientes_lista.html", pacientes=pacientes, novo_form=novo_form)
+    editar_form = session.pop("editar_paciente_form", None)
+    return render_template(
+        "medico/pacientes_lista.html", pacientes=pacientes, novo_form=novo_form, editar_form=editar_form,
+    )
 
 
 @medico_bp.route("/pacientes/buscar-cpf")
@@ -859,8 +862,52 @@ def pacientes_editar(paciente_id):
     ).first_or_404()
 
     if request.method == "POST":
+        def _erro(msg):
+            flash(msg, "danger")
+            if request.form.get("origem") == "lista":
+                # Reabre a janela de edição com o que foi digitado.
+                session["editar_paciente_form"] = {
+                    "id": paciente.id,
+                    **{c: request.form.get(c, "") for c in ("nome", "cpf", "telefone", "observacoes")},
+                }
+                return redirect(url_for("medico.pacientes_lista"))
+            return render_template("medico/pacientes_form.html", paciente=paciente)
+
+        # CPF e telefone editáveis pela janela da lista (pedido do Silvan,
+        # 2026-10-21). O cadastro do paciente é da plataforma inteira (vale
+        # em todas as clínicas dele): o CPF tem que ser válido e não pode
+        # ser de outro paciente; o telefone vai também para a conta de
+        # acesso dele, como em paciente.meus_dados. Só mexe quando o campo
+        # veio no formulário (a tela de página inteira não manda).
+        novo_cpf = request.form.get("cpf")
+        if novo_cpf is not None and re.sub(r"\D", "", novo_cpf) == re.sub(r"\D", "", paciente.cpf or ""):
+            # Não mudou: não confere (cadastros antigos podem ter CPF que não
+            # passa na conferência, e editar só o nome não pode travar).
+            novo_cpf = None
+        if novo_cpf is not None:
+            novo_cpf = novo_cpf.strip()
+            if not validar_cpf(novo_cpf):
+                return _erro("CPF inválido — confira os números digitados.")
+            outro = _buscar_paciente_por_cpf_plataforma(novo_cpf)
+            if outro and outro.id != paciente.id:
+                return _erro("Esse CPF já é de outro paciente cadastrado no MedIA.")
+        telefone_digitado = request.form.get("telefone")
+        novo_telefone = None
+        if telefone_digitado is not None:
+            novo_telefone = normalizar_telefone(telefone_digitado)
+            if not novo_telefone or telefone_incompleto(telefone_digitado):
+                return _erro("Telefone incompleto — digite o DDD e o número completos.")
+
         paciente.nome = formatar_nome_proprio(request.form.get("nome", "")) or paciente.nome
         paciente.observacoes = request.form.get("observacoes", "").strip() or None
+        if novo_cpf is not None:
+            paciente.cpf = novo_cpf
+        if novo_telefone:
+            paciente.telefone = novo_telefone
+            if paciente.usuario and paciente.usuario.tipo == "paciente":
+                paciente.usuario.telefone = novo_telefone
+                for outro_cadastro in paciente.usuario.pacientes:
+                    outro_cadastro.telefone = novo_telefone
         db.session.commit()
         flash("Cadastro do paciente atualizado.", "success")
         # Editado pela janela da lista de pacientes (pedido do Silvan,
