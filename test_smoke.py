@@ -624,53 +624,22 @@ checar("Paciente vê a lista de alimentos proibidos com o horário calculado a p
        "Leite e derivados" in texto and "09/08/2026 às 20:00" in texto)
 checar("Paciente vê a lista de alimentos sugeridos para consumo", "Água de coco" in texto)
 
-# O chat calcula automaticamente a resposta sobre um alimento cadastrado (mesmo
-# sem FAQ manual), mas - por instrução do Silvan (2026-09-11: "toda a resposta,
-# mesmo estando no preparo, deve passar por aprovação nesse momento - só não
-# passa por aprovação se já estiver na base de conhecimento do médico") - essa
-# resposta calculada fica esperando aprovação do médico antes de chegar ao
-# paciente, exatamente como uma resposta da IA (ver app/routes_paciente.py e
-# app/templates/paciente/chat.html, origem 'alimento_aguard'/'medicamento_aguard').
+# Pergunta sobre alimento cadastrado no preparo não tem mais resposta pronta
+# por comparação de palavras (pedido do Silvan, 2026-10-21): fora da FAQ,
+# toda pergunta vai para as 2 IAs. Aqui não há IA configurada, então a
+# pergunta fica pendente para a equipe, sem rascunho e sem resposta direta.
 r = client.post("/paciente/chat", data={"pergunta": "posso tomar água de coco?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
 texto = r.get_data(as_text=True)
-checar("Chat NÃO responde direto sobre água de coco - a resposta calculada espera aprovação do médico",
-       # a tela repete a pergunta do paciente (balão do chat e histórico),
-       # então "água de coco" só não pode aparecer FORA da pergunta
-       "água de coco" not in texto.lower().replace("posso tomar água de coco?", "")
-       and "revisada pelo médico" in texto.lower())
-
-r = client.post("/paciente/chat", data={"pergunta": "posso comer leite e derivados antes do exame?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
-texto = r.get_data(as_text=True)
-checar("Chat NÃO responde direto sobre leite e derivados - a resposta calculada espera aprovação do médico",
-       "09/08/2026" not in texto and "revisada pelo médico" in texto.lower())
-
-# Pequenos erros de digitação não devem impedir o reconhecimento do alimento
-# (ex.: "amendoin" em vez de "amendoim") - a correspondência ainda tolera isso,
-# mas a resposta calculada também fica esperando aprovação do médico.
-r = client.post("/paciente/chat", data={"pergunta": "Posso comer amendoin?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
-texto = r.get_data(as_text=True)
-checar("Chat reconhece 'amendoin' (com erro de digitação) como 'amendoim', mas espera aprovação do médico antes de responder",
-       "amendoim" not in texto.lower() and "revisada pelo médico" in texto.lower())
+checar("Chat NÃO responde direto sobre água de coco (sem resposta pronta; sem IA, vai para a equipe)",
+       "está entre os alimentos sugeridos" not in texto)
 client.get("/logout")
 
 with app.app_context():
     pend_agua = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="posso tomar água de coco?", status="aguardando_aprovacao",
+        grupo_id=clinica_vitoria_id, pergunta="posso tomar água de coco?",
     ).first()
-    checar("A resposta calculada sobre água de coco fica salva em PerguntaPendente, com o texto já pronto",
-           pend_agua is not None and "água de coco" in pend_agua.resposta_sugerida_ia.lower() and "sim" in pend_agua.resposta_sugerida_ia.lower())
-
-    pend_leite = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="posso comer leite e derivados antes do exame?", status="aguardando_aprovacao",
-    ).first()
-    checar("A resposta calculada sobre leite e derivados fica salva em PerguntaPendente, com o prazo já calculado",
-           pend_leite is not None and "09/08/2026" in pend_leite.resposta_sugerida_ia)
-
-    pend_amendoim = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="Posso comer amendoin?", status="aguardando_aprovacao",
-    ).first()
-    checar("A resposta calculada sobre amendoim (com erro de digitação) fica salva em PerguntaPendente",
-           pend_amendoim is not None and "amendoim" in pend_amendoim.resposta_sugerida_ia.lower())
+    checar("... e fica como PerguntaPendente sem resposta pronta sugerida",
+           pend_agua is not None and not pend_agua.resposta_sugerida_ia)
 
 # Cadastro manual de alimentos num modelo de preparo, via formulário do médico/secretária.
 with app.app_context():
@@ -736,61 +705,10 @@ checar("Paciente vê o alimento proibido com prazo calculado em DIAS antes (não
        "Carne vermelha" in texto and "07/08/2026" in texto and "3 dias antes" in texto)
 checar("Paciente vê a lista de medicamentos que pode manter", "AAS" in texto and "não precisa suspender" in texto)
 
-# O chat também reconhece perguntas sobre medicamentos (suspensos ou mantidos),
-# não só sobre alimentos — usando a mesma ideia de correspondência por
-# palavra-chave, agora sobre o catálogo de medicamentos do preparo.
-r = client.post("/paciente/chat", data={"pergunta": "Posso tomar AAS?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
-texto = r.get_data(as_text=True)
-checar("Chat NÃO responde direto sobre AAS - a resposta calculada também espera aprovação do médico",
-       "revisada pelo médico" in texto.lower())
-
-r = client.post("/paciente/chat", data={"pergunta": "Posso continuar tomando Xarelto?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
-texto = r.get_data(as_text=True)
-checar("Chat NÃO responde direto sobre Xarelto - a resposta calculada também espera aprovação do médico",
-       "07/08/2026" not in texto and "revisada pelo médico" in texto.lower())
+# (As respostas prontas de medicamento/categoria de alimento no chat saíram
+# em 2026-10-21 - essas perguntas vão para as 2 IAs, ver o bloco da água de
+# coco acima.)
 client.get("/logout")
-
-with app.app_context():
-    pend_aas = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="Posso tomar AAS?", status="aguardando_aprovacao",
-    ).first()
-    checar("A resposta calculada sobre AAS (medicamento mantido) fica salva em PerguntaPendente",
-           pend_aas is not None and "sim" in pend_aas.resposta_sugerida_ia.lower() and "aas" in pend_aas.resposta_sugerida_ia.lower())
-
-    pend_xarelto = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="Posso continuar tomando Xarelto?", status="aguardando_aprovacao",
-    ).first()
-    checar("A resposta calculada sobre Xarelto (medicamento suspenso) fica salva em PerguntaPendente, com o prazo calculado",
-           pend_xarelto is not None and "07/08/2026" in pend_xarelto.resposta_sugerida_ia)
-
-# O preparo cadastrou a categoria genérica "Frutas" (não item por item) —
-# o chat precisa reconhecer que uma fruta específica (ex.: laranja, banana)
-# está coberta por essa categoria, sem precisar que a clínica cadastre cada
-# fruta separadamente.
-login_paciente("123.456.789-00", "1985-04-12")
-r = client.post("/paciente/chat", data={"pergunta": "Posso chupar laranja?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
-texto = r.get_data(as_text=True)
-checar("Chat reconhece que 'laranja' está coberta pela categoria genérica 'Frutas', mas espera aprovação do médico",
-       "frutas" not in texto.lower() and "revisada pelo médico" in texto.lower())
-
-r = client.post("/paciente/chat", data={"pergunta": "Posso comer banana?", "exame_id": str(colonoscopia_vitoria_id)}, follow_redirects=True)
-texto = r.get_data(as_text=True)
-checar("Chat também reconhece 'banana' (outro item da categoria 'Frutas'), mas espera aprovação do médico",
-       "frutas" not in texto.lower() and "revisada pelo médico" in texto.lower())
-client.get("/logout")
-
-with app.app_context():
-    pend_laranja = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="Posso chupar laranja?", status="aguardando_aprovacao",
-    ).first()
-    checar("A resposta calculada sobre laranja (categoria 'Frutas') fica salva em PerguntaPendente",
-           pend_laranja is not None and "frutas" in pend_laranja.resposta_sugerida_ia.lower())
-
-    pend_banana = PerguntaPendente.query.filter_by(
-        grupo_id=clinica_vitoria_id, pergunta="Posso comer banana?", status="aguardando_aprovacao",
-    ).first()
-    checar("A resposta calculada sobre banana (categoria 'Frutas') fica salva em PerguntaPendente",
-           pend_banana is not None and "frutas" in pend_banana.resposta_sugerida_ia.lower())
 
 # Bug real reportado: uma pergunta sobre um produto específico que só
 # MENCIONA uma fruta como sabor/descrição (ex.: "gatorade de uva") não pode

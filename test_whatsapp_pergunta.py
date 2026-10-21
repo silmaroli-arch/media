@@ -59,32 +59,17 @@ with app.app_context():
     checar("Pergunta respondida por FAQ fica no histórico com origem faq", ultima_mensagem.origem == "faq")
     checar("Histórico guarda a resposta de verdade (não só o aviso de encaminhamento)", "água pura é permitida" in ultima_mensagem.resposta)
 
-    # --- Caminho 2: sem FAQ, mas bate com um alimento proibido cadastrado
-    # no preparo (Amendoim, ver seed.py) - pedido do Silvan (2026-09-11,
-    # segurança do sistema): mesmo tendo uma resposta pronta a partir do
-    # preparo, ela NÃO vai direto pro paciente - fica como PerguntaPendente
-    # "aguardando_aprovacao" (mesmo fluxo da IA) até o médico revisar e
-    # aprovar; só depois disso vira FAQ e passa a responder direto (ver
-    # Caminho 1, acima). ---
-    pendentes_antes_alimento = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
-    resposta = processar_mensagem(telefone, "Posso comer amendoim antes do exame?")
-    checar("Pergunta sobre alimento cadastrado NÃO devolve a resposta direto, avisa que foi encaminhada", "encaminhada" in resposta.lower())
-
-    pendentes_depois_alimento = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
-    checar("Pergunta sobre alimento cria uma PerguntaPendente nova", pendentes_depois_alimento == pendentes_antes_alimento + 1)
-
+    # --- Caminho 2: alimento cadastrado no preparo (Amendoim) NÃO tem mais
+    # resposta pronta por comparação de palavras (pedido do Silvan,
+    # 2026-10-21): vai para as 2 IAs, como qualquer pergunta fora da FAQ.
+    # Aqui sem IA configurada, então fica pendente para a equipe, sem
+    # rascunho pronto. ---
+    with patch("app.whatsapp_conversa.responder_com_ia", return_value=None) as ia_alimento:
+        resposta = processar_mensagem(telefone, "Posso comer amendoim antes do exame?")
+    checar("Pergunta sobre alimento cadastrado chama as IAs (não há mais resposta pronta)", ia_alimento.called)
+    checar("... e, sem IA disponível, avisa que foi encaminhada", "encaminhada" in resposta.lower())
     pendente_alimento = PerguntaPendente.query.filter_by(paciente_id=joao.id).order_by(PerguntaPendente.id.desc()).first()
-    checar('PerguntaPendente do alimento criada com status "aguardando_aprovacao"', pendente_alimento.status == "aguardando_aprovacao")
-    checar("PerguntaPendente do alimento já vem com a resposta pronta sugerida", pendente_alimento.resposta_sugerida_ia and "Amendoim" in pendente_alimento.resposta_sugerida_ia and "proibid" in pendente_alimento.resposta_sugerida_ia)
-
-    ultima_mensagem = ChatMensagem.query.filter_by(paciente_id=joao.id).order_by(ChatMensagem.id.desc()).first()
-    checar("Pergunta sobre alimento fica no histórico sem resposta ainda (aguardando aprovação)", ultima_mensagem.resposta is None)
-    checar("Pergunta sobre alimento fica no histórico com origem alimento_aguard", ultima_mensagem.origem == "alimento_aguard")
-
-    # Simula o médico já tendo aprovado essa pergunta, só para poder seguir
-    # testando os próximos cenários nesta mesma conversa sem o aviso de
-    # "aguardando resposta" no meio (mesmo padrão usado mais abaixo, para a
-    # pergunta pendente do Caminho 3).
+    checar("... sem rascunho de resposta pronta", not pendente_alimento.resposta_sugerida_ia)
     pendente_alimento.status = "respondida"
     db.session.commit()
 

@@ -184,11 +184,7 @@ from datetime import date, datetime
 from flask import current_app
 
 from app.extensions import db
-from app.faq_engine import (
-    buscar_resposta,
-    buscar_resposta_alimento,
-    buscar_resposta_medicamento,
-)
+from app.faq_engine import buscar_resposta
 from app.ia_preparo import responder_com_ia, validar_pergunta
 from app.preparo_publico import montar_link_preparo
 from app.models import (
@@ -599,43 +595,15 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
         exame_id=exame.id if exame else None,
         criado_por_id=criado_por_id_ancora,
     )
-    resposta_alimento = buscar_resposta_alimento(pergunta_texto, exame, paciente) if not faq_item and exame else None
-    resposta_medicamento = (
-        buscar_resposta_medicamento(pergunta_texto, exame, paciente)
-        if not faq_item and not resposta_alimento and exame else None
-    )
-
+    # Resposta pronta de alimento/medicamento por comparação de palavras
+    # saiu (pedido do Silvan, 2026-10-21): errava ("carro" virava "Líquidos
+    # claros", "nimesulida" virava Clopidogrel) e pulava as 2 IAs, que já
+    # recebem o preparo completo. Fora a FAQ (idêntica e já aprovada),
+    # toda pergunta vai para as IAs.
     if faq_item:
         faq_item.vezes_utilizada += 1
         resposta_final = faq_item.resposta
         origem = "faq"
-    elif resposta_alimento or resposta_medicamento:
-        # Resposta pronta (alimento ou medicamento) - vira rascunho
-        # aguardando aprovação do médico, igual à IA, em vez de ir direto
-        # pro paciente (ver docstring desta função).
-        resposta_pronta = resposta_alimento if resposta_alimento else resposta_medicamento
-        # Nomes curtos de propósito: ChatMensagem.origem é String(20), e
-        # "medicamento_aguardando" (22 caracteres) não caberia.
-        origem = "alimento_aguard" if resposta_alimento else "medicamento_aguard"
-        pergunta_pendente_criada = PerguntaPendente(
-            grupo_id=grupo_id_ancora,
-            criado_por_id=criado_por_id_ancora,
-            paciente_id=paciente.id,
-            exame_id=exame.id if exame else None,
-            pergunta=pergunta_texto,
-            status="aguardando_aprovacao",
-            resposta_sugerida_ia=resposta_pronta,
-            telefone_whatsapp=telefone,
-        )
-        db.session.add(pergunta_pendente_criada)
-        if not exige_aprovacao:
-            # Pedido do Silvan (2026-09-13): aprovação desativada para este
-            # Grupo/médico (ver exige_aprovacao_pergunta) - responde direto
-            # pelo WhatsApp, sem esperar o médico revisar.
-            aprovar_pergunta_automaticamente(pergunta_pendente_criada, resposta_pronta)
-            resposta_final = resposta_pronta
-            origem = "alimento" if resposta_alimento else "medicamento"
-            pergunta_pendente_criada = None
     else:
         resultado_ia = (
             responder_com_ia(

@@ -19,6 +19,20 @@ do seed.py mudarem no futuro."""
 from app import create_app, db
 from app.models import FaqItem, Grupo, GrupoPaciente, Paciente, PerguntaPendente
 from app.whatsapp_conversa import processar_mensagem
+from unittest.mock import patch
+
+# Desde 2026-10-21 não há mais resposta pronta de alimento: toda pergunta
+# fora da FAQ vai para as 2 IAs. Aqui a IA é simulada.
+RESPOSTA_IA = "Não, Amendoim está na lista de alimentos proibidos deste preparo."
+RESULTADO_IA = {
+    "final": RESPOSTA_IA, "por_provedor": {"Claude": RESPOSTA_IA, "ChatGPT": RESPOSTA_IA, "Gemini": None},
+    "falhas": [], "sem_sentido": False,
+}
+
+
+def perguntar(telefone, texto):
+    with patch("app.whatsapp_conversa.responder_com_ia", return_value=RESULTADO_IA):
+        return processar_mensagem(telefone, texto)
 
 app = create_app()
 
@@ -51,7 +65,7 @@ with app.app_context():
     # --- Com o padrão de fábrica (aprovação ativada): comportamento igual
     # a sempre, já coberto em detalhe por test_whatsapp_pergunta.py - aqui
     # só confirma que a EXISTÊNCIA do novo campo não mudou nada por si só. ---
-    resposta = processar_mensagem(telefone, "Posso comer amendoim antes do exame?")
+    resposta = perguntar(telefone, "Posso comer amendoim antes do exame?")
     checar(
         "Com aprovação ativada, pergunta sobre alimento NÃO devolve a resposta direto",
         "encaminhada" in resposta.lower(),
@@ -71,7 +85,7 @@ with app.app_context():
     pendentes_antes = PerguntaPendente.query.filter_by(paciente_id=joao.id).count()
     faqs_antes = FaqItem.query.filter_by(grupo_id=grupo_joao.id).count()
 
-    resposta = processar_mensagem(telefone, "Posso comer amendoim antes do exame?")
+    resposta = perguntar(telefone, "Posso comer amendoim antes do exame?")
     checar(
         "Com aprovação DESATIVADA, a resposta sobre o alimento já vem direto pelo WhatsApp",
         "amendoim" in resposta.lower() and "proibid" in resposta.lower(),

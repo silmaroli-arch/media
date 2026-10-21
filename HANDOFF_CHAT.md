@@ -2553,6 +2553,14 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Correção: além do ratio, a palavra curta (até 6 letras) só aceita 1 letra de diferença (distância de edição); longas, até 2. "amendoin", "chocolatte" etc. continuam reconhecidos.
 - Teste novo: `test_alimento_palavra_parecida.py`.
 
+## Resposta pronta de alimento/medicamento removida: fora da FAQ, sempre as 2 IAs (2026-10-21, decisão do Silvan)
+
+- Regra do Silvan: toda pergunta deve passar pelas 2 IAs. A etapa "resposta pronta de alimento/medicamento" (comparação de palavras com o preparo, `faq_engine.buscar_resposta_alimento/buscar_resposta_medicamento`) vinha antes das IAs e as pulava quando casava - e errava ("carro" -> "Líquidos claros", "nimesulida" -> Clopidogrel). As IAs já recebem o preparo completo (alimentos, prazos, medicamentos).
+- Fluxo novo, igual no WhatsApp (`whatsapp_conversa._responder_pergunta`), no chat do paciente (`routes_paciente.chat`) e no Testar IA (`routes_medico.testar_ia`): IA validadora -> FAQ (pergunta IDÊNTICA já aprovada) -> 2 IAs. Regras de aprovação sem mudança.
+- Código removido de `app/faq_engine.py`: as duas funções, a tabela de categorias de alimento e os limiares delas. `_palavras_correspondem` (com a correção carro/claro) fica - é usada pela FAQ do MedIA (`base_conhecimento`). Telas: `chat.html`/`perguntas.html` continuam reconhecendo as origens antigas (`alimento_aguard` etc.) para o histórico; `testar_ia.html` limpou os textos de origem alimento/medicamento.
+- Custo: perguntas simples de alimento ("posso comer amendoim?") agora chamam as IAs.
+- Testes ajustados: `test_whatsapp_pergunta.py`, `test_aprovacao_configuravel.py` (IA simulada), `test_smoke.py`, `test_medicamento_nao_cadastrado_revisao.py`, `test_alimento_palavra_parecida.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2623,7 +2631,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Linha do tempo: cada data aparece uma vez com os itens do dia embaixo (horário "às HH:MM" uma vez por horário); PDF igual
 
 **Portal de atendimento**
-- [ ] "Posso ir de carro?" não recebe mais a resposta de "Líquidos claros" (vai para as IAs); "amendoin" continua reconhecido como amendoim
+- [ ] Pergunta sobre alimento/medicamento (ex.: "posso comer amendoim?", "Posso ir de carro?") chama as 2 IAs: o rascunho mostra a resposta de cada IA (não aparece mais "Automática (preparo cadastrado)" em perguntas novas). WhatsApp, chat do paciente e Testar IA
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

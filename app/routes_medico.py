@@ -42,7 +42,7 @@ from app.clinica_utils import (
 from app.pdf_preparo import extrair_sugestao_de_pdf, extrair_sugestao_de_texto
 from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
 from app.ia_preparo import responder_com_ia
-from app.faq_engine import buscar_resposta, buscar_resposta_alimento, buscar_resposta_medicamento
+from app.faq_engine import buscar_resposta
 from app.custo_ia import registrar_chamada_ia
 from app.whatsapp_envio import (
     enviar_boas_vindas_whatsapp, enviar_preparo_cadastrado_whatsapp,
@@ -3983,12 +3983,6 @@ def testar_ia():
                     db.session.commit()
                     resposta_ia = faq_item.resposta
                     origem = "faq"
-                elif (resposta_alimento := buscar_resposta_alimento(pergunta_enviada, exame_selecionado, paciente_teste)):
-                    resposta_ia = resposta_alimento
-                    origem = "alimento"
-                elif (resposta_medicamento := buscar_resposta_medicamento(pergunta_enviada, exame_selecionado, paciente_teste)):
-                    resposta_ia = resposta_medicamento
-                    origem = "medicamento"
                 else:
                     pendente = PerguntaPendente(
                         grupo_id=grupo_id_ancora,
