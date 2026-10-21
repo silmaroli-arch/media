@@ -33,7 +33,7 @@ from app.models import (
     Usuario, Grupo, GrupoMembro, GrupoConvite, GrupoPaciente, PlataformaConfig, validar_cpf,
     Agendamento, Exame, PreparoModelo, FaqItem, PerguntaPendente,
 )
-from app.clinica_utils import migrar_dados_pessoais_para_grupo
+from app.clinica_utils import migrar_dados_pessoais_para_grupo, empresa_atual, selecionar_clinica
 
 grupo_bp = Blueprint("grupo", __name__, url_prefix="/grupos")
 
@@ -43,7 +43,12 @@ def _cpf_digitos(cpf):
 
 
 def _grupo_ativo_id():
-    return session.get("grupo_ativo_id")
+    """Grupo ativo de verdade: o de clinica_utils.empresa_atual() (sessão
+    "empresa_id"), o mesmo do topo e de todas as telas. Antes esta lista
+    usava uma chave própria ("grupo_ativo_id") que nada mais lia - o
+    "Selecionar" não trocava o grupo (relatado pelo Silvan, 2026-10-21)."""
+    grupo = empresa_atual()
+    return grupo.id if grupo else None
 
 
 def _meus_grupos_ativos():
@@ -140,6 +145,7 @@ def selecionar(grupo_id):
     if not grupo.membro_ativo(current_user.id):
         flash("Você não participa deste grupo.", "danger")
         return redirect(url_for("grupo.meus_grupos"))
+    selecionar_clinica(grupo.id)
     session["grupo_ativo_id"] = grupo.id
     flash(f'Grupo ativo: "{grupo.nome}".', "success")
     return redirect(url_for("grupo.meus_grupos"))
@@ -223,8 +229,9 @@ def sair(grupo_id):
     else:
         membro.ativo = False
         db.session.commit()
-        if _grupo_ativo_id() == grupo.id:
-            session.pop("grupo_ativo_id", None)
+        for chave in ("grupo_ativo_id", "empresa_id"):
+            if session.get(chave) == grupo.id:
+                session.pop(chave, None)
         flash(f'Você saiu do grupo "{grupo.nome}".', "success")
     return redirect(url_for("grupo.meus_grupos"))
 

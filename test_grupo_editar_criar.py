@@ -65,6 +65,20 @@ r = client.get("/grupos/")
 checar("Com dois grupos, 'Grupos de trabalho' mostra a lista", r.status_code == 200 and "Clinica Segunda" in r.get_data(as_text=True))
 checar("... com 'Dados do grupo' no grupo ativo", "Dados do grupo" in r.get_data(as_text=True))
 
+# "Selecionar" troca o grupo de verdade (o do topo e de todas as telas) e a
+# lista marca "Selecionado" no mesmo grupo (2026-10-21 - antes eram duas
+# marcas separadas e o botão não trocava nada).
+with app.app_context():
+    primeira_id = Grupo.query.filter_by(nome="Clinica Renomeada").first().id
+html = r.get_data(as_text=True)
+checar("Grupo recém-criado (Segunda) é o ativo: topo e lista concordam",
+       "Clinica Segunda" in html[html.find('class="app-topbar'):html.find('class="app-topbar') + 3000]
+       and f'/grupos/{primeira_id}/selecionar' in html)
+html = client.post(f"/grupos/{primeira_id}/selecionar", follow_redirects=True).get_data(as_text=True)
+topo = html[html.find('class="app-topbar'):html.find('class="app-topbar') + 3000]
+checar("'Selecionar' troca o grupo do topo", "Clinica Renomeada" in topo and "Clinica Segunda" not in topo)
+checar("... e a lista marca esse como 'Selecionado'", f'/grupos/{primeira_id}/selecionar' not in html and "Selecionado" in html)
+
 # ---------- Permissões: "Gerenciar filiais" saiu, "dados do grupo" renomeada ----------
 with app.app_context():
     usuario_id = Usuario.query.filter_by(email="grupo.unico@teste.com").first().id

@@ -2477,6 +2477,12 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - "Dados do grupo": janela com o nome, POST em `medico.clinica_configuracoes` (que já volta para "Meus grupos").
 - "Ver membros / Convidar": janela com um iframe da própria tela `grupo.convidar`, para não reescrever a busca por CPF, criar conta, permissões e remover. **Mecanismo novo em base.html:** um script no `<head>` marca `<html class="embutido">` quando a página está dentro de um iframe, e o CSS esconde menu lateral, topo, avisos de instalar e de notificações e tudo com a classe `so-fora-da-janela` (o caminho "Meus grupos > ..." do convidar). O popup de anúncios não abre dentro da janela. Ao fechar, se algo mudou lá dentro, a lista recarrega para atualizar a contagem. Serve para outras telas que precisem abrir em janela.
 
+## Meus grupos: "Selecionar" não trocava o grupo (2026-10-21, relatado pelo Silvan)
+
+- A lista "Meus grupos" usava uma marca própria de grupo ativo (`session["grupo_ativo_id"]`) que nada mais lia; o grupo de verdade (topo e todas as telas) é `clinica_utils.empresa_atual()` (`session["empresa_id"]`). Resultado: o topo dizia um grupo, a lista mostrava "Selecionar" nele, e clicar em "Selecionar" não trocava nada.
+- Agora `routes_grupo._grupo_ativo_id()` lê `empresa_atual()` e `grupo.selecionar` chama `selecionar_clinica()` (que grava `empresa_id`). "Sair do grupo" limpa as duas chaves. Teste em `test_grupo_editar_criar.py`.
+- Para que serve: quem participa de mais de um grupo escolhe com qual está trabalhando (pacientes, exames, agenda e perguntas mostrados são os do grupo selecionado). Com um grupo só, ele já vem selecionado.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2515,6 +2521,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 
 **Grupos de trabalho**
 - [ ] O menu abre "Meus grupos" mesmo com um grupo só
+- [ ] O grupo do topo aparece como "Selecionado" na lista; com 2+ grupos, "Selecionar" troca o grupo do topo e das telas
 - [ ] "Dados do grupo" abre numa janela: só o nome; salvar volta para "Meus grupos"
 - [ ] "Criar novo grupo"; "Ver membros / Convidar" abre numa janela com a tela de membros dentro (buscar por CPF, criar conta, permissões, remover); ao fechar, a contagem de membros atualiza
 - [ ] "Excluir": grupo vazio é excluído; grupo com dados mostra o que tem e não apaga
