@@ -3897,7 +3897,24 @@ def faq_lista():
             or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
     itens = query.order_by(FaqItem.criado_em.desc()).all()
-    return render_template("medico/faq_lista.html", itens=itens)
+    # Janela "Adicionar manualmente" (pedido do Silvan, 2026-10-21): os
+    # exames do select e, depois de um erro, os campos preenchidos.
+    faq_form = session.pop("faq_novo_form", None) if request.args.get("novo") else None
+    return render_template(
+        "medico/faq_lista.html", itens=itens, exames=_exames_para_faq(),
+        faq_form=faq_form, abrir_novo=bool(request.args.get("novo")),
+    )
+
+
+def _exames_para_faq():
+    """Exames que podem receber um item do FAQ: os do escopo atual; para o
+    médico, só os dele."""
+    exames_query = Exame.query.filter(filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id))
+    if eh_medico():
+        exames_query = exames_query.filter(
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
+        )
+    return exames_query.order_by(Exame.nome).all()
 
 
 @medico_bp.route("/faq/novo", methods=["GET", "POST"])
@@ -3905,14 +3922,19 @@ def faq_lista():
 @staff_required
 def faq_novo():
     filiais = filiais_atuais()
-    exames_query = Exame.query.filter(filtro_escopo_atual(Exame.grupo_id, Exame.criado_por_id))
-    if eh_medico():
-        exames_query = exames_query.filter(
-            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
-        )
-    exames = exames_query.order_by(Exame.nome).all()
+    exames = _exames_para_faq()
 
     if request.method == "POST":
+        def _voltar_com_erro():
+            """Veio da janela da lista? Volta para ela aberta, com os campos
+            preenchidos (o motivo já foi para o flash)."""
+            if request.form.get("origem") == "lista":
+                session["faq_novo_form"] = {
+                    c: request.form.get(c, "") for c in ("exame_id", "pergunta", "resposta", "clinica_id")
+                }
+                return redirect(url_for("medico.faq_lista", novo=1))
+            return render_template("medico/faq_form.html", exames=exames)
+
         exame_id = request.form.get("exame_id", type=int)
         exame_escolhido = next((e for e in exames if e.id == exame_id), None)
         # Item vinculado a um exame nasce no Grupo DESSE exame; item geral
@@ -3927,18 +3949,18 @@ def faq_novo():
             exame_valido = exame_id and any(e.id == exame_id for e in exames)
             if not exame_valido:
                 flash("Escolha um dos seus exames para vincular a pergunta.", "danger")
-                return render_template("medico/faq_form.html", exames=exames)
+                return _voltar_com_erro()
 
         pergunta = request.form.get("pergunta", "").strip()
         resposta = request.form.get("resposta", "").strip()
 
         if not pergunta or not resposta:
             flash("Pergunta e resposta são obrigatórias.", "danger")
-            return render_template("medico/faq_form.html", exames=exames)
+            return _voltar_com_erro()
 
         if filiais and not filial:
             flash("Escolha a filial em que este item será cadastrado.", "danger")
-            return render_template("medico/faq_form.html", exames=exames)
+            return _voltar_com_erro()
 
         item = FaqItem(
             grupo_id=filial.id if filial else None,

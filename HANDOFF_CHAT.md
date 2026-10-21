@@ -2461,6 +2461,17 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Mensagens que pedem a data agora dizem "assim: 01/01/1990 (ou só os números: 01011990)".
 - Teste: `test_whatsapp_identificacao.py` (formatos aceitos e recusados, e a identificação completa com "12041985").
 
+## Telas em janela (popup) e tela única de exames agendados (2026-10-21, pedidos do Silvan)
+
+- **Telefone com máscara:** filtro Jinja `telefone` (app/__init__.py) mostra (27) 99999-9999 na lista, no detalhe, nas solicitações e no relatório de pacientes. "Telefone (login)" virou "Telefone": o login do paciente é CPF + nascimento.
+- **Pacientes (lista):**
+  - **"Editar"** abre uma janela (nome e observações) e volta para a lista (`origem=lista` em `pacientes_editar`). O "Editar cadastro" saiu do detalhe.
+  - **"Detalhes"** virou **"Todos os agendamentos"**: janela que carrega `medico.pacientes_agendamentos` (pedaço de HTML `_paciente_agendamentos.html`), com passados e futuros, médico e situação (Próximo/Passado), **só do grupo atual**. O detalhe antigo listava `paciente.agendamentos` de qualquer clínica. Médico sem perm_pacientes vê só os dele.
+  - **"Novo paciente"** numa janela em duas etapas. 1) CPF: `medico.pacientes_buscar_cpf` (JSON: invalido / ja_e_paciente / importar / novo); se já tem cadastro no MedIA, botão "Importar para este grupo" (POST `pacientes_importar`). 2) Nome, telefone e nascimento. Erro: `_voltar_com_erro` guarda os campos em `session["novo_paciente_form"]` e volta para `/equipe/pacientes?novo=1` com a janela aberta e o motivo dentro dela. O cadastro pela equipe passou a conferir o CPF (`validar_cpf`); vários testes usavam CPFs inventados e foram trocados por válidos.
+- **Exames agendados (tela única, `medico.medico_agenda_pessoal`):** o item de menu "Agendar exame" saiu e virou botão com janela nessa tela (POST em `agenda_novo` com `origem=agenda`; erro volta com `?agendar=1`, `session["agendar_form"]`). Ganhou a coluna **Médico**. **Médico vê só os dele** (mesmo com perm_equipe, a pedido do Silvan); **secretária vê os de todos os médicos do grupo**, com filtro opcional por médico. No menu: "Meus exames agendados" (médico) ou "Exames agendados" (secretária). Na janela, o select de médico mostra só quem atende o exame escolhido (`data-medicos`) e escolhe sozinho quando há um só. Links "Novo agendamento" do painel, dos primeiros passos e do detalhe do paciente apontam para `?agendar=1`. A rota `agenda_novo` (página inteira) continua existindo.
+- **Meu FAQ:** "Adicionar manualmente" abre uma janela (POST em `faq_novo` com `origem=lista`; erro volta com `?novo=1`, `session["faq_novo_form"]`). Função nova `_exames_para_faq`.
+- Testes novos: `test_exames_agendados_tela_unica.py`, `test_faq_adicionar_janela.py`; `test_paciente_da_empresa.py` cobre máscara, editar, agendamentos e novo paciente em janela. Suíte 86/86. Conferido no navegador: janela de agendar com o filtro de médico.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção):
@@ -2498,6 +2509,15 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
    - [ ] Modelo de preparo e cadastro de exame sem a caixa "Precisa de acompanhante"
 8. **WhatsApp: data de nascimento sem "/"** (ver seção acima)
    - [ ] Identificar-se no WhatsApp mandando a data só com números (ex.: 16111983)
+9. **Pacientes em janelas** (ver seção acima)
+   - [ ] Telefone com máscara na lista e no detalhe
+   - [ ] "Editar" na lista abre a janela e salva
+   - [ ] "Todos os agendamentos" mostra passados e futuros só deste grupo
+   - [ ] "Novo paciente": CPF novo (cadastro completo), CPF já existente no MedIA (importar), CPF que já é paciente, CPF inválido
+10. **Exames agendados (tela única)** (ver seção acima)
+   - [ ] Menu sem "Agendar exame"; botão "Agendar exame" abre a janela e agenda
+   - [ ] Coluna Médico; secretária vê todos os médicos do grupo (e filtra); médico vê só os dele
+11. **Meu FAQ:** "Adicionar manualmente" abre a janela e salva
 
 ## Como continuar
 

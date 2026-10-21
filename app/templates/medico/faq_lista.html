@@ -4,7 +4,8 @@
 {% block conteudo %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h3>Meu FAQ</h3>
-  <a href="{{ url_for('medico.faq_novo') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Adicionar manualmente</a>
+  {# Abre numa janela, sem sair da lista (pedido do Silvan, 2026-10-21) #}
+  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovoFaq"><i class="bi bi-plus-lg"></i> Adicionar manualmente</button>
 </div>
 <table class="table table-hover">
   <thead><tr><th>Exame</th>{{ th_filial() }}<th>Pergunta</th><th>Resposta</th><th>Usada</th><th>Origem</th><th>Ações</th></tr></thead>
@@ -29,4 +30,59 @@
     {% endfor %}
   </tbody>
 </table>
+
+{# Janela "Adicionar manualmente" - o POST vai para medico.faq_novo
+   (origem=lista: com erro, volta para cá com a janela aberta). #}
+<div class="modal fade" id="modalNovoFaq" tabindex="-1" aria-labelledby="modalNovoFaqTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" action="{{ url_for('medico.faq_novo') }}" class="modal-content">
+      <input type="hidden" name="origem" value="lista">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalNovoFaqTitulo"><i class="bi bi-plus-lg me-2"></i>Adicionar pergunta/resposta</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        {% if abrir_novo %}
+        {% for categoria, msg in get_flashed_messages(with_categories=true) if categoria in ('danger', 'warning') %}
+        <div class="alert alert-{{ categoria }} py-2 small">{{ msg }}</div>
+        {% endfor %}
+        {% endif %}
+        {% if current_user.tipo == "secretaria" %}
+        {{ select_filial(selecionado=(faq_form.clinica_id|int if faq_form and faq_form.clinica_id else None), ajuda="Usada quando o item for geral (sem exame). Se você escolher um exame abaixo, o item fica no local daquele exame.") }}
+        {% endif %}
+        <div class="mb-3">
+          <label class="form-label" for="faq_exame">Exame relacionado{% if current_user.tipo == "secretaria" %} (opcional){% endif %}</label>
+          <select name="exame_id" id="faq_exame" class="form-select" {% if current_user.tipo == "medico" %}required{% endif %}>
+            {% if current_user.tipo == "secretaria" %}
+            <option value="">Geral (qualquer exame)</option>
+            {% else %}
+            <option value="" disabled {% if not faq_form %}selected{% endif %}>Selecione...</option>
+            {% endif %}
+            {% for e in exames %}
+            <option value="{{ e.id }}" {% if faq_form and faq_form.exame_id == e.id|string %}selected{% endif %}>{{ e.nome }}{% if mostrar_filial %} — {{ e.clinica.nome }}{% endif %}</option>
+            {% endfor %}
+          </select>
+          {% if not exames %}<div class="form-text text-danger">Nenhum exame cadastrado ainda (menu Exames &amp; preparo).</div>{% endif %}
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="faq_pergunta">Pergunta</label>
+          <input type="text" name="pergunta" id="faq_pergunta" class="form-control" required value="{{ faq_form.pergunta if faq_form else '' }}">
+        </div>
+        <label class="form-label" for="faq_resposta">Resposta</label>
+        <textarea name="resposta" id="faq_resposta" class="form-control" rows="4" required>{{ faq_form.resposta if faq_form else '' }}</textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% if abrir_novo %}
+<script>
+  window.addEventListener('load', function () {
+    if (window.bootstrap) new bootstrap.Modal(document.getElementById('modalNovoFaq')).show();
+  });
+</script>
+{% endif %}
 {% endblock %}
