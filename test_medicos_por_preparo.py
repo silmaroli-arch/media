@@ -76,6 +76,21 @@ with app.app_context():
            ex.medico_id == carlos_id and not ex.medico_pode_atender(fernanda_id))
 checar("... e ela volta a não ver o preparo", "Preparo Ecoendoscopia" not in
        fernanda_c.get("/equipe/preparo-modelos").get_data(as_text=True))
+# ---------- Permissão "Associar médicos aos exames" (2026-10-21) ----------
+html = fernanda_c.get("/equipe/", follow_redirects=True).get_data(as_text=True)
+menu = html[html.find('<nav class="app-sidebar'):html.find('</nav>', html.find('<nav class="app-sidebar'))]
+checar("Médica sem a permissão: o menu não mostra 'Médicos por preparo'", "Médicos por preparo" not in menu)
+r = fernanda_c.get("/equipe/preparos/medicos")
+checar("... e a tela a manda de volta", r.status_code == 302)
+html = sec.get(f"/equipe/equipe-membros/{fernanda_id}/permissoes", follow_redirects=True).get_data(as_text=True)
+checar("A tela de permissões tem 'Associar médicos aos exames'",
+       'name="perm_medicos_preparo"' in html and "Associar médicos aos exames" in html)
+sec.post(f"/equipe/equipe-membros/{fernanda_id}/permissoes", data={"perm_medicos_preparo": "on"})
+with app.app_context():
+    checar("... e salvar liga a permissão", Usuario.query.get(fernanda_id).perm_medicos_preparo)
+html = fernanda_c.get("/equipe/preparos/medicos").get_data(as_text=True)
+checar("Com a permissão, ela abre a tela (só com os preparos dela - o do Dr. Carlos não)",
+       "Médicos por preparo" in html and "Preparo Ecoendoscopia" not in html)
 r = fernanda_c.post(f"/equipe/preparos/{modelo_id}/medicos", data={"medico_ids": [str(fernanda_id)]}, follow_redirects=True)
 with app.app_context():
     checar("Médico sem acesso ao preparo não consegue se associar sozinho",

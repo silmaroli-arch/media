@@ -2524,6 +2524,13 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Mensagem de conflito (`_mensagem_conflito`, usada no agendar e no remarcar): mesmo horário continua "já tem um exame nesse horário"; sobreposição pela duração diz "Não é possível marcar ... por causa da duração dos exames", mostra a duração e a previsão de término do outro exame e a deste, e sugere o horário ("a partir das HH:MM" ou "até as HH:MM ou a partir das HH:MM").
 - Teste: `test_exames_agendados_tela_unica.py`. Conferido no navegador (Playwright).
 
+## Permissão "Associar médicos aos exames" (2026-10-21, pedido do Silvan)
+
+- Nova permissão `Usuario.perm_medicos_preparo`, na tela de permissões da equipe: "Associar médicos aos exames (Médicos por preparo)". Sem ela, o menu "Médicos por preparo" some e as rotas `preparos_medicos`/`preparos_medicos_salvar` mandam de volta (`permissao_required`). Médico com ela continua só nos preparos que pode editar (`_pode_associar_medicos`).
+- Padrão: quem cria a conta (`conceder_todas_permissoes`) e secretária (`definir_permissoes_padrao`) têm; médico convidado não tem.
+- Migração (`migrar_banco.py`, em Python, logo depois do bloco SQL): só quando a coluna ainda não existe, cria a coluna e liga a permissão para TODOS os médicos e secretárias existentes (para ninguém perder o que já usava). Roda uma vez só - rodar de novo não desfaz quem tirou a permissão de alguém. INSERT do dono atualizado. Validado em PostgreSQL a partir do banco da versão anterior, duas vezes.
+- Teste: `test_medicos_por_preparo.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2563,6 +2570,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [x] Menu "Médicos por preparo": lista os preparos com o médico principal - validado 2026-10-21
 - [x] Associar um médico pela janela: ele passa a ver e editar o preparo e a atender (agendar) o exame - validado 2026-10-21
 - [ ] Desmarcar: ele deixa de ver o preparo; o principal não sai
+- [ ] Permissão "Associar médicos aos exames": sem ela, o menu "Médicos por preparo" some; marcar/desmarcar na tela de permissões da equipe (Ver membros / Convidar > Permissões)
 
 **Meu FAQ** - VALIDADO pelo Silvan em 2026-10-21
 - [x] "Adicionar manualmente" (janela) salva; com erro, reabre com o motivo - validado 2026-10-21

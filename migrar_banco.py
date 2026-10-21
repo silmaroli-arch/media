@@ -561,6 +561,18 @@ for comando in sql_sem_comentarios.strip().split(";"):
     if comando:
         conn.execute(comando)
 
+# Permissão "Associar médicos aos exames" (Médicos por preparo, 2026-10-21).
+# Feito em Python (não no SQL acima) porque o UPDATE só pode rodar UMA vez,
+# quando a coluna nasce: quem já usava a tela (médicos e secretárias)
+# continua podendo. Rodar de novo a cada deploy desfaria quem tirou a
+# permissão de alguém.
+if not conn.execute(
+    "SELECT 1 FROM information_schema.columns WHERE table_name = 'usuarios' AND column_name = 'perm_medicos_preparo'"
+).fetchone():
+    conn.execute("ALTER TABLE usuarios ADD COLUMN perm_medicos_preparo BOOLEAN NOT NULL DEFAULT FALSE")
+    conn.execute("UPDATE usuarios SET perm_medicos_preparo = TRUE WHERE tipo IN ('medico', 'secretaria')")
+    print("Permissão perm_medicos_preparo criada (ligada para médicos e secretárias existentes).")
+
 
 def _remover_constraint_unica(conn, tabela, coluna):
     """Remove qualquer constraint UNIQUE (nome pode variar por ambiente -
@@ -745,10 +757,10 @@ if not tem_dono:
     # INSERT também.
     conn.execute(
         "INSERT INTO usuarios (nome, email, senha_hash, tipo, ativo, "
-        "perm_pacientes, perm_equipe, perm_filiais, perm_dados_clinica, licenca_status, "
+        "perm_pacientes, perm_equipe, perm_filiais, perm_dados_clinica, perm_medicos_preparo, licenca_status, "
         "aprovacao_perguntas_paciente, ciclo_licenca) "
         "VALUES ('Dono da Plataforma', 'dono@plataforma.com', %s, 'dono', TRUE, "
-        "FALSE, FALSE, FALSE, FALSE, 'trial', TRUE, 'mensal')",
+        "FALSE, FALSE, FALSE, FALSE, FALSE, 'trial', TRUE, 'mensal')",
         (_gerar_hash_senha("123456"),),
     )
     print("Conta do dono recriada (dono@plataforma.com / 123456) - a base estava sem nenhum dono.")

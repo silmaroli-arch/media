@@ -20,9 +20,14 @@
     {# "Gerenciar filiais" saiu (2026-10-20): filiais deixaram de existir e
        a permissão não controlava mais nada (Usuario.perm_filiais fica só
        no banco, sem uso). #}
-    <div class="form-check mb-3">
+    <div class="form-check mb-2">
       <input class="form-check-input" type="checkbox" name="perm_dados_clinica" id="perm_dados_clinica" {% if usuario_alvo.perm_dados_clinica %}checked{% endif %}>
       <label class="form-check-label" for="perm_dados_clinica">Editar dados do grupo</label>
+    </div>
+    <div class="form-check mb-3">
+      <input class="form-check-input" type="checkbox" name="perm_medicos_preparo" id="perm_medicos_preparo" {% if usuario_alvo.perm_medicos_preparo %}checked{% endif %}>
+      <label class="form-check-label" for="perm_medicos_preparo">Associar médicos aos exames (Médicos por preparo)</label>
+      <div class="form-text">Médico com esta permissão associa colegas só aos preparos dele.</div>
     </div>
     {% if usuario_alvo.id == current_user.id %}
     <div class="alert alert-warning small">Atenção: você está editando as próprias permissões.</div>

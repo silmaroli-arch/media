@@ -175,6 +175,10 @@ class Usuario(db.Model, UserMixin):
     # de permissões. Continua só no banco.
     perm_filiais = db.Column(db.Boolean, nullable=False, default=False)
     perm_dados_clinica = db.Column(db.Boolean, nullable=False, default=False)
+    # Tela "Médicos por preparo" (associar médicos aos exames - pedido do
+    # Silvan, 2026-10-21). Médico com ela continua só nos preparos que
+    # pode editar (ver medico._pode_associar_medicos).
+    perm_medicos_preparo = db.Column(db.Boolean, nullable=False, default=False)
 
     # Pedido do Silvan (2026-09-13): equivalente pessoal de
     # Grupo.aprovacao_perguntas_paciente (ver comentário lá) - usado quando
@@ -383,12 +387,14 @@ class Usuario(db.Model, UserMixin):
         self.perm_equipe = administrativo
         self.perm_filiais = administrativo
         self.perm_dados_clinica = administrativo
+        self.perm_medicos_preparo = administrativo
 
     def conceder_todas_permissoes(self):
         self.perm_pacientes = True
         self.perm_equipe = True
         self.perm_filiais = True
         self.perm_dados_clinica = True
+        self.perm_medicos_preparo = True
 
     @property
     def is_staff(self):

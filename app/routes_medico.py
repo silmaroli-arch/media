@@ -1578,6 +1578,7 @@ def _pode_associar_medicos(modelo):
 @medico_bp.route("/preparos/medicos")
 @login_required
 @staff_required
+@permissao_required("perm_medicos_preparo")
 def preparos_medicos():
     """Um mesmo exame, com o mesmo preparo, pode ser feito por mais de um
     médico. Aqui se escolhe quais médicos fazem cada preparo: eles passam
@@ -1602,6 +1603,7 @@ def preparos_medicos():
 @medico_bp.route("/preparos/<int:modelo_id>/medicos", methods=["POST"])
 @login_required
 @staff_required
+@permissao_required("perm_medicos_preparo")
 def preparos_medicos_salvar(modelo_id):
     modelo = PreparoModelo.query.filter(
         PreparoModelo.id == modelo_id, filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
@@ -4545,6 +4547,7 @@ def equipe_permissoes(usuario_id):
         usuario_alvo.perm_pacientes = request.form.get("perm_pacientes") == "on"
         usuario_alvo.perm_equipe = request.form.get("perm_equipe") == "on"
         usuario_alvo.perm_dados_clinica = request.form.get("perm_dados_clinica") == "on"
+        usuario_alvo.perm_medicos_preparo = request.form.get("perm_medicos_preparo") == "on"
         db.session.commit()
         flash(f"Permissões de {usuario_alvo.nome} atualizadas.", "success")
         return redirect(url_for("medico.equipe_lista"))
