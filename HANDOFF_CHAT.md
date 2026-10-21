@@ -2555,29 +2555,29 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [x] "Editar" (janela): nome, CPF, telefone e observações; CPF inválido ou de outro paciente é recusado; aviso de não registrar dados de saúde - validado 2026-10-21
 - [x] "Todos os agendamentos" (janela): passados e futuros, só deste grupo - validado 2026-10-21
 
-**Exames agendados (tela única)**
+**Agenda de Exames (tela única)** - VALIDADO pelo Silvan em 2026-10-21
 - [x] Menu "Agenda de Exames" (sem "Agendar exame"); médico vê só os exames dele, secretária vê os de todos os médicos do grupo (com filtro) - validado 2026-10-21
 - [x] Calendário: Mês, Semana, Dia e Lista (no celular, Lista); cor por médico; clicar no exame abre os detalhes com Atendimento, Resultado e Encerrar; clicar num dia vazio abre "Agendar exame" com a data - validado 2026-10-21
 - [x] Botão "Agendar exame" (janela): o médico é filtrado pelo exame escolhido; sem os campos de acompanhante - validado 2026-10-21
-- [ ] Dois exames do mesmo médico no mesmo horário (ou sobrepostos pela duração): recusado com o aviso; outro médico no mesmo horário: aceito
-- [ ] Janela do exame: "Remarcar para" muda data e hora; horário ocupado é recusado com o aviso DENTRO da janela (pela duração: mostra a previsão de término); "Cancelar exame" apaga; os dois somem em exame encerrado
+- [x] Dois exames do mesmo médico no mesmo horário (ou sobrepostos pela duração): recusado com o aviso; outro médico no mesmo horário: aceito - validado 2026-10-21
+- [x] Janela do exame: "Remarcar para" muda data e hora; horário ocupado é recusado com o aviso DENTRO da janela (pela duração: mostra a previsão de término); "Cancelar exame" apaga; os dois somem em exame encerrado - validado 2026-10-21
 
 **Exames & preparo (modelo de preparo / cadastro de exame)** - VALIDADO pelo Silvan em 2026-10-21
 - [x] Médico não salva sem "Sua especialidade"; com ela, aparece em "Meus dados" - validado 2026-10-21
 - [x] Sem a caixa "Precisa de acompanhante" - validado 2026-10-21
 
-**Médicos por preparo**
+**Médicos por preparo** - VALIDADO pelo Silvan em 2026-10-21
 - [x] Menu "Médicos por preparo": lista os preparos com o médico principal - validado 2026-10-21
 - [x] Associar um médico pela janela: ele passa a ver e editar o preparo e a atender (agendar) o exame - validado 2026-10-21
-- [ ] Desmarcar: ele deixa de ver o preparo; o principal não sai
-- [ ] Permissão "Associar médicos aos exames": sem ela, o menu "Médicos por preparo" some; marcar/desmarcar na tela de permissões da equipe (Ver membros / Convidar > Permissões)
+- [x] Desmarcar: ele deixa de ver o preparo; o principal não sai - validado 2026-10-21
+- [x] Permissão "Associar médicos aos exames": sem ela, o menu "Médicos por preparo" some; marcar/desmarcar na tela de permissões da equipe (Ver membros / Convidar > Permissões) - validado 2026-10-21
 
 **Meu FAQ** - VALIDADO pelo Silvan em 2026-10-21
 - [x] "Adicionar manualmente" (janela) salva; com erro, reabre com o motivo - validado 2026-10-21
 
-**Grupos de trabalho**
+**Grupos de trabalho** - VALIDADO pelo Silvan em 2026-10-21
 - [x] O menu abre "Meus grupos" mesmo com um grupo só - validado 2026-10-21
-- [ ] O grupo do topo aparece como "Selecionado" na lista; com 2+ grupos, "Selecionar" troca o grupo do topo e das telas
+- [x] O grupo do topo aparece como "Selecionado" na lista; com 2+ grupos, "Selecionar" troca o grupo do topo e das telas - validado 2026-10-21
 - [x] "Dados do grupo" abre numa janela: só o nome; salvar volta para "Meus grupos" - validado 2026-10-21
 - [x] "Criar novo grupo"; "Ver membros / Convidar" abre numa janela com a tela de membros dentro (buscar por CPF, criar conta, permissões, remover); ao fechar, a contagem de membros atualiza - validado 2026-10-21
 - [x] "Excluir": grupo vazio é excluído; grupo com dados mostra o que tem e não apaga - validado 2026-10-21
@@ -2589,9 +2589,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 **WhatsApp**
 - [ ] Identificação com a data de nascimento só em números (ex.: 16111983)
 
-**Painel do dono**
-- [ ] Menu lateral: "Configurações", "Usuários", "Grupos" e "Custo de IA" abrem a aba certa
-- [ ] Anúncios: sem popup (só no sino); com popup (abre ao entrar, só fecha no "Entendi", também no celular e com médico de mais de um grupo)
+**Painel do dono** - VALIDADO pelo Silvan em 2026-10-21
+- [x] Menu lateral: "Configurações", "Usuários", "Grupos" e "Custo de IA" abrem a aba certa - validado 2026-10-21
+- [x] Anúncios: sem popup (só no sino); com popup (abre ao entrar, só fecha no "Entendi", também no celular e com médico de mais de um grupo) - validado 2026-10-21
 
 **Site público**
 - [ ] /privacidade com a lista nova de dados
