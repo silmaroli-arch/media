@@ -589,8 +589,11 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     origem = None
     pergunta_pendente_criada = None
 
+    # A FAQ é procurada pela pergunta com a digitação corrigida pela IA
+    # validadora ("carrp" acha a mesma resposta de "carro") - 2026-10-21.
+    pergunta_corrigida = resultado_validacao.get("pergunta_corrigida")
     faq_item, _score = buscar_resposta(
-        pergunta_texto,
+        pergunta_corrigida or pergunta_texto,
         grupo_id=grupo_id_ancora,
         exame_id=exame.id if exame else None,
         criado_por_id=criado_por_id_ancora,
@@ -630,6 +633,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 paciente_id=paciente.id,
                 exame_id=exame.id,
                 pergunta=pergunta_texto,
+                pergunta_faq=pergunta_corrigida,
                 status="aguardando_aprovacao",
                 resposta_sugerida_ia=resultado_ia["final"],
                 resposta_bruta_claude=resultado_ia["por_provedor"]["Claude"],
@@ -675,6 +679,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 paciente_id=paciente.id,
                 exame_id=exame.id if exame else None,
                 pergunta=pergunta_texto,
+                pergunta_faq=pergunta_corrigida,
                 # Mesmo sem nenhum rascunho da IA, vale registrar se foi
                 # porque alguma delas deu erro de chamada - ver
                 # app.ia_preparo.responder_com_ia.

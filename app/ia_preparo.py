@@ -1141,7 +1141,9 @@ Classifique em exatamente uma das 3 categorias abaixo, e responda SOMENTE com o 
 - FORA_DO_EXAME_ENCAMINHAR: o texto É coerente, mas não tem NENHUMA relação com exame médico nenhum (ex.: futebol, previsão do tempo, assunto pessoal, pedido sobre outro serviço qualquer sem nenhuma ligação com exames). Perguntas sobre outros assuntos da própria clínica (horário de atendimento, endereço, agendamento, valores) NÃO se encaixam aqui - são relacionadas à clínica/exame, mesmo que não sejam sobre o preparo específico deste exame.
 - VALIDA: qualquer pergunta ou comentário coerente relacionado a exame médico ou à clínica, incluindo dúvidas sobre o preparo deste exame específico, mesmo que a resposta não esteja disponível nos dados fornecidos - a checagem de "temos a informação?" é feita depois, por outra parte do sistema, não é sua tarefa aqui.
 
-Quando houver um "Histórico recente desta conversa" listado antes da mensagem atual, use-o para entender o CONTEXTO (ex.: uma mensagem de acompanhamento curta só faz sentido em conjunto com a anterior). Na dúvida entre duas categorias, prefira sempre VALIDA - é mais seguro deixar uma pergunta ambígua seguir o fluxo normal do que rejeitá-la por engano."""
+Quando houver um "Histórico recente desta conversa" listado antes da mensagem atual, use-o para entender o CONTEXTO (ex.: uma mensagem de acompanhamento curta só faz sentido em conjunto com a anterior). Na dúvida entre duas categorias, prefira sempre VALIDA - é mais seguro deixar uma pergunta ambígua seguir o fluxo normal do que rejeitá-la por engano.
+
+Quando a categoria for VALIDA, escreva numa SEGUNDA linha "PERGUNTA: " seguido da mensagem do paciente só com a ortografia, a digitação, os acentos, as maiúsculas e a pontuação corrigidos - mesmas palavras, mesma ordem e mesmo sentido, sem completar com o histórico, sem resumir e sem acrescentar nada (ex.: "POsso ir de carrp" vira "PERGUNTA: Posso ir de carro?"; "e frita" vira "PERGUNTA: E frita?"). Nas outras categorias, responda só a primeira linha."""
 
 
 def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
@@ -1153,7 +1155,10 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
     do paciente em sem_sentido / fora_do_exame / válida, numa chamada
     separada e mais barata (só classificação, sem tentar responder).
 
-    Retorna um dicionário {"classificacao": ..., "chamada": ...} -
+    Retorna um dicionário {"classificacao": ..., "chamada": ...,
+    "pergunta_corrigida": ...} (esta última: a mensagem só com a digitação
+    corrigida, quando "valida" - usada para procurar e gravar no FAQ; pode
+    faltar ou vir None, e aí vale o texto original) -
     "classificacao" é "sem_sentido", "fora_do_exame", "valida" ou None
     (sem julgamento possível: `exame` ausente, a IA escolhida não está
     configurada/disponível, a chamada falhou, ou a resposta não bateu com
@@ -1190,7 +1195,7 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
     try:
         if provedor == "Claude":
             resposta = cliente.messages.create(
-                model=MODELO_PADRAO, max_tokens=12, system=PROMPT_SISTEMA_VALIDADOR,
+                model=MODELO_PADRAO, max_tokens=200, system=PROMPT_SISTEMA_VALIDADOR,
                 messages=[{"role": "user", "content": conteudo}],
             )
             uso = getattr(resposta, "usage", None)
@@ -1202,7 +1207,7 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
             texto = "".join(getattr(bloco, "text", "") for bloco in resposta.content).strip()
         elif provedor == "ChatGPT":
             resposta = cliente.chat.completions.create(
-                model=MODELO_OPENAI_PADRAO, max_tokens=12,
+                model=MODELO_OPENAI_PADRAO, max_tokens=200,
                 messages=[
                     {"role": "system", "content": PROMPT_SISTEMA_VALIDADOR},
                     {"role": "user", "content": conteudo},
@@ -1220,7 +1225,7 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
             resposta = cliente.models.generate_content(
                 model=MODELO_GEMINI_PADRAO, contents=conteudo,
                 config=genai_types.GenerateContentConfig(
-                    system_instruction=PROMPT_SISTEMA_VALIDADOR, max_output_tokens=12,
+                    system_instruction=PROMPT_SISTEMA_VALIDADOR, max_output_tokens=200,
                 ),
             )
             uso = getattr(resposta, "usage_metadata", None)
@@ -1236,7 +1241,8 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
         )
         return {"classificacao": None, "chamada": None}
 
-    texto_normalizado = texto.upper()
+    primeira_linha, _, resto = texto.partition("\n")
+    texto_normalizado = primeira_linha.upper()
     if MARCADOR_SEM_SENTIDO in texto_normalizado:
         classificacao = "sem_sentido"
     elif MARCADOR_FORA_DO_EXAME in texto_normalizado:
@@ -1249,4 +1255,24 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
         # deixar a pergunta seguir o fluxo normal do que arriscar bloquear
         # uma pergunta legítima por um formato de resposta inesperado.
         classificacao = "valida"
-    return {"classificacao": classificacao, "chamada": chamada}
+    pergunta_corrigida = (
+        _extrair_pergunta_corrigida(resto, pergunta_usuario) if classificacao == "valida" else None
+    )
+    return {"classificacao": classificacao, "chamada": chamada, "pergunta_corrigida": pergunta_corrigida}
+
+
+def _extrair_pergunta_corrigida(resto, original):
+    """A linha "PERGUNTA: ..." da resposta do validador (pedido do Silvan,
+    2026-10-21: a pergunta ia para o FAQ com erro de digitação). Descarta
+    a correção se ela não parecer só uma correção (tamanho muito diferente
+    do original - a IA pode ter completado com o histórico): na dúvida, o
+    original vale, como antes."""
+    for linha in resto.splitlines():
+        linha = linha.strip()
+        if linha.upper().startswith("PERGUNTA:"):
+            corrigida = linha[len("PERGUNTA:"):].strip().strip('"').strip()
+            tamanho = len(original.strip())
+            if corrigida and tamanho and 0.6 * tamanho <= len(corrigida) <= 1.5 * tamanho + 3:
+                return corrigida
+            return None
+    return None

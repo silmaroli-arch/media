@@ -2561,6 +2561,15 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Custo: perguntas simples de alimento ("posso comer amendoim?") agora chamam as IAs.
 - Testes ajustados: `test_whatsapp_pergunta.py`, `test_aprovacao_configuravel.py` (IA simulada), `test_smoke.py`, `test_medicamento_nao_cadastrado_revisao.py`, `test_alimento_palavra_parecida.py`.
 
+## FAQ grava e procura a pergunta com a digitação corrigida (2026-10-21, pedido do Silvan)
+
+- Problema: "Posso ir de carrp?" foi aprovada e entrou no FAQ com o erro; depois "POsso ir de carro?" não achava a resposta (o FAQ só responde pergunta idêntica) e ia de novo para as IAs.
+- A IA validadora (`ia_preparo.validar_pergunta`, já chamada em toda pergunta do WhatsApp, sem custo de chamada extra) agora, quando VALIDA, devolve numa 2ª linha "PERGUNTA: ..." a mensagem só com ortografia/digitação/acentos corrigidos. `_extrair_pergunta_corrigida` descarta a correção se o tamanho mudar demais (ex.: IA completou com o histórico). Resultado em `pergunta_corrigida` (None = sem correção). max_tokens do validador 12 -> 200.
+- WhatsApp (`_responder_pergunta`): procura o FAQ pela versão corrigida e grava em `PerguntaPendente.pergunta_faq` (coluna nova, migração ADD COLUMN IF NOT EXISTS). Ao aprovar (manual em `perguntas_responder` ou automática em `aprovar_pergunta_automaticamente`), o FAQ recebe `pergunta_faq or pergunta`. O médico vê e o paciente recebe citado o texto original. Decisão do Silvan: sem campo de edição na janela de aprovação - se a correção sair errada, ajustar em Meu FAQ > Editar.
+- O chat web do paciente não passa pelo validador (já era assim): lá continua o texto original.
+- FAQ antigo com erro (ex.: "Posso ir de carrp?" no media-dev): corrigir em Meu FAQ > Editar.
+- Teste novo: `test_faq_pergunta_corrigida.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2632,6 +2641,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 
 **Portal de atendimento**
 - [ ] Pergunta sobre alimento/medicamento (ex.: "posso comer amendoim?", "Posso ir de carro?") chama as 2 IAs: o rascunho mostra a resposta de cada IA (não aparece mais "Automática (preparo cadastrado)" em perguntas novas). WhatsApp, chat do paciente e Testar IA
+
+**FAQ (WhatsApp)**
+- [ ] Pergunta com erro de digitação (ex.: "Posso ir de carrp?"), depois de aprovada, entra no Meu FAQ corrigida ("Posso ir de carro?"); a mesma pergunta escrita certa ou com outro erro recebe a resposta aprovada na hora
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

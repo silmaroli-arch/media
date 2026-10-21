@@ -101,7 +101,7 @@ def aprovar_pergunta_automaticamente(pergunta_pendente, resposta):
         grupo_id=pergunta_pendente.grupo_id,
         criado_por_id=pergunta_pendente.criado_por_id,
         exame_id=pergunta_pendente.exame_id,
-        pergunta=pergunta_pendente.pergunta,
+        pergunta=pergunta_pendente.pergunta_faq or pergunta_pendente.pergunta,
         resposta=resposta,
         criado_por="Sistema (aprovação automática desativada)",
     ))

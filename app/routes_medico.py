@@ -4079,7 +4079,8 @@ def perguntas_responder(pergunta_id):
         grupo_id=pergunta.grupo_id,
         criado_por_id=pergunta.criado_por_id,
         exame_id=pergunta.exame_id,
-        pergunta=pergunta.pergunta,
+        # Com a digitação corrigida pela IA validadora, quando houver.
+        pergunta=pergunta.pergunta_faq or pergunta.pergunta,
         resposta=resposta,
         criado_por=current_user.nome,
     )

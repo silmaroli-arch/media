@@ -1869,6 +1869,11 @@ class PerguntaPendente(db.Model):
     paciente_id = db.Column(db.Integer, db.ForeignKey("pacientes.id"), nullable=False)
     exame_id = db.Column(db.Integer, db.ForeignKey("exames.id"), nullable=True)
     pergunta = db.Column(db.Text, nullable=False)
+    # A mesma pergunta com a digitação corrigida pela IA validadora (pedido
+    # do Silvan, 2026-10-21 - "Posso ir de carrp?" ia para o FAQ assim). É
+    # o texto gravado no FAQ ao aprovar; `pergunta` continua o original,
+    # mostrado ao médico e citado ao paciente. None: sem correção.
+    pergunta_faq = db.Column(db.Text, nullable=True)
     # Fatia 7 (WhatsApp): quando a pergunta veio pelo WhatsApp, guarda o
     # número de telefone exato da conversa que originou (o mesmo formato
     # usado em ConversaWhatsapp.telefone, sem o prefixo "whatsapp:") - é
