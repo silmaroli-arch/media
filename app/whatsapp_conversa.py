@@ -242,12 +242,16 @@ def _extrair_cpf(texto):
 
 
 def _extrair_data_nascimento(texto):
-    """Lê uma data de nascimento em formato dd/mm/aaaa (aceita "-" no
-    lugar de "/") de uma mensagem que contenha só a data. Retorna a data,
-    ou None se não reconhecer ou se a data não existir de verdade (ex.:
-    31/02/1990)."""
+    """Lê uma data de nascimento dd/mm/aaaa de uma mensagem que contenha só
+    a data. Aceita "/", "-", "." ou espaço como separador e também os 8
+    números juntos, ddmmaaaa (pedido do Silvan, 2026-10-21: "16111983").
+    Retorna a data, ou None se não reconhecer ou se a data não existir de
+    verdade (ex.: 31/02/1990)."""
     texto = (texto or "").strip()
-    data_match = re.fullmatch(r"(\d{1,2})\s*[/-]\s*(\d{1,2})\s*[/-]\s*(\d{4})", texto)
+    data_match = (
+        re.fullmatch(r"(\d{1,2})\s*[/.\s-]\s*(\d{1,2})\s*[/.\s-]\s*(\d{4})", texto)
+        or re.fullmatch(r"(\d{2})(\d{2})(\d{4})", texto)
+    )
     if not data_match:
         return None
     dia, mes, ano = (int(x) for x in data_match.groups())
@@ -354,9 +358,9 @@ MENSAGEM_CPF_DIGITO_INVALIDO = (
     "Esse CPF não parece válido (algum número deve estar errado). "
     "Confira e me envie de novo."
 )
-MENSAGEM_PEDIR_NASCIMENTO = "Certo! Agora me envie sua data de nascimento, assim: 01/01/1990"
+MENSAGEM_PEDIR_NASCIMENTO = "Certo! Agora me envie sua data de nascimento, assim: 01/01/1990 (ou só os números: 01011990)"
 MENSAGEM_NASCIMENTO_INVALIDA = (
-    "Não reconheci a data. Envie no formato dia/mês/ano, assim: 01/01/1990"
+    "Não reconheci a data. Envie no formato dia/mês/ano, assim: 01/01/1990 (ou só os números: 01011990)"
 )
 MENSAGEM_NAO_ENCONTRADO = (
     "Não encontramos um cadastro com esses dados. Vamos tentar de novo — "

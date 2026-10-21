@@ -2455,6 +2455,12 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Sobre a caixa "Mostrar exames de todas as especialidades": ela tira o filtro da lista "Tipo de exame" pela especialidade escolhida. Sem especialidade, não fazia nada; agora, com a especialidade obrigatória, sempre tem efeito.
 - Teste: `test_tipo_exame_nao_encontrado.py` (especialidade vazia e inventada recusadas).
 
+## WhatsApp: data de nascimento com ou sem "/" (2026-10-21, pedido do Silvan)
+
+- `whatsapp_conversa._extrair_data_nascimento` passou a aceitar, além de 16/11/1983 e 16-11-1983: os 8 números juntos (**16111983**), ponto (16.11.1983) e espaço (16 11 1983). Data inexistente (31/02/1990), ano com 2 dígitos e ordem ano-mês-dia continuam recusados.
+- Mensagens que pedem a data agora dizem "assim: 01/01/1990 (ou só os números: 01011990)".
+- Teste: `test_whatsapp_identificacao.py` (formatos aceitos e recusados, e a identificação completa com "12041985").
+
 ## PENDENTE DE TESTE (Silvan) - lembrete
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção):
@@ -2490,6 +2496,8 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 7. **Acompanhante removido** (ver seção da LGPD)
    - [ ] "Novo agendamento" sem os campos de acompanhante; agendar um exame que antes exigia acompanhante funciona
    - [ ] Modelo de preparo e cadastro de exame sem a caixa "Precisa de acompanhante"
+8. **WhatsApp: data de nascimento sem "/"** (ver seção acima)
+   - [ ] Identificar-se no WhatsApp mandando a data só com números (ex.: 16111983)
 
 ## Como continuar
 
