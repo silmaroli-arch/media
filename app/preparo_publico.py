@@ -169,10 +169,37 @@ def montar_documento_preparo(agendamento):
         "exame": exame,
         "preparo": preparo,
         "linha_do_tempo": linha_do_tempo,
+        "linha_do_tempo_por_dia": agrupar_por_dia(linha_do_tempo),
         "sem_data": sem_data,
         "instrucoes": preparo.instrucoes if preparo else None,
         "observacoes_medicamentos": preparo.observacoes_medicamentos if preparo else None,
     }
+
+
+def agrupar_por_dia(linha_do_tempo):
+    """A data aparece uma vez só, com os itens daquele dia embaixo (pedido
+    do Silvan, 2026-10-21 - antes a mesma data se repetia em cada item).
+    Cada item ganha "hora" (só quando não é meia-noite e muda em relação
+    ao item anterior do mesmo dia) e perde o
+    "detalhe" que só repetia a data/hora (ex.: alimentos)."""
+    dias = []
+    for item in linha_do_tempo:
+        data = item["quando"].strftime("%d/%m/%Y")
+        if not dias or dias[-1]["data"] != data:
+            dias.append({"data": data, "categoria": item["categoria"], "itens": []})
+        hora = item["quando"].strftime("%H:%M")
+        detalhe = item["detalhe"]
+        if detalhe and detalhe.startswith(data):
+            detalhe = None
+        hora = None if hora == "00:00" else hora
+        # Mesma hora do item anterior do dia: não repete (fica agrupado nela).
+        hora_anterior = dias[-1]["itens"][-1]["hora_real"] if dias[-1]["itens"] else None
+        dias[-1]["itens"].append({
+            **item, "hora_real": hora, "hora": None if hora == hora_anterior else hora, "detalhe": detalhe,
+        })
+        if item["categoria"] == "exame":
+            dias[-1]["categoria"] = "exame"
+    return dias
 
 
 def _texto_seguro(texto):
@@ -232,14 +259,14 @@ def gerar_pdf_preparo(documento):
     if documento["linha_do_tempo"]:
         elementos.append(Paragraph("Linha do tempo do preparo", estilos["Heading2"]))
         dados_tabela = [["Data", "O que fazer"]]
-        for item in documento["linha_do_tempo"]:
-            texto = _texto_seguro(item["titulo"])
-            if item["detalhe"]:
-                texto += f" — {_texto_seguro(item['detalhe'])}"
-            dados_tabela.append([
-                item["quando"].strftime("%d/%m/%Y %H:%M"),
-                Paragraph(texto, estilo_item),
-            ])
+        for dia in documento["linha_do_tempo_por_dia"]:
+            linhas = []
+            for item in dia["itens"]:
+                texto = (f"<b>{item['hora']}</b> " if item["hora"] else "") + _texto_seguro(item["titulo"])
+                if item["detalhe"]:
+                    texto += f" — {_texto_seguro(item['detalhe'])}"
+                linhas.append("• " + texto)
+            dados_tabela.append([dia["data"], Paragraph("<br/>".join(linhas), estilo_item)])
         tabela = Table(dados_tabela, colWidths=[3.6 * cm, None], repeatRows=1)
         tabela.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),

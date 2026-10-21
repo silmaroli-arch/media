@@ -2541,6 +2541,12 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 
 - Na lista de modelos de preparo (`medico/preparo_modelos_lista.html`), a coluna "Médico" passou a se chamar "Médico Criador" (é o médico principal do exame; os associados ficam em "Médicos por preparo").
 
+## Linha do tempo do preparo agrupada por dia (2026-10-21, pedido do Silvan)
+
+- Página pública do preparo (`paciente/preparo_publico.html`) e PDF: a data aparece uma vez, com os itens do dia embaixo (antes repetia a mesma data em cada item). Quando há horário, ele aparece como "às HH:MM" uma vez antes dos itens daquele horário. O detalhe que só repetia a data (alimentos) some.
+- `app.preparo_publico.agrupar_por_dia()` monta `linha_do_tempo_por_dia` (a `linha_do_tempo` plana continua no documento). No PDF, uma linha da tabela por dia, com os itens em lista.
+- Teste: `test_preparo_publico.py`. Conferido no navegador.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2606,6 +2612,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 
 **Site público** - VALIDADO pelo Silvan em 2026-10-21
 - [x] /privacidade com a lista nova de dados - validado 2026-10-21
+
+**Preparo do paciente (link do WhatsApp)**
+- [ ] Linha do tempo: cada data aparece uma vez com os itens do dia embaixo (horário "às HH:MM" uma vez por horário); PDF igual
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

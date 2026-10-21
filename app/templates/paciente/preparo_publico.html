@@ -106,6 +106,9 @@
     font-weight: 600;
     margin-top: 2px;
   }
+  .item-tempo .subitem-tempo + .subitem-tempo { margin-top: 8px; }
+  .item-tempo .hora-item { color: var(--azul); font-weight: 700; font-size: 0.85rem; margin-top: 8px; }
+  .item-tempo.categoria-exame .hora-item { color: #198754; }
   .item-tempo .detalhe-item {
     color: var(--cinza-texto);
     font-size: 0.9rem;
@@ -172,16 +175,19 @@
     {% if linha_do_tempo %}
     <h2 class="secao-titulo">Linha do tempo do preparo</h2>
     <div class="linha-do-tempo">
-      {% for item in linha_do_tempo %}
-      <div class="item-tempo categoria-{{ item.categoria }}">
-        <div class="data-item">
-          {{ item.quando.strftime('%d/%m/%Y') }}
-          {% if item.quando.strftime('%H:%M') != '00:00' %}às {{ item.quando.strftime('%H:%M') }}{% endif %}
+      {# A data aparece uma vez, com os itens do dia embaixo (2026-10-21). #}
+      {% for dia in linha_do_tempo_por_dia %}
+      <div class="item-tempo categoria-{{ dia.categoria }}">
+        <div class="data-item">{{ dia.data }}</div>
+        {% for item in dia.itens %}
+        {% if item.hora %}<div class="hora-item">às {{ item.hora }}</div>{% endif %}
+        <div class="subitem-tempo">
+          <div class="titulo-item">{{ item.titulo }}</div>
+          {% if item.detalhe %}
+          <div class="detalhe-item">{{ item.detalhe }}</div>
+          {% endif %}
         </div>
-        <div class="titulo-item">{{ item.titulo }}</div>
-        {% if item.detalhe %}
-        <div class="detalhe-item">{{ item.detalhe }}</div>
-        {% endif %}
+        {% endfor %}
       </div>
       {% endfor %}
     </div>
