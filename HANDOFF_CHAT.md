@@ -2499,6 +2499,11 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Os eventos são gerados no próprio template (`var eventos = [...]`); a rota passa `timedelta` para calcular o fim. Filtro por médico e regras de quem vê o quê não mudaram.
 - Testes ajustados: `test_exames_agendados_tela_unica.py` (lê os eventos) e `test_atendimento_encerrar_rapido.py`. Conferido no navegador (computador e celular).
 
+## Agendamento: conflito de horário do mesmo médico (2026-10-21, relatado pelo Silvan)
+
+- Dava para marcar dois exames do mesmo médico no mesmo dia e hora. `agenda_novo` agora chama `_agendamento_em_conflito(medico_id, inicio, duracao)`: cada exame ocupa da hora marcada até hora + `Exame.duracao_minutos` (sem duração cadastrada, só a hora exata). Se sobrepõe outro agendamento do MESMO médico (em qualquer grupo, porque é a agenda da pessoa), recusa com "Fulano já tem um exame nesse horário: <exame> com <paciente>, em dd/mm/aaaa às hh:mm" e a janela reabre com os dados. Outro médico no mesmo horário é aceito.
+- Teste em `test_exames_agendados_tela_unica.py` (mesmo horário, dentro da duração, terminando depois do início do outro, logo após o fim, outro médico).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2527,6 +2532,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Menu sem "Agendar exame"; médico vê "Meus exames agendados" (só os dele), secretária vê "Exames agendados" (todos os médicos do grupo, com filtro)
 - [ ] Calendário: Mês, Semana, Dia e Lista (no celular, Lista); cor por médico; clicar no exame abre os detalhes com Atendimento, Resultado e Encerrar; clicar num dia vazio abre "Agendar exame" com a data
 - [ ] Botão "Agendar exame" (janela): o médico é filtrado pelo exame escolhido; sem os campos de acompanhante
+- [ ] Dois exames do mesmo médico no mesmo horário (ou sobrepostos pela duração): recusado com o aviso; outro médico no mesmo horário: aceito
 
 **Exames & preparo (modelo de preparo / cadastro de exame)**
 - [ ] Médico não salva sem "Sua especialidade"; com ela, aparece em "Meus dados"

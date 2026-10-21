@@ -2481,6 +2481,27 @@ def agenda():
     return redirect(url_for("medico.dashboard", _anchor="agenda-completa"))
 
 
+def _agendamento_em_conflito(medico_id, inicio, duracao_minutos):
+    """Outro agendamento do MESMO médico que se sobrepõe a este horário
+    (pedido do Silvan, 2026-10-21: deixava marcar dois exames do mesmo
+    médico no mesmo dia e hora). Cada exame ocupa da hora marcada até
+    hora + duração do exame; sem duração cadastrada, só a hora exata.
+    Vale em qualquer grupo: é a agenda da pessoa."""
+    fim = inicio + timedelta(minutes=duracao_minutos or 0)
+    candidatos = Agendamento.query.filter(
+        Agendamento.medico_id == medico_id,
+        Agendamento.data_hora >= inicio - timedelta(days=1),
+        Agendamento.data_hora <= fim + timedelta(days=1),
+    ).all()
+    for outro in candidatos:
+        outro_fim = outro.data_hora + timedelta(minutes=(outro.exame.duracao_minutos if outro.exame else 0) or 0)
+        mesmo_inicio = outro.data_hora == inicio
+        sobrepoe = outro.data_hora < fim and inicio < outro_fim
+        if mesmo_inicio or sobrepoe:
+            return outro
+    return None
+
+
 @medico_bp.route("/agenda/novo", methods=["GET", "POST"])
 @login_required
 @staff_required
@@ -2556,6 +2577,17 @@ def agenda_novo():
             data_hora = datetime.strptime(data_hora_str, "%Y-%m-%dT%H:%M")
         except (ValueError, TypeError):
             flash("Data/hora inválida.", "danger")
+            return _voltar(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
+
+        conflito = _agendamento_em_conflito(medico_atende_id, data_hora, exame.duracao_minutos)
+        if conflito:
+            medico_nome = conflito.medico.nome if conflito.medico else "O médico"
+            flash(
+                f"{medico_nome} já tem um exame nesse horário: {conflito.exame.nome if conflito.exame else 'exame'} "
+                f"com {conflito.paciente.nome}, em {conflito.data_hora.strftime('%d/%m/%Y às %H:%M')}. "
+                "Escolha outro horário.",
+                "danger",
+            )
             return _voltar(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
 
         agendamento = Agendamento(

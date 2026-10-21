@@ -85,4 +85,39 @@ html = sec.get(r.headers["Location"]).get_data(as_text=True)
 checar("... mostrando o motivo e o que foi preenchido",
        "Data/hora inválida." in html and "trazer exames antigos" in html and "new bootstrap.Modal" in html)
 
+# ---------- Conflito de horário do mesmo médico (2026-10-21) ----------
+from app.extensions import db
+from app.models import Exame
+with app.app_context():
+    Exame.query.get(hemograma_id).duracao_minutos = 30
+    db.session.commit()
+
+
+def agendar(data_hora, medico_id=fernanda_id):
+    return sec.post("/equipe/agenda/novo", data={
+        "origem": "agenda", "filial_id": str(vitoria_id), "paciente_id": str(pedro_id),
+        "exame_id": str(hemograma_id), "medico_id": str(medico_id), "data_hora": data_hora,
+    }, follow_redirects=True).get_data(as_text=True)
+
+
+with app.app_context():
+    antes = Agendamento.query.filter_by(medico_id=fernanda_id).count()
+html = agendar("2026-12-01T09:30")
+checar("Mesmo médico, mesmo dia e hora: recusado", "já tem um exame nesse horário" in html and "01/12/2026 às 09:30" in html)
+html = agendar("2026-12-01T09:45")
+checar("Mesmo médico, dentro da duração do outro exame (30 min): recusado", "já tem um exame nesse horário" in html)
+html = agendar("2026-12-01T09:10")
+checar("Mesmo médico, terminaria depois que o outro começa: recusado", "já tem um exame nesse horário" in html)
+with app.app_context():
+    checar("... e nenhum desses foi criado", Agendamento.query.filter_by(medico_id=fernanda_id).count() == antes)
+html = agendar("2026-12-01T10:00")
+checar("Logo depois do fim do outro exame (10:00): aceito", "Agendamento criado com sucesso." in html)
+with app.app_context():
+    exame_carlos = Agendamento.query.filter_by(medico_id=carlos_id).first().exame_id
+r = sec.post("/equipe/agenda/novo", data={
+    "origem": "agenda", "filial_id": str(vitoria_id), "paciente_id": str(pedro_id),
+    "exame_id": str(exame_carlos), "medico_id": str(carlos_id), "data_hora": "2026-12-01T09:30",
+}, follow_redirects=True)
+checar("Outro médico no mesmo horário: aceito", "Agendamento criado com sucesso." in r.get_data(as_text=True))
+
 print("\nTodos os testes da tela única de exames agendados passaram.")
