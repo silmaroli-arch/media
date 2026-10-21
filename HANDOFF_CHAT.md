@@ -2437,6 +2437,16 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Tela de permissões: saiu **"Gerenciar filiais"**, porque filiais deixaram de existir e `perm_filiais` não controlava nada (a coluna fica no banco, sem uso). **"Editar dados da clínica"** virou **"Editar dados do grupo"**: continua controlando quem abre "Dados do grupo" (e Dados Fiscais por URL). O texto "em todas as filiais" virou "em todos os grupos".
 - Testes: `test_grupo_editar_criar.py`; ajustados test_smoke, test_dados_cadastrais_fecha_ao_salvar, test_dados_fiscais_menu, test_menu_cadastro_geral_unificado. Suíte 83/83.
 
+## Excluir grupo de trabalho (2026-10-21, pedido do Silvan - opção 1: só grupo vazio)
+
+- Em "Meus grupos", o **dono** do grupo tem o botão **"Excluir"** (com confirmação). A rota é `grupo.excluir` (POST `/grupos/<id>/excluir`).
+- Só exclui grupo **vazio**. Se tiver outras pessoas ativas, pacientes, agendamentos, exames, modelos de preparo, itens de FAQ ou perguntas de paciente, nada é apagado e a mensagem lista o que ainda existe (`_o_que_impede_excluir`, que cobre toda tabela com `grupo_id`).
+- Não conta: o próprio médico como paciente. `routes_medico._paciente_teste_do_medico` cria esse cadastro (com o CPF dele) e ele entra sozinho em todo grupo que o médico cria; sem essa exceção, nenhum grupo seria "vazio". Na exclusão sai só o vínculo; o cadastro dele continua.
+- Vão junto com o grupo: convites, vínculos de membro (do dono e de quem já saiu) e o vínculo do próprio médico como paciente. Se era o grupo ativo, a sessão deixa de apontar para ele.
+- Administrador que não é dono não exclui. A exclusão completa (grupo com dados) não foi feita: as opções 2 e 3 ficaram de fora.
+- Atenção: se o médico usou "Testar IA" dentro do grupo, o agendamento e o exame de teste fazem o grupo deixar de ser vazio.
+- Teste: `test_grupo_excluir.py` (11 checks).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção):
@@ -2463,6 +2473,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
    - [ ] "Dados do grupo": só o nome; salvar volta para "Meus grupos" com o nome novo no topo
    - [ ] "Criar novo grupo" e "Ver membros / Convidar" na lista
    - [ ] Permissões: sem "Gerenciar filiais"; "Editar dados do grupo"
+5. **Excluir grupo** (ver seção acima)
+   - [ ] Criar um grupo de teste e excluir pelo botão "Excluir" em "Meus grupos"
+   - [ ] Tentar excluir um grupo com paciente ou agenda: mostra o que ainda existe e não apaga
 
 ## Como continuar
 

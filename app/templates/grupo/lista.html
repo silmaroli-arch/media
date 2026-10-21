@@ -42,6 +42,14 @@
           <a href="{{ url_for('medico.clinica_configuracoes', filial_id=item.grupo.id) }}" class="btn btn-sm btn-outline-primary">Dados do grupo</a>
           {% endif %}
           {% endif %}
+          {% if item.papel == 'dono' %}
+          {# Só grupo vazio é excluído (ver grupo.excluir) - com dados, a
+             mensagem diz o que ainda existe nele. #}
+          <form method="post" action="{{ url_for('grupo.excluir', grupo_id=item.grupo.id) }}" class="d-inline"
+                onsubmit="return confirm('Excluir o grupo &quot;{{ item.grupo.nome|e }}&quot;? Só é possível excluir um grupo vazio (sem pacientes, agenda, exames nem outras pessoas).');">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Excluir</button>
+          </form>
+          {% endif %}
           {% if item.papel != 'dono' %}
           <form method="post" action="{{ url_for('grupo.sair', grupo_id=item.grupo.id) }}" class="d-inline" onsubmit="return confirm('Sair deste grupo?');">
             <button type="submit" class="btn btn-sm btn-outline-danger">Sair do grupo</button>
