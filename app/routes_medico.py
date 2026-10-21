@@ -1665,6 +1665,14 @@ def _ler_tipo_exame(form, obrigatorio, tipo_atual_id=None):
     return tipo_id, None
 
 
+def _falta_especialidade_do_medico(form):
+    """Médico precisa informar a especialidade no preparo (pedido do Silvan,
+    2026-10-21): desde 2026-10-19 ela não é mais pedida no cadastro e este
+    formulário é onde ele a informa. Só vale quando o campo está na tela
+    (médico, com a lista de tipos de exame)."""
+    return eh_medico() and "especialidade" in form and not especialidade_valida(form.get("especialidade"))
+
+
 def _atualizar_especialidade_do_medico(form):
     """O campo "Especialidade" do cadastro de preparo é a do PRÓPRIO médico
     logado: se ele escolheu outra (ou preencheu pela 1ª vez), atualiza o
@@ -1756,6 +1764,10 @@ def preparo_modelos_novo():
 
         if not nome or not instrucoes:
             flash("Nome do modelo e instruções são obrigatórios.", "danger")
+            return _rerender_novo()
+
+        if _falta_especialidade_do_medico(request.form):
+            flash("Informe a sua especialidade.", "danger")
             return _rerender_novo()
 
         tipo_exame_id, erro_tipo = _ler_tipo_exame(request.form, obrigatorio=True)
@@ -1918,6 +1930,10 @@ def preparo_modelos_editar(modelo_id):
         nome = request.form.get("nome", "").strip()
         if not nome:
             flash("Informe o nome do modelo.", "danger")
+            return _rerender_editar()
+
+        if _falta_especialidade_do_medico(request.form):
+            flash("Informe a sua especialidade.", "danger")
             return _rerender_editar()
 
         # Preparo antigo (sem tipo) não é obrigado a escolher agora - só

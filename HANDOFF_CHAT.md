@@ -2447,6 +2447,13 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Atenção: se o médico usou "Testar IA" dentro do grupo, o agendamento e o exame de teste fazem o grupo deixar de ser vazio.
 - Teste: `test_grupo_excluir.py` (11 checks).
 
+## Especialidade obrigatória no modelo de preparo (2026-10-21, relatado pelo Silvan)
+
+- O médico conseguia salvar "Novo modelo de preparo" (e editar) sem informar "Sua especialidade". Desde 2026-10-19 ela não é pedida no cadastro e é nesse formulário que o médico a informa, então passou a ser **obrigatória**: `required` no select e checagem no servidor (`_falta_especialidade_do_medico` em routes_medico, em `preparo_modelos_novo` e `preparo_modelos_editar`). Vazia ou fora da lista: "Informe a sua especialidade." e nada é salvo.
+- Só vale para médico e quando o campo aparece na tela (secretária não tem o campo).
+- Sobre a caixa "Mostrar exames de todas as especialidades": ela tira o filtro da lista "Tipo de exame" pela especialidade escolhida. Sem especialidade, não fazia nada; agora, com a especialidade obrigatória, sempre tem efeito.
+- Teste: `test_tipo_exame_nao_encontrado.py` (especialidade vazia e inventada recusadas).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção):
@@ -2476,6 +2483,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 5. **Excluir grupo** (ver seção acima)
    - [ ] Criar um grupo de teste e excluir pelo botão "Excluir" em "Meus grupos"
    - [ ] Tentar excluir um grupo com paciente ou agenda: mostra o que ainda existe e não apaga
+6. **Especialidade obrigatória no modelo de preparo** (ver seção acima)
+   - [ ] Como médico, "Novo modelo de preparo" sem especialidade: não deixa salvar
+   - [ ] Com especialidade: salva, e ela aparece em "Meus dados"
 
 ## Como continuar
 

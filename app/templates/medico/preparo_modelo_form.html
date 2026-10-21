@@ -83,7 +83,7 @@
     {% if current_user.tipo == 'medico' %}
     <div class="mb-3">
       <label class="form-label">Sua especialidade</label>
-      <select name="especialidade" id="select-especialidade" class="form-select">
+      <select name="especialidade" id="select-especialidade" class="form-select" required>
         <option value="">Selecione a especialidade...</option>
         {% for e in ESPECIALIDADES %}
         <option value="{{ e }}" {% if current_user.especialidade == e %}selected{% endif %}>{{ e }}</option>
