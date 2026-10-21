@@ -1301,6 +1301,12 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
                 break
         if classificacao:
             break
+    if classificacao in ("sem_sentido", "fora_do_exame"):
+        # Registro para investigar bloqueios estranhos nos logs do Render.
+        current_app.logger.info(
+            "Validador (%s) classificou como %s: pergunta=%r resposta=%r",
+            provedor, classificacao, pergunta_usuario, texto[:300],
+        )
     if classificacao is None:
         # Resposta que não bateu com nenhum marcador esperado (a IA não
         # seguiu a instrução à risca) - mais seguro tratar como "valida" e

@@ -582,8 +582,11 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     )
     if resultado_validacao["classificacao"] == "sem_sentido":
         return MENSAGEM_MENSAGEM_SEM_SENTIDO, None, True
-    if resultado_validacao["classificacao"] == "fora_do_exame":
-        return MENSAGEM_PERGUNTA_FORA_DO_EXAME, None, True
+    # "Fora do exame" não encerra mais sozinho (2026-10-21: a validadora
+    # bloqueou "Que horas tenho que chegar na clínica?" várias vezes): a
+    # pergunta segue para as 2 IAs, e só recebe o aviso de "este chat é só
+    # para o preparo" se elas também não tiverem nada a responder.
+    validador_disse_fora = resultado_validacao["classificacao"] == "fora_do_exame"
 
     resposta_final = None
     origem = None
@@ -627,6 +630,10 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             # ChatMensagem - não faz sentido registrar isso no histórico
             # nem na fila da equipe.
             return MENSAGEM_MENSAGEM_SEM_SENTIDO, None, True
+        if validador_disse_fora and not (resultado_ia and resultado_ia["final"]):
+            # A validadora disse "fora do exame" e as IAs confirmaram (não
+            # tinham nada a responder): aviso, sem ir para a fila da equipe.
+            return MENSAGEM_PERGUNTA_FORA_DO_EXAME, None, True
         if resultado_ia and resultado_ia["final"]:
             origem = "ia_aguardando"
             pergunta_pendente_criada = PerguntaPendente(

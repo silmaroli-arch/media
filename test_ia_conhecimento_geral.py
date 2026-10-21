@@ -73,6 +73,25 @@ with app.app_context():
            "encaminhada" in resposta.lower() and pendente.status == "aguardando_aprovacao")
     checar("... e fica marcada como conhecimento geral", pendente.usou_conhecimento_geral)
 
+    # Validadora disse "fora do exame": não encerra mais sozinha - as 2 IAs
+    # são consultadas; se responderem, a pergunta segue (2026-10-21).
+    from app.whatsapp_conversa import MENSAGEM_PERGUNTA_FORA_DO_EXAME
+    fora = {"classificacao": "fora_do_exame", "chamada": None, "pergunta_corrigida": None}
+    with patch("app.whatsapp_conversa.validar_pergunta", return_value=fora), \
+            patch("app.whatsapp_conversa.responder_com_ia", return_value=resultado) as ia:
+        resposta = processar_mensagem(telefone, "Que horas tenho que chegar na clinica de novo?")
+    checar("Validadora diz 'fora do exame', mas as IAs respondem: a pergunta segue para o médico",
+           ia.called and resposta != MENSAGEM_PERGUNTA_FORA_DO_EXAME and "encaminhada" in resposta.lower())
+    sem_resposta = {"final": None, "falhas": [], "sem_sentido": False, "exige_revisao_medicamento": False,
+                    "por_provedor": {"Claude": None, "ChatGPT": None, "Gemini": None},
+                    "situacao": {"Claude": "nao_sabe", "ChatGPT": "nao_sabe"}}
+    antes = PerguntaPendente.query.count()
+    with patch("app.whatsapp_conversa.validar_pergunta", return_value=fora), \
+            patch("app.whatsapp_conversa.responder_com_ia", return_value=sem_resposta):
+        resposta = processar_mensagem(telefone, "Quem ganha o jogo hoje?")
+    checar("... e se as IAs também não têm o que responder, recebe o aviso, sem ir para a fila",
+           resposta == MENSAGEM_PERGUNTA_FORA_DO_EXAME and PerguntaPendente.query.count() == antes)
+
 medico = app.test_client()
 medico.post("/login", data={"identificador": "medica2@clinicavitoria.com", "senha": "123456"})
 with app.app_context():

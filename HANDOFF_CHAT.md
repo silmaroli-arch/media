@@ -2603,6 +2603,13 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Correção (`ia_preparo.validar_pergunta`): a categoria é a primeira linha que COMEÇA com um marcador (ignorando *, aspas, ponto); prompt reforça "1ª linha só a categoria, nunca explique" e cita "que horas chegar" e "ir de carro/acompanhante" como assuntos da clínica (VALIDA); limite 200 -> 120 tokens.
 - Teste: `test_ia_validador_pergunta.py` (casos com explicação antes/depois).
 
+## Validador: "fora do exame" não bloqueia mais sozinho (2026-10-21, relatado pelo Silvan)
+
+- Mesmo depois da leitura estrita da categoria, a validadora continuou classificando "Que horas tenho que chegar na clinica?" e "Posso ir de caro/" como fora do exame (no WhatsApp real). Causa exata não confirmada (sem chave de IA aqui).
+- Mudança (`whatsapp_conversa._responder_pergunta`): `fora_do_exame` da validadora vira só um indício - a pergunta segue para FAQ e as 2 IAs; o aviso "Este chat é só para dúvidas sobre o preparo" só sai se as IAs também não tiverem resposta (final None), sem criar pendente. `sem_sentido` continua encerrando direto. Custo: mensagens realmente fora do assunto passam a gastar as 2 chamadas das IAs (raras).
+- Log novo (`ia_preparo.validar_pergunta`, nível INFO): quando a validadora diz sem_sentido/fora_do_exame, registra provedor, pergunta e a resposta crua dela - ver nos logs do Render ("Validador (...) classificou como ...") para entender a causa.
+- Teste: `test_ia_conhecimento_geral.py` (2 casos novos).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
