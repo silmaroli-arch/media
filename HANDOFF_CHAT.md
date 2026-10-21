@@ -2483,6 +2483,14 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Agora `routes_grupo._grupo_ativo_id()` lê `empresa_atual()` e `grupo.selecionar` chama `selecionar_clinica()` (que grava `empresa_id`). "Sair do grupo" limpa as duas chaves. Teste em `test_grupo_editar_criar.py`.
 - Para que serve: quem participa de mais de um grupo escolhe com qual está trabalhando (pacientes, exames, agenda e perguntas mostrados são os do grupo selecionado). Com um grupo só, ele já vem selecionado.
 
+## Médicos por preparo (2026-10-21, pedido do Silvan)
+
+- Um mesmo exame, com o mesmo preparo, pode ser feito por mais de um médico. Item de menu novo **"Médicos por preparo"** (`medico.preparos_medicos`, logo abaixo de "Exames & preparo"): lista cada preparo com seus exames e médicos (principal em azul, associados em cinza); o botão "Médicos" abre uma janela com caixas de seleção (o principal fica marcado e travado). Salvar (`preparos_medicos_salvar`) grava os associados em `Exame.medicos_extra` de TODOS os exames que usam aquele preparo.
+- Reaproveita o que já existia: agenda, perguntas e listas do médico já usavam `medicos_extra` (`Exame.medico_pode_atender`).
+- **Regra nova de edição:** `PreparoModelo.pode_ser_editado_por` e `Exame.pode_ser_editado_por` passaram a aceitar também os médicos associados (antes, só quem criou). As listas do médico (Exames & preparo, exames, dropdowns de modelo) usam essa regra, então o associado passa a ver e editar o preparo. Saiu a trava antiga que impedia associar médicos a um exame com dono. Mensagens "Só fulano pode editar" viraram "Só fulano e os médicos associados podem editar".
+- Quem associa: secretária (qualquer preparo do grupo) e médico só nos preparos que ele pode editar. Conta sem grupo: aviso para criar um grupo e convidar colegas.
+- Teste: `test_medicos_por_preparo.py` (13 checks); `test_dono_conteudo_clinico.py` ajustado às mensagens novas.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2515,6 +2523,11 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 **Exames & preparo (modelo de preparo / cadastro de exame)**
 - [ ] Médico não salva sem "Sua especialidade"; com ela, aparece em "Meus dados"
 - [ ] Sem a caixa "Precisa de acompanhante"
+
+**Médicos por preparo**
+- [ ] Menu "Médicos por preparo": lista os preparos com o médico principal
+- [ ] Associar um médico pela janela: ele passa a ver e editar o preparo e a atender (agendar) o exame
+- [ ] Desmarcar: ele deixa de ver o preparo; o principal não sai
 
 **Meu FAQ**
 - [ ] "Adicionar manualmente" (janela) salva; com erro, reabre com o motivo
