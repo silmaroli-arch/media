@@ -2592,16 +2592,16 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 **Área do paciente (autocadastro e Meus dados)** - VALIDADO pelo Silvan em 2026-10-21
 - [x] Sem e-mail, endereço e contato de emergência - validado 2026-10-21
 
-**WhatsApp**
+**WhatsApp** - VALIDADO pelo Silvan em 2026-10-21
 - [x] Identificação com a data de nascimento só em números (ex.: 16111983) - validado 2026-10-21 (no print do Silvan)
-- [ ] Paciente sem exame em preparo: avisa uma vez e a próxima mensagem volta a pedir o CPF (dá para mandar outro CPF) - antes entrava em loop
+- [x] Paciente sem exame em preparo: avisa uma vez e a próxima mensagem volta a pedir o CPF (dá para mandar outro CPF) - antes entrava em loop - validado 2026-10-21
 
 **Painel do dono** - VALIDADO pelo Silvan em 2026-10-21
 - [x] Menu lateral: "Configurações", "Usuários", "Grupos" e "Custo de IA" abrem a aba certa - validado 2026-10-21
 - [x] Anúncios: sem popup (só no sino); com popup (abre ao entrar, só fecha no "Entendi", também no celular e com médico de mais de um grupo) - validado 2026-10-21
 
-**Site público**
-- [ ] /privacidade com a lista nova de dados
+**Site público** - VALIDADO pelo Silvan em 2026-10-21
+- [x] /privacidade com a lista nova de dados - validado 2026-10-21
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos
