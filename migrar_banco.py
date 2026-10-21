@@ -520,6 +520,8 @@ ALTER TABLE notificacoes ADD COLUMN IF NOT EXISTS popup BOOLEAN NOT NULL DEFAULT
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS email VARCHAR(150);
 UPDATE usuarios SET cep = NULL, rua = NULL, numero = NULL, complemento = NULL, bairro = NULL, cidade = NULL, uf = NULL WHERE cep IS NOT NULL OR rua IS NOT NULL OR numero IS NOT NULL OR complemento IS NOT NULL OR bairro IS NOT NULL OR cidade IS NOT NULL OR uf IS NOT NULL;
 UPDATE usuarios SET email = NULL WHERE tipo = 'paciente' AND email IS NOT NULL;
+-- Acompanhante do agendamento (nome e telefone) saiu em 2026-10-21 - mesma fase 1.
+UPDATE agendamentos SET acompanhante_nome = NULL, acompanhante_telefone = NULL WHERE acompanhante_nome IS NOT NULL OR acompanhante_telefone IS NOT NULL;
 UPDATE pacientes SET email = NULL, cep = NULL, rua = NULL, numero = NULL, complemento = NULL, bairro = NULL, cidade = NULL, uf = NULL, contato_emergencia_nome = NULL, contato_emergencia_telefone = NULL WHERE email IS NOT NULL OR cep IS NOT NULL OR rua IS NOT NULL OR numero IS NOT NULL OR complemento IS NOT NULL OR bairro IS NOT NULL OR cidade IS NOT NULL OR uf IS NOT NULL OR contato_emergencia_nome IS NOT NULL OR contato_emergencia_telefone IS NOT NULL;
 """
 

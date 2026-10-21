@@ -907,7 +907,6 @@ def exames_novo():
         descricao = request.form.get("descricao", "").strip()
         preparo_modelo_raw = request.form.get("preparo_modelo_id", "").strip()
         duracao_minutos = request.form.get("duracao_minutos", type=int)
-        precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
 
         # medico_id continua obrigatório no banco (é quem aparece como
         # titular do exame) - se quem está cadastrando é médico, ele mesmo é
@@ -957,7 +956,6 @@ def exames_novo():
             grupo_id=filial.id if filial else None,
             medico_id=medico_id, nome=nome, descricao=descricao,
             preparo_modelo_id=modelo.id if modelo else None, duracao_minutos=duracao_minutos,
-            precisa_acompanhante=precisa_acompanhante,
             # medico_id acima é só um valor técnico/provisório pra passar
             # pela constraint do banco - não foi uma escolha de verdade
             # (nem quando é o próprio médico logado cadastrando, já que
@@ -1036,7 +1034,6 @@ def exames_editar(exame_id):
         # tela "Exames por filial" (medico.exames_por_filial_atualizar),
         # que deixa claro que é um valor por local, não do cadastro do
         # exame em si.
-        exame.precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
         # Reatribuir o médico RESPONSÁVEL principal saiu desta tela (fica
         # para uma funcionalidade própria, futura) - por ora só os médicos
         # EXTRAS continuam editáveis abaixo.
@@ -1292,7 +1289,6 @@ def exames_por_filial_atualizar(exame_id):
         nome_origem = origem.nome
         descricao_origem = origem.descricao
         duracao_origem = origem.duracao_minutos
-        acompanhante_origem = origem.precisa_acompanhante
         # Fatia 5: `origem` e `exame` agora sempre vivem no MESMO Grupo (não
         # existe mais outra filial pra abrigar cada um) - copiar o nome de
         # `origem` para `exame` sem removê-lo violaria a constraint única
@@ -1308,7 +1304,6 @@ def exames_por_filial_atualizar(exame_id):
         exame.nome = nome_origem
         exame.descricao = descricao_origem
         exame.duracao_minutos = duracao_origem
-        exame.precisa_acompanhante = acompanhante_origem
         # O modelo de preparo era do exame antigo - com a associação
         # apontando pra outro exame, não vale mais; fica pra revisar.
         exame.preparo_modelo_id = None
@@ -1760,7 +1755,6 @@ def preparo_modelos_novo():
         # Campos do Exame (ver models.py) preenchidos direto nesta tela -
         # antes viviam só no cadastro de exame separado (exames_novo).
         duracao_minutos = request.form.get("duracao_minutos", type=int)
-        precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
 
         if not nome or not instrucoes:
             flash("Nome do modelo e instruções são obrigatórios.", "danger")
@@ -1841,7 +1835,6 @@ def preparo_modelos_novo():
             medico_id=medico_id, nome=nome, descricao="",
             preparo_modelo_id=modelo.id,
             duracao_minutos=duracao_minutos,
-            precisa_acompanhante=precisa_acompanhante,
             medico_confirmado=medico_confirmado,
             associado=True,
             criado_por_id=current_user.id,
@@ -1947,7 +1940,6 @@ def preparo_modelos_editar(modelo_id):
             return _rerender_editar()
 
         duracao_minutos = request.form.get("duracao_minutos", type=int)
-        precisa_acompanhante = request.form.get("precisa_acompanhante") == "on"
         medico_id = None
         medico_confirmado = True
 
@@ -2002,7 +1994,6 @@ def preparo_modelos_editar(modelo_id):
             if exame_vinculado:
                 exame_vinculado.nome = nome
                 exame_vinculado.duracao_minutos = duracao_minutos
-                exame_vinculado.precisa_acompanhante = precisa_acompanhante
                 exame_vinculado.medico_id = medico_id
                 exame_vinculado.medico_confirmado = medico_confirmado
                 exame_vinculado.associado = True
@@ -2012,7 +2003,6 @@ def preparo_modelos_editar(modelo_id):
                     medico_id=medico_id, nome=nome, descricao="",
                     preparo_modelo_id=modelo.id,
                     duracao_minutos=duracao_minutos,
-                    precisa_acompanhante=precisa_acompanhante,
                     medico_confirmado=medico_confirmado, associado=True,
                     criado_por_id=current_user.id,
                 ))
@@ -2342,12 +2332,6 @@ def agenda_novo():
         exame_id = request.form.get("exame_id", type=int)
         data_hora_str = request.form.get("data_hora")
         observacoes = request.form.get("observacoes", "").strip()
-        acompanhante_nome = request.form.get("acompanhante_nome", "").strip()
-        acompanhante_telefone = request.form.get("acompanhante_telefone", "").strip()
-
-        if telefone_incompleto(acompanhante_telefone):
-            flash("Telefone do acompanhante incompleto — digite o DDD e o número completos.", "danger")
-            return redirect(url_for("medico.agenda_novo", filial_id=filial_id))
 
         # Fatia 6: sem Grupo (conta solo), `filiais_disponiveis` é vazia -
         # não há filial pra escolher, e não é mais um erro (era antes).
@@ -2400,14 +2384,6 @@ def agenda_novo():
             flash("Data/hora inválida.", "danger")
             return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
 
-        if exame.precisa_acompanhante and not acompanhante_nome:
-            flash(
-                f"O exame '{exame.nome}' exige acompanhante — informe o nome de quem vai acompanhar "
-                "o paciente no dia (pode ser alterado depois, se necessário).",
-                "danger",
-            )
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
-
         agendamento = Agendamento(
             grupo_id=filial.id if filial else None,
             # Fatia 6: sem Grupo (conta solo), o agendamento fica escopado
@@ -2418,8 +2394,6 @@ def agenda_novo():
             medico_id=medico_atende_id,
             data_hora=data_hora,
             observacoes=observacoes,
-            acompanhante_nome=acompanhante_nome or None,
-            acompanhante_telefone=acompanhante_telefone or None,
         )
         db.session.add(agendamento)
         db.session.commit()

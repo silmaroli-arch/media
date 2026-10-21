@@ -1345,7 +1345,7 @@ login("dono@plataforma.com", "123456")
 client.post(f"/dono/grupos/{grupo_sp_id}/desbloquear", follow_redirects=True)
 client.get("/logout")
 
-# ---------- Novas funcionalidades: duração/preço/acompanhante do exame,
+# ---------- Novas funcionalidades: duração/preço do exame,
 # horário do médico, otimizador de agenda, solicitação de agendamento pelo
 # paciente, atendimento (histórico de chat + encerramento), resultado em
 # PDF ----------
@@ -1362,17 +1362,16 @@ with app.app_context():
 
 login("secretaria@clinicavitoria.com", "123456")
 
-# --- Duração e acompanhante do exame (o cadastro/edição do exame em si
+# --- Duração do exame (o cadastro/edição do exame em si
 # não toca mais no preço - preço é só via "Exames por filial", ver abaixo) ---
 r = client.post(f"/equipe/exames/{colonoscopia_id}/editar", data={
     "nome": "Colonoscopia",
     "descricao": "Exame do intestino grosso",
     "duracao_minutos": "45",
-    "precisa_acompanhante": "on",
     "preparo_modelo_id": str(colonoscopia.preparo_modelo_id),
     "medico_id": str(medico_carlos_id),
 }, follow_redirects=True)
-checar("Exame atualizado com duração/acompanhante", "atualizado" in r.get_data(as_text=True).lower())
+checar("Exame atualizado com duração", "atualizado" in r.get_data(as_text=True).lower())
 
 # Associação médico/exame é atualizada pela tela de associações (Exames por filial).
 r = client.post(f"/equipe/exames/por-filial/{colonoscopia_id}/atualizar", data={
@@ -1383,19 +1382,12 @@ checar("Associação atualizada pela tela de associações", r.status_code == 20
 with app.app_context():
     colonoscopia_checar = Exame.query.get(colonoscopia_id)
     checar("Duração do exame salva (45 minutos)", colonoscopia_checar.duracao_minutos == 45)
-    checar("Flag de acompanhante obrigatório salva", colonoscopia_checar.precisa_acompanhante is True)
 
-# Agendar sem informar acompanhante deve ser rejeitado
-r = client.post("/equipe/agenda/novo", data={
-    "filial_id": str(clinica_vitoria_id),
-    "paciente_id": str(joao_id),
-    "exame_id": str(colonoscopia_id),
-    "data_hora": "2026-09-15T08:00",
-    "observacoes": "",
-    "acompanhante_nome": "",
-}, follow_redirects=True)
-checar("Agendamento sem acompanhante é rejeitado quando o exame exige", "acompanhante" in r.get_data(as_text=True).lower())
-
+# Acompanhante (nome/telefone e a marca "exige acompanhante") saiu em
+# 2026-10-21 - agendar não pede nem guarda mais esse dado.
+html_agenda = client.get(f"/equipe/agenda/novo?filial_id={clinica_vitoria_id}").get_data(as_text=True)
+checar("Novo agendamento não pede acompanhante", 'name="acompanhante_nome"' not in html_agenda
+       and 'name="acompanhante_telefone"' not in html_agenda)
 r = client.post("/equipe/agenda/novo", data={
     "filial_id": str(clinica_vitoria_id),
     "paciente_id": str(joao_id),
@@ -1404,14 +1396,14 @@ r = client.post("/equipe/agenda/novo", data={
     "observacoes": "",
     "acompanhante_nome": "Maria (esposa)",
 }, follow_redirects=True)
-checar("Agendamento com acompanhante informado é aceito", "sucesso" in r.get_data(as_text=True).lower())
+checar("Agendamento é aceito sem acompanhante", "sucesso" in r.get_data(as_text=True).lower())
 
 with app.app_context():
     agendamento_colono = Agendamento.query.filter_by(
         paciente_id=joao_id, exame_id=colonoscopia_id, grupo_id=clinica_vitoria_id
     ).order_by(Agendamento.id.desc()).first()
     agendamento_colono_id = agendamento_colono.id
-    checar("Nome do acompanhante foi salvo no agendamento", agendamento_colono.acompanhante_nome == "Maria (esposa)")
+    checar("Acompanhante enviado no POST não é guardado", not hasattr(agendamento_colono, "acompanhante_nome"))
 
 # --- Paciente deixa uma pergunta no chat, para aparecer no atendimento ---
 client.get("/logout")

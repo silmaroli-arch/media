@@ -121,4 +121,18 @@ checar("migrar_banco.py apaga o e-mail das contas de paciente",
 checar("migrar_banco.py apaga e-mail, endereço e contato de emergência dos pacientes",
        "UPDATE pacientes SET email = NULL" in sql and "contato_emergencia_telefone = NULL" in sql)
 
+# ---------- Acompanhante (2026-10-21): saiu do agendamento e do exame ----------
+from app.models import Agendamento
+checar("Agendamento não tem mais nome/telefone do acompanhante",
+       not hasattr(Agendamento, "acompanhante_nome") and not hasattr(Agendamento, "acompanhante_telefone"))
+checar("migrar_banco.py apaga o acompanhante dos agendamentos",
+       "UPDATE agendamentos SET acompanhante_nome = NULL, acompanhante_telefone = NULL" in sql)
+medico = app.test_client()
+medico.post("/login", data={"identificador": "medico@clinicavitoria.com", "senha": "123456"})
+medico.post("/equipe/clinica", data={"clinica_id": str(vitoria_id)}, follow_redirects=True)
+html = medico.get("/equipe/preparo-modelos/novo", follow_redirects=True).get_data(as_text=True)
+checar("Modelo de preparo não tem mais 'Precisa de acompanhante'", 'name="precisa_acompanhante"' not in html)
+html = medico.get("/equipe/agenda/novo", follow_redirects=True).get_data(as_text=True)
+checar("Novo agendamento não pede acompanhante", 'name="acompanhante_nome"' not in html)
+
 print("\nTodos os testes de minimização (LGPD) passaram.")

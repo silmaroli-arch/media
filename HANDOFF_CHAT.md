@@ -2408,6 +2408,7 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Validado num PostgreSQL de verdade: banco criado com o código antigo e dados preenchidos -> migração nova -> 0 registros com esses dados, e-mail da equipe intacto, idempotente (2ª execução ok), app novo e app antigo funcionando no banco migrado.
 - Removidos: `cep_incompleto` (models), `_preencher_endereco_emergencia` (routes_medico), JS de CEP/contato de emergência nas telas, `test_autocadastro_paciente_endereco.py`. Novo: `test_lgpd_minimizacao.py` (22 checks). Ajustados: test_smoke, test_meus_dados, test_meus_dados_paciente, test_paciente_da_empresa, test_grupo_agendamento, test_cadastro_global_importar_cpf, seed.py (pacientes sem e-mail). Suíte 82/82.
 - Atenção: os backups automáticos do Render ainda guardam esses dados até expirarem pelo prazo de retenção do plano.
+- **Acompanhante (2026-10-21, pedido do Silvan):** saíram o nome e o telefone do acompanhante do "Novo agendamento" (dado de terceiro, sem uso) e a caixa "Precisa de acompanhante" do modelo de preparo e do cadastro de exame (só servia para exigir esse preenchimento). `Agendamento.acompanhante_nome/telefone` saíram do modelo e `migrar_banco.py` apaga os valores (fase 1, mesmo esquema). `Exame.precisa_acompanhante` fica no modelo SEM USO, porque a coluna é NOT NULL e, num banco criado pelo `db.create_all()`, não tem valor padrão no banco. As perguntas sobre acompanhante do FAQ do MedIA continuam (são orientação ao paciente). Fase 2 inclui `agendamentos.acompanhante_nome/telefone`.
 - Criar conta: saiu também o aviso "Depois de criar sua conta, você cadastra seu(s) local(is) de atendimento em 'Meus Locais de Atendimento'". Ele ficava logo abaixo do endereço e apontava para um menu que já não existe (virou "Grupos de trabalho").
 
 ## Anúncio do dono como popup (2026-10-20, pedido do Silvan)
@@ -2486,6 +2487,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 6. **Especialidade obrigatória no modelo de preparo** (ver seção acima)
    - [ ] Como médico, "Novo modelo de preparo" sem especialidade: não deixa salvar
    - [ ] Com especialidade: salva, e ela aparece em "Meus dados"
+7. **Acompanhante removido** (ver seção da LGPD)
+   - [ ] "Novo agendamento" sem os campos de acompanhante; agendar um exame que antes exigia acompanhante funciona
+   - [ ] Modelo de preparo e cadastro de exame sem a caixa "Precisa de acompanhante"
 
 ## Como continuar
 

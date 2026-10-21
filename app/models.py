@@ -1094,8 +1094,9 @@ class Exame(db.Model):
     # Quanto tempo (em minutos) esse exame costuma levar — informativo.
     duracao_minutos = db.Column(db.Integer)
 
-    # Se marcado, ao agendar esse exame o sistema exige/permite indicar
-    # quem vai acompanhar o paciente no dia (ver Agendamento.acompanhante_nome).
+    # SEM USO desde 2026-10-21 (pedido do Silvan): servia só para exigir o
+    # acompanhante no agendamento, que saiu. Fica no modelo porque a coluna
+    # é NOT NULL no banco - sem ela aqui, criar exame quebraria.
     precisa_acompanhante = db.Column(db.Boolean, nullable=False, default=False)
 
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
@@ -1572,11 +1573,9 @@ class Agendamento(db.Model):
     data_hora = db.Column(db.DateTime, nullable=False)
     observacoes = db.Column(db.Text)
 
-    # Quem vai acompanhar o paciente no dia do exame — só usado quando
-    # Exame.precisa_acompanhante é True. Pode ser preenchido/alterado tanto
-    # no momento do agendamento quanto no próprio dia do exame.
-    acompanhante_nome = db.Column(db.String(150))
-    acompanhante_telefone = db.Column(db.String(30))
+    # Nome e telefone do acompanhante saíram em 2026-10-21 (pedido do
+    # Silvan): dado de terceiro que o sistema não usava (LGPD).
+    # migrar_banco.py apaga os valores já salvos.
 
     # Continuidade/encerramento do atendimento pelo médico: observações da
     # consulta (reaproveitáveis no histórico do paciente em atendimentos

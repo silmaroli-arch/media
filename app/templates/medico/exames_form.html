@@ -57,12 +57,6 @@
         <input type="number" min="1" name="duracao_minutos" class="form-control" value="{{ exame.duracao_minutos if exame and exame.duracao_minutos else '' }}">
         <div class="form-text">Usada pelo otimizador de agenda para calcular horários disponíveis.</div>
       </div>
-      <div class="col-md-12">
-        <div class="form-check">
-          <input type="checkbox" name="precisa_acompanhante" id="precisa_acompanhante" class="form-check-input" {% if exame and exame.precisa_acompanhante %}checked{% endif %}>
-          <label class="form-check-label" for="precisa_acompanhante">Este exame exige acompanhante no dia</label>
-        </div>
-      </div>
     </div>
     <div class="mb-3">
       <label class="form-label">Modelo de preparo</label>
