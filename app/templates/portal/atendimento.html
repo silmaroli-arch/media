@@ -88,6 +88,12 @@
   <div class="campo"><span class="rotulo">{{ rotulo }}:</span> {{ valor }}</div>
 {% endmacro %}
 
+{# Sugestão com o botão "Usar", que copia o texto para o rascunho final
+   (pedido do Silvan, 2026-10-21 - ver o script no fim da página). #}
+{% macro sugestao(rotulo, valor) %}
+  <div class="campo"><span class="rotulo">{{ rotulo }}:</span> <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ valor }}" title="Copiar esta sugestão para o rascunho final">Usar</button> {{ valor }}</div>
+{% endmacro %}
+
 {# FAQ do MedIA (base compartilhada) no portal - mesmo conteúdo que
    medico/perguntas.html já mostrava (pedido do Silvan, 2026-10-20). Só
    aparece quando a base encontrou algo; sem resposta da base, não mostra
@@ -104,7 +110,7 @@
       {% endif %}
     </div>
     {% endif %}
-    <div class="campo"><span class="rotulo"><i class="bi bi-journal-medical"></i> Sugestão do FAQ do MedIA:</span> {{ p.resposta_bruta_base }}
+    <div class="campo"><span class="rotulo"><i class="bi bi-journal-medical"></i> Sugestão do FAQ do MedIA:</span> <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.resposta_bruta_base }}" title="Copiar esta sugestão para o rascunho final">Usar</button> {{ p.resposta_bruta_base }}
       {% if p.base_item and (p.base_item.fonte_nome or p.base_item.fonte_url) %}
       <div class="small text-muted">Fonte: {% if p.base_item.fonte_url %}<a href="{{ p.base_item.fonte_url }}" target="_blank" rel="noopener">{{ p.base_item.fonte_nome or p.base_item.fonte_url }}</a>{% else %}{{ p.base_item.fonte_nome }}{% endif %}</div>
       {% endif %}
@@ -117,7 +123,7 @@
    ias_situacao gravada, não mostram nada aqui. #}
 {% macro situacao_ias(p) %}
   {% for nome, estado, texto in p.situacao_ias %}
-    {% if estado == "respondeu" %}{{ campo("Sugestão do " ~ nome, texto) }}
+    {% if estado == "respondeu" %}{{ sugestao("Sugestão do " ~ nome, texto) }}
     {% else %}<div class="campo"><span class="rotulo">{{ nome }}:</span> <em class="text-muted">{{ texto }}</em></div>{% endif %}
   {% endfor %}
 {% endmacro %}
@@ -147,9 +153,9 @@
             {% if p.situacao_ias %}
               {{ situacao_ias(p) }}
             {% else %}
-            {% if p.resposta_bruta_gemini %}{{ campo("Sugestão do Gemini", p.resposta_bruta_gemini) }}{% endif %}
-            {% if p.resposta_bruta_chatgpt %}{{ campo("Sugestão do ChatGPT", p.resposta_bruta_chatgpt) }}{% endif %}
-            {% if p.resposta_bruta_claude %}{{ campo("Sugestão do Claude", p.resposta_bruta_claude) }}{% endif %}
+            {% if p.resposta_bruta_gemini %}{{ sugestao("Sugestão do Gemini", p.resposta_bruta_gemini) }}{% endif %}
+            {% if p.resposta_bruta_chatgpt %}{{ sugestao("Sugestão do ChatGPT", p.resposta_bruta_chatgpt) }}{% endif %}
+            {% if p.resposta_bruta_claude %}{{ sugestao("Sugestão do Claude", p.resposta_bruta_claude) }}{% endif %}
             {% endif %}
             {{ faq_medIA(p) }}
             <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
@@ -227,5 +233,18 @@
     }
   });
 })();
+</script>
+<script>
+  // "Usar" ao lado de cada sugestão: copia o texto para o rascunho final
+  // da mesma pergunta (pedido do Silvan, 2026-10-21).
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('.usar-sugestao');
+    if (!b) return;
+    var caixa = b.closest('.modal-content, .accordion-body');
+    var rascunho = caixa && caixa.querySelector('textarea[name=resposta]');
+    if (!rascunho) return;
+    rascunho.value = b.getAttribute('data-texto');
+    rascunho.focus();
+  });
 </script>
 {% endblock %}

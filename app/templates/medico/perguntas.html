@@ -95,25 +95,25 @@
                 <div class="row g-3 mb-2">
                   {% if p.resposta_bruta_gemini %}
                   <div class="{{ col }}">
-                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do Gemini</label>
+                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do Gemini <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.resposta_bruta_gemini }}" title="Copiar esta sugestão para o rascunho final">Usar</button></label>
                     <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_gemini }}</div>
                   </div>
                   {% endif %}
                   {% if p.resposta_bruta_chatgpt %}
                   <div class="{{ col }}">
-                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do ChatGPT</label>
+                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do ChatGPT <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.resposta_bruta_chatgpt }}" title="Copiar esta sugestão para o rascunho final">Usar</button></label>
                     <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_chatgpt }}</div>
                   </div>
                   {% endif %}
                   {% if p.resposta_bruta_claude %}
                   <div class="{{ col }}">
-                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do Claude</label>
+                    <label class="form-label small text-muted mb-1 fw-semibold">Resposta do Claude <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.resposta_bruta_claude }}" title="Copiar esta sugestão para o rascunho final">Usar</button></label>
                     <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_claude }}</div>
                   </div>
                   {% endif %}
                   {% if p.resposta_bruta_base %}
                   <div class="{{ col }}">
-                    <label class="form-label small text-muted mb-1 fw-semibold"><i class="bi bi-journal-medical"></i> FAQ do MedIA</label>
+                    <label class="form-label small text-muted mb-1 fw-semibold"><i class="bi bi-journal-medical"></i> FAQ do MedIA <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.resposta_bruta_base }}" title="Copiar esta sugestão para o rascunho final">Usar</button></label>
                     <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.resposta_bruta_base }}
 {% if p.base_item and (p.base_item.fonte_nome or p.base_item.fonte_url) %}<div class="text-muted mt-1" style="white-space: normal;">Fonte: {% if p.base_item.fonte_url %}<a href="{{ p.base_item.fonte_url }}" target="_blank" rel="noopener">{{ p.base_item.fonte_nome or p.base_item.fonte_url }}</a>{% else %}{{ p.base_item.fonte_nome }}{% endif %}</div>{% endif %}</div>
                   </div>
@@ -184,4 +184,17 @@
     {% endfor %}
   </div>
 {% endif %}
+<script>
+  // "Usar" ao lado de cada sugestão: copia o texto para o rascunho final
+  // da mesma pergunta (pedido do Silvan, 2026-10-21).
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('.usar-sugestao');
+    if (!b) return;
+    var caixa = b.closest('.modal-content, .accordion-body');
+    var rascunho = caixa && caixa.querySelector('textarea[name=resposta]');
+    if (!rascunho) return;
+    rascunho.value = b.getAttribute('data-texto');
+    rascunho.focus();
+  });
+</script>
 {% endblock %}

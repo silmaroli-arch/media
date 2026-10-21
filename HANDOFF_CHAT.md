@@ -2583,6 +2583,10 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Botão "Apagar pergunta" (com confirmação) na janela da pergunta do Portal de atendimento e em Perguntas pendentes.
 - Teste: `test_faq_pergunta_corrigida.py` (bloco no fim).
 
+## Botão "Usar" nas sugestões (2026-10-21, pedido do Silvan)
+
+- Portal de atendimento (janela da pergunta) e Perguntas pendentes: cada sugestão (Claude, ChatGPT, Gemini, FAQ do MedIA) tem o botão "Usar", que copia o texto dela para o "Rascunho final" da mesma pergunta; o médico ainda pode editar antes de aprovar. Macro `sugestao` em `portal/atendimento.html`; script no fim das duas telas (classe `usar-sugestao`, texto em `data-texto`). Conferido no navegador (inclusive texto com aspas e <>).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2663,6 +2667,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Mostra as 2 IAs: a que respondeu com a sugestão e a que não respondeu com o motivo (não soube / erro / não configurada)
 - [ ] A resposta que chega ao paciente cita a pergunta corrigida; as IAs respondem à pergunta corrigida
 - [ ] "Apagar pergunta" (com confirmação) tira a pergunta da fila sem responder ao paciente nem gravar no FAQ; também em Perguntas pendentes
+- [ ] Botão "Usar" ao lado de cada sugestão (Claude, ChatGPT, FAQ do MedIA) copia o texto para o rascunho final; também em Perguntas pendentes
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

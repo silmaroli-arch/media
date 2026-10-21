@@ -82,6 +82,8 @@ medico.post("/equipe/clinica", data={"clinica_id": str(vitoria_id)}, follow_redi
 html = medico.get("/equipe/portal").get_data(as_text=True)
 checar("Portal mostra a pergunta do paciente e a corrigida pela IA",
        "Posso ir de carrp?" in html and "Pergunta corrigida pela IA:" in html and "Posso ir de carro?" in html)
+checar("Botão 'Usar' ao lado da sugestão, com o texto dela (2026-10-21)",
+       'class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="Não dirija."' in html)
 checar("... e mostra as 2 IAs: a resposta do Claude e o motivo do ChatGPT",
        "Sugestão do Claude:" in html and "ChatGPT:" in html and "não soube responder com base no preparo" in html)
 with patch("app.whatsapp_envio.enviar_mensagem_whatsapp") as envio:
