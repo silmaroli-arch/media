@@ -1938,11 +1938,17 @@ class PerguntaPendente(db.Model):
             nome, _, estado = parte.partition("=")
             if not nome:
                 continue
-            if estado == "respondeu" and respostas.get(nome):
+            if estado.startswith("respondeu") and respostas.get(nome):
                 itens.append((nome, estado, respostas[nome]))
             else:
                 itens.append((nome, estado, self.TEXTO_SITUACAO_IA.get(estado, "não respondeu")))
         return itens
+
+    @property
+    def usou_conhecimento_geral(self):
+        """Alguma IA respondeu com conhecimento geral, fora do preparo
+        cadastrado (ver app.ia_preparo.MARCADOR_CONHECIMENTO_GERAL)."""
+        return "=respondeu_geral" in (self.ias_situacao or "")
     # "Terceira IA" (base de conhecimento compartilhada, ver
     # BaseConhecimentoItem e app.ia_preparo.responder_com_ia): a resposta do
     # item da base que foi consultado nesta pergunta (None quando a base

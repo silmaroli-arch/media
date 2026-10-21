@@ -65,7 +65,12 @@
               {% if p.pergunta_faq and p.pergunta_faq != p.pergunta %}
               <p class="small mb-2"><strong>Pergunta corrigida pela IA:</strong> {{ p.pergunta_faq }}</p>
               {% endif %}
-              {% for nome, estado, texto in p.situacao_ias if estado != "respondeu" %}
+              {% if p.usou_conhecimento_geral %}
+              <div class="alert alert-warning py-2 small mb-2">
+                <i class="bi bi-lightbulb"></i> Resposta com <strong>conhecimento geral</strong> da IA - não está no preparo cadastrado. Revise e ajuste ao que vale na sua clínica.
+              </div>
+              {% endif %}
+              {% for nome, estado, texto in p.situacao_ias if not estado.startswith("respondeu") %}
               <p class="small text-muted mb-2"><strong>{{ nome }}:</strong> <em>{{ texto }}</em></p>
               {% endfor %}
               {% if p.ias_com_erro %}

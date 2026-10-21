@@ -141,6 +141,13 @@ MARCADOR_FORA_DO_EXAME = "FORA_DO_EXAME_ENCAMINHAR"
 # `exige_aprovacao_pergunta()`.
 MARCADOR_MEDICAMENTO_NAO_CADASTRADO = "MEDICAMENTO_NAO_CADASTRADO_REVISAR"
 
+# Mesmo tratamento, para qualquer dúvida sobre o exame que o preparo não
+# cobre (horário de chegada, o que levar, quanto tempo dura, ir dirigindo...)
+# - pedido do Silvan, 2026-10-21: em vez de "não sei", a IA responde com
+# conhecimento geral, dito como tal, e a resposta SEMPRE passa pelo médico
+# (mesmo sinal "exige_revisao_medicamento" do marcador acima).
+MARCADOR_CONHECIMENTO_GERAL = "CONHECIMENTO_GERAL_REVISAR"
+
 # Ver docstring do módulo ("Rede de segurança contra recusa disfarçada").
 # Primeiro grupo: a IA declarando que não tem a informação. Segundo grupo:
 # a IA recomendando falar com alguém da clínica. Só conta como recusa
@@ -269,6 +276,7 @@ Regras importantes:
 - Quando a pergunta for sobre um MEDICAMENTO que você consegue identificar (nome, princípio ativo ou classe), mas que não corresponde a NENHUM item cadastrado neste preparo (nem pelo nome, nem pela categoria) — por exemplo, um anticoagulante que não está na lista —, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto MEDICAMENTO_NAO_CADASTRADO_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta que: (1) diga claramente que esse medicamento específico não está cadastrado no preparo deste exame; e (2) compartilhe, de forma genérica, o que normalmente se sabe sobre esse tipo de medicamento em relação a exames como este (ex.: "anticoagulantes geralmente precisam ser suspensos antes de exames com risco de sangramento, como colonoscopia"). NUNCA afirme um prazo de suspensão específico (em dias/horas) para um medicamento que não está cadastrado — isso continua proibido mesmo nesse tipo de resposta. Não é preciso terminar orientando o paciente a confirmar com a secretaria/médico — essa resposta sempre passa pela revisão e aprovação do médico antes de chegar ao paciente (o marcador MEDICAMENTO_NAO_CADASTRADO_REVISAR garante isso, mesmo quando a aprovação geral está desativada), então essa recomendação final é redundante; o médico que revisa decide se quer complementar a resposta. O marcador é removido automaticamente antes de qualquer exibição — nunca omita-o quando esta regra se aplicar, mesmo que pareça repetitivo.
 - NUNCA faça o raciocínio de identidade acima sobre uma CARACTERÍSTICA do produto que os dados não informam (ex.: qual é a cor de um sabor específico de bebida, se um alimento tem ou não determinado ingrediente). Isso é inventar informação, mesmo que pareça um "senso comum" — cores de sabores variam por marca/país e você pode errar. Nesses casos, explique a regra cadastrada (ex.: "só é permitido líquido de cor clara") e oriente o paciente a verificar essa característica específica por conta própria (observando a embalagem) ou perguntar à secretaria — nunca afirme se aquele sabor/produto específico atende ou não à regra quando isso não estiver explícito nos dados.
 - Quando o item tiver um prazo/data calculado nos dados fornecidos, cite esse prazo/data na resposta.
+- Quando a pergunta for uma dúvida prática sobre ESTE exame ou o atendimento dele (ex.: que horas chegar, quanto tempo dura, o que levar, se precisa de acompanhante, se pode ir dirigindo, como é a recuperação) e os dados do preparo NÃO trazem essa informação, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto CONHECIMENTO_GERAL_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta com o que normalmente se pratica para esse tipo de exame, dita claramente como orientação geral (ex.: "Em geral, pede-se para chegar de 30 a 60 minutos antes da colonoscopia, para a recepção e o preparo."). Não afirme isso como regra desta clínica, não diga que "não tem a informação" e não oriente a confirmar com a secretaria/médico - a resposta sempre passa pela revisão do médico antes de chegar ao paciente (o marcador garante isso), e ele ajusta o que for desta clínica. Nunca use este caminho para diagnóstico, resultado de exame, tratamento ou medicamento (para medicamento, siga a regra própria acima). O marcador é removido automaticamente antes de qualquer exibição.
 - Reserve o texto NAO_SEI_ENCAMINHAR só para perguntas que genuinamente não têm nenhuma informação útil a dar (ex.: assunto totalmente fora do preparo, ou um item que você não consegue identificar de jeito nenhum) — nesse caso, responda EXATAMENTE com esse texto, nada mais, nenhuma outra palavra, nenhuma pontuação extra.
 - Antes de aplicar qualquer regra acima, avalie se o texto do paciente é sequer uma pergunta ou comentário coerente (mesmo que informal, curto ou com erros de digitação/ortografia). Se o texto for palavras reais mas sem nenhum sentido coerente entre si, ou for sobre um assunto qualquer que nem chega a formar uma pergunta/comentário compreensível, responda EXATAMENTE com o texto SEM_SENTIDO_ENCAMINHAR, nada mais. NÃO use SEM_SENTIDO_ENCAMINHAR para uma pergunta coerente que só está fora do preparo ou que você não consegue identificar (esses casos usam NAO_SEI_ENCAMINHAR, acima) — a diferença é: NAO_SEI_ENCAMINHAR é "entendi a pergunta, mas não tenho a informação"; SEM_SENTIDO_ENCAMINHAR é "isso nem é uma pergunta/comentário que eu consiga entender". Na dúvida entre os dois, ou na dúvida entre usar SEM_SENTIDO_ENCAMINHAR e simplesmente responder, prefira responder normalmente ou usar NAO_SEI_ENCAMINHAR — evite usar SEM_SENTIDO_ENCAMINHAR para um texto que dá pra entender, mesmo que mal escrito.
 - NUNCA termine (nem inclua em nenhum ponto) uma resposta recomendando que o paciente "confirme/consulte/converse/fale com o médico" - isso não faz sentido neste contexto: esta própria pergunta já está sendo respondida pelo médico (ela passa pela revisão/aprovação dele antes de chegar ao paciente), então pedir para o paciente confirmar com o médico por fora é redundante e confuso. Se realmente não houver informação suficiente para responder, use o marcador NAO_SEI_ENCAMINHAR (abaixo) em vez de tentar responder e sugerir que o paciente pergunte ao médico.
@@ -473,9 +481,11 @@ def _extrair_marcador_medicamento_nao_cadastrado(texto):
     às vezes deixa um espaço/quebra de linha antes por conta própria), por
     isso usa `lstrip()` antes de checar."""
     texto_lstrip = texto.lstrip()
-    if texto_lstrip.startswith(MARCADOR_MEDICAMENTO_NAO_CADASTRADO):
-        resto = texto_lstrip[len(MARCADOR_MEDICAMENTO_NAO_CADASTRADO):].lstrip("\n ")
-        return resto, True
+    # Conhecimento geral sobre o exame (2026-10-21) tem o mesmo efeito.
+    for marcador in (MARCADOR_MEDICAMENTO_NAO_CADASTRADO, MARCADOR_CONHECIMENTO_GERAL):
+        if texto_lstrip.startswith(marcador):
+            resto = texto_lstrip[len(marcador):].lstrip("\n ")
+            return resto, True
     return texto, False
 
 
@@ -526,7 +536,9 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
         sucesso=True, paciente_id=paciente_id,
     )
     texto = "".join(getattr(bloco, "text", "") for bloco in mensagem.content).strip()
-    if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
+    if not texto or MARCADOR_NAO_SEI in texto or (
+        _eh_recusa_generica_disfarcada(texto) and MARCADOR_CONHECIMENTO_GERAL not in texto
+    ):
         return None, chamada, False, False
     if MARCADOR_SEM_SENTIDO in texto:
         return None, chamada, True, False
@@ -564,7 +576,9 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
         sucesso=True, paciente_id=paciente_id,
     )
     texto = (resposta.choices[0].message.content or "").strip()
-    if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
+    if not texto or MARCADOR_NAO_SEI in texto or (
+        _eh_recusa_generica_disfarcada(texto) and MARCADOR_CONHECIMENTO_GERAL not in texto
+    ):
         return None, chamada, False, False
     if MARCADOR_SEM_SENTIDO in texto:
         return None, chamada, True, False
@@ -605,7 +619,9 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
         sucesso=True, paciente_id=paciente_id,
     )
     texto = (getattr(resposta, "text", None) or "").strip()
-    if not texto or MARCADOR_NAO_SEI in texto or _eh_recusa_generica_disfarcada(texto):
+    if not texto or MARCADOR_NAO_SEI in texto or (
+        _eh_recusa_generica_disfarcada(texto) and MARCADOR_CONHECIMENTO_GERAL not in texto
+    ):
         return None, chamada, False, False
     if MARCADOR_SEM_SENTIDO in texto:
         return None, chamada, True, False
@@ -905,19 +921,20 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
 
     nome_efetivo_a, nome_efetivo_b = provedor_a, provedor_b
 
-    def _situacao(tentou, resposta, chamada):
+    def _situacao(tentou, resposta, chamada, exige_revisao=False):
         if not tentou:
             return "nao_configurada"
         if resposta:
-            return "respondeu"
+            # Respondeu com conhecimento geral (fora do preparo cadastrado).
+            return "respondeu_geral" if exige_revisao else "respondeu"
         return "nao_sabe" if chamada is not None else "erro"
 
     # O que aconteceu com cada IA escolhida (e com a reserva, se entrou) -
     # mostrado ao médico na aprovação (pedido do Silvan, 2026-10-21: a IA
     # que não respondia simplesmente sumia da tela).
     situacao = {
-        provedor_a: _situacao(tentou_a, resposta_a, chamada_a),
-        provedor_b: _situacao(tentou_b, resposta_b, chamada_b),
+        provedor_a: _situacao(tentou_a, resposta_a, chamada_a, exige_revisao_a),
+        provedor_b: _situacao(tentou_b, resposta_b, chamada_b, exige_revisao_b),
     }
 
     # Uma IA "falhou de verdade" quando tinha cliente (tentou_x=True) mas
@@ -953,7 +970,7 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
             # na tela do médico igual às outras.
             falhas.append(provedor_c)
         if tentou_c:
-            situacao[provedor_c] = _situacao(tentou_c, resposta_c, chamada_c)
+            situacao[provedor_c] = _situacao(tentou_c, resposta_c, chamada_c, exige_revisao_c)
         if reserva_respondeu and falhou_a:
             resposta_a, chamada_a, nome_efetivo_a, sem_sentido_a, exige_revisao_a = resposta_c, chamada_c, provedor_c, sem_sentido_c, exige_revisao_c
         elif reserva_respondeu and falhou_b:

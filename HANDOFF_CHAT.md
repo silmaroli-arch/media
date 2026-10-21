@@ -2587,6 +2587,15 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 
 - Portal de atendimento (janela da pergunta) e Perguntas pendentes: cada sugestão (Claude, ChatGPT, Gemini, FAQ do MedIA) tem o botão "Usar", que copia o texto dela para o "Rascunho final" da mesma pergunta; o médico ainda pode editar antes de aprovar. Macro `sugestao` em `portal/atendimento.html`; script no fim das duas telas (classe `usar-sugestao`, texto em `data-texto`). Conferido no navegador (inclusive texto com aspas e <>).
 
+## IAs respondem com conhecimento geral quando o preparo não cobre a dúvida (2026-10-21, pedido do Silvan)
+
+- Antes: "Que horas tenho que chegar na clínica?" -> as 2 IAs devolviam NAO_SEI, porque o PROMPT_SISTEMA manda responder SÓ com o preparo e o preparo não fala do horário.
+- Agora: nova regra no PROMPT_SISTEMA para dúvida prática sobre o exame/atendimento (horário de chegada, duração, o que levar, acompanhante, dirigir, recuperação) sem informação no preparo: a IA começa com `MARCADOR_CONHECIMENTO_GERAL` ("CONHECIMENTO_GERAL_REVISAR") e responde com o que em geral se pratica, dito como orientação geral. Nunca para diagnóstico, resultado, tratamento; medicamento continua com a regra própria. NAO_SEI fica para o resto.
+- Mesmo tratamento do marcador de medicamento não cadastrado (`_extrair_marcador_medicamento_nao_cadastrado` aceita os dois): sinal `exige_revisao_medicamento` -> SEMPRE vai para o médico, mesmo com aprovação automática desligada. Resposta com o marcador não é descartada como "recusa disfarçada".
+- `situacao` da IA: "respondeu_geral". Tela (portal e Perguntas pendentes): aviso "Resposta com conhecimento geral da IA - não está no preparo cadastrado" e rótulo "Sugestão do Claude (conhecimento geral)" (`PerguntaPendente.usou_conhecimento_geral`). Vale também para a resposta de medicamento não cadastrado (também é conhecimento geral).
+- Custo: nenhuma chamada a mais (mesma chamada, outra instrução). Depois de aprovada, entra no FAQ do médico e responde direto da próxima vez.
+- Teste novo: `test_ia_conhecimento_geral.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2668,6 +2677,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] A resposta que chega ao paciente cita a pergunta corrigida; as IAs respondem à pergunta corrigida
 - [ ] "Apagar pergunta" (com confirmação) tira a pergunta da fila sem responder ao paciente nem gravar no FAQ; também em Perguntas pendentes
 - [ ] Botão "Usar" ao lado de cada sugestão (Claude, ChatGPT, FAQ do MedIA) copia o texto para o rascunho final; também em Perguntas pendentes
+- [ ] "Que horas tenho que chegar na clínica?" (fora do preparo): as IAs respondem com orientação geral, com o aviso "conhecimento geral" na janela; vai para o médico mesmo com a aprovação automática desligada
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos
