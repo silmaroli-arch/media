@@ -76,6 +76,10 @@ r = client.get("/equipe/pacientes")
 html_lista = r.get_data(as_text=True)
 checar("Paciente aparece na lista (nome formatado como nome próprio)", "Cliente da Empresa" in html_lista)
 checar("Lista de pacientes NÃO tem coluna de filial", "<th>Filial</th>" not in html_lista)
+checar("Telefone aparece com máscara na lista (2026-10-21)", "(27) 97777-0001" in html_lista and "27977770001" not in html_lista)
+checar("Coluna não diz mais 'Telefone (login)' (o login é CPF + nascimento)", "Telefone (login)" not in html_lista)
+html_detalhe = client.get(f"/equipe/pacientes/{cliente_id}").get_data(as_text=True)
+checar("Telefone com máscara no detalhe do paciente", "(27) 97777-0001" in html_detalhe and "login de acesso" not in html_detalhe)
 
 # CPF duplicado é bloqueado por GRUPO (não mais por filial).
 r = client.post("/equipe/pacientes/novo", data={

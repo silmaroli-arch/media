@@ -231,6 +231,24 @@ def create_app():
             return valor.strftime("%H:%M")
         return str(valor)
 
+    @app.template_filter("telefone")
+    def telefone_formatado(valor):
+        """Telefone guardado só com dígitos (ver models.normalizar_telefone)
+        mostrado com máscara: (27) 99999-9999 ou (27) 3333-4444. Aceita o
+        55 do Brasil na frente. Fora desses tamanhos, mostra como está.
+        Pedido do Silvan, 2026-10-21."""
+        if not valor:
+            return valor
+        import re
+        d = re.sub(r"\D", "", str(valor))
+        if len(d) in (12, 13) and d.startswith("55"):
+            d = d[2:]
+        if len(d) == 11:
+            return f"({d[:2]}) {d[2:7]}-{d[7:]}"
+        if len(d) == 10:
+            return f"({d[:2]}) {d[2:6]}-{d[6:]}"
+        return valor
+
     @app.template_filter("usd_para_brl")
     def usd_para_brl(valor_usd):
         """Converte um valor em dólares (custo estimado de IA, ver

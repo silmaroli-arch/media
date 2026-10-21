@@ -34,7 +34,7 @@
     {% endif %}
   </p>
   <p><strong>CPF:</strong> {{ paciente.cpf }}</p>
-  <p><strong>Telefone (login de acesso):</strong> {{ paciente.telefone or '-' }}</p>
+  <p><strong>Telefone:</strong> {{ paciente.telefone|telefone or '-' }}</p>
   <p><strong>Data de nascimento:</strong> {{ paciente.data_nascimento.strftime('%d/%m/%Y') if paciente.data_nascimento else '-' }}</p>
 </div>
 

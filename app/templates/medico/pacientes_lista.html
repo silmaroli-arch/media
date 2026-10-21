@@ -12,7 +12,7 @@
   <table class="table table-hover">
     {# O paciente é da EMPRESA, não de uma filial - por isso não há coluna
        de filial aqui; a filial aparece em cada AGENDAMENTO do paciente. #}
-    <thead><tr><th>Nome</th><th>CPF</th><th>Telefone (login)</th><th>Data de nascimento</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Data de nascimento</th><th>Status</th><th></th></tr></thead>
     <tbody>
       {# Pedido do Silvan (2026-09-10, revisão desta mesma data): o
          paciente criado automaticamente no cadastro do médico (ver
@@ -24,7 +24,7 @@
       <tr>
         <td>{{ p.nome }}</td>
         <td>{{ p.cpf }}</td>
-        <td>{{ p.telefone or '-' }}</td>
+        <td>{{ p.telefone|telefone or '-' }}</td>
         <td>{{ p.data_nascimento.strftime('%d/%m/%Y') if p.data_nascimento else '-' }}</td>
         <td>
           {% if p.status_cadastro == 'aprovado' %}

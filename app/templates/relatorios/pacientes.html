@@ -82,7 +82,7 @@
           <td>{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
           <td>{{ p.nome }}</td>
           <td>{{ p.cpf or '-' }}</td>
-          <td>{{ p.telefone or '-' }}</td>
+          <td>{{ p.telefone|telefone or '-' }}</td>
           <td>{{ 'Auto-cadastro pelo app' if p.usuario_id else 'Cadastrado pela equipe' }}</td>
           <td>
             <span class="badge {% if p.status_cadastro == 'aprovado' %}bg-success{% elif p.status_cadastro == 'pendente' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
