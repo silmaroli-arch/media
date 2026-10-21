@@ -2610,6 +2610,10 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Log novo (`ia_preparo.validar_pergunta`, nível INFO): quando a validadora diz sem_sentido/fora_do_exame, registra provedor, pergunta e a resposta crua dela - ver nos logs do Render ("Validador (...) classificou como ...") para entender a causa.
 - Teste: `test_ia_conhecimento_geral.py` (2 casos novos).
 
+## Validador: exemplos no prompt (2026-10-21)
+
+- O log do Render mostrou a causa: a validadora em uso é o **ChatGPT (gpt-4o-mini)** e ela responde literalmente `FORA_DO_EXAME_ENCAMINHAR` para "Que horas tenho que chegar na clinica?" - é julgamento do modelo (pequeno), não leitura errada. `PROMPT_SISTEMA_VALIDADOR` ganhou exemplos explícitos (chegar na clínica, ir de carro, duração, documento, endereço, café -> VALIDA; jogo, chuva -> FORA; teclado -> SEM_SENTIDO) e a frase "FORA só quando for evidente que não tem nada a ver com saúde, exame, clínica ou atendimento". A rede de segurança anterior (fora do exame confirmado pelas 2 IAs) continua. Alternativa, se ainda errar: trocar a IA validadora para Claude em Painel do dono > Configurações.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.

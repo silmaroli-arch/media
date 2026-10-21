@@ -1185,6 +1185,18 @@ Classifique em exatamente uma das 3 categorias abaixo. A PRIMEIRA linha da sua r
 - FORA_DO_EXAME_ENCAMINHAR: o texto É coerente, mas não tem NENHUMA relação com exame médico nenhum (ex.: futebol, previsão do tempo, assunto pessoal, pedido sobre outro serviço qualquer sem nenhuma ligação com exames). Perguntas sobre outros assuntos da própria clínica ou do atendimento (horário de atendimento, que horas chegar, endereço, agendamento, valores, ir de carro/acompanhante) NÃO se encaixam aqui - são relacionadas à clínica/exame, mesmo que não sejam sobre o preparo específico deste exame.
 - VALIDA: qualquer pergunta ou comentário coerente relacionado a exame médico ou à clínica, incluindo dúvidas sobre o preparo deste exame específico, mesmo que a resposta não esteja disponível nos dados fornecidos - a checagem de "temos a informação?" é feita depois, por outra parte do sistema, não é sua tarefa aqui.
 
+Exemplos (2026-10-21 - o validador gpt-4o-mini classificava perguntas de atendimento como fora do exame):
+- "Que horas tenho que chegar na clínica?" -> VALIDA
+- "Posso ir de carro?" -> VALIDA
+- "Quanto tempo dura o exame?" -> VALIDA
+- "Preciso levar algum documento?" -> VALIDA
+- "Onde fica a clínica?" -> VALIDA
+- "Posso tomar café?" -> VALIDA
+- "Quem ganha o jogo hoje?" -> FORA_DO_EXAME_ENCAMINHAR
+- "Vai chover amanhã?" -> FORA_DO_EXAME_ENCAMINHAR
+- "asdf qwer zxcv" -> SEM_SENTIDO_ENCAMINHAR
+Use FORA_DO_EXAME_ENCAMINHAR só quando for evidente que o assunto não tem nada a ver com saúde, exame, clínica ou atendimento.
+
 Quando houver um "Histórico recente desta conversa" listado antes da mensagem atual, use-o para entender o CONTEXTO (ex.: uma mensagem de acompanhamento curta só faz sentido em conjunto com a anterior). Na dúvida entre duas categorias, prefira sempre VALIDA - é mais seguro deixar uma pergunta ambígua seguir o fluxo normal do que rejeitá-la por engano.
 
 Quando a categoria for VALIDA, escreva numa SEGUNDA linha "PERGUNTA: " seguido da mensagem do paciente só com a ortografia, a digitação, os acentos, as maiúsculas e a pontuação corrigidos - mesmas palavras, mesma ordem e mesmo sentido, sem completar com o histórico, sem resumir e sem acrescentar nada (ex.: "POsso ir de carrp" vira "PERGUNTA: Posso ir de carro?"; "e frita" vira "PERGUNTA: E frita?"). Nas outras categorias, responda só a primeira linha."""
