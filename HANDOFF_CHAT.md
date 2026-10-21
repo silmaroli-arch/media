@@ -2684,6 +2684,11 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Atenção: vale para o media-prod também no próximo PR dev -> main.
 - Teste novo: `test_base_arquivo.py`.
 
+## Deploy do media-dev falhou na migração do arquivo do FAQ do MedIA - corrigido (2026-10-21)
+
+- Log do deploy (commit 6899df1): `INSERT INTO base_conhecimento_arquivo ... SELECT p0::INTEGER ... (425498 characters truncated)` -> `OperationalError: consuming input failed: SSL error: unexpected eof while reading`. A 1ª versão de `arquivar_carga_inicial` trazia os 866 itens para o Python e mandava UM INSERT com todos (cada vetor ~30 mil caracteres, ~26 MB num comando só); o Postgres do plano Free derrubou a conexão (o app no ar também recebeu "Connection refused" por alguns instantes). A transação voltou atrás - nada foi perdido.
+- Correção: tudo no próprio banco (`INSERT ... SELECT` + UPDATE/DELETE) em lotes de 50 ids, um commit por lote; se cair no meio, o próximo deploy continua de onde parou (só move o que ainda está na principal e não está no arquivo). Validado em PostgreSQL com vetores de 1536 posições nos 866 itens: 1,6 s, 866 no arquivo (todos com vetor), 0 na principal.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
