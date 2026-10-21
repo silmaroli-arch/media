@@ -403,7 +403,8 @@ MENSAGEM_REAGENDAMENTO_AVISADO = (
 )
 MENSAGEM_SEM_EXAME_ATIVO = (
     "Não encontramos nenhum exame em preparo no momento. Se acha que isso é "
-    "um engano, entre em contato com a clínica."
+    "um engano, entre em contato com a clínica. Para consultar com outro "
+    "CPF, é só enviar o CPF."
 )
 MENSAGEM_OPCAO_INVALIDA_EXAME = "Não entendi. Responda só com o número do exame na lista abaixo:"
 MENSAGEM_PERGUNTA_VAZIA = "Não recebi nenhum texto."
@@ -460,6 +461,17 @@ def _tem_pergunta_pendente(paciente):
     )
 
 
+def _sem_exame_ativo(conversa):
+    """Paciente identificado mas sem exame em preparo: desfaz a
+    identificação para a próxima mensagem recomeçar pelo CPF. Antes a
+    conversa ficava presa respondendo MENSAGEM_SEM_EXAME_ATIVO a qualquer
+    mensagem, inclusive a outro CPF (relatado pelo Silvan, 2026-10-21)."""
+    conversa.paciente_id = None
+    conversa.agendamento_id = None
+    conversa.cpf_pendente = None
+    return MENSAGEM_SEM_EXAME_ATIVO
+
+
 def _resolver_exame_em_foco(conversa, paciente, agendamentos):
     """Decide o próximo passo depois de identificar o paciente (na
     entrada) ou depois de "trocar" (já identificado): com um só exame
@@ -467,8 +479,7 @@ def _resolver_exame_em_foco(conversa, paciente, agendamentos):
     pra escolher (a escolha em si é tratada por processar_mensagem, na
     próxima mensagem que chegar)."""
     if not agendamentos:
-        conversa.agendamento_id = None
-        return MENSAGEM_SEM_EXAME_ATIVO
+        return _sem_exame_ativo(conversa)
     if len(agendamentos) == 1:
         conversa.agendamento_id = agendamentos[0].id
         return _texto_pedir_pergunta(paciente, agendamentos[0])
@@ -1180,8 +1191,9 @@ def processar_mensagem(telefone, corpo_mensagem):
         paciente = conversa.paciente
         agendamentos = _agendamentos_ativos(paciente)
         if not agendamentos:
+            resposta = _sem_exame_ativo(conversa)
             db.session.commit()
-            return MENSAGEM_SEM_EXAME_ATIVO
+            return resposta
 
         escolha = corpo_mensagem.strip() if corpo_mensagem else ""
         indice = int(escolha) if escolha.isdigit() else None

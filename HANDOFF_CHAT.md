@@ -2531,6 +2531,12 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Migração (`migrar_banco.py`, em Python, logo depois do bloco SQL): só quando a coluna ainda não existe, cria a coluna e liga a permissão para TODOS os médicos e secretárias existentes (para ninguém perder o que já usava). Roda uma vez só - rodar de novo não desfaz quem tirou a permissão de alguém. INSERT do dono atualizado. Validado em PostgreSQL a partir do banco da versão anterior, duas vezes.
 - Teste: `test_medicos_por_preparo.py`.
 
+## WhatsApp: conversa presa em "Não encontramos nenhum exame em preparo" (2026-10-21, relatado pelo Silvan)
+
+- Causa: o paciente identificado (CPF + nascimento) sem nenhum agendamento ativo ficava com `conversa.paciente_id` preenchido; toda mensagem seguinte ("ok", "sair", outro CPF) caía no ramo "já identificado, falta escolher o exame" e repetia `MENSAGEM_SEM_EXAME_ATIVO` até a sessão expirar.
+- Correção (`app/whatsapp_conversa.py`): nova `_sem_exame_ativo(conversa)` desfaz a identificação (paciente, exame em foco e CPF pendente) - usada na identificação e quando o exame em foco some depois (encerrado/cancelado). A mensagem ganhou "Para consultar com outro CPF, é só enviar o CPF." A próxima mensagem recomeça pelo CPF. Não conta como tentativa de identificação errada.
+- Teste novo: `test_whatsapp_sem_exame_ativo.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2587,7 +2593,8 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [x] Sem e-mail, endereço e contato de emergência - validado 2026-10-21
 
 **WhatsApp**
-- [ ] Identificação com a data de nascimento só em números (ex.: 16111983)
+- [x] Identificação com a data de nascimento só em números (ex.: 16111983) - validado 2026-10-21 (no print do Silvan)
+- [ ] Paciente sem exame em preparo: avisa uma vez e a próxima mensagem volta a pedir o CPF (dá para mandar outro CPF) - antes entrava em loop
 
 **Painel do dono** - VALIDADO pelo Silvan em 2026-10-21
 - [x] Menu lateral: "Configurações", "Usuários", "Grupos" e "Custo de IA" abrem a aba certa - validado 2026-10-21
