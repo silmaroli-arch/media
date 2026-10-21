@@ -2,12 +2,9 @@
 {% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
 {% block titulo %}{{ paciente.nome }}{% endblock %}
 {% block conteudo %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h3>{{ paciente.nome }} {{ badge_filial(paciente) }}</h3>
-  <div>
-    <a href="{{ url_for('medico.pacientes_editar', paciente_id=paciente.id) }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-pencil"></i> Editar cadastro</a>
-  </div>
-</div>
+{# "Editar cadastro" mudou para a lista de pacientes, numa janela
+   (pedido do Silvan, 2026-10-21 - ver medico/pacientes_lista.html). #}
+<h3 class="mb-3">{{ paciente.nome }} {{ badge_filial(paciente) }}</h3>
 <div class="card p-3 mb-3">
   <p>
     <strong>Status do cadastro:</strong>

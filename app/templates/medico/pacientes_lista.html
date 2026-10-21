@@ -35,7 +35,19 @@
           <span class="badge bg-warning text-dark">Pendente</span>
           {% endif %}
         </td>
-        <td><a href="{{ url_for('medico.pacientes_detalhe', paciente_id=p.id) }}" class="btn btn-sm btn-outline-secondary">Detalhes</a></td>
+        <td class="text-nowrap text-end">
+          {% if current_user.perm_pacientes %}
+          {# Edita numa janela, sem sair da lista (pedido do Silvan, 2026-10-21) #}
+          <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalEditarPaciente"
+                  data-acao="{{ url_for('medico.pacientes_editar', paciente_id=p.id) }}"
+                  data-nome="{{ p.nome }}" data-cpf="{{ p.cpf }}" data-telefone="{{ p.telefone|telefone or '-' }}"
+                  data-nascimento="{{ p.data_nascimento.strftime('%d/%m/%Y') if p.data_nascimento else '-' }}"
+                  data-observacoes="{{ p.observacoes or '' }}">
+            <i class="bi bi-pencil"></i> Editar
+          </button>
+          {% endif %}
+          <a href="{{ url_for('medico.pacientes_detalhe', paciente_id=p.id) }}" class="btn btn-sm btn-outline-secondary">Detalhes</a>
+        </td>
       </tr>
       {% else %}
       <tr><td colspan="6" class="text-muted text-center">Nenhum paciente cadastrado ainda.</td></tr>
@@ -43,4 +55,49 @@
     </tbody>
   </table>
 </div>
+
+{% if current_user.perm_pacientes %}
+<div class="modal fade" id="modalEditarPaciente" tabindex="-1" aria-labelledby="modalEditarPacienteTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" class="modal-content" id="formEditarPaciente">
+      <input type="hidden" name="origem" value="lista">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalEditarPacienteTitulo"><i class="bi bi-pencil me-2"></i>Editar cadastro</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" for="editar_nome">Nome</label>
+          <input type="text" name="nome" id="editar_nome" class="form-control" required>
+        </div>
+        <div class="row g-2 mb-3 small text-muted">
+          <div class="col-6">CPF: <span id="editar_cpf"></span></div>
+          <div class="col-6">Nascimento: <span id="editar_nascimento"></span></div>
+          <div class="col-12">Telefone: <span id="editar_telefone"></span></div>
+          <div class="col-12">CPF, nascimento e telefone são a identificação do paciente e não mudam por aqui.</div>
+        </div>
+        <label class="form-label" for="editar_observacoes">Observações</label>
+        <textarea name="observacoes" id="editar_observacoes" class="form-control" rows="3"></textarea>
+        <div class="form-text">Só o necessário para o atendimento (ex.: "prefere contato à tarde"). Não registre diagnósticos, doenças ou outros dados de saúde aqui.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  // Preenche a janela com os dados da linha clicada (atributos data-* do botão "Editar").
+  document.getElementById('modalEditarPaciente').addEventListener('show.bs.modal', function (evento) {
+    var b = evento.relatedTarget;
+    document.getElementById('formEditarPaciente').action = b.getAttribute('data-acao');
+    document.getElementById('editar_nome').value = b.getAttribute('data-nome');
+    document.getElementById('editar_observacoes').value = b.getAttribute('data-observacoes');
+    document.getElementById('editar_cpf').textContent = b.getAttribute('data-cpf');
+    document.getElementById('editar_nascimento').textContent = b.getAttribute('data-nascimento');
+    document.getElementById('editar_telefone').textContent = b.getAttribute('data-telefone');
+  });
+</script>
+{% endif %}
 {% endblock %}

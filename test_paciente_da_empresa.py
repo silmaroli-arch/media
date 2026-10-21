@@ -81,6 +81,22 @@ checar("Coluna não diz mais 'Telefone (login)' (o login é CPF + nascimento)", 
 html_detalhe = client.get(f"/equipe/pacientes/{cliente_id}").get_data(as_text=True)
 checar("Telefone com máscara no detalhe do paciente", "(27) 97777-0001" in html_detalhe and "login de acesso" not in html_detalhe)
 
+# "Editar" fica na lista e abre numa janela (2026-10-21); salvar volta para a lista.
+checar("Lista tem o botão 'Editar' que abre a janela de edição",
+       'data-bs-target="#modalEditarPaciente"' in html_lista and f'/equipe/pacientes/{cliente_id}/editar' in html_lista
+       and 'id="modalEditarPaciente"' in html_lista)
+checar("O detalhe não tem mais o botão 'Editar cadastro'", "Editar cadastro" not in html_detalhe)
+r = client.post(f"/equipe/pacientes/{cliente_id}/editar", data={
+    "nome": "cliente da empresa editado", "observacoes": "Prefere contato à tarde", "origem": "lista",
+})
+checar("Salvar pela janela volta para a lista", r.status_code == 302 and r.headers["Location"].endswith("/equipe/pacientes"))
+with app.app_context():
+    editado = Paciente.query.get(cliente_id)
+    checar("Nome e observações salvos pela janela",
+           editado.nome == "Cliente da Empresa Editado" and editado.observacoes == "Prefere contato à tarde")
+    editado.nome = "Cliente da Empresa"
+    db.session.commit()
+
 # CPF duplicado é bloqueado por GRUPO (não mais por filial).
 r = client.post("/equipe/pacientes/novo", data={
     "nome": "Cliente Repetido", "cpf": "321.654.987-00", "email": "",

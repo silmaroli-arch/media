@@ -827,6 +827,10 @@ def pacientes_editar(paciente_id):
         paciente.observacoes = request.form.get("observacoes", "").strip() or None
         db.session.commit()
         flash("Cadastro do paciente atualizado.", "success")
+        # Editado pela janela da lista de pacientes (pedido do Silvan,
+        # 2026-10-21): volta para a lista, sem sair dela.
+        if request.form.get("origem") == "lista":
+            return redirect(url_for("medico.pacientes_lista"))
         return redirect(url_for("medico.pacientes_detalhe", paciente_id=paciente.id))
 
     return render_template("medico/pacientes_form.html", paciente=paciente)
