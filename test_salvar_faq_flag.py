@@ -53,4 +53,24 @@ with app.app_context():
     checar("Marcada: grava no FAQ", FaqItem.query.filter_by(pergunta="Pergunta para todos").count() == 1)
     checar("Form sem a opção mantém o padrão (grava)", FaqItem.query.filter_by(pergunta="Pergunta de outra tela").count() == 1)
 
+# FAQ do MedIA desligado: some a sugestão já gravada nas perguntas da fila (2026-10-21).
+from app.models import PlataformaConfig
+with app.app_context():
+    nova = PerguntaPendente(grupo_id=vitoria_id, paciente_id=Paciente.query.filter_by(nome="Pedro Souza").first().id,
+                            exame_id=Exame.query.filter_by(nome="Hemograma completo").first().id, pergunta="Diarreia?",
+                            status="aguardando_aprovacao", resposta_sugerida_ia="Hidrate-se.",
+                            resposta_bruta_claude="Hidrate-se.", resposta_bruta_base="Resposta da base.", base_divergiu=True)
+    db.session.add(nova)
+    PlataformaConfig.obter().base_conhecimento_ativa = True
+    db.session.commit()
+html = medico.get("/equipe/portal").get_data(as_text=True)
+checar("Terceira IA ligada: a sugestão do FAQ do MedIA aparece", "Sugestão do FAQ do MedIA" in html)
+with app.app_context():
+    PlataformaConfig.obter().base_conhecimento_ativa = False
+    db.session.commit()
+html = medico.get("/equipe/portal").get_data(as_text=True)
+checar("Desligada: some da janela (com o aviso de divergência)",
+       "Sugestão do FAQ do MedIA" not in html and "FAQ do MedIA</strong> é bem diferente" not in html)
+checar("... também em Perguntas pendentes", "Resposta da base." not in medico.get("/equipe/perguntas").get_data(as_text=True))
+
 print("\nTodos os testes da opção Salvar no Meu FAQ passaram.")

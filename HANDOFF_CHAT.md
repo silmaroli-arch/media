@@ -2669,6 +2669,12 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Ao excluir a conta (`exclusao_usuario.excluir_usuario_e_dados`), o pedido fica "concluida", sem o vínculo com a conta (nome e motivo continuam como registro).
 - Teste novo: `test_solicitar_exclusao.py`.
 
+## Terceira IA desligada: some também das perguntas já na fila (2026-10-21, relatado pelo Silvan)
+
+- O interruptor "Usar a base de conhecimento como terceira IA" já era respeitado na hora em que a pergunta chega (`ia_preparo._aplicar_base_de_conhecimento` -> `base_ativa()`), mas a sugestão fica gravada na PerguntaPendente (`resposta_bruta_base`) - perguntas que chegaram com ela ligada continuavam mostrando "Sugestão do FAQ do MedIA" e o aviso de divergência depois de desligar.
+- Agora `PerguntaPendente.base_visivel` (sugestão gravada E base ligada agora) controla a exibição no portal e em Perguntas pendentes. O rascunho final não muda (se ele veio da base, continua como está).
+- Teste: `test_salvar_faq_flag.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.

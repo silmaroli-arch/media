@@ -36,7 +36,7 @@
       <div class="accordion" id="accordionAguardando">
         {% for p in aguardando %}
         {% set eh_ia = p.resposta_bruta_claude or p.resposta_bruta_chatgpt or p.resposta_bruta_gemini or p.resposta_bruta_base %}
-        {% set col = 'col-md-3' if p.resposta_bruta_base else 'col-md-4' %}
+        {% set col = 'col-md-3' if p.base_visivel else 'col-md-4' %}
         <div class="accordion-item border-warning">
           <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#aguardando-{{ p.id }}" aria-expanded="false" aria-controls="aguardando-{{ p.id }}">
@@ -44,7 +44,7 @@
               {% if p.exame %}<span class="badge bg-light text-dark me-2">{{ p.exame.nome }}</span>{% endif %}
               {% if not eh_ia %}<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle me-2">Automática (preparo cadastrado)</span>{% endif %}
               {{ badge_filial(p) }}
-              {% if p.base_divergiu %}
+              {% if p.base_visivel and p.base_divergiu %}
               <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-2" title="O FAQ do MedIA diverge das IAs (ou respondeu sozinha) - revise com atenção">
                 <i class="bi bi-journal-medical"></i> FAQ do MedIA diverge
               </span>
@@ -81,7 +81,7 @@
                 (indisponibilidade momentânea do provedor) — o rascunho abaixo usa a resposta de outra IA disponível no momento.
               </div>
               {% endif %}
-              {% if p.base_divergiu %}
+              {% if p.base_visivel and p.base_divergiu %}
               <div class="alert alert-warning py-2 small mb-3">
                 <i class="bi bi-journal-medical"></i>
                 {% if not (p.resposta_bruta_claude or p.resposta_bruta_chatgpt or p.resposta_bruta_gemini) %}
@@ -116,7 +116,7 @@
                     <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.para_paciente(p.resposta_bruta_claude) }}</div>
                   </div>
                   {% endif %}
-                  {% if p.resposta_bruta_base %}
+                  {% if p.base_visivel %}
                   <div class="{{ col }}">
                     <label class="form-label small text-muted mb-1 fw-semibold"><i class="bi bi-journal-medical"></i> FAQ do MedIA <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.para_paciente(p.resposta_bruta_base) }}" title="Copiar esta sugestão para o rascunho final">Usar</button></label>
                     <div class="border rounded p-2 bg-light small h-100" style="white-space: pre-wrap; min-height: 8rem;">{{ p.para_paciente(p.resposta_bruta_base) }}

@@ -1977,6 +1977,14 @@ class PerguntaPendente(db.Model):
         return agendamento.data_hora.strftime("%d/%m/%Y, %H:%M") if agendamento else None
 
     @property
+    def base_visivel(self):
+        """Mostrar a sugestão do FAQ do MedIA gravada nesta pergunta - só
+        com a "terceira IA" LIGADA agora (pedido do Silvan, 2026-10-21:
+        desligada, as perguntas que já estavam na fila continuavam com ela)."""
+        from app.base_conhecimento import base_ativa
+        return bool(self.resposta_bruta_base) and base_ativa()
+
+    @property
     def usou_conhecimento_geral(self):
         """Alguma IA respondeu com conhecimento geral, fora do preparo
         cadastrado (ver app.ia_preparo.MARCADOR_CONHECIMENTO_GERAL)."""
