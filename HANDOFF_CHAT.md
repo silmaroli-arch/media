@@ -2547,6 +2547,12 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - `app.preparo_publico.agrupar_por_dia()` monta `linha_do_tempo_por_dia` (a `linha_do_tempo` plana continua no documento). No PDF, uma linha da tabela por dia, com os itens em lista.
 - Teste: `test_preparo_publico.py`. Conferido no navegador.
 
+## Resposta pronta de alimento: "carro" casava com "claro" (2026-10-21, relatado pelo Silvan)
+
+- "Posso ir de carro?" recebeu o rascunho "Sim, Líquidos claros está entre os alimentos sugeridos...": a tolerância a erro de digitação (`faq_engine._palavras_correspondem`, SequenceMatcher >= 0.8) aceitou "carro" ~ "claro" (0.8), e 1 de 2 palavras do nome já atinge o limiar de 0.5. Como a resposta pronta de alimento vem antes das IAs no fluxo (validador -> FAQ exata -> alimento/medicamento por regras -> IAs de resposta), as IAs nem foram chamadas.
+- Correção: além do ratio, a palavra curta (até 6 letras) só aceita 1 letra de diferença (distância de edição); longas, até 2. "amendoin", "chocolatte" etc. continuam reconhecidos.
+- Teste novo: `test_alimento_palavra_parecida.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2615,6 +2621,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 
 **Preparo do paciente (link do WhatsApp)**
 - [ ] Linha do tempo: cada data aparece uma vez com os itens do dia embaixo (horário "às HH:MM" uma vez por horário); PDF igual
+
+**Portal de atendimento**
+- [ ] "Posso ir de carro?" não recebe mais a resposta de "Líquidos claros" (vai para as IAs); "amendoin" continua reconhecido como amendoim
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

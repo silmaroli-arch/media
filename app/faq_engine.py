@@ -91,7 +91,25 @@ def _palavras_correspondem(palavra_a: str, palavra_b: str) -> bool:
         return True
     if len(palavra_a) <= 3 or len(palavra_b) <= 3:
         return False
-    return SequenceMatcher(None, palavra_a, palavra_b).ratio() >= LIMIAR_CONFIANCA_PALAVRA
+    if SequenceMatcher(None, palavra_a, palavra_b).ratio() < LIMIAR_CONFIANCA_PALAVRA:
+        return False
+    # Palavra curta: só 1 letra de diferença. Sem isso, "carro" casava com
+    # "claro" (ratio 0.8) e "Posso ir de carro?" recebia a resposta pronta
+    # de "Líquidos claros" (relatado pelo Silvan, 2026-10-21).
+    limite = 1 if min(len(palavra_a), len(palavra_b)) <= 6 else 2
+    return _distancia_edicao(palavra_a, palavra_b) <= limite
+
+
+def _distancia_edicao(a: str, b: str) -> int:
+    """Quantas letras é preciso trocar, inserir ou apagar para ir de `a`
+    a `b` (distância de Levenshtein)."""
+    anterior = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        atual = [i]
+        for j, cb in enumerate(b, 1):
+            atual.append(min(anterior[j] + 1, atual[j - 1] + 1, anterior[j - 1] + (ca != cb)))
+        anterior = atual
+    return anterior[-1]
 
 
 def _quantidade_correspondencias(palavras_a: set, palavras_b: set) -> int:
