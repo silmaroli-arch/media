@@ -2518,6 +2518,12 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - O item do menu lateral "Meus exames agendados" (médico) / "Exames agendados" (secretária e demais) passou a se chamar **"Agenda de Exames"** para todos. O título da tela (`medico/medico_agenda_pessoal.html`) também; o subtítulo continua dizendo se são os exames do médico ou os de todos os médicos do grupo.
 - Testes ajustados: `test_exames_agendados_tela_unica.py`, `test_menu_cadastro_geral_unificado.py` (ordem do menu).
 
+## Remarcar: aviso dentro da janela e conflito pela duração explicado (2026-10-21, pedido do Silvan)
+
+- Remarcar com erro (horário ocupado ou data inválida) não fecha mais a janela com o aviso no topo: `agenda_remarcar` guarda `session["remarcar_erro"]` (id, mensagem, data tentada) e volta com `?remarcar=<id>`; a tela reabre a janela desse exame (vai para o mês dele) com o aviso dentro (`#ag_erro`) e a data tentada no campo. `abrirDetalhes()` no JS é a mesma função do clique no exame.
+- Mensagem de conflito (`_mensagem_conflito`, usada no agendar e no remarcar): mesmo horário continua "já tem um exame nesse horário"; sobreposição pela duração diz "Não é possível marcar ... por causa da duração dos exames", mostra a duração e a previsão de término do outro exame e a deste, e sugere o horário ("a partir das HH:MM" ou "até as HH:MM ou a partir das HH:MM").
+- Teste: `test_exames_agendados_tela_unica.py`. Conferido no navegador (Playwright).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2547,7 +2553,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [x] Calendário: Mês, Semana, Dia e Lista (no celular, Lista); cor por médico; clicar no exame abre os detalhes com Atendimento, Resultado e Encerrar; clicar num dia vazio abre "Agendar exame" com a data - validado 2026-10-21
 - [x] Botão "Agendar exame" (janela): o médico é filtrado pelo exame escolhido; sem os campos de acompanhante - validado 2026-10-21
 - [ ] Dois exames do mesmo médico no mesmo horário (ou sobrepostos pela duração): recusado com o aviso; outro médico no mesmo horário: aceito
-- [ ] Janela do exame: "Remarcar para" muda data e hora (recusa horário ocupado); "Cancelar exame" apaga; os dois somem em exame encerrado
+- [ ] Janela do exame: "Remarcar para" muda data e hora; horário ocupado é recusado com o aviso DENTRO da janela (pela duração: mostra a previsão de término); "Cancelar exame" apaga; os dois somem em exame encerrado
 
 **Exames & preparo (modelo de preparo / cadastro de exame)** - VALIDADO pelo Silvan em 2026-10-21
 - [x] Médico não salva sem "Sua especialidade"; com ela, aparece em "Meus dados" - validado 2026-10-21

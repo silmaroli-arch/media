@@ -2505,6 +2505,40 @@ def _agendamento_em_conflito(medico_id, inicio, duracao_minutos, ignorar_id=None
     return None
 
 
+def _mensagem_conflito(conflito, inicio, duracao_minutos):
+    """Texto do aviso de conflito de horário. Se o choque é pela duração
+    (não no mesmo horário), diz isso e mostra a previsão de término
+    (pedido do Silvan, 2026-10-21)."""
+    medico = conflito.medico.nome if conflito.medico else "O médico"
+    outro = f"{conflito.exame.nome if conflito.exame else 'exame'} com {conflito.paciente.nome}"
+    if conflito.data_hora == inicio:
+        return (
+            f"{medico} já tem um exame nesse horário: {outro}, em "
+            f"{conflito.data_hora.strftime('%d/%m/%Y às %H:%M')}. Escolha outro horário."
+        )
+    duracao_outro = (conflito.exame.duracao_minutos if conflito.exame else 0) or 0
+    outro_fim = conflito.data_hora + timedelta(minutes=duracao_outro)
+    partes = [f"Não é possível marcar em {inicio.strftime('%d/%m/%Y às %H:%M')} por causa da duração dos exames."]
+    if duracao_outro:
+        partes.append(
+            f"{medico} tem {outro} às {conflito.data_hora.strftime('%H:%M')}, com duração de {duracao_outro} min "
+            f"(previsão de término às {outro_fim.strftime('%H:%M')})."
+        )
+    else:
+        partes.append(f"{medico} tem {outro} às {conflito.data_hora.strftime('%H:%M')}.")
+    if duracao_minutos:
+        fim = inicio + timedelta(minutes=duracao_minutos)
+        partes.append(f"Este exame dura {duracao_minutos} min (previsão de término às {fim.strftime('%H:%M')}).")
+    if inicio > conflito.data_hora:
+        partes.append(f"Escolha um horário a partir das {outro_fim.strftime('%H:%M')}.")
+    else:
+        limite = conflito.data_hora - timedelta(minutes=duracao_minutos or 0)
+        partes.append(
+            f"Escolha um horário até as {limite.strftime('%H:%M')} ou a partir das {outro_fim.strftime('%H:%M')}."
+        )
+    return " ".join(partes)
+
+
 @medico_bp.route("/agenda/novo", methods=["GET", "POST"])
 @login_required
 @staff_required
@@ -2584,13 +2618,7 @@ def agenda_novo():
 
         conflito = _agendamento_em_conflito(medico_atende_id, data_hora, exame.duracao_minutos)
         if conflito:
-            medico_nome = conflito.medico.nome if conflito.medico else "O médico"
-            flash(
-                f"{medico_nome} já tem um exame nesse horário: {conflito.exame.nome if conflito.exame else 'exame'} "
-                f"com {conflito.paciente.nome}, em {conflito.data_hora.strftime('%d/%m/%Y às %H:%M')}. "
-                "Escolha outro horário.",
-                "danger",
-            )
+            flash(_mensagem_conflito(conflito, data_hora, exame.duracao_minutos), "danger")
             return _voltar(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
 
         agendamento = Agendamento(
@@ -2723,6 +2751,7 @@ def medico_agenda_pessoal(medico_id=None):
     exames = exames_query.order_by(Exame.nome).all()
     medicos_agendar = [] if eh_medico() else _medicos_do_escopo_atual(filial)
     agendar_form = session.pop("agendar_form", None) if request.args.get("agendar") else None
+    remarcar_erro = session.pop("remarcar_erro", None) if request.args.get("remarcar") else None
     return render_template(
         "medico/medico_agenda_pessoal.html",
         proximos=proximos,
@@ -2735,6 +2764,7 @@ def medico_agenda_pessoal(medico_id=None):
         medicos_agendar=medicos_agendar,
         agendar_form=agendar_form,
         abrir_agendar=bool(request.args.get("agendar")),
+        remarcar_erro=remarcar_erro,
         timedelta=timedelta,
     )
 
@@ -2922,21 +2952,24 @@ def agenda_remarcar(agendamento_id):
     if agendamento.encerrado_em:
         flash("Este atendimento já foi encerrado - não dá para remarcar.", "danger")
         return redirect(url_for("medico.medico_agenda_pessoal"))
+
+    def _voltar_com_erro(mensagem):
+        """Reabre a janela do exame com o aviso dentro dela e a data
+        tentada (pedido do Silvan, 2026-10-21 - antes a janela fechava e o
+        aviso ia para o topo da tela)."""
+        session["remarcar_erro"] = {
+            "id": agendamento.id, "mensagem": mensagem, "data_hora": request.form.get("data_hora", ""),
+        }
+        return redirect(url_for("medico.medico_agenda_pessoal", remarcar=agendamento.id))
+
     try:
         nova = datetime.strptime(request.form.get("data_hora", ""), "%Y-%m-%dT%H:%M")
     except ValueError:
-        flash("Data/hora inválida.", "danger")
-        return redirect(url_for("medico.medico_agenda_pessoal"))
+        return _voltar_com_erro("Data/hora inválida.")
     duracao = agendamento.exame.duracao_minutos if agendamento.exame else None
     conflito = _agendamento_em_conflito(agendamento.medico_id, nova, duracao, ignorar_id=agendamento.id)
     if conflito:
-        flash(
-            f"{conflito.medico.nome if conflito.medico else 'O médico'} já tem um exame nesse horário: "
-            f"{conflito.exame.nome if conflito.exame else 'exame'} com {conflito.paciente.nome}, em "
-            f"{conflito.data_hora.strftime('%d/%m/%Y às %H:%M')}. Escolha outro horário.",
-            "danger",
-        )
-        return redirect(url_for("medico.medico_agenda_pessoal"))
+        return _voltar_com_erro(_mensagem_conflito(conflito, nova, duracao))
     agendamento.data_hora = nova
     db.session.commit()
     flash(f"Agendamento remarcado para {nova.strftime('%d/%m/%Y às %H:%M')}.", "success")

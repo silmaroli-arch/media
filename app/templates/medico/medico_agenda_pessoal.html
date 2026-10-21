@@ -67,6 +67,7 @@
         <p class="mb-0 small text-muted d-none" id="ag_encerrado">Atendimento encerrado.</p>
         {# Remarcar e cancelar (pedido do Silvan, 2026-10-21) - somem quando já encerrado. #}
         <div id="ag_mudar" class="border-top mt-3 pt-3">
+          <div id="ag_erro" class="alert alert-danger py-2 small d-none"></div>
           <form method="post" id="ag_remarcar" class="mb-2">
             <label class="form-label small mb-1" for="ag_nova_data">Remarcar para</label>
             <div class="input-group">
@@ -209,23 +210,7 @@
         eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
         noEventsContent: 'Nenhum exame agendado neste período.',
         events: eventos,
-        eventClick: function (info) {
-          var p = info.event.extendedProps;
-          document.getElementById('ag_quando').textContent = p.quando;
-          document.getElementById('ag_paciente').textContent = p.paciente;
-          document.getElementById('ag_exame').textContent = p.exame;
-          document.getElementById('ag_medico').textContent = p.medico;
-          document.getElementById('ag_atendimento').href = p.atendimento;
-          document.getElementById('ag_resultado').href = p.resultado;
-          document.getElementById('ag_encerrar').action = p.encerrar;
-          document.getElementById('ag_encerrar').classList.toggle('d-none', p.encerrada);
-          document.getElementById('ag_encerrado').classList.toggle('d-none', !p.encerrada);
-          document.getElementById('ag_mudar').classList.toggle('d-none', p.encerrada);
-          document.getElementById('ag_remarcar').action = p.remarcar;
-          document.getElementById('ag_cancelar').action = p.cancelar;
-          document.getElementById('ag_nova_data').value = p.inicio;
-          bootstrap.Modal.getOrCreateInstance(document.getElementById('modalAgendamento')).show();
-        },
+        eventClick: function (info) { abrirDetalhes(info.event); },
         // Dia/horário vazio: abre "Agendar exame" com a data (e a hora, nas
         // visões de semana/dia; no mês, 08:00).
         dateClick: function (info) {
@@ -235,7 +220,38 @@
         }
       });
       calendario.render();
+      {% if remarcar_erro %}
+      // Remarcar deu erro: reabre a janela desse exame com o aviso dentro.
+      var comErro = calendario.getEventById('{{ remarcar_erro.id }}');
+      if (comErro) {
+        calendario.gotoDate(comErro.start);
+        abrirDetalhes(comErro, {{ remarcar_erro.mensagem|tojson }}, {{ remarcar_erro.data_hora|tojson }});
+      } else {
+        alert({{ remarcar_erro.mensagem|tojson }});
+      }
+      {% endif %}
     });
+
+    function abrirDetalhes(evento, erro, dataTentada) {
+      var p = evento.extendedProps;
+      document.getElementById('ag_quando').textContent = p.quando;
+      document.getElementById('ag_paciente').textContent = p.paciente;
+      document.getElementById('ag_exame').textContent = p.exame;
+      document.getElementById('ag_medico').textContent = p.medico;
+      document.getElementById('ag_atendimento').href = p.atendimento;
+      document.getElementById('ag_resultado').href = p.resultado;
+      document.getElementById('ag_encerrar').action = p.encerrar;
+      document.getElementById('ag_encerrar').classList.toggle('d-none', p.encerrada);
+      document.getElementById('ag_encerrado').classList.toggle('d-none', !p.encerrada);
+      document.getElementById('ag_mudar').classList.toggle('d-none', p.encerrada);
+      document.getElementById('ag_remarcar').action = p.remarcar;
+      document.getElementById('ag_cancelar').action = p.cancelar;
+      document.getElementById('ag_nova_data').value = dataTentada || p.inicio;
+      var caixaErro = document.getElementById('ag_erro');
+      caixaErro.textContent = erro || '';
+      caixaErro.classList.toggle('d-none', !erro);
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('modalAgendamento')).show();
+    }
   })();
 
   (function () {

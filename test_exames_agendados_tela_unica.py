@@ -105,9 +105,13 @@ with app.app_context():
 html = agendar("2026-12-01T09:30")
 checar("Mesmo médico, mesmo dia e hora: recusado", "já tem um exame nesse horário" in html and "01/12/2026 às 09:30" in html)
 html = agendar("2026-12-01T09:45")
-checar("Mesmo médico, dentro da duração do outro exame (30 min): recusado", "já tem um exame nesse horário" in html)
+checar("Mesmo médico, dentro da duração do outro exame (30 min): recusado, explicando a duração e a previsão de término",
+       "por causa da duração dos exames" in html and "duração de 30 min (previsão de término às 10:00)" in html
+       and "a partir das 10:00" in html)
 html = agendar("2026-12-01T09:10")
-checar("Mesmo médico, terminaria depois que o outro começa: recusado", "já tem um exame nesse horário" in html)
+checar("Mesmo médico, terminaria depois que o outro começa: recusado, com o término deste e o horário limite",
+       "por causa da duração dos exames" in html and "Este exame dura 30 min (previsão de término às 09:40)" in html
+       and "até as 09:00 ou a partir das 10:00" in html)
 with app.app_context():
     checar("... e nenhum desses foi criado", Agendamento.query.filter_by(medico_id=fernanda_id).count() == antes)
 html = agendar("2026-12-01T10:00")
@@ -126,8 +130,17 @@ with app.app_context():
     ag_id = ag.id
 html = sec.get("/equipe/medico-agenda").get_data(as_text=True)
 checar("A janela do exame tem Remarcar e Cancelar", f"/equipe/agenda/{ag_id}/remarcar" in html and f"/equipe/agenda/{ag_id}/cancelar" in html)
-r = sec.post(f"/equipe/agenda/{ag_id}/remarcar", data={"data_hora": "2026-12-01T09:40"}, follow_redirects=True)
-checar("Remarcar para um horário ocupado: recusado", "já tem um exame nesse horário" in r.get_data(as_text=True))
+r = sec.post(f"/equipe/agenda/{ag_id}/remarcar", data={"data_hora": "2026-12-01T09:40"})
+checar("Remarcar para um horário ocupado: volta reabrindo a janela do exame",
+       r.status_code == 302 and f"remarcar={ag_id}" in r.headers["Location"])
+html = sec.get(r.headers["Location"]).get_data(as_text=True)
+import json
+inicio_js = html.find("abrirDetalhes(comErro, ")
+aviso, fim_js = json.JSONDecoder().raw_decode(html, inicio_js + len("abrirDetalhes(comErro, "))
+data_tentada, _ = json.JSONDecoder().raw_decode(html, fim_js + 2)
+checar("... com o aviso (duração e previsão de término) dentro da janela e a data tentada",
+       inicio_js != -1 and "duração de 30 min (previsão de término às 10:00)" in aviso and data_tentada == "2026-12-01T09:40"
+       and 'id="ag_erro"' in html)
 r = sec.post(f"/equipe/agenda/{ag_id}/remarcar", data={"data_hora": "2026-12-02T15:00"}, follow_redirects=True)
 with app.app_context():
     checar("Remarcar para um horário livre muda a data", "remarcado para 02/12/2026 às 15:00" in r.get_data(as_text=True)
