@@ -63,7 +63,7 @@
             <button type="submit" class="btn btn-sm btn-outline-danger" {% if m.exames %}disabled title="Em uso por algum exame"{% endif %}>Remover</button>
           </form>
           {% else %}
-          <span class="text-muted small" title="Conteúdo clínico do médico que criou o modelo">Só {{ m.dono_medico.nome }} pode editar</span>
+          <span class="text-muted small" title="Conteúdo clínico do médico que criou o modelo">Só {{ m.dono_medico.nome }} e os médicos associados podem editar</span>
           {% endif %}
         </td>
       </tr>

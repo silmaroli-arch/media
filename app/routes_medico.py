@@ -997,7 +997,7 @@ def exames_novo():
     # (e, portanto, só vê no dropdown) os SEUS modelos de preparo ou os sem
     # dono registrado - não os de outro médico da empresa.
     if eh_medico():
-        modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
+        modelos = [m for m in modelos if m.pode_ser_editado_por(current_user)]
 
     # Último passo do checklist "Primeiros passos" (ver medico.atalhos
     # e preparo_modelos_novo, acessado pelo menu, não mais forçado após o
@@ -1123,7 +1123,7 @@ def exames_editar(exame_id):
     # registrado (antigos) seguem o comportamento antigo.
     if not exame.pode_ser_editado_por(current_user):
         flash(
-            f"Só {exame.dono_medico.nome}, que criou este exame, pode editá-lo.",
+            f"Só {exame.dono_medico.nome}, que criou este exame, e os médicos associados a ele podem editá-lo.",
             "danger",
         )
         return redirect(url_for("medico.exames_lista"))
@@ -1134,7 +1134,7 @@ def exames_editar(exame_id):
         filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
     ).order_by(PreparoModelo.nome).all()
     if eh_medico():
-        modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
+        modelos = [m for m in modelos if m.pode_ser_editado_por(current_user)]
 
     if request.method == "POST":
         exame.nome = request.form.get("nome", "").strip()
@@ -1153,16 +1153,9 @@ def exames_editar(exame_id):
         # médico editando o próprio exame - já que clínicas sem secretária
         # (só médicos) também precisam conseguir compartilhar um exame
         # entre colegas.
+        # Desde 2026-10-21 (pedido do Silvan) o exame com dono médico também
+        # pode ter outros médicos associados - ver "Médicos por preparo".
         medicos_extra_ids = {v for v in request.form.getlist("medicos_extra_ids", type=int) if v != exame.medico_id}
-        if exame.dono_medico and medicos_extra_ids:
-            # Exame com dono médico é SÓ dele - outros médicos não podem
-            # ser associados (nem como extras).
-            flash(
-                f"Este exame pertence a {exame.dono_medico.nome} — outros médicos não podem ser "
-                "associados a ele.",
-                "danger",
-            )
-            return render_template("medico/exames_form.html", exame=exame, medicos=medicos, modelos=modelos)
         exame.medicos_extra = [m for m in medicos if m.id in medicos_extra_ids]
         preparo_modelo_id = request.form.get("preparo_modelo_id", type=int)
         if preparo_modelo_id:
@@ -1227,7 +1220,7 @@ def exames_por_filial():
     if current_user.tipo == "medico":
         exames_visiveis = [
             e for e in exames_do_grupo
-            if e.dono_medico is None or e.dono_medico.id == current_user.id
+            if e.pode_ser_editado_por(current_user)
         ]
     else:
         exames_visiveis = exames_do_grupo
@@ -1568,8 +1561,65 @@ def preparo_modelos_lista():
     # inteira não deveria nem mostrar o conteúdo clínico de outro médico.
     # Secretária/dono continuam vendo todos.
     if eh_medico():
-        modelos = [m for m in modelos if m.dono_medico is None or m.dono_medico.id == current_user.id]
+        modelos = [m for m in modelos if m.pode_ser_editado_por(current_user)]
     return render_template("medico/preparo_modelos_lista.html", modelos=modelos)
+
+
+# ---------- Médicos por preparo (pedido do Silvan, 2026-10-21) ----------
+
+def _pode_associar_medicos(modelo):
+    """Secretária (e quem não é médico) associa médicos a qualquer preparo
+    do grupo; médico, só aos preparos que ele pode editar (o dele ou um
+    em que já foi associado)."""
+    return not eh_medico() or modelo.pode_ser_editado_por(current_user)
+
+
+@medico_bp.route("/preparos/medicos")
+@login_required
+@staff_required
+def preparos_medicos():
+    """Um mesmo exame, com o mesmo preparo, pode ser feito por mais de um
+    médico. Aqui se escolhe quais médicos fazem cada preparo: eles passam
+    a atender os exames que usam esse preparo (Exame.medicos_extra - agenda,
+    perguntas e listas já respeitam isso) e também podem editar o preparo
+    (PreparoModelo.pode_ser_editado_por)."""
+    grupo = empresa_atual()
+    modelos = (
+        PreparoModelo.query.filter(filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id))
+        .order_by(PreparoModelo.nome).all()
+    )
+    modelos = [m for m in modelos if _pode_associar_medicos(m)]
+    medicos = _medicos_do_escopo_atual(grupo) if grupo else []
+    linhas = []
+    for m in modelos:
+        principais = {e.medico_id for e in m.exames if e.medico_id}
+        associados = {u.id for e in m.exames for u in e.medicos_extra} - principais
+        linhas.append({"modelo": m, "principais": principais, "associados": associados})
+    return render_template("medico/preparos_medicos.html", linhas=linhas, medicos=medicos)
+
+
+@medico_bp.route("/preparos/<int:modelo_id>/medicos", methods=["POST"])
+@login_required
+@staff_required
+def preparos_medicos_salvar(modelo_id):
+    modelo = PreparoModelo.query.filter(
+        PreparoModelo.id == modelo_id, filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
+    ).first_or_404()
+    if not _pode_associar_medicos(modelo):
+        flash("Você não pode mudar os médicos deste preparo.", "danger")
+        return redirect(url_for("medico.preparos_medicos"))
+    if not modelo.exames:
+        flash("Este preparo ainda não tem exame - edite e salve o preparo uma vez para criar o exame.", "warning")
+        return redirect(url_for("medico.preparos_medicos"))
+    grupo = empresa_atual()
+    medicos = _medicos_do_escopo_atual(grupo) if grupo else []
+    escolhidos = set(request.form.getlist("medico_ids", type=int))
+    # O médico principal de cada exame continua sempre - só os associados mudam.
+    for exame in modelo.exames:
+        exame.medicos_extra = [m for m in medicos if m.id in escolhidos and m.id != exame.medico_id]
+    db.session.commit()
+    flash(f"Médicos do preparo \"{modelo.nome}\" atualizados.", "success")
+    return redirect(url_for("medico.preparos_medicos"))
 
 
 def _salvar_cortes_e_medicamentos(modelo, form):
@@ -2002,7 +2052,7 @@ def preparo_modelos_editar(modelo_id):
     # POR ELE. Modelos sem dono registrado (antigos) seguem como antes.
     if not modelo.pode_ser_editado_por(current_user):
         flash(
-            f"Só {modelo.dono_medico.nome}, que criou este modelo de preparo, pode editá-lo.",
+            f"Só {modelo.dono_medico.nome}, que criou este modelo de preparo, e os médicos associados a ele podem editá-lo.",
             "danger",
         )
         return redirect(url_for("medico.preparo_modelos_lista"))
@@ -2136,7 +2186,7 @@ def preparo_modelos_remover(modelo_id):
     # Mesma regra da edição: só o médico dono remove.
     if not modelo.pode_ser_editado_por(current_user):
         flash(
-            f"Só {modelo.dono_medico.nome}, que criou este modelo de preparo, pode removê-lo.",
+            f"Só {modelo.dono_medico.nome}, que criou este modelo de preparo, e os médicos associados a ele podem removê-lo.",
             "danger",
         )
         return redirect(url_for("medico.preparo_modelos_lista"))

@@ -1144,10 +1144,12 @@ class Exame(db.Model):
         return criador if criador and criador.tipo == "medico" else None
 
     def pode_ser_editado_por(self, usuario):
-        """Exame com dono médico só é editado POR ELE. Sem dono médico
-        (legado/criado pela secretária), a equipe segue editando."""
+        """Exame com dono médico é editado por ele e pelos médicos
+        associados a ele (medicos_extra - "Médicos por preparo", pedido do
+        Silvan, 2026-10-21). Sem dono médico (legado/criado pela
+        secretária), a equipe segue editando."""
         dono = self.dono_medico
-        return dono is None or usuario.id == dono.id
+        return dono is None or usuario.id == dono.id or self.medico_pode_atender(usuario.id)
 
 
 class Medicamento(db.Model):
@@ -2085,11 +2087,13 @@ class Notificacao(db.Model):
 
 
 def _preparo_pode_ser_editado_por(self, usuario):
-    """Modelo com dono médico só é editado POR ELE (ver criado_por_id).
-    Sem dono médico (legado/criado pela secretária), a equipe edita."""
+    """Modelo com dono médico é editado por ele (ver criado_por_id) e pelos
+    médicos associados a um exame que usa este preparo ("Médicos por
+    preparo", pedido do Silvan, 2026-10-21). Sem dono médico (legado/
+    criado pela secretária), a equipe edita."""
     criador = Usuario.query.get(self.criado_por_id) if self.criado_por_id else None
     if criador and criador.tipo == "medico":
-        return usuario.id == criador.id
+        return usuario.id == criador.id or any(e.medico_pode_atender(usuario.id) for e in self.exames)
     return True
 
 

@@ -257,6 +257,13 @@
       </li>
       {% endif %}
 
+      {# Quais médicos fazem cada preparo/exame (pedido do Silvan, 2026-10-21) #}
+      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
+        <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparos_medicos') %}active{% endif %}" href="{{ url_for('medico.preparos_medicos') }}">
+          <i class="bi bi-people me-2"></i>Médicos por preparo
+        </a>
+      </li>
+
       <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.pacientes') %}active{% endif %}" href="{{ url_for('medico.pacientes_lista') }}">
           <i class="bi bi-journal-plus me-2"></i>Pacientes

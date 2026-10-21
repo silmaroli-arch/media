@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{# "Médicos por preparo" (pedido do Silvan, 2026-10-21): quais médicos fazem
+   cada preparo/exame. Os associados atendem os exames desse preparo e
+   também podem editá-lo. Ver medico.preparos_medicos. #}
+{% block titulo %}Médicos por preparo{% endblock %}
+{% block conteudo %}
+<h3 class="mb-1">Médicos por preparo</h3>
+<p class="text-muted mb-3">
+  Um mesmo exame, com o mesmo preparo, pode ser feito por mais de um médico. Os médicos associados a um preparo
+  atendem os exames que usam esse preparo (agenda e perguntas dos pacientes) e também podem editar o preparo.
+</p>
+
+{% if not medicos %}
+<div class="alert alert-info">Para associar outros médicos, crie um grupo de trabalho e convide os colegas (menu Grupos de trabalho).</div>
+{% endif %}
+
+<div class="card p-3">
+  <div class="table-responsive">
+  <table class="table table-hover align-middle mb-0">
+    <thead><tr><th>Preparo</th><th>Exame(s)</th><th>Médicos</th><th></th></tr></thead>
+    <tbody>
+      {% for l in linhas %}
+      {% set m = l.modelo %}
+      <tr>
+        <td>{{ m.nome }}</td>
+        <td>{% if m.exames %}{{ m.exames|map(attribute='nome')|join(', ') }}{% else %}<span class="text-muted">Sem exame</span>{% endif %}</td>
+        <td>
+          {% for med in medicos if med.id in l.principais %}<span class="badge bg-primary me-1" title="Médico principal">{{ med.nome }}</span>{% endfor %}
+          {% for med in medicos if med.id in l.associados %}<span class="badge bg-light text-dark border me-1">{{ med.nome }}</span>{% endfor %}
+          {% if not l.principais and not l.associados %}<span class="text-muted">-</span>{% endif %}
+        </td>
+        <td class="text-end">
+          {% if m.exames and medicos %}
+          <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" data-bs-toggle="modal" data-bs-target="#modalMedicosPreparo"
+                  data-acao="{{ url_for('medico.preparos_medicos_salvar', modelo_id=m.id) }}" data-nome="{{ m.nome }}"
+                  data-principais="{{ l.principais|join('|') }}" data-associados="{{ l.associados|join('|') }}">
+            <i class="bi bi-people"></i> Médicos
+          </button>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-muted text-center">Nenhum preparo cadastrado ainda (menu Exames &amp; preparo).</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="modal fade" id="modalMedicosPreparo" tabindex="-1" aria-labelledby="modalMedicosPreparoTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" class="modal-content" id="formMedicosPreparo">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalMedicosPreparoTitulo"><i class="bi bi-people me-2"></i><span id="medicos_preparo_nome"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">Marque os médicos que fazem este exame com este preparo. O médico principal fica sempre.</p>
+        {% for med in medicos %}
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="medico_ids" value="{{ med.id }}" id="medico_preparo_{{ med.id }}">
+          <label class="form-check-label" for="medico_preparo_{{ med.id }}">
+            {{ med.nome }} <span class="text-muted small d-none" data-principal-de="{{ med.id }}">(principal)</span>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  document.getElementById('modalMedicosPreparo').addEventListener('show.bs.modal', function (evento) {
+    var b = evento.relatedTarget;
+    var principais = (b.getAttribute('data-principais') || '').split('|').filter(Boolean);
+    var associados = (b.getAttribute('data-associados') || '').split('|').filter(Boolean);
+    document.getElementById('formMedicosPreparo').action = b.getAttribute('data-acao');
+    document.getElementById('medicos_preparo_nome').textContent = 'Médicos de ' + b.getAttribute('data-nome');
+    document.querySelectorAll('#formMedicosPreparo input[name=medico_ids]').forEach(function (c) {
+      var principal = principais.indexOf(c.value) !== -1;
+      c.checked = principal || associados.indexOf(c.value) !== -1;
+      c.disabled = principal;  // o principal fica sempre
+      document.querySelector('[data-principal-de="' + c.value + '"]').classList.toggle('d-none', !principal);
+    });
+  });
+</script>
+{% endblock %}

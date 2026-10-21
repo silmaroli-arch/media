@@ -84,17 +84,17 @@ client.post("/equipe/clinica", data={"empresa_id": str(centro_id)}, follow_redir
 r = client.get("/equipe/preparo-modelos")
 html = r.get_data(as_text=True)
 checar("Na lista, a secretária vê quem é o dono do modelo",
-       "Só Dr. Eduardo Nunes pode editar" in html)
+       "Só Dr. Eduardo Nunes e os médicos associados podem editar" in html)
 
 r = client.get(f"/equipe/preparo-modelos/{modelo_id}/editar", follow_redirects=True)
 checar("Secretária é barrada ao editar o modelo",
-       "que criou este modelo de preparo, pode editá-lo" in r.get_data(as_text=True))
+       "que criou este modelo de preparo, e os médicos associados a ele podem editá-lo" in r.get_data(as_text=True))
 r = client.post(f"/equipe/preparo-modelos/{modelo_id}/remover", follow_redirects=True)
 checar("Secretária é barrada ao remover o modelo",
-       "pode removê-lo" in r.get_data(as_text=True))
+       "podem removê-lo" in r.get_data(as_text=True))
 r = client.get(f"/equipe/exames/{exame_id}/editar", follow_redirects=True)
 checar("Secretária é barrada ao editar o exame",
-       "que criou este exame, pode editá-lo" in r.get_data(as_text=True))
+       "que criou este exame, e os médicos associados a ele podem editá-lo" in r.get_data(as_text=True))
 
 # ---------- Associação: só o dono pode ser o médico do exame ----------
 
@@ -148,7 +148,7 @@ client.get("/logout")
 login("gilda@gruposaude.com")
 r = client.get(f"/equipe/preparo-modelos/{modelo_id}/editar", follow_redirects=True)
 checar("Outro médico também é barrado no modelo",
-       "pode editá-lo" in r.get_data(as_text=True))
+       "podem editá-lo" in r.get_data(as_text=True))
 client.get("/logout")
 
 # ---------- Conteúdo SEM dono (legado / criado pela secretária) ----------
