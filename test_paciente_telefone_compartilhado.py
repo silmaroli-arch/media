@@ -29,15 +29,15 @@ TELEFONE_FAMILIA = "(27) 97777-6666"
 login("secretaria@clinicavitoria.com", "123456")
 
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Pai Teste", "cpf": "555.444.333-22",
+    "nome": "Pai Teste", "cpf": "555.444.333-80",
     "telefone": TELEFONE_FAMILIA, "data_nascimento": "10/05/1980",
 }, follow_redirects=True)
 checar("Cadastro do pai funciona", "cadastrado" in r.get_data(as_text=True).lower() or r.status_code == 200)
 with app.app_context():
-    checar("Paciente 'Pai Teste' foi criado", Paciente.query.filter_by(cpf="555.444.333-22").first() is not None)
+    checar("Paciente 'Pai Teste' foi criado", Paciente.query.filter_by(cpf="555.444.333-80").first() is not None)
 
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Filho Teste", "cpf": "111.999.888-77",
+    "nome": "Filho Teste", "cpf": "111.999.888-39",
     "telefone": TELEFONE_FAMILIA, "data_nascimento": "20/03/2015",
 }, follow_redirects=True)
 html = r.get_data(as_text=True)
@@ -46,13 +46,13 @@ checar(
     "já existe" not in html.lower(),
 )
 with app.app_context():
-    checar("Paciente 'Filho Teste' foi criado", Paciente.query.filter_by(cpf="111.999.888-77").first() is not None)
+    checar("Paciente 'Filho Teste' foi criado", Paciente.query.filter_by(cpf="111.999.888-39").first() is not None)
     total_com_telefone = Usuario.query.filter_by(telefone="27977776666").count()
     checar("Existem 2 contas distintas com o mesmo telefone (pai e filho)", total_com_telefone == 2)
 
 # Tentar cadastrar de novo com o MESMO telefone E a MESMA data de nascimento do pai -> ainda deve bloquear.
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Pai Duplicado", "cpf": "000.111.222-33",
+    "nome": "Pai Duplicado", "cpf": "000.111.222-85",
     "telefone": TELEFONE_FAMILIA, "data_nascimento": "10/05/1980",
 }, follow_redirects=True)
 checar(
@@ -60,7 +60,7 @@ checar(
     "já existe um paciente cadastrado com esse telefone e data de nascimento" in r.get_data(as_text=True).lower(),
 )
 with app.app_context():
-    checar("Paciente duplicado NÃO foi criado", Paciente.query.filter_by(cpf="000.111.222-33").first() is None)
+    checar("Paciente duplicado NÃO foi criado", Paciente.query.filter_by(cpf="000.111.222-85").first() is None)
 
 client.get("/logout")
 

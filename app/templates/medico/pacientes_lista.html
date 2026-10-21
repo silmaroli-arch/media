@@ -5,7 +5,8 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h3>{% if current_user.tipo == "medico" %}Meus pacientes{% else %}Pacientes{% endif %}</h3>
   {% if current_user.perm_pacientes %}
-  <a href="{{ url_for('medico.pacientes_novo') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Novo paciente</a>
+  {# Abre numa janela, sem sair da lista (pedido do Silvan, 2026-10-21) #}
+  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovoPaciente"><i class="bi bi-plus-lg"></i> Novo paciente</button>
   {% endif %}
 </div>
 <div class="card p-3">
@@ -86,6 +87,139 @@
 </script>
 
 {% if current_user.perm_pacientes %}
+{# Novo paciente em duas etapas: 1) CPF - se já tem cadastro na plataforma
+   (outra clínica ou autocadastro), oferece importar; 2) se é novo, o resto
+   do cadastro. Ver medico.pacientes_buscar_cpf e medico.pacientes_novo
+   (origem=lista: em caso de erro, volta para cá com a janela aberta). #}
+<div class="modal fade" id="modalNovoPaciente" tabindex="-1" aria-labelledby="modalNovoPacienteTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" action="{{ url_for('medico.pacientes_novo') }}" class="modal-content" id="formNovoPaciente">
+      <input type="hidden" name="origem" value="lista">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalNovoPacienteTitulo"><i class="bi bi-person-plus me-2"></i>Novo paciente</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        {% if novo_form %}
+        {% for categoria, msg in get_flashed_messages(with_categories=true) if categoria in ('danger', 'warning') %}
+        <div class="alert alert-{{ categoria }} py-2 small">{{ msg }}</div>
+        {% endfor %}
+        {% endif %}
+        <label class="form-label" for="novo_cpf">CPF</label>
+        <div class="input-group">
+          <input type="text" inputmode="numeric" name="cpf" id="novo_cpf" class="form-control" placeholder="000.000.000-00"
+                 value="{{ novo_form.cpf if novo_form else '' }}" required>
+          <button type="button" class="btn btn-outline-primary" id="novo_continuar">Continuar</button>
+        </div>
+        <div class="form-text" id="novo_cpf_status">Primeiro o CPF: se o paciente já tem cadastro no MedIA, é só importar.</div>
+
+        <div id="novo_importar" class="alert alert-info mt-3 d-none">
+          <span id="novo_importar_texto"></span>
+          <button type="button" class="btn btn-sm btn-primary mt-2 d-block" id="novo_importar_botao">Importar para este grupo</button>
+        </div>
+
+        <div id="novo_campos" class="mt-3 {% if not novo_form %}d-none{% endif %}">
+          <div class="mb-3">
+            <label class="form-label" for="novo_nome">Nome</label>
+            <input type="text" name="nome" id="novo_nome" class="form-control" autocapitalize="words" value="{{ novo_form.nome if novo_form else '' }}">
+          </div>
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <label class="form-label" for="novo_telefone">Telefone (WhatsApp)</label>
+              <input type="text" inputmode="numeric" name="telefone" id="novo_telefone" class="form-control" placeholder="(27) 99999-9999"
+                     value="{{ novo_form.telefone if novo_form else '' }}">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label" for="novo_nascimento">Data de nascimento</label>
+              <input type="text" inputmode="numeric" name="data_nascimento" id="novo_nascimento" class="form-control" placeholder="DD/MM/AAAA"
+                     value="{{ novo_form.data_nascimento if novo_form else '' }}">
+            </div>
+          </div>
+          <div class="form-text mt-2">O paciente usa o CPF e a data de nascimento para acessar o sistema — não é preciso criar senha.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary {% if not novo_form %}d-none{% endif %}" id="novo_salvar">Cadastrar</button>
+      </div>
+    </form>
+  </div>
+</div>
+<form method="post" action="{{ url_for('medico.pacientes_importar') }}" id="formImportarPaciente" class="d-none">
+  <input type="hidden" name="cpf" id="importar_cpf">
+</form>
+<script>
+  (function () {
+    function mascara(campo, padrao) {
+      var max = (padrao.match(/9/g) || []).length;
+      campo.addEventListener('input', function () {
+        var d = campo.value.replace(/\D/g, '').slice(0, max), r = '', p = 0;
+        for (var i = 0; i < padrao.length && p < d.length; i++) { r += padrao[i] === '9' ? d[p++] : padrao[i]; }
+        campo.value = r;
+      });
+    }
+    var cpf = document.getElementById('novo_cpf');
+    mascara(cpf, '999.999.999-99');
+    mascara(document.getElementById('novo_telefone'), '(99) 99999-9999');
+    mascara(document.getElementById('novo_nascimento'), '99/99/9999');
+    var status = document.getElementById('novo_cpf_status');
+    var campos = document.getElementById('novo_campos');
+    var salvar = document.getElementById('novo_salvar');
+    var importar = document.getElementById('novo_importar');
+    function mostrarCampos(sim) {
+      campos.classList.toggle('d-none', !sim);
+      salvar.classList.toggle('d-none', !sim);
+      ['novo_nome', 'novo_telefone', 'novo_nascimento'].forEach(function (id) { document.getElementById(id).required = sim; });
+    }
+    function verificar() {
+      importar.classList.add('d-none');
+      mostrarCampos(false);
+      status.className = 'form-text';
+      status.textContent = 'Verificando...';
+      fetch('{{ url_for('medico.pacientes_buscar_cpf') }}?cpf=' + encodeURIComponent(cpf.value), { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.situacao === 'invalido') {
+            status.className = 'form-text text-danger';
+            status.textContent = 'CPF inválido — confira os números digitados.';
+          } else if (d.situacao === 'ja_e_paciente') {
+            status.className = 'form-text text-warning';
+            status.textContent = d.nome + ' já é paciente deste grupo.';
+          } else if (d.situacao === 'importar') {
+            status.textContent = '';
+            document.getElementById('novo_importar_texto').textContent =
+              d.nome + ' já tem cadastro no MedIA. Os dados vêm prontos: é só importar para este grupo.';
+            importar.classList.remove('d-none');
+          } else {
+            status.textContent = 'CPF novo no MedIA — complete o cadastro.';
+            mostrarCampos(true);
+            document.getElementById('novo_nome').focus();
+          }
+        })
+        .catch(function () {
+          status.className = 'form-text text-danger';
+          status.textContent = 'Não foi possível verificar o CPF agora. Tente de novo.';
+        });
+    }
+    document.getElementById('novo_continuar').addEventListener('click', verificar);
+    cpf.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && campos.classList.contains('d-none')) { e.preventDefault(); verificar(); }
+    });
+    cpf.addEventListener('input', function () { importar.classList.add('d-none'); mostrarCampos(false); });
+    document.getElementById('novo_importar_botao').addEventListener('click', function () {
+      document.getElementById('importar_cpf').value = cpf.value;
+      document.getElementById('formImportarPaciente').submit();
+    });
+    {% if novo_form %}
+    mostrarCampos(true);
+    // Voltou de um erro no cadastro: reabre a janela com os campos preenchidos.
+    window.addEventListener('load', function () {
+      if (window.bootstrap) new bootstrap.Modal(document.getElementById('modalNovoPaciente')).show();
+    });
+    {% endif %}
+  })();
+</script>
+
 <div class="modal fade" id="modalEditarPaciente" tabindex="-1" aria-labelledby="modalEditarPacienteTitulo" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <form method="post" class="modal-content" id="formEditarPaciente">

@@ -25,7 +25,7 @@ from app.models import (
     PlataformaConfig, MensagemSuporte, Notificacao, TipoExame, BaseConhecimentoItem, BaseConhecimentoSugestao,
     tipos_exame_ordenados, TipoExameSugestao,
     encontrar_conta_paciente, encontrar_conta_paciente_por_cpf, formatar_nome_proprio,
-    telefone_incompleto,
+    telefone_incompleto, validar_cpf,
 )
 from app.especialidades import ESPECIALIDADES, especialidade_valida
 from app.mercadopago_integration import (
@@ -569,7 +569,30 @@ def pacientes_lista():
     # escondido à parte - agora é um Paciente real, incluído normalmente
     # em `pacientes` acima (via _filtro_pacientes_da_empresa), sem
     # tratamento especial nesta tela.
-    return render_template("medico/pacientes_lista.html", pacientes=pacientes)
+    # Janela "Novo paciente" (pedido do Silvan, 2026-10-21): depois de um
+    # erro no cadastro, a lista volta com a janela aberta e os campos
+    # preenchidos (ver _voltar_com_erro em pacientes_novo).
+    novo_form = session.pop("novo_paciente_form", None) if request.args.get("novo") else None
+    return render_template("medico/pacientes_lista.html", pacientes=pacientes, novo_form=novo_form)
+
+
+@medico_bp.route("/pacientes/buscar-cpf")
+@login_required
+@staff_required
+@permissao_required("perm_pacientes")
+def pacientes_buscar_cpf():
+    """1º passo da janela "Novo paciente": o CPF já é paciente deste grupo,
+    tem cadastro na plataforma (outra clínica ou autocadastro, e aí é só
+    importar) ou é novo? Devolve JSON."""
+    cpf = request.args.get("cpf", "").strip()
+    if not validar_cpf(cpf):
+        return {"situacao": "invalido"}
+    encontrado = _buscar_paciente_por_cpf_plataforma(cpf)
+    if not encontrado:
+        return {"situacao": "novo"}
+    if Paciente.query.filter(_filtro_pacientes_da_empresa(), Paciente.id == encontrado.id).first():
+        return {"situacao": "ja_e_paciente", "nome": encontrado.nome}
+    return {"situacao": "importar", "nome": encontrado.nome}
 
 
 @medico_bp.route("/pacientes/solicitacoes")
@@ -665,6 +688,21 @@ def pacientes_novo():
         if not encontrado:
             flash("CPF não encontrado na plataforma — preencha o cadastro completo abaixo.", "info")
 
+    def _voltar_com_erro():
+        """Erro no cadastro. Veio da janela "Novo paciente" da lista (pedido
+        do Silvan, 2026-10-21)? Volta para a lista com a janela aberta e os
+        campos preenchidos (o motivo já foi para o flash). Senão, mostra o
+        formulário de página inteira, como sempre."""
+        if request.form.get("origem") == "lista":
+            session["novo_paciente_form"] = {
+                c: request.form.get(c, "") for c in ("nome", "cpf", "telefone", "data_nascimento")
+            }
+            return redirect(url_for("medico.pacientes_lista", novo=1))
+        return render_template(
+            "medico/pacientes_form.html", paciente=None,
+            cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
+        )
+
     if request.method == "POST":
         # O paciente é cadastrado na EMPRESA - não se escolhe filial aqui
         # ("o cliente é só cliente"). A filial só é escolhida na hora de
@@ -677,22 +715,23 @@ def pacientes_novo():
 
         if not nome or not cpf or not telefone or not data_nascimento_str:
             flash("Nome, CPF, telefone e data de nascimento são obrigatórios.", "danger")
-            return render_template("medico/pacientes_form.html", paciente=None)
+            return _voltar_com_erro()
+
+        if not validar_cpf(cpf):
+            flash("CPF inválido — confira os números digitados.", "danger")
+            return _voltar_com_erro()
 
         # Telefone incompleto (ex.: "(27" digitado e enviado sem terminar)
         # não travava o envio - a máscara só formata o que foi digitado,
         # não garante que a pessoa terminou de digitar.
         if telefone_incompleto(telefone_digitado):
             flash("Telefone incompleto — digite o DDD e o número completos.", "danger")
-            return render_template(
-                "medico/pacientes_form.html", paciente=None,
-                cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
-            )
+            return _voltar_com_erro()
 
         data_nascimento = _parse_data_nascimento(data_nascimento_str)
         if not data_nascimento:
             flash("Data de nascimento inválida — use o formato DD/MM/AAAA.", "danger")
-            return render_template("medico/pacientes_form.html", paciente=None)
+            return _voltar_com_erro()
 
         # Telefone não é único por pessoa - é normal uma família inteira
         # (pais e filhos, por exemplo) compartilhar o mesmo telefone de
@@ -712,7 +751,7 @@ def pacientes_novo():
             .first()
         ):
             flash("Já existe um paciente cadastrado com esse telefone e data de nascimento nesta empresa.", "danger")
-            return render_template("medico/pacientes_form.html", paciente=None)
+            return _voltar_com_erro()
 
         # Fatia 5: o cadastro (Paciente) é único e GLOBAL por CPF - não dá
         # mais para criar um cadastro novo se o CPF já existe em QUALQUER
@@ -729,7 +768,7 @@ def pacientes_novo():
                     "\"Buscar por CPF\" no topo desta página para importá-lo.",
                     "warning",
                 )
-            return render_template("medico/pacientes_form.html", paciente=None)
+            return _voltar_com_erro()
 
         # Paciente não usa e-mail/senha para entrar — o acesso é feito
         # informando telefone e data de nascimento (ver auth.login_paciente).
@@ -773,10 +812,7 @@ def pacientes_novo():
         )
         return redirect(url_for("medico.pacientes_lista"))
 
-    return render_template(
-        "medico/pacientes_form.html", paciente=None,
-        cpf_busca=cpf_busca, encontrado=encontrado, busca_feita=busca_feita,
-    )
+    return _voltar_com_erro()
 
 
 @medico_bp.route("/pacientes/importar", methods=["POST"])

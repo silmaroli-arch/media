@@ -57,7 +57,7 @@ html_form = r.get_data(as_text=True)
 checar("Formulário de novo paciente NÃO pede filial", 'name="clinica_id"' not in html_form)
 
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "cliente da empresa", "cpf": "321.654.987-00", "email": "",
+    "nome": "cliente da empresa", "cpf": "321.654.987-91", "email": "",
     "telefone": "(27) 97777-0001", "data_nascimento": "1992-05-10",
 }, follow_redirects=True)
 checar("Cadastro do paciente sem filial funciona", "cadastrado" in r.get_data(as_text=True).lower())
@@ -97,6 +97,31 @@ with app.app_context():
     editado.nome = "Cliente da Empresa"
     db.session.commit()
 
+# "Novo paciente" numa janela, em duas etapas (2026-10-21).
+checar("'Novo paciente' abre a janela", 'data-bs-target="#modalNovoPaciente"' in html_lista and 'id="modalNovoPaciente"' in html_lista)
+checar("1ª etapa: CPF inválido", client.get("/equipe/pacientes/buscar-cpf?cpf=111.111.111-11").get_json() == {"situacao": "invalido"})
+checar("1ª etapa: CPF que já é paciente do grupo",
+       client.get("/equipe/pacientes/buscar-cpf?cpf=321.654.987-91").get_json()["situacao"] == "ja_e_paciente")
+checar("1ª etapa: CPF novo", client.get("/equipe/pacientes/buscar-cpf?cpf=529.982.247-25").get_json() == {"situacao": "novo"})
+r = client.post("/equipe/pacientes/novo", data={
+    "origem": "lista", "nome": "paciente da janela", "cpf": "529.982.247-25",
+    "telefone": "(27) 97777-0003", "data_nascimento": "10",
+})
+checar("Erro na janela volta para a lista com a janela aberta", r.status_code == 302 and "novo=1" in r.headers["Location"])
+html_erro = client.get(r.headers["Location"]).get_data(as_text=True)
+checar("... mostrando o erro e os campos preenchidos",
+       "Data de nascimento inválida" in html_erro and 'value="paciente da janela"' in html_erro and "new bootstrap.Modal" in html_erro)
+r = client.post("/equipe/pacientes/novo", data={
+    "origem": "lista", "nome": "paciente da janela", "cpf": "529.982.247-25",
+    "telefone": "(27) 97777-0003", "data_nascimento": "10/05/1990",
+}, follow_redirects=True)
+checar("Cadastro pela janela funciona e volta para a lista",
+       "cadastrado" in r.get_data(as_text=True).lower() and "Paciente da Janela" in r.get_data(as_text=True))
+r = client.post("/equipe/pacientes/novo", data={
+    "nome": "Cpf Errado", "cpf": "123.456.789-99", "telefone": "(27) 97777-0004", "data_nascimento": "10/05/1990",
+}, follow_redirects=True)
+checar("Cadastro pela equipe agora confere o CPF", "CPF inválido" in r.get_data(as_text=True))
+
 # "Detalhes" virou a janela "Todos os agendamentos" (2026-10-21).
 checar("Lista tem 'Todos os agendamentos' e não tem mais 'Detalhes'",
        "Todos os agendamentos" in html_lista and ">Detalhes<" not in html_lista
@@ -107,7 +132,7 @@ checar("Janela de agendamentos responde (sem agendamentos ainda)",
 
 # CPF duplicado é bloqueado por GRUPO (não mais por filial).
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Cliente Repetido", "cpf": "321.654.987-00", "email": "",
+    "nome": "Cliente Repetido", "cpf": "321.654.987-91", "email": "",
     "telefone": "(27) 97777-0002", "data_nascimento": "1993-06-11",
 }, follow_redirects=True)
 checar("CPF repetido no mesmo grupo é rejeitado", "já existe um paciente com esse cpf nesta empresa" in r.get_data(as_text=True).lower())
@@ -141,7 +166,7 @@ checar("Paciente pode ser agendado no Grupo Centro", "criado com sucesso" in r.g
 # mesmo paciente (identidade global) pra lá pelo CPF - a associação com um
 # Grupo não é automática entre Grupos distintos.
 client.post("/equipe/clinica", data={"clinica_id": str(praia_id)}, follow_redirects=True)
-r = client.post("/equipe/pacientes/importar", data={"cpf": "321.654.987-00"}, follow_redirects=True)
+r = client.post("/equipe/pacientes/importar", data={"cpf": "321.654.987-91"}, follow_redirects=True)
 checar("Paciente importado (pelo CPF) para o Grupo Praia", "importado" in r.get_data(as_text=True).lower())
 
 r = client.post("/equipe/agenda/novo", data={
@@ -169,7 +194,7 @@ r = client.get("/equipe/pacientes")
 checar("Paciente do Grupo Saúde Total NÃO aparece para a Clínica Vitória", "Cliente da Empresa" not in r.get_data(as_text=True))
 client.get("/logout")
 
-r = client.post("/login-paciente", data={"cpf": "321.654.987-00", "data_nascimento": "10/05/1992"}, follow_redirects=True)
+r = client.post("/login-paciente", data={"cpf": "321.654.987-91", "data_nascimento": "10/05/1992"}, follow_redirects=True)
 checar("Paciente loga normalmente (CPF + nascimento)", r.status_code == 200)
 client.get("/logout")
 

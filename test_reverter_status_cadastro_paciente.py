@@ -23,12 +23,12 @@ def login(email, senha):
 login("secretaria@clinicavitoria.com", "123456")
 
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Paciente Reversao Teste", "cpf": "789.789.789-00",
+    "nome": "Paciente Reversao Teste", "cpf": "789.789.789-32",
     "telefone": "(27) 93333-2222", "data_nascimento": "12/12/1999",
 }, follow_redirects=True)
 
 with app.app_context():
-    paciente = Paciente.query.filter_by(cpf="789.789.789-00").first()
+    paciente = Paciente.query.filter_by(cpf="789.789.789-32").first()
     checar("Paciente de teste foi criado", paciente is not None)
     paciente_id = paciente.id
 
@@ -58,11 +58,11 @@ checar("Redireciona de volta para a tela de detalhe do paciente", f"/equipe/paci
 
 # O fluxo antigo (a partir da fila de solicitações pendentes) continua funcionando normalmente.
 r2 = client.post("/equipe/pacientes/novo", data={
-    "nome": "Paciente Fila Pendente", "cpf": "321.321.321-00",
+    "nome": "Paciente Fila Pendente", "cpf": "321.321.321-78",
     "telefone": "(27) 92222-1111", "data_nascimento": "01/01/2000",
 }, follow_redirects=True)
 with app.app_context():
-    paciente2_id = Paciente.query.filter_by(cpf="321.321.321-00").first().id
+    paciente2_id = Paciente.query.filter_by(cpf="321.321.321-78").first().id
 
 r2 = client.post(f"/equipe/pacientes/{paciente2_id}/cadastro/decidir", data={"acao": "aceitar"}, follow_redirects=True)
 checar("Fluxo antigo (sem 'origem') continua redirecionando para a fila de solicitações", "/equipe/pacientes/solicitacoes" in r2.request.path)

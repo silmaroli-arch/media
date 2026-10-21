@@ -238,13 +238,13 @@ checar("Médico solo consegue acessar Novo paciente mesmo sem Grupo", r.status_c
 # ---------- Cadastro de paciente sem senha: login por telefone + data de nascimento ----------
 
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Beatriz Nunes", "cpf": "555.666.777-00", "email": "",
+    "nome": "Beatriz Nunes", "cpf": "555.666.777-20", "email": "",
 }, follow_redirects=True)
 checar("Cadastro de paciente exige telefone e data de nascimento (sem eles, é rejeitado)",
        "obrigatórios" in r.get_data(as_text=True).lower())
 
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Beatriz Nunes", "cpf": "555.666.777-00", "email": "",
+    "nome": "Beatriz Nunes", "cpf": "555.666.777-20", "email": "",
     "telefone": "(28) 98765-4321", "data_nascimento": "1995-06-20",
 }, follow_redirects=True)
 texto = r.get_data(as_text=True)
@@ -259,7 +259,7 @@ checar("Paciente recém-cadastrado (sem agendamento ainda) já aparece na lista 
 # login do paciente já usa telefone + data de nascimento pra diferenciar
 # as contas - ver comentário em routes_medico.pacientes_novo).
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Outra Pessoa", "cpf": "999.888.777-00", "email": "",
+    "nome": "Outra Pessoa", "cpf": "999.888.777-14", "email": "",
     "telefone": "(28) 98765-4321", "data_nascimento": "1980-01-01",
 }, follow_redirects=True)
 checar("Cadastro com o MESMO telefone mas data de nascimento DIFERENTE agora é permitido (compartilhamento familiar)",
@@ -268,7 +268,7 @@ checar("Cadastro com o MESMO telefone mas data de nascimento DIFERENTE agora é 
 # Duplicata DE VERDADE: mesmo telefone E mesma data de nascimento de
 # Beatriz - essa sim continua bloqueada (mesma pessoa se cadastrando de novo).
 r = client.post("/equipe/pacientes/novo", data={
-    "nome": "Beatriz Duplicada", "cpf": "111.111.111-11", "email": "",
+    "nome": "Beatriz Duplicada", "cpf": "111.111.112-00", "email": "",
     "telefone": "(28) 98765-4321", "data_nascimento": "1995-06-20",
 }, follow_redirects=True)
 checar("Cadastro com o MESMO telefone E a MESMA data de nascimento continua bloqueado",
@@ -276,17 +276,17 @@ checar("Cadastro com o MESMO telefone E a MESMA data de nascimento continua bloq
 
 client.get("/logout")
 
-r = login_paciente("999.888.777-00", "1980-01-01")
+r = login_paciente("999.888.777-14", "1980-01-01")
 texto = r.get_data(as_text=True)
 checar("Login da 'Outra Pessoa' funciona (CPF + nascimento próprios, mesmo telefone de contato da Beatriz)",
        "Meus exames" in texto or "Tirar dúvidas" in texto)
 client.get("/logout")
 
-r = login_paciente("999.888.777-00", "1970-12-31")
+r = login_paciente("999.888.777-14", "1970-12-31")
 checar("Login com CPF existente mas data de nascimento que não bate é rejeitado",
        "incorretos" in r.get_data(as_text=True).lower())
 
-r = login_paciente("555.666.777-00", "1995-06-20")
+r = login_paciente("555.666.777-20", "1995-06-20")
 texto = r.get_data(as_text=True)
 checar("Paciente cadastrado sem senha consegue entrar só com CPF e data de nascimento",
        "Meus exames" in texto or "Tirar dúvidas" in texto)
