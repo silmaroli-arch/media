@@ -32,39 +32,48 @@
 </div>
 {% endif %}
 
+{# Calendário (pedido do Silvan, 2026-10-21) - FullCalendar 6, no lugar da
+   tabela. Clicar num exame abre a janela de detalhes (com Atendimento,
+   Resultado e Encerrar); clicar num dia/horário vazio abre "Agendar exame"
+   com a data preenchida. No celular abre na lista da semana. #}
+<style>
+  /* Calendário nas cores do MedIA; exame encerrado aparece apagado. */
+  #calendario { --fc-button-bg-color: #1660B0; --fc-button-border-color: #1660B0;
+                --fc-button-hover-bg-color: #0E3F78; --fc-button-hover-border-color: #0E3F78;
+                --fc-button-active-bg-color: #0E3F78; --fc-button-active-border-color: #0E3F78;
+                --fc-today-bg-color: #eef5ff; }
+  #calendario .fc-toolbar-title { font-size: 1.15rem; }
+  #calendario a { text-decoration: none; color: inherit; }
+  #calendario .fc-event { cursor: pointer; }
+  #calendario .agendamento-encerrado { opacity: .5; }
+  #calendario .fc-daygrid-day { cursor: pointer; }
+  @media (max-width: 767px) { #calendario .fc-toolbar { flex-wrap: wrap; gap: .5rem; } }
+</style>
 <div class="card p-3">
-  <div class="table-responsive">
-  <table class="table table-hover mb-0">
-    <thead><tr><th>Data/Hora</th>{{ th_filial() }}<th>Paciente</th><th>Exame</th><th>Médico</th><th></th></tr></thead>
-    <tbody>
-      {% for a in proximos %}
-      <tr>
-        <td class="text-nowrap">{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
-        {{ td_filial(a) }}
-        <td>{{ a.paciente.nome }}</td>
-        <td>{{ a.exame.nome }}</td>
-        <td>{{ a.medico.nome if a.medico else '-' }}</td>
-        <td class="text-nowrap">
-          <div class="d-flex gap-1 flex-wrap">
-            <a href="{{ url_for('medico.atendimento', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Atendimento">Atendimento</a>
-            <a href="{{ url_for('medico.resultado_upload', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Resultado">Resultado</a>
-            {# Encerra sem precisar abrir a tela de Atendimento nem escrever
-               nada (pedido do Silvan, 2026-09-25) - some quando já está
-               encerrado, pra não dar a impressão de que dá pra clicar de
-               novo (ver Agendamento.encerrada em app/models.py). #}
-            {% if not a.encerrada %}
-            <form method="post" action="{{ url_for('medico.atendimento_encerrar_rapido', agendamento_id=a.id) }}" class="d-inline" onsubmit="return confirm('Encerrar este atendimento?');">
-              <button type="submit" class="btn btn-sm btn-outline-success" title="Encerrar sem anotar nada">Encerrar</button>
-            </form>
-            {% endif %}
-          </div>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="{{ 6 if mostrar_filial else 5 }}" class="text-muted text-center">Nenhum exame agendado no momento.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div id="calendario"></div>
+</div>
+
+<div class="modal fade" id="modalAgendamento" tabindex="-1" aria-labelledby="modalAgendamentoTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalAgendamentoTitulo"><i class="bi bi-calendar-event me-2"></i><span id="ag_quando"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-1"><strong>Paciente:</strong> <span id="ag_paciente"></span></p>
+        <p class="mb-1"><strong>Exame:</strong> <span id="ag_exame"></span></p>
+        <p class="mb-1"><strong>Médico:</strong> <span id="ag_medico"></span></p>
+        <p class="mb-0 small text-muted d-none" id="ag_encerrado">Atendimento encerrado.</p>
+      </div>
+      <div class="modal-footer justify-content-start">
+        <a id="ag_atendimento" class="btn btn-outline-secondary btn-sm">Atendimento</a>
+        <a id="ag_resultado" class="btn btn-outline-secondary btn-sm">Resultado</a>
+        <form method="post" id="ag_encerrar" class="d-inline" onsubmit="return confirm('Encerrar este atendimento?');">
+          <button type="submit" class="btn btn-outline-success btn-sm" title="Encerrar sem anotar nada">Encerrar</button>
+        </form>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -131,7 +140,84 @@
     </form>
   </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.15/locales/pt-br.global.min.js"></script>
 <script>
+  (function () {
+    // Uma cor por médico (sempre a mesma para o mesmo médico).
+    var cores = ['#1660B0', '#0E9F6E', '#C2410C', '#7C3AED', '#BE185D', '#0E7490', '#A16207', '#4D7C0F'];
+    var eventos = [
+      {% for a in proximos %}
+      {
+        id: '{{ a.id }}',
+        title: {{ (a.paciente.nome ~ ' - ' ~ a.exame.nome)|tojson }},
+        start: '{{ a.data_hora.strftime('%Y-%m-%dT%H:%M') }}',
+        {% if a.exame and a.exame.duracao_minutos %}end: '{{ (a.data_hora + timedelta(minutes=a.exame.duracao_minutos)).strftime('%Y-%m-%dT%H:%M') }}',{% endif %}
+        backgroundColor: {{ 'cores[' ~ ((a.medico_id or 0) % 8) ~ ']' }},
+        borderColor: {{ 'cores[' ~ ((a.medico_id or 0) % 8) ~ ']' }},
+        classNames: [{% if a.encerrada %}'agendamento-encerrado'{% endif %}],
+        extendedProps: {
+          paciente: {{ a.paciente.nome|tojson }},
+          exame: {{ (a.exame.nome if a.exame else '-')|tojson }},
+          medico: {{ (a.medico.nome if a.medico else '-')|tojson }},
+          quando: '{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}',
+          encerrada: {{ 'true' if a.encerrada else 'false' }},
+          atendimento: '{{ url_for('medico.atendimento', agendamento_id=a.id) }}',
+          resultado: '{{ url_for('medico.resultado_upload', agendamento_id=a.id) }}',
+          encerrar: '{{ '' if a.encerrada else url_for('medico.atendimento_encerrar_rapido', agendamento_id=a.id) }}'
+        }
+      }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ];
+    document.addEventListener('DOMContentLoaded', function () {
+      var el = document.getElementById('calendario');
+      if (!window.FullCalendar) {
+        el.innerHTML = '<p class="text-danger mb-0">Não foi possível carregar o calendário. Recarregue a página.</p>';
+        return;
+      }
+      var celular = window.matchMedia('(max-width: 767px)').matches;
+      var calendario = new FullCalendar.Calendar(el, {
+        locale: 'pt-br',
+        initialView: celular ? 'listWeek' : 'dayGridMonth',
+        headerToolbar: celular
+          ? { left: 'prev,next', center: 'title', right: 'today' }
+          : { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek' },
+        footerToolbar: celular ? { center: 'listWeek,dayGridMonth,timeGridDay' } : false,
+        buttonText: { listWeek: 'Lista' },
+        height: 'auto',
+        nowIndicator: true,
+        allDaySlot: false,
+        slotMinTime: '06:00:00',
+        slotMaxTime: '21:00:00',
+        dayMaxEvents: 3,
+        eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
+        noEventsContent: 'Nenhum exame agendado neste período.',
+        events: eventos,
+        eventClick: function (info) {
+          var p = info.event.extendedProps;
+          document.getElementById('ag_quando').textContent = p.quando;
+          document.getElementById('ag_paciente').textContent = p.paciente;
+          document.getElementById('ag_exame').textContent = p.exame;
+          document.getElementById('ag_medico').textContent = p.medico;
+          document.getElementById('ag_atendimento').href = p.atendimento;
+          document.getElementById('ag_resultado').href = p.resultado;
+          document.getElementById('ag_encerrar').action = p.encerrar;
+          document.getElementById('ag_encerrar').classList.toggle('d-none', p.encerrada);
+          document.getElementById('ag_encerrado').classList.toggle('d-none', !p.encerrada);
+          bootstrap.Modal.getOrCreateInstance(document.getElementById('modalAgendamento')).show();
+        },
+        // Dia/horário vazio: abre "Agendar exame" com a data (e a hora, nas
+        // visões de semana/dia; no mês, 08:00).
+        dateClick: function (info) {
+          var quando = info.allDay ? info.dateStr + 'T08:00' : info.dateStr.slice(0, 16);
+          document.getElementById('agendar_data').value = quando;
+          bootstrap.Modal.getOrCreateInstance(document.getElementById('modalAgendarExame')).show();
+        }
+      });
+      calendario.render();
+    });
+  })();
+
   (function () {
     var exame = document.getElementById('agendar_exame');
     var medico = document.getElementById('agendar_medico');

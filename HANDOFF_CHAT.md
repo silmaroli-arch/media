@@ -2491,6 +2491,14 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Quem associa: secretária (qualquer preparo do grupo) e médico só nos preparos que ele pode editar. Conta sem grupo: aviso para criar um grupo e convidar colegas.
 - Teste: `test_medicos_por_preparo.py` (13 checks); `test_dono_conteudo_clinico.py` ajustado às mensagens novas.
 
+## Exames agendados em calendário (2026-10-21, pedido do Silvan)
+
+- A tabela de `medico/medico_agenda_pessoal.html` virou um calendário com **FullCalendar 6.1.15** (jsdelivr: `fullcalendar@6.1.15/index.global.min.js` e a tradução `@fullcalendar/core@6.1.15/locales/pt-br.global.min.js`). Visões: Mês, Semana, Dia e Lista; no celular abre na Lista da semana, com os botões embaixo.
+- Uma cor por médico (`medico_id % 8`); encerrado aparece apagado. A duração do exame (`Exame.duracao_minutos`), quando existe, define o fim do evento.
+- Clicar num exame abre a janela `#modalAgendamento` (paciente, exame, médico, Atendimento, Resultado e Encerrar, que estavam na tabela). Clicar num dia ou horário vazio abre "Agendar exame" com a data preenchida (no mês, às 08:00).
+- Os eventos são gerados no próprio template (`var eventos = [...]`); a rota passa `timedelta` para calcular o fim. Filtro por médico e regras de quem vê o quê não mudaram.
+- Testes ajustados: `test_exames_agendados_tela_unica.py` (lê os eventos) e `test_atendimento_encerrar_rapido.py`. Conferido no navegador (computador e celular).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2517,7 +2525,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 
 **Exames agendados (tela única)**
 - [ ] Menu sem "Agendar exame"; médico vê "Meus exames agendados" (só os dele), secretária vê "Exames agendados" (todos os médicos do grupo, com filtro)
-- [ ] Coluna Médico
+- [ ] Calendário: Mês, Semana, Dia e Lista (no celular, Lista); cor por médico; clicar no exame abre os detalhes com Atendimento, Resultado e Encerrar; clicar num dia vazio abre "Agendar exame" com a data
 - [ ] Botão "Agendar exame" (janela): o médico é filtrado pelo exame escolhido; sem os campos de acompanhante
 
 **Exames & preparo (modelo de preparo / cadastro de exame)**

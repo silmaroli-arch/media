@@ -2700,6 +2700,7 @@ def medico_agenda_pessoal(medico_id=None):
         medicos_agendar=medicos_agendar,
         agendar_form=agendar_form,
         abrir_agendar=bool(request.args.get("agendar")),
+        timedelta=timedelta,
     )
 
 

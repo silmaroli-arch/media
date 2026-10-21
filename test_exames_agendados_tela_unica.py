@@ -20,8 +20,10 @@ def checar(nome, condicao):
 
 
 def tabela(html):
-    """Só a lista de agendamentos (a janela tem a lista de pacientes)."""
-    return html[:html.find('id="modalAgendarExame"')]
+    """Só os agendamentos do calendário (os eventos; a janela de agendar
+    tem a lista de pacientes)."""
+    inicio = html.find("var eventos = [")
+    return html[inicio:html.find("];", inicio)]
 
 
 def entrar(email):
@@ -43,7 +45,9 @@ html = sec.get("/equipe/medico-agenda", follow_redirects=True).get_data(as_text=
 checar("Secretária vê o título 'Exames agendados'", "<h3 class=\"mb-1\">Exames agendados</h3>" in html)
 checar("... os exames dos dois médicos do grupo", "Dr. Carlos Andrade" in html and "Dra. Fernanda Lima" in html
        and "Pedro Souza" in html and "João Pereira" in html)
-checar("... com a coluna Médico", "<th>Médico</th>" in html)
+checar("... em calendário, com o médico de cada exame",
+       'id="calendario"' in html and "FullCalendar.Calendar" in html and '"medico": "Dra. Fernanda Lima"' not in html
+       and "medico: \"Dra. Fernanda Lima\"" in tabela(html))
 checar("... e não os de outro grupo (Maria, Clínica São Paulo)", "Maria Silva" not in tabela(html))
 checar("... e o botão 'Agendar exame' com a janela", 'data-bs-target="#modalAgendarExame"' in html and 'id="modalAgendarExame"' in html)
 menu = html[html.find('<nav class="app-sidebar'):html.find('</nav>', html.find('<nav class="app-sidebar'))]
@@ -54,8 +58,9 @@ checar("Filtro por médico mostra só os dele", "Pedro Souza" in html and "João
 # ---------- Médico: só os dele ----------
 med = entrar("medica2@clinicavitoria.com")
 med.post("/equipe/clinica", data={"clinica_id": str(vitoria_id)}, follow_redirects=True)
-html = tabela(med.get("/equipe/medico-agenda", follow_redirects=True).get_data(as_text=True))
-checar("Médica vê 'Meus exames agendados' só com os dela", "Meus exames agendados" in html
+pagina = med.get("/equipe/medico-agenda", follow_redirects=True).get_data(as_text=True)
+html = tabela(pagina)
+checar("Médica vê 'Meus exames agendados' só com os dela", "Meus exames agendados" in pagina
        and "Pedro Souza" in html and "João Pereira" not in html)
 html = tabela(med.get(f"/equipe/medico-agenda/{carlos_id}").get_data(as_text=True))
 checar("Médica não vê os do colega nem pelo endereço", "João Pereira" not in html)
