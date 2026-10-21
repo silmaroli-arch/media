@@ -1,32 +1,49 @@
 {% extends "base.html" %}
 {% from "medico/_filial.html" import th_filial, td_filial, badge_filial, select_filial with context %}
-{% block titulo %}Meus exames agendados{% endblock %}
+{# Tela única de exames agendados (pedido do Silvan, 2026-10-21): a lista e
+   o "Agendar exame" numa janela - o item de menu "Agendar exame" saiu.
+   Médico vê só os dele; secretária vê os de todos os médicos do grupo.
+   Ver medico.medico_agenda_pessoal; o POST da janela vai para
+   medico.agenda_novo (origem=agenda). #}
+{% block titulo %}{% if eh_medico %}Meus exames agendados{% else %}Exames agendados{% endif %}{% endblock %}
 {% block conteudo %}
-<h3 class="mb-1">Exames agendados de {{ medico_alvo.nome }}</h3>
-<p class="text-muted mb-4">Exames agendados deste médico na filial atual.</p>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <h3 class="mb-1">{% if eh_medico %}Meus exames agendados{% else %}Exames agendados{% endif %}</h3>
+    <p class="text-muted mb-0">
+      {% if eh_medico %}Os exames agendados com você.{% else %}Os exames agendados com os médicos do grupo.{% endif %}
+    </p>
+  </div>
+  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalAgendarExame">
+    <i class="bi bi-calendar-plus me-1"></i> Agendar exame
+  </button>
+</div>
 
 {% if medicos %}
-<div class="mb-4">
-  <label class="form-label">Médico</label>
-  <select class="form-select" style="max-width: 350px" onchange="window.location = '{{ url_for('medico.medico_agenda_pessoal') }}/' + this.value">
+<div class="mb-3">
+  <label class="form-label small mb-1" for="filtro_medico">Médico</label>
+  <select id="filtro_medico" class="form-select" style="max-width: 350px"
+          onchange="window.location = this.value ? '{{ url_for('medico.medico_agenda_pessoal') }}/' + this.value : '{{ url_for('medico.medico_agenda_pessoal') }}'">
+    <option value="">Todos os médicos</option>
     {% for m in medicos %}
-    <option value="{{ m.id }}" {% if m.id == medico_alvo.id %}selected{% endif %}>{{ m.nome }}</option>
+    <option value="{{ m.id }}" {% if medico_filtro and m.id == medico_filtro.id %}selected{% endif %}>{{ m.nome }}</option>
     {% endfor %}
   </select>
 </div>
 {% endif %}
 
 <div class="card p-3">
-  <h5>Próximos agendamentos</h5>
-  <table class="table table-hover mt-2">
-    <thead><tr><th>Data/Hora</th>{{ th_filial() }}<th>Paciente</th><th>Exame</th><th></th></tr></thead>
+  <div class="table-responsive">
+  <table class="table table-hover mb-0">
+    <thead><tr><th>Data/Hora</th>{{ th_filial() }}<th>Paciente</th><th>Exame</th><th>Médico</th><th></th></tr></thead>
     <tbody>
       {% for a in proximos %}
       <tr>
-        <td>{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td class="text-nowrap">{{ a.data_hora.strftime('%d/%m/%Y %H:%M') }}</td>
         {{ td_filial(a) }}
         <td>{{ a.paciente.nome }}</td>
         <td>{{ a.exame.nome }}</td>
+        <td>{{ a.medico.nome if a.medico else '-' }}</td>
         <td class="text-nowrap">
           <div class="d-flex gap-1 flex-wrap">
             <a href="{{ url_for('medico.atendimento', agendamento_id=a.id) }}" class="btn btn-sm btn-outline-secondary" title="Atendimento">Atendimento</a>
@@ -44,9 +61,102 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="{{ 5 if mostrar_filial else 4 }}" class="text-muted text-center">Nenhum exame agendado no momento.</td></tr>
+      <tr><td colspan="{{ 6 if mostrar_filial else 5 }}" class="text-muted text-center">Nenhum exame agendado no momento.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
+
+<div class="modal fade" id="modalAgendarExame" tabindex="-1" aria-labelledby="modalAgendarExameTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" action="{{ url_for('medico.agenda_novo') }}" class="modal-content">
+      <input type="hidden" name="origem" value="agenda">
+      {% if filial %}<input type="hidden" name="filial_id" value="{{ filial.id }}">{% endif %}
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalAgendarExameTitulo"><i class="bi bi-calendar-plus me-2"></i>Agendar exame</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        {% if abrir_agendar %}
+        {% for categoria, msg in get_flashed_messages(with_categories=true) if categoria in ('danger', 'warning') %}
+        <div class="alert alert-{{ categoria }} py-2 small">{{ msg }}</div>
+        {% endfor %}
+        {% endif %}
+        <div class="mb-3">
+          <label class="form-label" for="agendar_paciente">Paciente</label>
+          <select name="paciente_id" id="agendar_paciente" class="form-select" required>
+            <option value="" disabled {% if not agendar_form %}selected{% endif %}>Selecione...</option>
+            {% for p in pacientes %}
+            <option value="{{ p.id }}" {% if agendar_form and agendar_form.paciente_id == p.id|string %}selected{% endif %}>{{ p.nome }} ({{ p.cpf }})</option>
+            {% endfor %}
+          </select>
+          {% if not pacientes %}<div class="form-text text-danger">Nenhum paciente cadastrado ainda (menu Pacientes).</div>{% endif %}
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="agendar_exame">Exame</label>
+          <select name="exame_id" id="agendar_exame" class="form-select" required>
+            <option value="" disabled {% if not agendar_form %}selected{% endif %}>Selecione...</option>
+            {% for e in exames %}
+            {# data-medicos: quem pode atender este exame (principal + associados) #}
+            <option value="{{ e.id }}" data-medicos="{{ ([e.medico_id] + e.medicos_extra|map(attribute='id')|list)|join('|') }}"
+                    {% if agendar_form and agendar_form.exame_id == e.id|string %}selected{% endif %}>{{ e.nome }}</option>
+            {% endfor %}
+          </select>
+          {% if not exames %}<div class="form-text text-danger">Nenhum exame cadastrado ainda (menu Exames &amp; preparo).</div>{% endif %}
+        </div>
+        {% if not eh_medico %}
+        <div class="mb-3">
+          <label class="form-label" for="agendar_medico">Médico</label>
+          <select name="medico_id" id="agendar_medico" class="form-select" required>
+            <option value="" disabled selected>Selecione o exame primeiro...</option>
+            {% for m in medicos_agendar %}
+            <option value="{{ m.id }}" {% if agendar_form and agendar_form.medico_id == m.id|string %}selected{% endif %}>{{ m.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        <div class="mb-3">
+          <label class="form-label" for="agendar_data">Data e hora</label>
+          <input type="datetime-local" name="data_hora" id="agendar_data" class="form-control" required
+                 value="{{ agendar_form.data_hora if agendar_form else '' }}">
+        </div>
+        <label class="form-label" for="agendar_obs">Observações</label>
+        <textarea name="observacoes" id="agendar_obs" class="form-control" rows="2">{{ agendar_form.observacoes if agendar_form else '' }}</textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Agendar</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  (function () {
+    var exame = document.getElementById('agendar_exame');
+    var medico = document.getElementById('agendar_medico');
+    // Secretária: o médico só pode ser um dos que atendem o exame escolhido.
+    function filtrarMedicos() {
+      if (!medico) return;
+      var op = exame.selectedOptions[0];
+      var permitidos = op && op.value ? (op.getAttribute('data-medicos') || '').split('|') : [];
+      var visiveis = [];
+      Array.prototype.forEach.call(medico.options, function (o) {
+        if (!o.value) { o.textContent = permitidos.length ? 'Selecione...' : 'Selecione o exame primeiro...'; return; }
+        var ok = permitidos.indexOf(o.value) !== -1;
+        o.hidden = !ok; o.disabled = !ok;
+        if (ok) visiveis.push(o);
+        if (!ok && o.selected) medico.value = '';
+      });
+      if (visiveis.length === 1) medico.value = visiveis[0].value;
+    }
+    exame.addEventListener('change', filtrarMedicos);
+    filtrarMedicos();
+    {% if abrir_agendar %}
+    window.addEventListener('load', function () {
+      if (window.bootstrap) new bootstrap.Modal(document.getElementById('modalAgendarExame')).show();
+    });
+    {% endif %}
+  })();
+</script>
 {% endblock %}

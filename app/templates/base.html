@@ -262,19 +262,11 @@
            link no menu. #}
       </li>
 
-      {# Pedido do Silvan (2026-09-10): atalho direto no menu para criar um
-         novo agendamento — antes só se chegava em medico.agenda_novo pelo
-         botão dentro do Painel ("agenda completa"); a rota em si não
-         mudou, só ganhou este link fixo logo abaixo de "Pacientes". #}
-      <li class="nav-item mb-1 {{ oculto_no_celular_do_medico }}">
-        <a class="nav-link {% if request.endpoint == 'medico.agenda_novo' %}active{% endif %}" href="{{ url_for('medico.agenda_novo') }}">
-          <i class="bi bi-calendar-plus me-2"></i>Agendar exame
-        </a>
-      </li>
-
+      {# "Agendar exame" saiu do menu (pedido do Silvan, 2026-10-21): agendar
+         virou um botão (com janela) na própria tela de exames agendados. #}
       <li class="nav-item mb-1">
-        <a class="nav-link {% if request.endpoint == 'medico.medico_agenda_pessoal' %}active{% endif %}" href="{{ url_for('medico.medico_agenda_pessoal') }}">
-          <i class="bi bi-clipboard2-pulse me-2"></i>Meus exames agendados
+        <a class="nav-link {% if request.endpoint in ('medico.medico_agenda_pessoal', 'medico.agenda_novo') %}active{% endif %}" href="{{ url_for('medico.medico_agenda_pessoal') }}">
+          <i class="bi bi-clipboard2-pulse me-2"></i>{% if current_user.tipo == 'medico' %}Meus exames agendados{% else %}Exames agendados{% endif %}
         </a>
         {# Reorganização de menus: o menu "Médico" (que só tinha "Meus
            exames agendados" e "Minha agenda em todos os locais") deixou

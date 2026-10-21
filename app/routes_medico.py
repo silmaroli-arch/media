@@ -2391,6 +2391,19 @@ def agenda_novo():
     filiais_disponiveis = filiais_atuais()
 
     if request.method == "POST":
+        def _voltar(destino_antigo):
+            """Veio da janela "Agendar exame" (tela única de exames
+            agendados, pedido do Silvan 2026-10-21)? Volta para ela com a
+            janela aberta e os campos preenchidos; senão, para o
+            formulário de página inteira, como antes."""
+            if request.form.get("origem") == "agenda":
+                session["agendar_form"] = {
+                    c: request.form.get(c, "")
+                    for c in ("paciente_id", "exame_id", "medico_id", "data_hora", "observacoes")
+                }
+                return redirect(url_for("medico.medico_agenda_pessoal", agendar=1))
+            return redirect(destino_antigo)
+
         filial_id = request.form.get("filial_id", type=int)
         paciente_id = request.form.get("paciente_id", type=int)
         exame_id = request.form.get("exame_id", type=int)
@@ -2402,11 +2415,11 @@ def agenda_novo():
         filial = next((f for f in filiais_disponiveis if f.id == filial_id), None)
         if filiais_disponiveis and not filial:
             flash("Escolha uma filial válida.", "danger")
-            return redirect(url_for("medico.agenda_novo"))
+            return _voltar(url_for("medico.agenda_novo"))
 
         if not paciente_id or not exame_id:
             flash("Escolha um paciente e um exame válidos.", "danger")
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None))
+            return _voltar(url_for("medico.agenda_novo", filial_id=filial.id if filial else None))
 
         # O médico só pode agendar para os seus próprios exames (principal
         # ou associado). Quando o exame tem mais de um médico associado,
@@ -2433,7 +2446,7 @@ def agenda_novo():
         exame = exame_query.first()
         if not paciente or not exame:
             flash("Paciente ou exame inválido para a filial/médico escolhidos.", "danger")
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
+            return _voltar(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
 
         if eh_medico():
             medico_atende_id = current_user.id
@@ -2446,7 +2459,7 @@ def agenda_novo():
             data_hora = datetime.strptime(data_hora_str, "%Y-%m-%dT%H:%M")
         except (ValueError, TypeError):
             flash("Data/hora inválida.", "danger")
-            return redirect(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
+            return _voltar(url_for("medico.agenda_novo", filial_id=filial.id if filial else None, medico_id=medico_id_form))
 
         agendamento = Agendamento(
             grupo_id=filial.id if filial else None,
@@ -2471,6 +2484,8 @@ def agenda_novo():
         # _garantir_agendamento_teste, usado só por "Testar IA").
         enviar_agendamento_criado_whatsapp(agendamento)
         flash("Agendamento criado com sucesso.", "success")
+        if request.form.get("origem") == "agenda":
+            return redirect(url_for("medico.medico_agenda_pessoal"))
         return redirect(url_for("medico.agenda"))
 
     # GET — monta os campos dependentes (filial -> médico -> exame/paciente)
@@ -2544,29 +2559,50 @@ def _resolver_medico_alvo(filiais, medico_id):
 @login_required
 @staff_required
 def medico_agenda_pessoal(medico_id=None):
+    """Tela única de exames agendados (pedido do Silvan, 2026-10-21): lista
+    e "Agendar exame" numa janela - o item de menu "Agendar exame" saiu.
+    Médico vê só os exames dele; secretária vê os de todos os médicos do
+    grupo, com filtro opcional por médico (`medico_id`)."""
     filiais = filiais_atuais()
-    pode_escolher_medico, medico_alvo = _resolver_medico_alvo(filiais, medico_id)
-    if not medico_alvo:
-        flash("Nenhum médico cadastrado ainda.", "danger")
-        return redirect(url_for("medico.equipe_lista"))
+    filial = clinica_atual()
+    consulta = Agendamento.query.filter(filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id))
+    medicos = []
+    medico_filtro = None
+    if eh_medico():
+        consulta = consulta.filter(Agendamento.medico_id == current_user.id)
+    else:
+        medicos = medicos_das_filiais(filiais)
+        medico_filtro = next((m for m in medicos if m.id == medico_id), None)
+        if medico_filtro:
+            consulta = consulta.filter(Agendamento.medico_id == medico_filtro.id)
 
-    # Lista de trabalho do médico — todos os exames agendados nas filiais
-    # atuais, sem filtro de status (não existe mais workflow de
-    # confirmação). Sem filtro de data: um exame de hoje que já passou do
-    # horário mas ainda não foi encerrado continua precisando aparecer aqui.
-    proximos = (
-        Agendamento.query.filter(
-            filtro_escopo_atual(Agendamento.grupo_id, Agendamento.criado_por_id),
-            Agendamento.medico_id == medico_alvo.id,
+    # Lista de trabalho — sem filtro de status nem de data: um exame de
+    # hoje que já passou do horário mas ainda não foi encerrado continua
+    # precisando aparecer aqui.
+    proximos = consulta.order_by(Agendamento.data_hora.asc()).all()
+
+    # Dados da janela "Agendar exame" (o POST vai para medico.agenda_novo).
+    pacientes = Paciente.query.filter(_filtro_pacientes_da_empresa()).order_by(Paciente.nome).all()
+    exames_query = Exame.query.filter(_filtro_exame_por_filial(filial), Exame.associado.is_(True))
+    if eh_medico():
+        exames_query = exames_query.filter(
+            or_(Exame.medico_id == current_user.id, Exame.medicos_extra.any(id=current_user.id))
         )
-        .order_by(Agendamento.data_hora.asc())
-        .all()
-    )
+    exames = exames_query.order_by(Exame.nome).all()
+    medicos_agendar = [] if eh_medico() else _medicos_do_escopo_atual(filial)
+    agendar_form = session.pop("agendar_form", None) if request.args.get("agendar") else None
     return render_template(
         "medico/medico_agenda_pessoal.html",
-        medico_alvo=medico_alvo,
-        medicos=(medicos_das_filiais(filiais) if pode_escolher_medico else []),
         proximos=proximos,
+        medicos=medicos,
+        medico_filtro=medico_filtro,
+        eh_medico=eh_medico(),
+        filial=filial,
+        pacientes=pacientes,
+        exames=exames,
+        medicos_agendar=medicos_agendar,
+        agendar_form=agendar_form,
+        abrir_agendar=bool(request.args.get("agendar")),
     )
 
 

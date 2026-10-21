@@ -50,7 +50,10 @@ checar("Menu tem o item direto 'Pacientes'", "Pacientes" in menu)
 checar("Menu não contém mais 'Equipe' (virou redirect p/ Grupos de trabalho)", ">Equipe<" not in menu)
 checar("Menu não contém mais 'Meus locais de atendimento'", "Meus locais de atendimento" not in menu)
 checar("Menu 'Médico' não existe mais (virou item direto)", ">Médico<" not in menu)
-checar("Menu tem o item direto 'Meus exames agendados'", "Meus exames agendados" in menu)
+# Secretária vê "Exames agendados" (de todos os médicos); "Agendar exame"
+# saiu do menu e virou botão nessa tela (2026-10-21).
+checar("Menu tem o item direto 'Exames agendados'", "Exames agendados" in menu)
+checar("Menu não tem mais 'Agendar exame'", "Agendar exame" not in menu)
 checar("Menu não contém mais 'Minha agenda em todos os locais'", "Minha agenda em todos os locais" not in menu)
 checar("Menu 'Relatórios' não existe mais", ">Relatórios<" not in menu)
 # O submenu "Médico + IA" também deixou de existir (seus itens viraram
@@ -62,7 +65,7 @@ checar("Menu 'Médico + IA' não existe mais (nem o antigo 'IA')", "Médico + IA
 # "Minha licença", que são só do médico).
 ordem_esperada = [
     "Painel", "Meus dados", "Primeiros passos", "Exames &amp; preparo", "Pacientes",
-    "Agendar exame", "Meus exames agendados", "Portal de atendimento rápido",
+    "Exames agendados", "Portal de atendimento rápido",
     "Últimas respondidas", "Meu FAQ", "Grupos de trabalho", "Fale com a gente",
 ]
 posicoes = [menu.find(item) for item in ordem_esperada]

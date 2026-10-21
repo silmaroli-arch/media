@@ -61,7 +61,7 @@
         </div>
       </div>
     </div>
-    <a href="{{ url_for('medico.agenda_novo') }}" class="btn {% if tem_agendamento %}btn-outline-secondary{% else %}btn-outline-primary{% endif %} btn-sm text-nowrap ms-3">{% if tem_agendamento %}Agendar outro{% else %}Agendar agora{% endif %}</a>
+    <a href="{{ url_for('medico.medico_agenda_pessoal', agendar=1) }}" class="btn {% if tem_agendamento %}btn-outline-secondary{% else %}btn-outline-primary{% endif %} btn-sm text-nowrap ms-3">{% if tem_agendamento %}Agendar outro{% else %}Agendar agora{% endif %}</a>
   </div>
 </div>
 {% endif %}
