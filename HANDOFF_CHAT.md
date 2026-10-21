@@ -2537,6 +2537,10 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Correção (`app/whatsapp_conversa.py`): nova `_sem_exame_ativo(conversa)` desfaz a identificação (paciente, exame em foco e CPF pendente) - usada na identificação e quando o exame em foco some depois (encerrado/cancelado). A mensagem ganhou "Para consultar com outro CPF, é só enviar o CPF." A próxima mensagem recomeça pelo CPF. Não conta como tentativa de identificação errada.
 - Teste novo: `test_whatsapp_sem_exame_ativo.py`.
 
+## Modelos de preparo: coluna "Médico Criador" (2026-10-21, pedido do Silvan)
+
+- Na lista de modelos de preparo (`medico/preparo_modelos_lista.html`), a coluna "Médico" passou a se chamar "Médico Criador" (é o médico principal do exame; os associados ficam em "Médicos por preparo").
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
