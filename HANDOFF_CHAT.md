@@ -2675,6 +2675,15 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Agora `PerguntaPendente.base_visivel` (sugestão gravada E base ligada agora) controla a exibição no portal e em Perguntas pendentes. O rascunho final não muda (se ele veio da base, continua como está).
 - Teste: `test_salvar_faq_flag.py`.
 
+## Carga inicial do FAQ do MedIA guardada à parte; o FAQ fica só com o que os médicos respondem (2026-10-21, decisão do Silvan)
+
+- Motivo: as respostas da carga inicial (baixadas da internet, origem "internet", ~866 itens) divergiam muito das respostas das IAs. Decisão: guardá-las numa tabela à parte, sem uso por enquanto, e deixar o FAQ do MedIA crescer só com as respostas dos médicos (aprendizado) e do dono; análise futura de como usar a terceira IA.
+- Tabela nova `base_conhecimento_arquivo` (modelo `BaseConhecimentoArquivo`, criada pelo db.create_all): cópia dos itens com texto, fonte, revisado, autor, vetor (embedding + modelo, para não recalcular se voltarem), vezes usada, criado_em, arquivado_em e o id original.
+- `base_conhecimento_padrao.arquivar_carga_inicial(db)`: move todos os itens origem "internet" para o arquivo e apaga da principal; antes solta as referências (PerguntaPendente.base_item_id -> NULL; sugestões de médicos de ALTERAÇÃO desses itens ficam com item_id NULL, ou seja, viram sugestão de item novo; histórico de edição desses itens é apagado). Idempotente. Itens de origem medico/dono ficam.
+- `migrar_banco.py`: NÃO semeia mais a carga inicial (`semear_base_conhecimento` continua existindo, só usado nos testes) e chama `arquivar_carga_inicial` a cada deploy. Validado em PostgreSQL: 866 movidos, principal 0; segunda execução move 0.
+- Atenção: vale para o media-prod também no próximo PR dev -> main.
+- Teste novo: `test_base_arquivo.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2775,6 +2784,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 **Pedido de exclusão de conta**
 - [ ] Meus dados (médico/secretária): "Solicitar exclusão da conta" pede o motivo; depois mostra o pedido aguardando e permite cancelar
 - [ ] Painel do dono > Usuários: badge com a quantidade, lista com o motivo, "Excluir conta" (com sua senha) e "Descartar pedido"
+
+**FAQ do MedIA sem a carga inicial**
+- [ ] Depois do deploy: Painel do dono > FAQ do MedIA sem os itens da carga inicial (só os de médicos/dono); nas perguntas novas, a sugestão do FAQ do MedIA só aparece quando houver item vindo de médico
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

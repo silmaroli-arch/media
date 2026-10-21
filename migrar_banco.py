@@ -57,10 +57,12 @@ with _app_para_create_all.app_context():
     from app.tipos_exame_padrao import semear_tipos_exame
     _novos_tipos = semear_tipos_exame(db, TipoExame)
     print(f"Tipos de exame: {_novos_tipos} novo(s) inserido(s) na lista padrao.")
-    # Conteudo inicial da base de conhecimento (so insere o que falta).
-    from app.base_conhecimento_padrao import semear_base_conhecimento
-    _novos_itens = semear_base_conhecimento(db)
-    print(f"Base de conhecimento: {_novos_itens} item(ns) inicial(is) inserido(s).")
+    # A carga inicial da base de conhecimento (baixada da internet) NAO e
+    # mais inserida: desde 2026-10-21 (pedido do Silvan) ela fica guardada
+    # a parte, sem uso, e o FAQ do MedIA tem so o que os medicos respondem.
+    from app.base_conhecimento_padrao import arquivar_carga_inicial
+    _arquivados = arquivar_carga_inicial(db)
+    print(f"Base de conhecimento: {_arquivados} item(ns) da carga inicial movido(s) para base_conhecimento_arquivo.")
 print("Schema de tabelas OK - seguindo para os ajustes de coluna (ALTER TABLE).")
 
 SQL = """

@@ -1288,6 +1288,33 @@ class BaseConhecimentoItem(db.Model):
     )
 
 
+class BaseConhecimentoArquivo(db.Model):
+    """Itens da carga inicial (baixados da internet) tirados do FAQ do MedIA
+    (pedido do Silvan, 2026-10-21: as respostas deles divergiam muito das
+    IAs). Guardados aqui, SEM uso nenhum por enquanto, para uma análise
+    futura; o FAQ do MedIA passa a ter só o que os médicos (e o dono)
+    respondem. O vetor é guardado junto para não precisar recalcular se
+    algum dia voltarem. Ver base_conhecimento_padrao.arquivar_carga_inicial."""
+    __tablename__ = "base_conhecimento_arquivo"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id_original = db.Column(db.Integer, unique=True)
+    tipo_exame_id = db.Column(db.Integer, db.ForeignKey("tipos_exame.id"), nullable=True)
+    pergunta = db.Column(db.Text, nullable=False)
+    resposta = db.Column(db.Text, nullable=False)
+    fonte_nome = db.Column(db.String(200))
+    fonte_url = db.Column(db.String(500))
+    origem = db.Column(db.String(20))
+    status = db.Column(db.String(20))
+    revisado = db.Column(db.Boolean)
+    autor_nome = db.Column(db.String(150))
+    embedding = db.Column(db.Text)
+    embedding_modelo = db.Column(db.String(60))
+    vezes_utilizada = db.Column(db.Integer)
+    criado_em = db.Column(db.DateTime)
+    arquivado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class BaseConhecimentoSugestao(db.Model):
     """Sugestão de um MÉDICO para a base compartilhada, aguardando o dono
     (fatia 5). `item_id` preenchido = sugestão de ALTERAÇÃO de um item;

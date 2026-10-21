@@ -234,6 +234,48 @@ ITENS_PADRAO = ITENS_PADRAO + _G7 + _G8 + _G9 + _G10 + _G11 + _G12 + _G13 + _G15
 ITENS_PADRAO = ITENS_PADRAO + _G18
 
 
+def arquivar_carga_inicial(db):
+    """Move os itens da carga inicial (origem "internet") do FAQ do MedIA
+    para `base_conhecimento_arquivo` e os apaga da tabela principal (pedido
+    do Silvan, 2026-10-21). Idempotente: roda a cada deploy
+    (migrar_banco.py) e só mexe no que ainda estiver lá. Antes de apagar,
+    solta as referências: perguntas da fila (base_item_id), sugestões de
+    médicos (item_id) e o histórico de edição do item. Devolve quantos
+    itens foram movidos."""
+    from app.models import (
+        BaseConhecimentoArquivo, BaseConhecimentoHistorico, BaseConhecimentoItem,
+        BaseConhecimentoSugestao, PerguntaPendente,
+    )
+
+    itens = BaseConhecimentoItem.query.filter_by(origem="internet").all()
+    if not itens:
+        return 0
+    ids = [i.id for i in itens]
+    ja_arquivados = {
+        a for (a,) in db.session.query(BaseConhecimentoArquivo.item_id_original)
+        .filter(BaseConhecimentoArquivo.item_id_original.in_(ids))
+    }
+    for i in itens:
+        if i.id in ja_arquivados:
+            continue
+        db.session.add(BaseConhecimentoArquivo(
+            item_id_original=i.id, tipo_exame_id=i.tipo_exame_id, pergunta=i.pergunta, resposta=i.resposta,
+            fonte_nome=i.fonte_nome, fonte_url=i.fonte_url, origem=i.origem, status=i.status,
+            revisado=i.revisado, autor_nome=i.autor_nome, embedding=i.embedding,
+            embedding_modelo=i.embedding_modelo, vezes_utilizada=i.vezes_utilizada, criado_em=i.criado_em,
+        ))
+    db.session.flush()
+    PerguntaPendente.query.filter(PerguntaPendente.base_item_id.in_(ids)).update(
+        {"base_item_id": None}, synchronize_session=False)
+    BaseConhecimentoSugestao.query.filter(BaseConhecimentoSugestao.item_id.in_(ids)).update(
+        {"item_id": None}, synchronize_session=False)
+    BaseConhecimentoHistorico.query.filter(BaseConhecimentoHistorico.item_id.in_(ids)).delete(
+        synchronize_session=False)
+    BaseConhecimentoItem.query.filter(BaseConhecimentoItem.id.in_(ids)).delete(synchronize_session=False)
+    db.session.commit()
+    return len(ids)
+
+
 def semear_base_conhecimento(db):
     """Insere os itens acima que ainda não existem (mesmo tipo de exame e
     mesma pergunta, sem diferenciar maiúsculas). Idempotente e NÃO
