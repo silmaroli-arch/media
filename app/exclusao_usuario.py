@@ -146,9 +146,12 @@ def excluir_usuario_e_dados(usuario):
         ChatMensagem.query.filter(ChatMensagem.exame_id.in_(exames_proprios_ids)).update(
             {"exame_id": None}, synchronize_session=False
         )
-        FaqItem.query.filter(FaqItem.exame_id.in_(exames_proprios_ids)).update(
-            {"exame_id": None}, synchronize_session=False
-        )
+        # Meu FAQ desses exames sai junto (pedido do Silvan, 2026-10-21):
+        # antes só perdia o exame_id, e item sem exame vira FAQ GERAL do
+        # grupo - as respostas sobre o preparo dele passariam a responder
+        # perguntas dos exames de outros médicos. O FAQ do MedIA fica
+        # (passo 1).
+        FaqItem.query.filter(FaqItem.exame_id.in_(exames_proprios_ids)).delete(synchronize_session=False)
         PerguntaPendente.query.filter(PerguntaPendente.exame_id.in_(exames_proprios_ids)).update(
             {"exame_id": None}, synchronize_session=False
         )

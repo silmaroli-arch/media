@@ -2649,6 +2649,11 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Painel do dono: texto do interruptor "Aprender com as respostas dos médicos" atualizado.
 - Testes: `test_base_aprendizado.py` (cenários reescritos), `test_base_conhecimento.py` (desempate e quase idêntico).
 
+## Excluir médico apaga o Meu FAQ dos exames dele (2026-10-21, pedido do Silvan)
+
+- `exclusao_usuario.excluir_usuario_e_dados`: os FaqItem ligados aos exames próprios do médico (apagados junto) agora são APAGADOS - antes só perdiam o exame_id, e item sem exame vira FAQ geral do grupo (as respostas sobre o preparo dele passariam a responder perguntas de exames de outros médicos). FAQ geral do grupo criado por ele (sem exame) continua; FAQ do MedIA continua (só perde o vínculo do autor, decisão anterior).
+- Teste: `test_exclusao_usuario.py`.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
