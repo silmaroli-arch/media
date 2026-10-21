@@ -87,16 +87,30 @@ with app.app_context():
     vitoria_id = Grupo.query.filter_by(nome="Clínica Vitória").first().id
 medico.post("/equipe/clinica", data={"clinica_id": str(vitoria_id)}, follow_redirects=True)
 html = medico.get("/equipe/portal").get_data(as_text=True)
-checar("Janela de aprovação: lembrete dos marcadores e a data do exame para a prévia",
-       "Dados do paciente: use {data_exame}" in html and 'data-agendamento="2026-11-10T08:00"' in html
-       and "Como o paciente vai receber" in html)
+checar("Na aprovação o médico vê o texto com as datas do paciente, sem marcador",
+       "Suspenda a partir de 07/11/2026.</textarea>" in html and "{3 dias antes}" not in html
+       and "As datas deste paciente (10/11/2026, 08:00) são ajustadas" in html)
 with patch("app.whatsapp_envio.enviar_mensagem_whatsapp") as envio:
-    medico.post(f"/equipe/perguntas/{pendente_id}/responder", data={"resposta": "Suspenda a partir de {3 dias antes}."})
+    medico.post(f"/equipe/perguntas/{pendente_id}/responder",
+                data={"resposta": "Suspenda a partir de 07/11/2026 e chegue às 08:00. Retorno em 15/12/2026."})
 with app.app_context():
-    checar("Aprovado: o WhatsApp leva a data do paciente", "Suspenda a partir de 07/11/2026." in envio.call_args[0][1])
-    checar("... e o FAQ guarda o texto genérico",
-           FaqItem.query.filter_by(pergunta="Quando suspendo?").first().resposta == "Suspenda a partir de {3 dias antes}.")
+    checar("Aprovado: o WhatsApp leva exatamente o texto do médico",
+           "Suspenda a partir de 07/11/2026 e chegue às 08:00. Retorno em 15/12/2026." in envio.call_args[0][1])
+    faq = FaqItem.query.filter_by(pergunta="Quando suspendo?").first()
+    checar("... e o FAQ guarda as datas do paciente como marcadores (data sem relação fica)",
+           faq.resposta == "Suspenda a partir de {3 dias antes} e chegue às {hora_exame}. Retorno em 15/12/2026.")
     checar("... e a área do paciente mostra preenchido",
-           PerguntaPendente.query.get(pendente_id).resposta_para_paciente == "Suspenda a partir de 07/11/2026.")
+           PerguntaPendente.query.get(pendente_id).resposta_para_paciente
+           == "Suspenda a partir de 07/11/2026 e chegue às 08:00. Retorno em 15/12/2026.")
+    faq_id = faq.id
+
+html = medico.get("/equipe/faq").get_data(as_text=True)
+checar("Meu FAQ mostra os marcadores de forma legível",
+       "Suspenda a partir de [3 dias antes do exame] e chegue às [horário do exame]." in html)
+medico.post(f"/equipe/faq/{faq_id}/editar", data={"pergunta": "Quando suspendo?",
+            "resposta": "Suspenda a partir de [5 dias antes do exame]."})
+with app.app_context():
+    checar("Editar no Meu FAQ com o texto legível grava o marcador",
+           FaqItem.query.get(faq_id).resposta == "Suspenda a partir de {5 dias antes}.")
 
 print("\nTodos os testes de marcadores de dados do paciente passaram.")

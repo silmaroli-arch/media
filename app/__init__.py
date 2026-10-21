@@ -231,6 +231,13 @@ def create_app():
             return valor.strftime("%H:%M")
         return str(valor)
 
+    @app.template_filter("legivel")
+    def marcadores_legiveis(texto):
+        """Marcadores de dados do paciente ({data_exame}...) como
+        "[data do exame]", para o Meu FAQ (ver app.marcadores_resposta)."""
+        from app.marcadores_resposta import para_leitura
+        return para_leitura(texto)
+
     @app.template_filter("telefone")
     def telefone_formatado(valor):
         """Telefone guardado só com dígitos (ver models.normalizar_telefone)

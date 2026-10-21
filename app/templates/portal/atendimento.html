@@ -110,7 +110,7 @@
       {% endif %}
     </div>
     {% endif %}
-    <div class="campo"><span class="rotulo"><i class="bi bi-journal-medical"></i> Sugestão do FAQ do MedIA:</span> <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.resposta_bruta_base }}" title="Copiar esta sugestão para o rascunho final">Usar</button> {{ p.resposta_bruta_base }}
+    <div class="campo"><span class="rotulo"><i class="bi bi-journal-medical"></i> Sugestão do FAQ do MedIA:</span> <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 ms-1 usar-sugestao" data-texto="{{ p.para_paciente(p.resposta_bruta_base) }}" title="Copiar esta sugestão para o rascunho final">Usar</button> {{ p.para_paciente(p.resposta_bruta_base) }}
       {% if p.base_item and (p.base_item.fonte_nome or p.base_item.fonte_url) %}
       <div class="small text-muted">Fonte: {% if p.base_item.fonte_url %}<a href="{{ p.base_item.fonte_url }}" target="_blank" rel="noopener">{{ p.base_item.fonte_nome or p.base_item.fonte_url }}</a>{% else %}{{ p.base_item.fonte_nome }}{% endif %}</div>
       {% endif %}
@@ -159,18 +159,17 @@
             {% if p.situacao_ias %}
               {{ situacao_ias(p) }}
             {% else %}
-            {% if p.resposta_bruta_gemini %}{{ sugestao("Sugestão do Gemini", p.resposta_bruta_gemini) }}{% endif %}
-            {% if p.resposta_bruta_chatgpt %}{{ sugestao("Sugestão do ChatGPT", p.resposta_bruta_chatgpt) }}{% endif %}
-            {% if p.resposta_bruta_claude %}{{ sugestao("Sugestão do Claude", p.resposta_bruta_claude) }}{% endif %}
+            {% if p.resposta_bruta_gemini %}{{ sugestao("Sugestão do Gemini", p.para_paciente(p.resposta_bruta_gemini)) }}{% endif %}
+            {% if p.resposta_bruta_chatgpt %}{{ sugestao("Sugestão do ChatGPT", p.para_paciente(p.resposta_bruta_chatgpt)) }}{% endif %}
+            {% if p.resposta_bruta_claude %}{{ sugestao("Sugestão do Claude", p.para_paciente(p.resposta_bruta_claude)) }}{% endif %}
             {% endif %}
             {{ faq_medIA(p) }}
             <form method="post" action="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
               <input type="hidden" name="origem" value="portal">
               <div class="campo">
                 <span class="rotulo">Rascunho final (edite se precisar)</span>
-                <textarea name="resposta" class="form-control mt-1 rascunho-resposta" rows="3" required data-agendamento="{{ p.agendamento_iso }}">{{ p.resposta_sugerida_ia }}</textarea>
-                <div class="form-text">Dados do paciente: use {data_exame}, {hora_exame}, {3 dias antes} ou {12 horas antes} - o sistema preenche para cada paciente e o FAQ guarda o texto genérico.</div>
-                <div class="previa-paciente small border rounded p-2 bg-light mt-1 d-none"><strong>Como o paciente vai receber:</strong> <span></span></div>
+                <textarea name="resposta" class="form-control mt-1" rows="3" required>{{ p.para_paciente(p.resposta_sugerida_ia) }}</textarea>
+                {% if p.datas_do_paciente %}<div class="form-text">As datas deste paciente ({{ p.datas_do_paciente }}) são ajustadas automaticamente para cada paciente quando a resposta for reutilizada.</div>{% endif %}
               </div>
               <button type="submit" class="btn btn-info btn-sm mt-1">Aprovar e enviar ao paciente</button>
             </form>
@@ -252,41 +251,8 @@
     var rascunho = caixa && caixa.querySelector('textarea[name=resposta]');
     if (!rascunho) return;
     rascunho.value = b.getAttribute('data-texto');
-    rascunho.dispatchEvent(new Event('input'));
     rascunho.focus();
   });
 
-  // Prévia dos marcadores ({data_exame}, {3 dias antes}...) com a data do
-  // exame deste paciente - mesma conta de app/marcadores_resposta.py.
-  (function () {
-    function dois(n) { return (n < 10 ? '0' : '') + n; }
-    function data(d) { return dois(d.getDate()) + '/' + dois(d.getMonth() + 1) + '/' + d.getFullYear(); }
-    function hora(d) { return dois(d.getHours()) + ':' + dois(d.getMinutes()); }
-    function preencher(texto, iso) {
-      var exame = iso ? new Date(iso) : null;
-      return texto.replace(/\{\s*(data_exame|hora_exame|(\d+)\s+(dias?|horas?)\s+antes)\s*\}/gi, function (m, nome, qtd, unidade) {
-        nome = nome.toLowerCase();
-        if (nome === 'data_exame') return exame ? data(exame) : 'a data do seu exame';
-        if (nome === 'hora_exame') return exame ? hora(exame) : 'o horário do seu exame';
-        var n = parseInt(qtd, 10);
-        if (unidade.toLowerCase().indexOf('dia') === 0) {
-          if (!exame) return n + ' dias antes do exame';
-          var d = new Date(exame); d.setDate(d.getDate() - n); return data(d);
-        }
-        if (!exame) return n + ' horas antes do exame';
-        var h = new Date(exame.getTime() - n * 3600000); return data(h) + ' às ' + hora(h);
-      });
-    }
-    document.querySelectorAll('textarea.rascunho-resposta').forEach(function (t) {
-      var previa = t.parentNode.querySelector('.previa-paciente');
-      function atualizar() {
-        var texto = preencher(t.value, t.getAttribute('data-agendamento'));
-        previa.querySelector('span').textContent = texto;
-        previa.classList.toggle('d-none', texto === t.value);
-      }
-      t.addEventListener('input', atualizar);
-      atualizar();
-    });
-  })();
 </script>
 {% endblock %}

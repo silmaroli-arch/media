@@ -43,7 +43,7 @@ from app.pdf_preparo import extrair_sugestao_de_pdf, extrair_sugestao_de_texto
 from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
 from app.ia_preparo import responder_com_ia, formatar_situacao_ias
 from app.faq_engine import buscar_resposta
-from app.marcadores_resposta import resposta_para_paciente
+from app.marcadores_resposta import de_leitura, generalizar_datas, para_leitura, resposta_para_paciente
 from app.custo_ia import registrar_chamada_ia
 from app.whatsapp_envio import (
     enviar_boas_vindas_whatsapp, enviar_preparo_cadastrado_whatsapp,
@@ -3197,6 +3197,8 @@ def pergunta_respondida_editar(pergunta_id):
             flash("Pergunta e resposta são obrigatórias.", "danger")
             return render_template("medico/pergunta_respondida_form.html", pergunta=pergunta)
 
+        # A tela mostra as datas deste paciente; o FAQ volta a ter marcadores.
+        resposta_texto = generalizar_datas(resposta_texto, pergunta.agendamento_do_paciente)
         _sincronizar_faq_da_pergunta_respondida(pergunta, pergunta_texto, resposta_texto)
         pergunta.pergunta = pergunta_texto
         pergunta.resposta = resposta_texto
@@ -4094,8 +4096,14 @@ def perguntas_responder(pergunta_id):
         if pergunta.status == "pendente":
             aprender = {"editou": True}
         elif pergunta.status == "aguardando_aprovacao" and veio_de_ia:
-            aprender = {"editou": " ".join(resposta.lower().split()) != " ".join((pergunta.resposta_sugerida_ia or "").lower().split())}
+            sugerida = pergunta.para_paciente(pergunta.resposta_sugerida_ia) or ""
+            aprender = {"editou": " ".join(resposta.lower().split()) != " ".join(sugerida.lower().split())}
 
+    # O médico aprova o texto já com as datas deste paciente; o que fica
+    # guardado (e vai para o FAQ) volta a ter marcadores no lugar delas,
+    # para valer para outros pacientes (pedido do Silvan, 2026-10-21).
+    resposta_paciente = resposta
+    resposta = generalizar_datas(resposta, pergunta.agendamento_do_paciente)
     pergunta.resposta = resposta
     pergunta.status = "respondida"
     pergunta.respondida_por = current_user.nome
@@ -4137,8 +4145,8 @@ def perguntas_responder(pergunta_id):
             pergunta.telefone_whatsapp,
             # Já com a digitação corrigida pela IA validadora, quando houver
             # (pedido do Silvan, 2026-10-21).
-            f"Sobre sua pergunta \"{pergunta.pergunta_faq or pergunta.pergunta}\":\n\n{pergunta.resposta_para_paciente}",
-            content_variables=[pergunta.pergunta_faq or pergunta.pergunta, pergunta.resposta_para_paciente],
+            f"Sobre sua pergunta \"{pergunta.pergunta_faq or pergunta.pergunta}\":\n\n{resposta_paciente}",
+            content_variables=[pergunta.pergunta_faq or pergunta.pergunta, resposta_paciente],
         )
 
     if aprender is not None:
@@ -4232,7 +4240,7 @@ def faq_novo():
             criado_por_id=current_user.id if not filial else None,
             exame_id=exame_id,
             pergunta=pergunta,
-            resposta=resposta,
+            resposta=de_leitura(resposta),
             criado_por=current_user.nome,
         )
         db.session.add(item)
@@ -4271,7 +4279,7 @@ def faq_editar(item_id):
             return render_template("medico/faq_form.html", item=item)
 
         item.pergunta = pergunta
-        item.resposta = resposta
+        item.resposta = de_leitura(resposta)
         db.session.commit()
         flash("Item da base de conhecimento atualizado.", "success")
         return redirect(url_for("medico.faq_lista"))

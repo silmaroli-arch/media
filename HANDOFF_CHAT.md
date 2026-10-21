@@ -2623,6 +2623,13 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Janela de aprovação (portal e Perguntas pendentes): lembrete dos marcadores embaixo do rascunho e prévia ao vivo "Como o paciente vai receber" (JS com a mesma conta; data do exame em `data-agendamento`, de `PerguntaPendente.agendamento_iso`). Só aparece quando há marcador. Conferido no navegador.
 - Teste novo: `test_marcadores_resposta.py` (inclui 2 pacientes com horários diferentes recebendo a mesma resposta do FAQ, cada um com o seu).
 
+## Médico não vê marcador: aprova o texto com as datas do paciente (2026-10-21, pedido do Silvan)
+
+- Feedback: mostrar {hora_exame} no rascunho "induz muito ao erro do médico". Agora a janela de aprovação (portal e Perguntas pendentes) mostra sugestões e rascunho já preenchidos com as datas do paciente (`PerguntaPendente.para_paciente(texto)`; `situacao_ias` já devolve preenchido); o botão "Usar" copia o texto preenchido. Saíram o lembrete dos marcadores e a prévia ao vivo; ficou a nota "As datas deste paciente (29/10/2026, 11:40) são ajustadas automaticamente para cada paciente quando a resposta for reutilizada" (`datas_do_paciente`).
+- Ao aprovar (`perguntas_responder`) e ao editar em Últimas respondidas: `marcadores_resposta.generalizar_datas(texto, agendamento)` troca as datas deste paciente por marcadores antes de gravar (`PerguntaPendente.resposta` e FAQ): data do exame -> {data_exame}; horário igual ao do exame -> {hora_exame}; "dd/mm/aaaa às HH:MM" N horas antes -> {N horas antes}; data N dias antes -> {N dias antes}. Só dentro de 31 dias antes do exame (`JANELA_DIAS_GENERALIZAR`) - data sem relação fica como está. O WhatsApp leva exatamente o texto aprovado.
+- Telas sem paciente (Meu FAQ - lista, editar, adicionar): marcadores aparecem como "[data do exame]", "[horário do exame]", "[3 dias antes do exame]" (filtro Jinja `legivel` / `para_leitura`); ao salvar, `de_leitura` volta para marcador. Últimas respondidas mostra preenchido para o paciente da pergunta.
+- Teste: `test_marcadores_resposta.py` (atualizado). Conferido no navegador.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2707,7 +2714,8 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] "Que horas tenho que chegar na clínica?" (fora do preparo): as IAs respondem com orientação geral, com o aviso "conhecimento geral" na janela; vai para o médico mesmo com a aprovação automática desligada (antes disso, conferir que o WhatsApp não responde mais "Este chat é só para dúvidas sobre o preparo" para essa pergunta)
 
 **Respostas com dados do paciente (marcadores)**
-- [ ] Perguntas como "Que horas tenho que chegar?" ou "Quando suspendo o Xarelto?": a sugestão da IA vem com {hora_exame}/{data_exame}/{3 dias antes} e a janela mostra "Como o paciente vai receber" com as datas dele
+- [ ] Perguntas como "Que horas tenho que chegar?" ou "Quando suspendo o Xarelto?": a janela mostra sugestões e rascunho já com as datas do paciente (sem chaves {}), com a nota de que as datas são ajustadas para cada paciente
+- [ ] Meu FAQ mostra essas respostas com [data do exame], [horário do exame], [3 dias antes do exame]; editar mantendo esse formato funciona
 - [ ] Depois de aprovada, o paciente recebe com as datas dele; Meu FAQ guarda com os marcadores; outro paciente com a mesma pergunta recebe as datas DELE
 
 **Banco (depois do deploy em produção)**

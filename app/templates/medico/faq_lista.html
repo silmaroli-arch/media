@@ -15,7 +15,7 @@
       <td>{{ i.exame.nome if i.exame else 'Geral' }}</td>
       {{ td_filial(i) }}
       <td>{{ i.pergunta }}</td>
-      <td>{{ i.resposta }}</td>
+      <td>{{ i.resposta|legivel }}</td>
       <td>{{ i.vezes_utilizada }}x</td>
       <td>{{ i.criado_por or '-' }}</td>
       <td class="text-nowrap">
@@ -70,6 +70,7 @@
         </div>
         <label class="form-label" for="faq_resposta">Resposta</label>
         <textarea name="resposta" id="faq_resposta" class="form-control" rows="4" required>{{ faq_form.resposta if faq_form else '' }}</textarea>
+        <div class="form-text">Para datas do paciente, use [data do exame], [horário do exame], [3 dias antes do exame] ou [12 horas antes do exame] - cada paciente recebe as datas dele.</div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>

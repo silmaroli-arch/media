@@ -39,7 +39,8 @@
     </div>
     <div class="mb-3">
       <label class="form-label">Resposta</label>
-      <textarea name="resposta" class="form-control" rows="3" required>{{ item.resposta if item else '' }}</textarea>
+      <textarea name="resposta" class="form-control" rows="3" required>{{ item.resposta|legivel if item else '' }}</textarea>
+      <div class="form-text">Para datas do paciente, use [data do exame], [horário do exame], [3 dias antes do exame] ou [12 horas antes do exame] - cada paciente recebe as datas dele.</div>
     </div>
     <button type="submit" class="btn btn-primary">Salvar</button>
     <a href="{{ url_for('medico.faq_lista') }}" class="btn btn-link">Cancelar</a>

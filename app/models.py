@@ -1939,7 +1939,7 @@ class PerguntaPendente(db.Model):
             if not nome:
                 continue
             if estado.startswith("respondeu") and respostas.get(nome):
-                itens.append((nome, estado, respostas[nome]))
+                itens.append((nome, estado, self.para_paciente(respostas[nome])))
             else:
                 itens.append((nome, estado, self.TEXTO_SITUACAO_IA.get(estado, "não respondeu")))
         return itens
@@ -1953,12 +1953,23 @@ class PerguntaPendente(db.Model):
         return resposta_para_paciente(self.resposta, self.paciente_id, self.exame_id)
 
     @property
-    def agendamento_iso(self):
-        """Data/hora do exame deste paciente ("2026-10-29T11:40"), para a
-        prévia ao vivo dos marcadores na tela de aprovação - "" sem agendamento."""
+    def agendamento_do_paciente(self):
         from app.marcadores_resposta import agendamento_do_paciente
-        agendamento = agendamento_do_paciente(self.paciente_id, self.exame_id)
-        return agendamento.data_hora.strftime("%Y-%m-%dT%H:%M") if agendamento else ""
+        return agendamento_do_paciente(self.paciente_id, self.exame_id)
+
+    def para_paciente(self, texto):
+        """`texto` (sugestão da IA, rascunho) com os marcadores já trocados
+        pelas datas deste paciente - o médico nunca vê marcador na aprovação
+        (pedido do Silvan, 2026-10-21)."""
+        from app.marcadores_resposta import preencher_marcadores
+        return preencher_marcadores(texto, self.agendamento_do_paciente)
+
+    @property
+    def datas_do_paciente(self):
+        """"29/10/2026, 11:40" - para o aviso de que essas datas são ajustadas
+        para cada paciente quando a resposta for reutilizada."""
+        agendamento = self.agendamento_do_paciente
+        return agendamento.data_hora.strftime("%d/%m/%Y, %H:%M") if agendamento else None
 
     @property
     def usou_conhecimento_geral(self):
