@@ -185,6 +185,7 @@ from flask import current_app
 
 from app.extensions import db
 from app.faq_engine import buscar_resposta
+from app.marcadores_resposta import agendamento_do_paciente, preencher_marcadores
 from app.ia_preparo import responder_com_ia, validar_pergunta, formatar_situacao_ias
 from app.preparo_publico import montar_link_preparo
 from app.models import (
@@ -591,6 +592,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     resposta_final = None
     origem = None
     pergunta_pendente_criada = None
+    agendamento_paciente = agendamento or (agendamento_do_paciente(paciente.id, exame.id) if exame else None)
 
     # A FAQ é procurada pela pergunta com a digitação corrigida pela IA
     # validadora ("carrp" acha a mesma resposta de "carro") - 2026-10-21.
@@ -608,7 +610,9 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     # toda pergunta vai para as IAs.
     if faq_item:
         faq_item.vezes_utilizada += 1
-        resposta_final = faq_item.resposta
+        # Marcadores ({data_exame}...) preenchidos com o agendamento deste
+        # paciente - o FAQ guarda o texto genérico (ver app.marcadores_resposta).
+        resposta_final = preencher_marcadores(faq_item.resposta, agendamento_paciente)
         origem = "faq"
     else:
         resultado_ia = (
@@ -678,7 +682,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 # Pedido do Silvan (2026-09-13): aprovação desativada para
                 # este Grupo/médico.
                 aprovar_pergunta_automaticamente(pergunta_pendente_criada, resultado_ia["final"])
-                resposta_final = resultado_ia["final"]
+                resposta_final = preencher_marcadores(resultado_ia["final"], agendamento_paciente)
                 origem = "ia"
                 pergunta_pendente_criada = None
         else:

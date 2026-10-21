@@ -1945,6 +1945,22 @@ class PerguntaPendente(db.Model):
         return itens
 
     @property
+    def resposta_para_paciente(self):
+        """A resposta com os marcadores ({data_exame}...) já preenchidos com
+        o agendamento deste paciente - `resposta` (e o FAQ) guardam o texto
+        genérico (pedido do Silvan, 2026-10-21, ver app.marcadores_resposta)."""
+        from app.marcadores_resposta import resposta_para_paciente
+        return resposta_para_paciente(self.resposta, self.paciente_id, self.exame_id)
+
+    @property
+    def agendamento_iso(self):
+        """Data/hora do exame deste paciente ("2026-10-29T11:40"), para a
+        prévia ao vivo dos marcadores na tela de aprovação - "" sem agendamento."""
+        from app.marcadores_resposta import agendamento_do_paciente
+        agendamento = agendamento_do_paciente(self.paciente_id, self.exame_id)
+        return agendamento.data_hora.strftime("%Y-%m-%dT%H:%M") if agendamento else ""
+
+    @property
     def usou_conhecimento_geral(self):
         """Alguma IA respondeu com conhecimento geral, fora do preparo
         cadastrado (ver app.ia_preparo.MARCADOR_CONHECIMENTO_GERAL)."""

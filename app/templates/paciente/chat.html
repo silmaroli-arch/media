@@ -89,7 +89,7 @@
             {% if p.status == 'respondida' %}respondida{% elif p.status == 'aguardando_aprovacao' %}em análise{% else %}pendente{% endif %}
           </span>
         </td>
-        <td>{{ p.resposta or '-' }}</td>
+        <td>{{ p.resposta_para_paciente or '-' }}</td>
         <td>
           <form method="post" action="{{ url_for('paciente.pergunta_remover', pergunta_id=p.id) }}" onsubmit="return confirm('Remover esta pergunta?');">
             <button type="submit" class="btn btn-sm btn-outline-danger">Remover</button>

@@ -2614,6 +2614,15 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 
 - O log do Render mostrou a causa: a validadora em uso é o **ChatGPT (gpt-4o-mini)** e ela responde literalmente `FORA_DO_EXAME_ENCAMINHAR` para "Que horas tenho que chegar na clinica?" - é julgamento do modelo (pequeno), não leitura errada. `PROMPT_SISTEMA_VALIDADOR` ganhou exemplos explícitos (chegar na clínica, ir de carro, duração, documento, endereço, café -> VALIDA; jogo, chuva -> FORA; teclado -> SEM_SENTIDO) e a frase "FORA só quando for evidente que não tem nada a ver com saúde, exame, clínica ou atendimento". A rede de segurança anterior (fora do exame confirmado pelas 2 IAs) continua. Alternativa, se ainda errar: trocar a IA validadora para Claude em Painel do dono > Configurações.
 
+## Dados do paciente nas respostas via marcadores; FAQ fica genérico (2026-10-21, pedido do Silvan)
+
+- Problema: a resposta aprovada "No seu caso, o exame está marcado para 29/10/2026 às 11:40" entraria no FAQ e seria reenviada a outros pacientes. E bug encontrado junto: `ia_preparo._formatar_contexto_preparo` mandava às IAs a data do agendamento mais recente do TIPO de exame (de qualquer paciente), com todos os prazos calculados a partir dela.
+- Novo `app/marcadores_resposta.py`: marcadores `{data_exame}`, `{hora_exame}`, `{N dias antes}`, `{N horas antes}`; `preencher_marcadores(texto, agendamento)` (mesmas contas dos prazos do preparo; sem agendamento vira texto genérico, ex. "3 dias antes do exame"); `agendamento_do_paciente(paciente_id, exame_id)` (o em aberto mais recente, senão o mais recente); `resposta_para_paciente`.
+- IAs: o contexto não leva mais nenhuma data (só prazos relativos); o PROMPT_SISTEMA proíbe data/horário concreto do paciente e nome, e ensina os marcadores.
+- O FAQ e `PerguntaPendente.resposta` guardam o texto COM marcadores. Preenchidos na entrega: FAQ e aprovação automática no WhatsApp (`_responder_pergunta`, com o agendamento em foco) e no chat web (`routes_paciente.chat`); Testar IA; mensagem do WhatsApp ao aprovar (`perguntas_responder` usa `pergunta.resposta_para_paciente`); histórico da área do paciente (`chat.html` usa `resposta_para_paciente`). `ChatMensagem.resposta` grava o texto já preenchido (o que o paciente viu).
+- Janela de aprovação (portal e Perguntas pendentes): lembrete dos marcadores embaixo do rascunho e prévia ao vivo "Como o paciente vai receber" (JS com a mesma conta; data do exame em `data-agendamento`, de `PerguntaPendente.agendamento_iso`). Só aparece quando há marcador. Conferido no navegador.
+- Teste novo: `test_marcadores_resposta.py` (inclui 2 pacientes com horários diferentes recebendo a mesma resposta do FAQ, cada um com o seu).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2696,6 +2705,10 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] "Apagar pergunta" (com confirmação) tira a pergunta da fila sem responder ao paciente nem gravar no FAQ; também em Perguntas pendentes
 - [ ] Botão "Usar" ao lado de cada sugestão (Claude, ChatGPT, FAQ do MedIA) copia o texto para o rascunho final; também em Perguntas pendentes
 - [ ] "Que horas tenho que chegar na clínica?" (fora do preparo): as IAs respondem com orientação geral, com o aviso "conhecimento geral" na janela; vai para o médico mesmo com a aprovação automática desligada (antes disso, conferir que o WhatsApp não responde mais "Este chat é só para dúvidas sobre o preparo" para essa pergunta)
+
+**Respostas com dados do paciente (marcadores)**
+- [ ] Perguntas como "Que horas tenho que chegar?" ou "Quando suspendo o Xarelto?": a sugestão da IA vem com {hora_exame}/{data_exame}/{3 dias antes} e a janela mostra "Como o paciente vai receber" com as datas dele
+- [ ] Depois de aprovada, o paciente recebe com as datas dele; Meu FAQ guarda com os marcadores; outro paciente com a mesma pergunta recebe as datas DELE
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

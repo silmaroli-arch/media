@@ -43,6 +43,7 @@ from app.pdf_preparo import extrair_sugestao_de_pdf, extrair_sugestao_de_texto
 from app.ia_pdf_preparo import extrair_sugestao_de_pdf_com_ia_stream
 from app.ia_preparo import responder_com_ia, formatar_situacao_ias
 from app.faq_engine import buscar_resposta
+from app.marcadores_resposta import resposta_para_paciente
 from app.custo_ia import registrar_chamada_ia
 from app.whatsapp_envio import (
     enviar_boas_vindas_whatsapp, enviar_preparo_cadastrado_whatsapp,
@@ -3982,7 +3983,7 @@ def testar_ia():
                 if faq_item:
                     faq_item.vezes_utilizada += 1
                     db.session.commit()
-                    resposta_ia = faq_item.resposta
+                    resposta_ia = resposta_para_paciente(faq_item.resposta, paciente_teste.id, exame_selecionado.id)
                     origem = "faq"
                 else:
                     pendente = PerguntaPendente(
@@ -4136,8 +4137,8 @@ def perguntas_responder(pergunta_id):
             pergunta.telefone_whatsapp,
             # Já com a digitação corrigida pela IA validadora, quando houver
             # (pedido do Silvan, 2026-10-21).
-            f"Sobre sua pergunta \"{pergunta.pergunta_faq or pergunta.pergunta}\":\n\n{resposta}",
-            content_variables=[pergunta.pergunta_faq or pergunta.pergunta, resposta],
+            f"Sobre sua pergunta \"{pergunta.pergunta_faq or pergunta.pergunta}\":\n\n{pergunta.resposta_para_paciente}",
+            content_variables=[pergunta.pergunta_faq or pergunta.pergunta, pergunta.resposta_para_paciente],
         )
 
     if aprender is not None:

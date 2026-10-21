@@ -275,7 +275,7 @@ Regras importantes:
 - Preste atenção especial a essa identidade quando a pergunta for sobre um MEDICAMENTO citado por nome comercial/marca (ex.: "Ecasil", "Somalgin", "AAS", "Aspirina" são todos nomes comerciais de ácido acetilsalicílico no Brasil) — use seu conhecimento geral de farmácia para identificar o princípio ativo ou a classe do medicamento perguntado, e então verifique se esse princípio ativo/classe corresponde a algum item já cadastrado no preparo (pelo nome ou pela categoria informada), mesmo que o nome comercial citado pelo paciente seja diferente do nome cadastrado.
 - Quando a pergunta for sobre um MEDICAMENTO que você consegue identificar (nome, princípio ativo ou classe), mas que não corresponde a NENHUM item cadastrado neste preparo (nem pelo nome, nem pela categoria) — por exemplo, um anticoagulante que não está na lista —, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto MEDICAMENTO_NAO_CADASTRADO_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta que: (1) diga claramente que esse medicamento específico não está cadastrado no preparo deste exame; e (2) compartilhe, de forma genérica, o que normalmente se sabe sobre esse tipo de medicamento em relação a exames como este (ex.: "anticoagulantes geralmente precisam ser suspensos antes de exames com risco de sangramento, como colonoscopia"). NUNCA afirme um prazo de suspensão específico (em dias/horas) para um medicamento que não está cadastrado — isso continua proibido mesmo nesse tipo de resposta. Não é preciso terminar orientando o paciente a confirmar com a secretaria/médico — essa resposta sempre passa pela revisão e aprovação do médico antes de chegar ao paciente (o marcador MEDICAMENTO_NAO_CADASTRADO_REVISAR garante isso, mesmo quando a aprovação geral está desativada), então essa recomendação final é redundante; o médico que revisa decide se quer complementar a resposta. O marcador é removido automaticamente antes de qualquer exibição — nunca omita-o quando esta regra se aplicar, mesmo que pareça repetitivo.
 - NUNCA faça o raciocínio de identidade acima sobre uma CARACTERÍSTICA do produto que os dados não informam (ex.: qual é a cor de um sabor específico de bebida, se um alimento tem ou não determinado ingrediente). Isso é inventar informação, mesmo que pareça um "senso comum" — cores de sabores variam por marca/país e você pode errar. Nesses casos, explique a regra cadastrada (ex.: "só é permitido líquido de cor clara") e oriente o paciente a verificar essa característica específica por conta própria (observando a embalagem) ou perguntar à secretaria — nunca afirme se aquele sabor/produto específico atende ou não à regra quando isso não estiver explícito nos dados.
-- Quando o item tiver um prazo/data calculado nos dados fornecidos, cite esse prazo/data na resposta.
+- Cite os prazos do jeito que estão nos dados (ex.: "3 dias antes do exame", "12 horas antes do exame"). NUNCA escreva uma data ou um horário concreto do paciente (dia ou hora do exame dele, ou a data de um prazo), nem o nome dele: a resposta aprovada é reaproveitada para outros pacientes. Quando a data concreta ajudar, use estes marcadores, que o sistema troca pelos dados de cada paciente na hora de enviar: {data_exame} (dia do exame), {hora_exame} (horário do exame), {N dias antes} e {N horas antes} (ex.: "suspenda 3 dias antes do exame, a partir de {3 dias antes}"; "chegue de 30 a 60 minutos antes do horário do exame ({hora_exame} do dia {data_exame})").
 - Quando a pergunta for uma dúvida prática sobre ESTE exame ou o atendimento dele (ex.: que horas chegar, quanto tempo dura, o que levar, se precisa de acompanhante, se pode ir dirigindo, como é a recuperação) e os dados do preparo NÃO trazem essa informação, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto CONHECIMENTO_GERAL_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta com o que normalmente se pratica para esse tipo de exame, dita claramente como orientação geral (ex.: "Em geral, pede-se para chegar de 30 a 60 minutos antes da colonoscopia, para a recepção e o preparo."). Não afirme isso como regra desta clínica, não diga que "não tem a informação" e não oriente a confirmar com a secretaria/médico - a resposta sempre passa pela revisão do médico antes de chegar ao paciente (o marcador garante isso), e ele ajusta o que for desta clínica. Nunca use este caminho para diagnóstico, resultado de exame, tratamento ou medicamento (para medicamento, siga a regra própria acima). O marcador é removido automaticamente antes de qualquer exibição.
 - Reserve o texto NAO_SEI_ENCAMINHAR só para perguntas que genuinamente não têm nenhuma informação útil a dar (ex.: assunto totalmente fora do preparo, ou um item que você não consegue identificar de jeito nenhum) — nesse caso, responda EXATAMENTE com esse texto, nada mais, nenhuma outra palavra, nenhuma pontuação extra.
 - Antes de aplicar qualquer regra acima, avalie se o texto do paciente é sequer uma pergunta ou comentário coerente (mesmo que informal, curto ou com erros de digitação/ortografia). Se o texto for palavras reais mas sem nenhum sentido coerente entre si, ou for sobre um assunto qualquer que nem chega a formar uma pergunta/comentário compreensível, responda EXATAMENTE com o texto SEM_SENTIDO_ENCAMINHAR, nada mais. NÃO use SEM_SENTIDO_ENCAMINHAR para uma pergunta coerente que só está fora do preparo ou que você não consegue identificar (esses casos usam NAO_SEI_ENCAMINHAR, acima) — a diferença é: NAO_SEI_ENCAMINHAR é "entendi a pergunta, mas não tenho a informação"; SEM_SENTIDO_ENCAMINHAR é "isso nem é uma pergunta/comentário que eu consiga entender". Na dúvida entre os dois, ou na dúvida entre usar SEM_SENTIDO_ENCAMINHAR e simplesmente responder, prefira responder normalmente ou usar NAO_SEI_ENCAMINHAR — evite usar SEM_SENTIDO_ENCAMINHAR para um texto que dá pra entender, mesmo que mal escrito.
@@ -340,21 +340,21 @@ def _cliente_gemini():
 
 
 def _formatar_contexto_preparo(exame):
-    """Serializa o preparo do exame (e o agendamento mais recente do
-    paciente, se houver) num texto simples — os prazos já vêm calculados
-    aqui (mesmas contas que a tela do paciente e o chat por palavra-chave
-    já fazem), pra IA não precisar (e não arriscar errar) fazer aritmética
-    de data por conta própria."""
+    """Serializa o preparo do exame num texto simples, com os prazos
+    RELATIVOS ("3 dias antes do exame").
+
+    Sem nenhuma data concreta (2026-10-21, pedido do Silvan): antes ia a
+    data do agendamento mais recente DESTE TIPO DE EXAME - de qualquer
+    paciente, não necessariamente de quem perguntou - e as datas
+    calculadas a partir dela; e a resposta aprovada, com essas datas,
+    virava FAQ para todos. Agora a IA usa marcadores ({data_exame},
+    {3 dias antes}...) e o sistema preenche com o agendamento de cada
+    paciente na hora de enviar (ver app.marcadores_resposta)."""
     preparo = exame.preparo
     partes = [f"Exame: {exame.nome}"]
     if exame.descricao:
         partes.append(f"Descrição do exame: {exame.descricao}")
 
-    agendamento = None
-    if exame.agendamentos:
-        agendamento = sorted(exame.agendamentos, key=lambda a: a.data_hora)[-1]
-    if agendamento:
-        partes.append(f"Data/hora do exame agendado: {agendamento.data_hora.strftime('%d/%m/%Y às %H:%M')}")
 
     if not preparo:
         partes.append("Nenhuma instrução de preparo cadastrada para este exame.")
@@ -363,10 +363,7 @@ def _formatar_contexto_preparo(exame):
     if preparo.cortes:
         partes.append("\nCortes de alimentação/líquido:")
         for c in preparo.cortes:
-            linha = f"- {c.descricao}: proibido a partir de {c.horas_antes} horas antes do exame"
-            if agendamento:
-                linha += f" (ou seja, a partir de {c.limite(agendamento.data_hora).strftime('%d/%m/%Y às %H:%M')})"
-            partes.append(linha)
+            partes.append(f"- {c.descricao}: proibido a partir de {c.horas_antes} horas antes do exame")
 
     if preparo.medicamentos_suspensos:
         partes.append("\nMedicamentos que precisam ser suspensos:")
@@ -377,8 +374,6 @@ def _formatar_contexto_preparo(exame):
             if categoria:
                 linha += f" (categoria: {categoria})"
             linha += f": suspender {ms.dias_antes} dias antes do exame"
-            if agendamento:
-                linha += f" (a partir de {ms.limite(agendamento.data_hora).strftime('%d/%m/%Y')})"
             if ms.observacao:
                 linha += f". Observação: {ms.observacao}"
             partes.append(linha)
@@ -401,10 +396,10 @@ def _formatar_contexto_preparo(exame):
             partes.append("\nAlimentos/bebidas PROIBIDOS:")
             for a in proibidos:
                 linha = f"- {a.nome}"
-                if (a.horas_antes is not None or a.dias_antes is not None) and agendamento:
+                if a.horas_antes is not None or a.dias_antes is not None:
                     prazo = a.horas_antes if a.horas_antes is not None else a.dias_antes
                     unidade = "horas" if a.horas_antes is not None else "dias"
-                    linha += f": evitar a partir de {a.limite_formatado(agendamento.data_hora)} ({prazo} {unidade} antes do exame)"
+                    linha += f": evitar a partir de {prazo} {unidade} antes do exame"
                 partes.append(linha)
         if permitidos:
             partes.append("\nAlimentos/bebidas PERMITIDOS (sugestão de consumo):")
@@ -415,21 +410,18 @@ def _formatar_contexto_preparo(exame):
         partes.append("\nExames/procedimentos que o paciente NÃO pode ter feito recentemente:")
         for e in preparo.exames_anteriores_proibidos:
             linha = f"- {e.nome}"
-            if e.dias_antes is not None and agendamento:
-                linha += (
-                    f": não deve ter sido feito desde {e.limite(agendamento.data_hora).strftime('%d/%m/%Y')} "
-                    f"({e.dias_antes} dias antes do exame)"
-                )
+            if e.dias_antes is not None:
+                linha += f": não deve ter sido feito nos {e.dias_antes} dias antes do exame"
             partes.append(linha)
 
     if preparo.informacoes_gerais:
         partes.append("\nOutras orientações:")
         for info in preparo.informacoes_gerais:
             linha = f"- {info.texto}"
-            if agendamento:
-                limite_info = info.limite(agendamento.data_hora)
-                if limite_info:
-                    linha += f" (prazo: {limite_info.strftime('%d/%m/%Y às %H:%M')})"
+            if info.horas_antes is not None:
+                linha += f" (prazo: {info.horas_antes} horas antes do exame)"
+            elif info.dias_antes is not None and info.hora_exata is not None:
+                linha += f" (prazo: {info.dias_antes} dia(s) antes do exame, às {info.hora_exata.strftime('%H:%M')})"
             partes.append(linha)
 
     if preparo.instrucoes:

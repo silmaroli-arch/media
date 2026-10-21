@@ -12,6 +12,7 @@ from sqlalchemy import or_
 from app.extensions import db
 from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Paciente, GrupoPaciente, Grupo, Usuario, FaqItem, normalizar_telefone, telefone_incompleto
 from app.faq_engine import buscar_resposta
+from app.marcadores_resposta import resposta_para_paciente
 from app.ia_preparo import responder_com_ia, formatar_situacao_ias
 from app.clinica_utils import verificar_vencimento_grupo
 from app.push_notificacoes import notificar_equipe_nova_pergunta
@@ -387,7 +388,9 @@ def chat():
             if faq_item:
                 faq_item.vezes_utilizada += 1
                 db.session.commit()
-                resposta_ia = faq_item.resposta
+                # Marcadores ({data_exame}...) preenchidos com o agendamento
+                # deste paciente (ver app.marcadores_resposta).
+                resposta_ia = resposta_para_paciente(faq_item.resposta, paciente.id, exame_selecionado.id if exame_selecionado else None)
                 origem = "faq"
             else:
                 # Nada bateu na base de conhecimento — só agora a IA (quando configurada) é
@@ -462,7 +465,7 @@ def chat():
                         # desativada para este Grupo/médico.
                         aprovar_pergunta_automaticamente(pendente, resultado_ia["final"])
                         db.session.commit()
-                        resposta_ia = resultado_ia["final"]
+                        resposta_ia = resposta_para_paciente(resultado_ia["final"], paciente.id, exame_selecionado.id)
                         origem = "ia"
                 else:
                     pendente = PerguntaPendente(
