@@ -33,6 +33,7 @@ O que este módulo NÃO apaga (de propósito):
 from app.extensions import db
 from app.models import (
     Agendamento,
+    BaseConhecimentoHistorico,
     BaseConhecimentoItem,
     BaseConhecimentoSugestao,
     ContagemPerguntasDia,
@@ -93,13 +94,22 @@ def apagar_todos_os_dados(dono_atual):
     nao_donos = db.session.query(Usuario.id).filter(Usuario.tipo != "dono")
     MensagemSuporte.query.filter(MensagemSuporte.usuario_id.in_(nao_donos)).delete(synchronize_session=False)
     Notificacao.query.filter(Notificacao.usuario_id.in_(nao_donos)).delete(synchronize_session=False)
-    # FAQ do MedIA e sugestões são conteúdo da plataforma: ficam, só perdem
-    # o vínculo com o autor (o nome continua em autor_nome) - mesma regra
-    # da exclusão de uma conta (app.exclusao_usuario).
-    for modelo in (BaseConhecimentoItem, BaseConhecimentoSugestao, TipoExameSugestao):
-        modelo.query.filter(modelo.autor_usuario_id.in_(nao_donos)).update(
-            {"autor_usuario_id": None}, synchronize_session=False
-        )
+    # FAQ do MedIA (pedido do Silvan, 2026-10-23): saem os itens que vieram
+    # de médicos (respostas de teste) e todas as sugestões dos médicos;
+    # ficam os itens cadastrados pelo dono e o arquivo da carga inicial
+    # (base_conhecimento_arquivo).
+    BaseConhecimentoSugestao.query.delete(synchronize_session=False)
+    TipoExameSugestao.query.delete(synchronize_session=False)
+    itens_de_medicos = db.session.query(BaseConhecimentoItem.id).filter(BaseConhecimentoItem.origem == "medico")
+    BaseConhecimentoHistorico.query.filter(BaseConhecimentoHistorico.item_id.in_(itens_de_medicos)).delete(
+        synchronize_session=False
+    )
+    BaseConhecimentoItem.query.filter(BaseConhecimentoItem.origem == "medico").delete(synchronize_session=False)
+    # Item que o dono cadastrou mas um médico editou (sugestão aprovada)
+    # fica, só sem o vínculo do autor.
+    BaseConhecimentoItem.query.filter(BaseConhecimentoItem.autor_usuario_id.in_(nao_donos)).update(
+        {"autor_usuario_id": None}, synchronize_session=False
+    )
 
     # 2. Agendamentos (o ResultadoExame ligado a cada um já foi acima).
     Agendamento.query.delete(synchronize_session=False)

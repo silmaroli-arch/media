@@ -2695,6 +2695,11 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Correção: apaga contador de perguntas/dia, pedidos de exclusão, "Fale com a gente" e notificações de quem não é dono (as do dono ficam); FAQ do MedIA, sugestões de médicos e sugestões de tipo de exame ficam, só perdem o vínculo do autor (mesma regra da exclusão de uma conta).
 - Teste novo: `test_limpar_dados.py`, com chave estrangeira LIGADA no SQLite (PRAGMA foreign_keys=ON) - falha com o código antigo, passa com o novo. Ao criar tabela nova que aponte para usuário/paciente/exame, lembrar de tratar aqui e em `app/exclusao_usuario.py`.
 
+## "Apagar todos os dados" também limpa o FAQ do MedIA vindo de médicos (2026-10-23, pedido do Silvan)
+
+- `limpar_dados.apagar_todos_os_dados`: apaga os itens do FAQ do MedIA com origem "medico" (e o histórico deles), todas as sugestões de médicos (`BaseConhecimentoSugestao`, `TipoExameSugestao`). Ficam os itens cadastrados pelo dono e o arquivo da carga inicial (`base_conhecimento_arquivo`). Texto do botão/janela no painel atualizado.
+- Teste: `test_limpar_dados.py`; conferido também em PostgreSQL.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.

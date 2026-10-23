@@ -11,7 +11,7 @@ from sqlalchemy import event
 from app import create_app, db
 from app.limpar_dados import apagar_todos_os_dados
 from app.models import (
-    BaseConhecimentoItem, ContagemPerguntasDia, Exame, MensagemSuporte, Notificacao, Paciente,
+    BaseConhecimentoArquivo, BaseConhecimentoItem, BaseConhecimentoSugestao, ContagemPerguntasDia, Exame, MensagemSuporte, Notificacao, Paciente,
     SolicitacaoExclusao, TipoExame, Usuario,
 )
 
@@ -43,7 +43,13 @@ with app.app_context():
         ContagemPerguntasDia(paciente_id=paciente.id, exame_id=exame.id, data=date.today(), quantidade=1),
         BaseConhecimentoItem(tipo_exame_id=tipo.id, pergunta="P?", resposta="R.", origem="medico",
                              autor_usuario_id=medico.id, autor_nome=medico.nome),
+        BaseConhecimentoItem(tipo_exame_id=tipo.id, pergunta="Do dono?", resposta="Fica.", origem="dono"),
+        BaseConhecimentoArquivo(item_id_original=999, tipo_exame_id=tipo.id, pergunta="Arquivada?", resposta="Fica."),
     ])
+    db.session.flush()
+    db.session.add(BaseConhecimentoSugestao(item_id=BaseConhecimentoItem.query.filter_by(pergunta="P?").first().id,
+                                            tipo_exame_id=tipo.id, pergunta="P?", resposta="Outra.",
+                                            autor_usuario_id=medico.id, autor_nome=medico.nome))
     db.session.commit()
 
     apagar_todos_os_dados(dono)
@@ -54,7 +60,10 @@ with app.app_context():
            ContagemPerguntasDia.query.count() == 0 and SolicitacaoExclusao.query.count() == 0
            and MensagemSuporte.query.count() == 0)
     checar("Notificações do dono ficam", Notificacao.query.count() == 1)
-    item = BaseConhecimentoItem.query.filter_by(pergunta="P?").first()
-    checar("FAQ do MedIA fica, sem o vínculo do autor", item is not None and item.autor_usuario_id is None and item.autor_nome)
+    checar("FAQ do MedIA: saem os itens de médicos e as sugestões (2026-10-23)",
+           BaseConhecimentoItem.query.filter_by(origem="medico").count() == 0 and BaseConhecimentoSugestao.query.count() == 0)
+    checar("... e ficam os do dono e o arquivo da carga inicial",
+           BaseConhecimentoItem.query.filter_by(pergunta="Do dono?").count() == 1
+           and BaseConhecimentoArquivo.query.filter_by(pergunta="Arquivada?").count() == 1)
 
 print("\nTodos os testes de apagar todos os dados passaram.")
