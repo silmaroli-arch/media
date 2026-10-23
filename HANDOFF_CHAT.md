@@ -2832,7 +2832,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Painel do dono > Configurações > "IA da ajuda do app" troca a IA; menu "Ajuda do app" lista as perguntas
 
 **Medicamentos (ANVISA)**
-- [ ] Painel do dono > Medicamentos (ANVISA): importar o DADOS_ABERTOS_MEDICAMENTOS.csv; conferir o total e testar "Poviztra"
+- [x] Painel do dono > Medicamentos (ANVISA): importar o DADOS_ABERTOS_MEDICAMENTOS.csv; conferir o total e testar "Poviztra" - validado 2026-10-23 no media-dev: arquivo real importado (17.932 pares nome/princípio ativo), "Poviztra = semaglutida" (situação "Ativo", Novo Nordisk)
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

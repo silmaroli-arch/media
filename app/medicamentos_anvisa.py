@@ -120,4 +120,5 @@ def buscar(nome):
     from app.models import MedicamentoAnvisa
 
     itens = MedicamentoAnvisa.query.filter_by(nome_normalizado=normalizar_nome(nome)).all()
-    return sorted(itens, key=lambda m: 0 if normalizar_nome(m.situacao or "").startswith("VALID") else 1)
+    # No arquivo real a situação vem como "Ativo" (2026-10-23); "Válido" fica por garantia.
+    return sorted(itens, key=lambda m: 0 if normalizar_nome(m.situacao or "").startswith(("ATIVO", "VALID")) else 1)
