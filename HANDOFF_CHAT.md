@@ -2708,6 +2708,12 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Modelo novo `AjudaMensagem` (tabela `ajuda_mensagens`, create_all): pergunta, resposta, tela, provedor, nao_soube, enviada_suporte. Apagada na exclusão do usuário e no "Apagar todos os dados".
 - Teste novo: `test_ajuda_app.py`. Conferido no navegador (computador e celular). Migração conferida em PostgreSQL.
 
+## BACKLOG (Silvan) - combinado para fazer depois
+
+- [ ] **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente.
+- [ ] Remarcar/desmarcar pelo WhatsApp (talvez com menu) - Silvan vai definir depois.
+- [ ] Aviso ao paciente no WhatsApp ao remarcar/cancelar exame - precisa de modelos novos aprovados na Meta (exame_remarcado, exame_cancelado).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
