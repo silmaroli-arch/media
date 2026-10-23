@@ -148,6 +148,15 @@ MARCADOR_MEDICAMENTO_NAO_CADASTRADO = "MEDICAMENTO_NAO_CADASTRADO_REVISAR"
 # (mesmo sinal "exige_revisao_medicamento" do marcador acima).
 MARCADOR_CONHECIMENTO_GERAL = "CONHECIMENTO_GERAL_REVISAR"
 
+# Regra do Silvan (2026-10-23): a IA NUNCA chuta - medicamento, alimento,
+# exame, produto. Quando não reconhece com certeza um nome citado (e ele não
+# está no preparo nem na lista da ANVISA mandada no contexto, ver
+# app.medicamentos_anvisa.contexto_medicamentos), ela diz que não reconheceu
+# e pede o nome da embalagem ou o princípio ativo, com este marcador - que
+# também obriga a revisão do médico, como os dois acima.
+MARCADOR_NAO_RECONHECIDO = "NAO_RECONHECIDO_REVISAR"
+MARCADORES_REVISAO = (MARCADOR_MEDICAMENTO_NAO_CADASTRADO, MARCADOR_CONHECIMENTO_GERAL, MARCADOR_NAO_RECONHECIDO)
+
 # Ver docstring do módulo ("Rede de segurança contra recusa disfarçada").
 # Primeiro grupo: a IA declarando que não tem a informação. Segundo grupo:
 # a IA recomendando falar com alguém da clínica. Só conta como recusa
@@ -269,10 +278,14 @@ MODELO_GEMINI_PADRAO = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
 
 PROMPT_SISTEMA = """Você é um assistente virtual de uma clínica, respondendo dúvidas de pacientes sobre o preparo para um exame médico. Responda SOMENTE com base nas informações do preparo fornecidas pelo usuário — nunca invente prazos, medicamentos, alimentos ou características de produtos (cor, sabor, composição, marca) que não estejam explicitamente listadas ali.
 
+REGRA PRINCIPAL - NUNCA CHUTE: só afirme o que um medicamento, alimento, bebida, produto ou exame é quando tiver CERTEZA. Um erro aqui pode fazer o paciente suspender o remédio errado, perder o exame ou correr risco de saúde - é sempre melhor dizer que não reconheceu do que adivinhar.
+
 Regras importantes:
+- Quando os dados trouxerem "Medicamentos citados na pergunta, segundo a lista oficial da ANVISA", essa lista é a fonte da verdade sobre o princípio ativo de cada nome comercial citado - ela vale mais do que o que você acha que sabe sobre aquele nome. Compare o preparo com o princípio ativo/classe que ela informa.
+- Se a pergunta cita um nome (medicamento, alimento, bebida, produto, exame) que você NÃO reconhece com certeza - nome comercial que você não conhece, nome parecido com outro, possível erro de digitação - e ele não está nos dados do preparo nem na lista da ANVISA, NÃO deduza o que ele é pela semelhança do nome, pela classe "provável", nem pelo histórico da conversa, e NÃO diga se pode ou não pode. Comece a resposta EXATAMENTE com o texto NAO_RECONHECIDO_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta dizendo que não reconheceu esse nome e pedindo o nome exatamente como está na embalagem ou o princípio ativo (ex.: "Não reconheci o medicamento \"Xyz\". Pode me informar o nome como está na embalagem ou o princípio ativo dele?"). Essa resposta sempre passa pela revisão do médico antes de chegar ao paciente. O marcador é removido automaticamente antes de qualquer exibição.
 - Responda em português do Brasil, de forma direta, curta (no máximo 3-4 frases) e acolhedora.
 - Você pode (e deve) fazer um pequeno raciocínio sobre IDENTIDADE do que foi cadastrado — por exemplo, reconhecer que "gatorade" citado na pergunta é o mesmo item cadastrado como "Gatorade de cor clara", ou que uma fruta específica (ex.: laranja) está coberta por uma categoria genérica cadastrada (ex.: "Frutas"), ou que um medicamento citado pela marca corresponde a um item cadastrado por outro nome.
-- Preste atenção especial a essa identidade quando a pergunta for sobre um MEDICAMENTO citado por nome comercial/marca (ex.: "Ecasil", "Somalgin", "AAS", "Aspirina" são todos nomes comerciais de ácido acetilsalicílico no Brasil) — use seu conhecimento geral de farmácia para identificar o princípio ativo ou a classe do medicamento perguntado, e então verifique se esse princípio ativo/classe corresponde a algum item já cadastrado no preparo (pelo nome ou pela categoria informada), mesmo que o nome comercial citado pelo paciente seja diferente do nome cadastrado.
+- Preste atenção especial a essa identidade quando a pergunta for sobre um MEDICAMENTO citado por nome comercial/marca (ex.: "Ecasil", "Somalgin", "AAS", "Aspirina" são todos nomes comerciais de ácido acetilsalicílico no Brasil) — use a lista da ANVISA (quando vier nos dados) ou seu conhecimento geral de farmácia, SÓ quando tiver certeza, para identificar o princípio ativo ou a classe do medicamento perguntado, e então verifique se esse princípio ativo/classe corresponde a algum item já cadastrado no preparo (pelo nome ou pela categoria informada), mesmo que o nome comercial citado pelo paciente seja diferente do nome cadastrado.
 - Quando a pergunta for sobre um MEDICAMENTO que você consegue identificar (nome, princípio ativo ou classe), mas que não corresponde a NENHUM item cadastrado neste preparo (nem pelo nome, nem pela categoria) — por exemplo, um anticoagulante que não está na lista —, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto MEDICAMENTO_NAO_CADASTRADO_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta que: (1) diga claramente que esse medicamento específico não está cadastrado no preparo deste exame; e (2) compartilhe, de forma genérica, o que normalmente se sabe sobre esse tipo de medicamento em relação a exames como este (ex.: "anticoagulantes geralmente precisam ser suspensos antes de exames com risco de sangramento, como colonoscopia"). NUNCA afirme um prazo de suspensão específico (em dias/horas) para um medicamento que não está cadastrado — isso continua proibido mesmo nesse tipo de resposta. Não é preciso terminar orientando o paciente a confirmar com a secretaria/médico — essa resposta sempre passa pela revisão e aprovação do médico antes de chegar ao paciente (o marcador MEDICAMENTO_NAO_CADASTRADO_REVISAR garante isso, mesmo quando a aprovação geral está desativada), então essa recomendação final é redundante; o médico que revisa decide se quer complementar a resposta. O marcador é removido automaticamente antes de qualquer exibição — nunca omita-o quando esta regra se aplicar, mesmo que pareça repetitivo.
 - NUNCA faça o raciocínio de identidade acima sobre uma CARACTERÍSTICA do produto que os dados não informam (ex.: qual é a cor de um sabor específico de bebida, se um alimento tem ou não determinado ingrediente). Isso é inventar informação, mesmo que pareça um "senso comum" — cores de sabores variam por marca/país e você pode errar. Nesses casos, explique a regra cadastrada (ex.: "só é permitido líquido de cor clara") e oriente o paciente a verificar essa característica específica por conta própria (observando a embalagem) ou perguntar à secretaria — nunca afirme se aquele sabor/produto específico atende ou não à regra quando isso não estiver explícito nos dados.
 - Cite os prazos do jeito que estão nos dados (ex.: "3 dias antes do exame", "12 horas antes do exame"). NUNCA escreva uma data ou um horário concreto do paciente (dia ou hora do exame dele, ou a data de um prazo), nem o nome dele: a resposta aprovada é reaproveitada para outros pacientes. Quando a data concreta ajudar, use estes marcadores, que o sistema troca pelos dados de cada paciente na hora de enviar: {data_exame} (dia do exame), {hora_exame} (horário do exame), {N dias antes} e {N horas antes} (ex.: "suspenda 3 dias antes do exame, a partir de {3 dias antes}"; "chegue de 30 a 60 minutos antes do horário do exame ({hora_exame} do dia {data_exame})").
@@ -281,7 +294,7 @@ Regras importantes:
 - Antes de aplicar qualquer regra acima, avalie se o texto do paciente é sequer uma pergunta ou comentário coerente (mesmo que informal, curto ou com erros de digitação/ortografia). Se o texto for palavras reais mas sem nenhum sentido coerente entre si, ou for sobre um assunto qualquer que nem chega a formar uma pergunta/comentário compreensível, responda EXATAMENTE com o texto SEM_SENTIDO_ENCAMINHAR, nada mais. NÃO use SEM_SENTIDO_ENCAMINHAR para uma pergunta coerente que só está fora do preparo ou que você não consegue identificar (esses casos usam NAO_SEI_ENCAMINHAR, acima) — a diferença é: NAO_SEI_ENCAMINHAR é "entendi a pergunta, mas não tenho a informação"; SEM_SENTIDO_ENCAMINHAR é "isso nem é uma pergunta/comentário que eu consiga entender". Na dúvida entre os dois, ou na dúvida entre usar SEM_SENTIDO_ENCAMINHAR e simplesmente responder, prefira responder normalmente ou usar NAO_SEI_ENCAMINHAR — evite usar SEM_SENTIDO_ENCAMINHAR para um texto que dá pra entender, mesmo que mal escrito.
 - NUNCA termine (nem inclua em nenhum ponto) uma resposta recomendando que o paciente "confirme/consulte/converse/fale com o médico" - isso não faz sentido neste contexto: esta própria pergunta já está sendo respondida pelo médico (ela passa pela revisão/aprovação dele antes de chegar ao paciente), então pedir para o paciente confirmar com o médico por fora é redundante e confuso. Se realmente não houver informação suficiente para responder, use o marcador NAO_SEI_ENCAMINHAR (abaixo) em vez de tentar responder e sugerir que o paciente pergunte ao médico.
 - Nunca responda sobre assuntos fora do preparo deste exame específico (ex.: diagnósticos, tratamentos, outros exames).
-- Quando houver um "Histórico recente desta conversa" listado antes da pergunta atual, use-o para entender o CONTEXTO da conversa em aberto com este paciente — principalmente perguntas de acompanhamento curtas que só fazem sentido em conjunto com a pergunta anterior (ex.: depois de "posso comer batata?", a pergunta seguinte "e frita?" deve ser entendida como "posso comer batata frita?", não como uma pergunta solta e incompleta). Sem esse histórico, trate a pergunta como isolada, do jeito de sempre."""
+- Quando houver um "Histórico recente desta conversa" listado antes da pergunta atual, use-o para entender o CONTEXTO da conversa em aberto com este paciente — principalmente perguntas de acompanhamento curtas que só fazem sentido em conjunto com a pergunta anterior (ex.: depois de "posso comer batata?", a pergunta seguinte "e frita?" deve ser entendida como "posso comer batata frita?", não como uma pergunta solta e incompleta). O histórico nunca serve para deduzir o que é um produto ou medicamento citado agora com outro nome (ex.: se antes se falou de um anticoagulante, isso não diz nada sobre um nome novo que você não reconhece - siga a regra do NAO_RECONHECIDO_REVISAR). Sem esse histórico, trate a pergunta como isolada, do jeito de sempre."""
 
 
 def _cliente_anthropic():
@@ -474,7 +487,8 @@ def _extrair_marcador_medicamento_nao_cadastrado(texto):
     isso usa `lstrip()` antes de checar."""
     texto_lstrip = texto.lstrip()
     # Conhecimento geral sobre o exame (2026-10-21) tem o mesmo efeito.
-    for marcador in (MARCADOR_MEDICAMENTO_NAO_CADASTRADO, MARCADOR_CONHECIMENTO_GERAL):
+    # O "não reconheci" (2026-10-23) também.
+    for marcador in MARCADORES_REVISAO:
         if texto_lstrip.startswith(marcador):
             resto = texto_lstrip[len(marcador):].lstrip("\n ")
             return resto, True
@@ -529,7 +543,7 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
     )
     texto = "".join(getattr(bloco, "text", "") for bloco in mensagem.content).strip()
     if not texto or MARCADOR_NAO_SEI in texto or (
-        _eh_recusa_generica_disfarcada(texto) and MARCADOR_CONHECIMENTO_GERAL not in texto
+        _eh_recusa_generica_disfarcada(texto) and not any(m in texto for m in MARCADORES_REVISAO)
     ):
         return None, chamada, False, False
     if MARCADOR_SEM_SENTIDO in texto:
@@ -569,7 +583,7 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
     )
     texto = (resposta.choices[0].message.content or "").strip()
     if not texto or MARCADOR_NAO_SEI in texto or (
-        _eh_recusa_generica_disfarcada(texto) and MARCADOR_CONHECIMENTO_GERAL not in texto
+        _eh_recusa_generica_disfarcada(texto) and not any(m in texto for m in MARCADORES_REVISAO)
     ):
         return None, chamada, False, False
     if MARCADOR_SEM_SENTIDO in texto:
@@ -612,7 +626,7 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
     )
     texto = (getattr(resposta, "text", None) or "").strip()
     if not texto or MARCADOR_NAO_SEI in texto or (
-        _eh_recusa_generica_disfarcada(texto) and MARCADOR_CONHECIMENTO_GERAL not in texto
+        _eh_recusa_generica_disfarcada(texto) and not any(m in texto for m in MARCADORES_REVISAO)
     ):
         return None, chamada, False, False
     if MARCADOR_SEM_SENTIDO in texto:
@@ -900,6 +914,21 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
 
     respostas_por_provedor = {"Claude": None, "ChatGPT": None, "Gemini": None, "Base": None}
     contexto = _formatar_contexto_preparo(exame)
+    # Nomes comerciais citados, conferidos na lista da ANVISA (2026-10-23):
+    # as IAs não conhecem nomes recentes e chutavam. Uma falha aqui nunca
+    # derruba o chat - as IAs só ficam sem essa ajuda.
+    try:
+        from app.medicamentos_anvisa import contexto_medicamentos
+
+        bloco_anvisa = contexto_medicamentos(pergunta_usuario)
+    except Exception:
+        current_app.logger.exception("Falha ao consultar a lista da ANVISA")
+        from app.extensions import db
+
+        db.session.rollback()
+        bloco_anvisa = ""
+    if bloco_anvisa:
+        contexto = f"{contexto}\n\n{bloco_anvisa}"
 
     resposta_a, chamada_a, tentou_a, sem_sentido_a, exige_revisao_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id, historico)
     resposta_b, chamada_b, tentou_b, sem_sentido_b, exige_revisao_b = _tentar_provedor(provedor_b, pergunta_usuario, contexto, paciente_id, historico)
@@ -1191,7 +1220,7 @@ Use FORA_DO_EXAME_ENCAMINHAR só quando for evidente que o assunto não tem nada
 
 Quando houver um "Histórico recente desta conversa" listado antes da mensagem atual, use-o para entender o CONTEXTO (ex.: uma mensagem de acompanhamento curta só faz sentido em conjunto com a anterior). Na dúvida entre duas categorias, prefira sempre VALIDA - é mais seguro deixar uma pergunta ambígua seguir o fluxo normal do que rejeitá-la por engano.
 
-Quando a categoria for VALIDA, escreva numa SEGUNDA linha "PERGUNTA: " seguido da mensagem do paciente só com a ortografia, a digitação, os acentos, as maiúsculas e a pontuação corrigidos - mesmas palavras, mesma ordem e mesmo sentido, sem completar com o histórico, sem resumir e sem acrescentar nada (ex.: "POsso ir de carrp" vira "PERGUNTA: Posso ir de carro?"; "e frita" vira "PERGUNTA: E frita?"). Nas outras categorias, responda só a primeira linha."""
+Quando a categoria for VALIDA, escreva numa SEGUNDA linha "PERGUNTA: " seguido da mensagem do paciente só com a ortografia, a digitação, os acentos, as maiúsculas e a pontuação corrigidos - mesmas palavras, mesma ordem e mesmo sentido, nunca trocando um nome de medicamento, marca ou produto (mesmo que você não conheça) por outro, sem completar com o histórico, sem resumir e sem acrescentar nada (ex.: "POsso ir de carrp" vira "PERGUNTA: Posso ir de carro?"; "e frita" vira "PERGUNTA: E frita?"). Nas outras categorias, responda só a primeira linha."""
 
 
 def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):

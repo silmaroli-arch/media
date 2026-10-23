@@ -122,3 +122,81 @@ def buscar(nome):
     itens = MedicamentoAnvisa.query.filter_by(nome_normalizado=normalizar_nome(nome)).all()
     # No arquivo real a situação vem como "Ativo" (2026-10-23); "Válido" fica por garantia.
     return sorted(itens, key=lambda m: 0 if normalizar_nome(m.situacao or "").startswith(("ATIVO", "VALID")) else 1)
+
+
+# ---------- Uso nas respostas das IAs (pedido do Silvan, 2026-10-23) ----------
+# Antes de chamar as IAs, o sistema procura na lista os nomes comerciais
+# citados na pergunta e manda junto no contexto "Poviztra = semaglutida" -
+# assim as IAs comparam pelo princípio ativo em vez de chutar o que é um nome
+# que elas não conhecem (o caso real: Poviztra virou varfarina).
+
+MAXIMO_CITADOS = 5
+MAXIMO_PRINCIPIOS_POR_NOME = 3
+_TAMANHO_MINIMO_PALAVRA = 4
+
+
+def _palavras(pergunta):
+    return [p for p in normalizar_nome("".join(c if c.isalnum() else " " for c in (pergunta or ""))).split()]
+
+
+def _candidatos(pergunta):
+    """Nomes a procurar na lista: cada palavra fora do dicionário de
+    português (uma palavra comum como "calma" ou "dieta" pode ser nome de
+    produto e confundiria a IA) e cada par de palavras vizinhas em que ao
+    menos uma é fora do dicionário (ex.: "AAS PROTECT"). Sem o dicionário,
+    vale qualquer palavra de 5+ letras."""
+    from app.whatsapp_conversa import _obter_verificador_ortografico
+
+    palavras = _palavras(pergunta)
+    verificador = _obter_verificador_ortografico()
+    if verificador:
+        desconhecidas = verificador.unknown([p.lower() for p in palavras])
+        estranha = [p.lower() in desconhecidas for p in palavras]
+    else:
+        estranha = [len(p) >= 5 for p in palavras]
+    candidatos = []
+    for i, palavra in enumerate(palavras):
+        if estranha[i] and len(palavra) >= _TAMANHO_MINIMO_PALAVRA:
+            candidatos.append(palavra)
+        if i + 1 < len(palavras) and (estranha[i] or estranha[i + 1]):
+            candidatos.append(f"{palavra} {palavras[i + 1]}")
+    return list(dict.fromkeys(candidatos))
+
+
+def medicamentos_citados(pergunta):
+    """[(nome comercial, [princípios ativos], classe ou None)] dos nomes da
+    pergunta que estão na lista - no máximo MAXIMO_CITADOS, os registros
+    ativos primeiro. Um par de palavras que bate esconde a palavra solta."""
+    from app.models import MedicamentoAnvisa
+
+    candidatos = _candidatos(pergunta)
+    if not candidatos:
+        return []
+    itens = MedicamentoAnvisa.query.filter(MedicamentoAnvisa.nome_normalizado.in_(candidatos)).all()
+    por_nome = {}
+    for item in sorted(itens, key=lambda m: 0 if normalizar_nome(m.situacao or "").startswith(("ATIVO", "VALID")) else 1):
+        por_nome.setdefault(item.nome_normalizado, []).append(item)
+    achados = [c for c in candidatos if c in por_nome]
+    achados = [c for c in achados if not any(c != o and c in o.split() for o in achados)]
+    resultado = []
+    for chave in achados[:MAXIMO_CITADOS]:
+        registros = por_nome[chave]
+        principios = list(dict.fromkeys(r.principio_ativo for r in registros))[:MAXIMO_PRINCIPIOS_POR_NOME]
+        classe = next((r.classe_terapeutica for r in registros if r.classe_terapeutica), None)
+        resultado.append((registros[0].nome_produto, principios, classe))
+    return resultado
+
+
+def contexto_medicamentos(pergunta):
+    """Bloco para o contexto das IAs, ou "" quando a pergunta não cita nada
+    da lista (ou a lista está vazia)."""
+    citados = medicamentos_citados(pergunta)
+    if not citados:
+        return ""
+    linhas = ["Medicamentos citados na pergunta, segundo a lista oficial da ANVISA (nome comercial = princípio ativo):"]
+    for nome, principios, classe in citados:
+        linha = f"- {nome} = {' / '.join(principios)}"
+        if classe:
+            linha += f" (classe: {classe})"
+        linhas.append(linha)
+    return "\n".join(linhas)
