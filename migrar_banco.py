@@ -514,6 +514,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_google_sub ON usuarios (google_sub
 ALTER TABLE notificacoes ADD COLUMN IF NOT EXISTS popup BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS pergunta_faq TEXT;
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS ias_situacao VARCHAR(120);
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS ia_ajuda_app VARCHAR(20) NOT NULL DEFAULT 'Claude';
 
 -- LGPD, minimizacao (pedido do Silvan, 2026-10-20): o sistema deixou de pedir
 -- o endereco pessoal da equipe e o e-mail, o endereco e o contato de emergencia

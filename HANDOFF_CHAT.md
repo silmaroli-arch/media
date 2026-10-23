@@ -2700,6 +2700,14 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - `limpar_dados.apagar_todos_os_dados`: apaga os itens do FAQ do MedIA com origem "medico" (e o histórico deles), todas as sugestões de médicos (`BaseConhecimentoSugestao`, `TipoExameSugestao`). Ficam os itens cadastrados pelo dono e o arquivo da carga inicial (`base_conhecimento_arquivo`). Texto do botão/janela no painel atualizado.
 - Teste: `test_limpar_dados.py`; conferido também em PostgreSQL.
 
+## Chat de ajuda sobre o uso do app (2026-10-23, pedido do Silvan)
+
+- Botão flutuante "Ajuda" (canto inferior direito) em todas as telas da EQUIPE (médico/secretária; não para dono/paciente; escondido dentro de janelas embutidas). Abre um chat; a conversa fica só na aba do navegador (sessionStorage). Código no fim de `base.html`.
+- `app/ajuda_app.py`: MANUAL do app (texto, por tela - ATUALIZAR quando uma tela mudar), `PROMPT_SISTEMA` (só uso do MedIA; nada médico/preparo; não vê dados de paciente; não inventa telas), `TELAS` (endpoint -> nome da tela atual, enviado junto) e `responder()` - chama a IA escolhida pelo dono (`PlataformaConfig.ia_ajuda_app`: Claude/ChatGPT/Gemini; migração ADD COLUMN), com as últimas 6 mensagens dos últimos 30 min como contexto; custo em ChamadaIA tipo "ajuda_app". Sem resposta no manual, a IA começa com `AJUDA_NAO_SEI` -> tela mostra "Enviar para o suporte".
+- Rotas: `medico.ajuda_perguntar` (POST JSON /equipe/ajuda), `medico.ajuda_enviar_suporte` (cria MensagemSuporte categoria duvida, uma vez só). Dono: `dono.configuracoes_ia_ajuda` (card "IA da ajuda do app" em Configurações) e `dono.ajuda_app_perguntas` (menu "Ajuda do app": perguntas feitas, filtro "só as que a IA não soube").
+- Modelo novo `AjudaMensagem` (tabela `ajuda_mensagens`, create_all): pergunta, resposta, tela, provedor, nao_soube, enviada_suporte. Apagada na exclusão do usuário e no "Apagar todos os dados".
+- Teste novo: `test_ajuda_app.py`. Conferido no navegador (computador e celular). Migração conferida em PostgreSQL.
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2803,6 +2811,10 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 
 **FAQ do MedIA sem a carga inicial**
 - [ ] Depois do deploy: Painel do dono > FAQ do MedIA sem os itens da carga inicial (só os de médicos/dono); nas perguntas novas, a sugestão do FAQ do MedIA só aparece quando houver item vindo de médico
+
+**Ajuda do app**
+- [ ] Botão "Ajuda" (canto inferior direito) para médico/secretária: perguntar "como remarco um exame?" responde com o caminho certo; pergunta fora do manual oferece "Enviar para o suporte" (aparece em Mensagens do dono)
+- [ ] Painel do dono > Configurações > "IA da ajuda do app" troca a IA; menu "Ajuda do app" lista as perguntas
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

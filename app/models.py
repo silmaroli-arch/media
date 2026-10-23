@@ -46,6 +46,9 @@ class PlataformaConfig(db.Model):
     # julgamento mais simples (classificar, não responder), não precisa
     # da mesma cautela.
     ia_validador_pergunta = db.Column(db.String(20), nullable=False, default="Claude")
+    # IA do chat de ajuda sobre o uso do app (botão "Ajuda" da equipe -
+    # pedido do Silvan, 2026-10-23, ver app.ajuda_app).
+    ia_ajuda_app = db.Column(db.String(20), nullable=False, default="Claude")
 
     # "Terceira IA" - base de conhecimento compartilhada (pedido do Silvan,
     # 2026-09-29, ver BaseConhecimentoItem e app.base_conhecimento). Liga/
@@ -103,7 +106,7 @@ class PlataformaConfig(db.Model):
         if not config:
             config = cls(
                 trial_dias=14, ia_chat_provedor_1="Claude", ia_chat_provedor_2="ChatGPT",
-                ia_validador_pergunta="Claude", aviso_inadimplencia_meses=2,
+                ia_validador_pergunta="Claude", ia_ajuda_app="Claude", aviso_inadimplencia_meses=2,
                 verificar_dicionario_chat=True,
             )
             db.session.add(config)
@@ -2155,6 +2158,27 @@ class SolicitacaoExclusao(db.Model):
     status = db.Column(db.String(20), nullable=False, default="pendente")
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     resolvido_em = db.Column(db.DateTime)
+
+    usuario = db.relationship("Usuario")
+
+
+class AjudaMensagem(db.Model):
+    """Pergunta da equipe no chat de ajuda sobre o uso do app e a resposta
+    da IA (pedido do Silvan, 2026-10-23, ver app.ajuda_app). O dono vê a
+    lista em Painel do dono > Ajuda do app, para saber onde os usuários
+    se perdem. `nao_soube`: a IA não achou a resposta no manual;
+    `enviada_suporte`: a pessoa mandou a dúvida para o "Fale com a gente"."""
+    __tablename__ = "ajuda_mensagens"
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
+    pergunta = db.Column(db.Text, nullable=False)
+    resposta = db.Column(db.Text)
+    tela = db.Column(db.String(120))
+    provedor = db.Column(db.String(20))
+    nao_soube = db.Column(db.Boolean, nullable=False, default=False)
+    enviada_suporte = db.Column(db.Boolean, nullable=False, default=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     usuario = db.relationship("Usuario")
 

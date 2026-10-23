@@ -32,6 +32,7 @@ O que este módulo NÃO apaga (de propósito):
   esta limpeza foi publicada)."""
 from app.extensions import db
 from app.models import (
+    AjudaMensagem,
     Agendamento,
     BaseConhecimentoHistorico,
     BaseConhecimentoItem,
@@ -93,6 +94,7 @@ def apagar_todos_os_dados(dono_atual):
     SolicitacaoExclusao.query.delete(synchronize_session=False)
     nao_donos = db.session.query(Usuario.id).filter(Usuario.tipo != "dono")
     MensagemSuporte.query.filter(MensagemSuporte.usuario_id.in_(nao_donos)).delete(synchronize_session=False)
+    AjudaMensagem.query.filter(AjudaMensagem.usuario_id.in_(nao_donos)).delete(synchronize_session=False)
     Notificacao.query.filter(Notificacao.usuario_id.in_(nao_donos)).delete(synchronize_session=False)
     # FAQ do MedIA (pedido do Silvan, 2026-10-23): saem os itens que vieram
     # de médicos (respostas de teste) e todas as sugestões dos médicos;

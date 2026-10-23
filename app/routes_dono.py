@@ -6,7 +6,7 @@ from sqlalchemy import func
 from flask_login import login_required, current_user
 
 from app.extensions import db
-from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico, BaseConhecimentoSugestao, tipos_exame_ordenados, TipoExameSugestao, SolicitacaoExclusao
+from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico, BaseConhecimentoSugestao, tipos_exame_ordenados, TipoExameSugestao, SolicitacaoExclusao, AjudaMensagem
 from app.base_conhecimento import (
     PROVEDORES_BUSCA, PROVEDOR_PALAVRA_CHAVE, provedor_configurado, atualizar_embedding_do_item, buscar_na_base,
     itens_sem_vetor_query,
@@ -302,6 +302,37 @@ def configuracoes_ia_validador():
     db.session.commit()
     flash(f"Validador de pergunta agora usa {provedor}.", "success")
     return redirect(url_for("dono.dashboard"))
+
+
+@dono_bp.route("/configuracoes/ia-ajuda", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_ia_ajuda():
+    """Escolhe a IA do chat de ajuda sobre o uso do app (botão "Ajuda" da
+    equipe - pedido do Silvan, 2026-10-23, ver app.ajuda_app)."""
+    provedor = request.form.get("ia_ajuda_app")
+    if provedor not in PROVEDORES_CHAT_VALIDOS:
+        flash("Selecione uma IA válida para a ajuda do app.", "danger")
+        return redirect(url_for("dono.dashboard"))
+    PlataformaConfig.obter().ia_ajuda_app = provedor
+    db.session.commit()
+    flash(f"A ajuda do app agora usa {provedor}.", "success")
+    return redirect(url_for("dono.dashboard"))
+
+
+@dono_bp.route("/ajuda-app")
+@login_required
+@dono_required
+def ajuda_app_perguntas():
+    """O que a equipe perguntou na ajuda do app - para ver onde os usuários
+    se perdem e melhorar o app ou o manual (app/ajuda_app.py). Filtro
+    "só as que a IA não soube responder"."""
+    consulta = AjudaMensagem.query
+    so_nao_soube = request.args.get("nao_soube") == "1"
+    if so_nao_soube:
+        consulta = consulta.filter_by(nao_soube=True)
+    mensagens = consulta.order_by(AjudaMensagem.criado_em.desc()).limit(300).all()
+    return render_template("dono/ajuda_app.html", mensagens=mensagens, so_nao_soube=so_nao_soube)
 
 
 @dono_bp.route("/configuracoes/limite-perguntas", methods=["POST"])
