@@ -33,6 +33,13 @@ O que este módulo NÃO apaga (de propósito):
 from app.extensions import db
 from app.models import (
     Agendamento,
+    BaseConhecimentoItem,
+    BaseConhecimentoSugestao,
+    ContagemPerguntasDia,
+    MensagemSuporte,
+    Notificacao,
+    SolicitacaoExclusao,
+    TipoExameSugestao,
     ChamadaIA,
     ChatMensagem,
     ConversaWhatsapp,
@@ -76,6 +83,23 @@ def apagar_todos_os_dados(dono_atual):
     ConversaWhatsapp.query.delete(synchronize_session=False)
     PerguntaPendente.query.delete(synchronize_session=False)
     FaqItem.query.delete(synchronize_session=False)
+    # Tabelas criadas depois desta limpeza e que apontam para usuários,
+    # pacientes ou exames - sem elas o Postgres recusava apagar os
+    # usuários (500 em /dono/limpar-dados, 2026-10-23). Contador de
+    # perguntas/dia, pedidos de exclusão, "Fale com a gente" e
+    # notificações (as do dono ficam).
+    ContagemPerguntasDia.query.delete(synchronize_session=False)
+    SolicitacaoExclusao.query.delete(synchronize_session=False)
+    nao_donos = db.session.query(Usuario.id).filter(Usuario.tipo != "dono")
+    MensagemSuporte.query.filter(MensagemSuporte.usuario_id.in_(nao_donos)).delete(synchronize_session=False)
+    Notificacao.query.filter(Notificacao.usuario_id.in_(nao_donos)).delete(synchronize_session=False)
+    # FAQ do MedIA e sugestões são conteúdo da plataforma: ficam, só perdem
+    # o vínculo com o autor (o nome continua em autor_nome) - mesma regra
+    # da exclusão de uma conta (app.exclusao_usuario).
+    for modelo in (BaseConhecimentoItem, BaseConhecimentoSugestao, TipoExameSugestao):
+        modelo.query.filter(modelo.autor_usuario_id.in_(nao_donos)).update(
+            {"autor_usuario_id": None}, synchronize_session=False
+        )
 
     # 2. Agendamentos (o ResultadoExame ligado a cada um já foi acima).
     Agendamento.query.delete(synchronize_session=False)
