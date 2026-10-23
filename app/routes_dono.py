@@ -335,6 +335,36 @@ def ajuda_app_perguntas():
     return render_template("dono/ajuda_app.html", mensagens=mensagens, so_nao_soube=so_nao_soube)
 
 
+@dono_bp.route("/medicamentos-anvisa", methods=["GET", "POST"])
+@login_required
+@dono_required
+def medicamentos_anvisa():
+    """Importa à mão a lista de medicamentos da ANVISA (CSV de dados abertos)
+    e testa a busca de um nome comercial (pedido do Silvan, 2026-10-23 - ver
+    app.medicamentos_anvisa)."""
+    from app.medicamentos_anvisa import buscar, importar_csv
+    from app.models import MedicamentoAnvisa
+
+    if request.method == "POST":
+        arquivo = request.files.get("arquivo")
+        if not arquivo or not arquivo.filename:
+            flash("Escolha o arquivo CSV da ANVISA.", "danger")
+            return redirect(url_for("dono.medicamentos_anvisa"))
+        quantidade, erro = importar_csv(arquivo.read())
+        if erro:
+            flash(erro, "danger")
+        else:
+            flash(f"Lista da ANVISA importada: {quantidade} medicamento(s) (nome comercial + princípio ativo).", "success")
+        return redirect(url_for("dono.medicamentos_anvisa"))
+
+    nome = request.args.get("nome", "").strip()
+    ultimo = MedicamentoAnvisa.query.order_by(MedicamentoAnvisa.importado_em.desc()).first()
+    return render_template(
+        "dono/medicamentos_anvisa.html", total=MedicamentoAnvisa.query.count(),
+        importado_em=ultimo.importado_em if ultimo else None, nome=nome, resultados=buscar(nome) if nome else [],
+    )
+
+
 @dono_bp.route("/configuracoes/limite-perguntas", methods=["POST"])
 @login_required
 @dono_required

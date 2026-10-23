@@ -2162,6 +2162,23 @@ class SolicitacaoExclusao(db.Model):
     usuario = db.relationship("Usuario")
 
 
+class MedicamentoAnvisa(db.Model):
+    """Medicamento registrado na ANVISA (nome comercial -> princípio ativo),
+    importado pelo dono a partir do CSV de dados abertos (pedido do Silvan,
+    2026-10-23, ver app.medicamentos_anvisa). Um registro por par
+    nome/princípio ativo; a importação substitui a lista inteira."""
+    __tablename__ = "medicamentos_anvisa"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome_produto = db.Column(db.String(255), nullable=False)
+    nome_normalizado = db.Column(db.String(255), nullable=False, index=True)
+    principio_ativo = db.Column(db.Text, nullable=False)
+    situacao = db.Column(db.String(60))
+    classe_terapeutica = db.Column(db.String(255))
+    empresa = db.Column(db.String(255))
+    importado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class AjudaMensagem(db.Model):
     """Pergunta da equipe no chat de ajuda sobre o uso do app e a resposta
     da IA (pedido do Silvan, 2026-10-23, ver app.ajuda_app). O dono vê a

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block titulo %}Medicamentos (ANVISA){% endblock %}
+{% block conteudo %}
+{# Lista oficial de medicamentos (nome comercial -> princípio ativo),
+   importada à mão (pedido do Silvan, 2026-10-23 - ver app/medicamentos_anvisa.py). #}
+<h3 class="mb-1">Medicamentos (ANVISA)</h3>
+<p class="text-muted small">
+  Lista oficial de medicamentos registrados no Brasil, com o nome comercial e o princípio ativo - para o sistema saber, por
+  exemplo, que "Poviztra" é semaglutida.
+</p>
+
+<div class="card p-3 mb-3">
+  <h6 class="mb-1">Lista atual</h6>
+  {% if total %}
+  <p class="mb-0">{{ total }} medicamento(s), importados em {{ importado_em.strftime('%d/%m/%Y %H:%M') if importado_em else '-' }}.</p>
+  {% else %}
+  <p class="mb-0 text-muted">Nenhuma lista importada ainda.</p>
+  {% endif %}
+</div>
+
+<div class="card p-3 mb-3">
+  <h6 class="mb-1">Importar arquivo</h6>
+  <p class="small text-muted mb-2">
+    Baixe o arquivo <code>DADOS_ABERTOS_MEDICAMENTOS.csv</code> nos dados abertos da ANVISA
+    (<a href="https://dados.anvisa.gov.br/dados/DADOS_ABERTOS_MEDICAMENTOS.csv" target="_blank" rel="noopener">link direto</a>)
+    e envie aqui. A importação substitui a lista inteira e pode levar alguns segundos.
+  </p>
+  <form method="post" enctype="multipart/form-data" class="d-flex gap-2 flex-wrap"
+        onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = 'Importando...';">
+    <input type="file" name="arquivo" accept=".csv,text/csv" class="form-control form-control-sm" style="max-width: 360px" required>
+    <button type="submit" class="btn btn-primary btn-sm">Importar</button>
+  </form>
+</div>
+
+<div class="card p-3">
+  <h6 class="mb-1">Testar um nome</h6>
+  <form method="get" class="d-flex gap-2 mb-2" style="max-width: 420px">
+    <input type="search" name="nome" value="{{ nome }}" class="form-control form-control-sm" placeholder="Nome comercial (ex.: Poviztra)">
+    <button class="btn btn-outline-primary btn-sm">Buscar</button>
+  </form>
+  {% if nome %}
+    {% if resultados %}
+    <ul class="mb-0">
+      {% for m in resultados %}
+      <li><strong>{{ m.nome_produto }}</strong> = {{ m.principio_ativo }}
+        <span class="small text-muted">{% if m.situacao %}· {{ m.situacao }}{% endif %}{% if m.empresa %} · {{ m.empresa }}{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="mb-0 text-muted">Nenhum medicamento com esse nome na lista.</p>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

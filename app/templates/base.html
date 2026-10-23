@@ -174,6 +174,11 @@
         </a>
       </li>
       <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.medicamentos_anvisa') %}active{% endif %}" href="{{ url_for('dono.medicamentos_anvisa') }}">
+          <i class="bi bi-capsule me-2"></i>Medicamentos (ANVISA)
+        </a>
+      </li>
+      <li class="nav-item mb-1">
         <a class="nav-link {% if ep_dono.startswith('dono.anuncio') %}active{% endif %}" href="{{ url_for('dono.anuncios') }}">
           <i class="bi bi-megaphone me-2"></i>Anúncios
         </a>

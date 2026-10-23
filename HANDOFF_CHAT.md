@@ -2708,9 +2708,18 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Modelo novo `AjudaMensagem` (tabela `ajuda_mensagens`, create_all): pergunta, resposta, tela, provedor, nao_soube, enviada_suporte. Apagada na exclusão do usuário e no "Apagar todos os dados".
 - Teste novo: `test_ajuda_app.py`. Conferido no navegador (computador e celular). Migração conferida em PostgreSQL.
 
+## Lista de medicamentos da ANVISA, importada à mão (2026-10-23, pedido do Silvan)
+
+- Objetivo: o sistema saber o princípio ativo de nomes comerciais que as IAs não conhecem (caso Poviztra = semaglutida). Fonte: dados abertos da ANVISA, arquivo `DADOS_ABERTOS_MEDICAMENTOS.csv` (https://dados.anvisa.gov.br/dados/DADOS_ABERTOS_MEDICAMENTOS.csv - não acessível do ambiente do Claude; formato/colunas a confirmar com o arquivo real). O dono baixa e importa à mão (sem custo de IA).
+- Painel do dono > menu "Medicamentos (ANVISA)" (`dono.medicamentos_anvisa`): mostra o total e a data da última importação, importa o CSV (substitui a lista inteira) e tem "Testar um nome".
+- `app/medicamentos_anvisa.py`: `importar_csv` (ponto e vírgula ou vírgula; UTF-8 ou Latin-1 detectado sem montar o texto todo; colunas pelo nome do cabeçalho - NOME_PRODUTO e PRINCIPIO_ATIVO obrigatórias, SITUACAO_REGISTRO/CLASSE_TERAPEUTICA/EMPRESA_DETENTORA_REGISTRO opcionais; um registro por par nome/princípio ativo; lê e grava em lotes de 1000; só apaga a lista atual quando já tem o primeiro lote válido) e `buscar(nome)` (sem acento/maiúscula, válidos primeiro). Carga de teste: 60 mil linhas em ~3 s, +22 MB de memória.
+- Modelo novo `MedicamentoAnvisa` (tabela `medicamentos_anvisa`, create_all). Não é apagada pelo "Apagar todos os dados" (dado da plataforma, como a configuração).
+- Teste novo: `test_medicamentos_anvisa.py`.
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [ ] **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente.
+- [ ] **Usar a lista da ANVISA nas respostas das IAs**: achar na pergunta nomes de medicamentos da tabela `medicamentos_anvisa` (só palavras com 5+ letras que não sejam palavras do português - dicionário do projeto) e mandar às IAs "Medicamentos citados (lista oficial da ANVISA): Poviztra = semaglutida". Junto com o item acima (não chutar o que não estiver na lista).
 - [ ] Remarcar/desmarcar pelo WhatsApp (talvez com menu) - Silvan vai definir depois.
 - [ ] Aviso ao paciente no WhatsApp ao remarcar/cancelar exame - precisa de modelos novos aprovados na Meta (exame_remarcado, exame_cancelado).
 
@@ -2821,6 +2830,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 **Ajuda do app**
 - [ ] Botão "Ajuda" (canto inferior direito) para médico/secretária: perguntar "como remarco um exame?" responde com o caminho certo; pergunta fora do manual oferece "Enviar para o suporte" (aparece em Mensagens do dono)
 - [ ] Painel do dono > Configurações > "IA da ajuda do app" troca a IA; menu "Ajuda do app" lista as perguntas
+
+**Medicamentos (ANVISA)**
+- [ ] Painel do dono > Medicamentos (ANVISA): importar o DADOS_ABERTOS_MEDICAMENTOS.csv; conferir o total e testar "Poviztra"
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos
