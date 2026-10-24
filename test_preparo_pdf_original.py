@@ -63,6 +63,8 @@ html = paciente.get(f"/paciente/preparo/{token}").get_data(as_text=True)
 checar("Link do WhatsApp: 'Preparo do médico' vem antes da linha do tempo",
        "Abrir o preparo (PDF)" in html and html.index("Preparo do médico") < html.index("Linha do tempo do preparo"))
 checar("... e a linha do tempo continua, com o PDF dela", "Baixar a linha do tempo (PDF)" in html)
+checar("'Baixar PDF' continua no topo e baixa o PDF do médico",
+       f'href="/paciente/preparo/{token}/original?baixar=1">\n      Baixar PDF' in html)
 r = paciente.get(f"/paciente/preparo/{token}/original")
 checar("Paciente abre o PDF original sem login", r.status_code == 200 and r.data == PDF
        and r.headers["Content-Disposition"].startswith("inline"))

@@ -212,7 +212,14 @@
       <span>Médico: <strong>{{ agendamento.medico.nome }}</strong></span>
       {% endif %}
     </div>
-    {% if not pdf_original %}
+    {# "Baixar PDF" sempre no topo, como era antes (pedido do Silvan,
+       2026-10-24): com o PDF do médico anexado, baixa esse PDF (o preparo
+       prioritário); sem ele, o PDF da linha do tempo. #}
+    {% if pdf_original %}
+    <a class="botao-pdf" href="{{ url_for('paciente.preparo_publico_original', token=agendamento.token_preparo_publico, baixar=1) }}">
+      Baixar PDF
+    </a>
+    {% else %}
     <a class="botao-pdf" href="{{ url_for('paciente.preparo_publico_pdf', token=agendamento.token_preparo_publico) }}">
       Baixar PDF
     </a>
