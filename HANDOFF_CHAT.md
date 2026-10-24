@@ -2740,6 +2740,13 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Contexto: cada medicamento do preparo (suspensos e mantidos) ganha "(princípio ativo segundo a ANVISA: SEMAGLUTIDA; TIRZEPATIDA)" quando os nomes dele estão na lista da ANVISA (`_principios_anvisa`), então a comparação Wegovy x Ozempic fica pelo princípio ativo dos dois lados.
 - Teste: `test_ia_nunca_chuta.py` ampliado.
 
+## Respostas sem tom de incerteza ("Em geral...") (2026-10-24, pedido do Silvan: "não gosto de incerteza")
+
+- `PROMPT_SISTEMA`: "TOM DAS RESPOSTAS" - sempre direto e afirmativo, sem "em geral", "geralmente", "normalmente", "costuma", "na maioria dos casos"...; a resposta passa pela aprovação do médico e vale como orientação da clínica. Não autoriza chutar: sem certeza, usa os marcadores. Exemplos do prompt reescritos no tom direto ("Chegue de 30 a 60 minutos antes...").
+- Síntese das 2 IAs com a mesma regra.
+- Rede de segurança `_tirar_incerteza`: tira "Em geral," / "Geralmente," / "Normalmente," / "Via de regra," etc. do começo das frases (nas sugestões de cada IA e na síntese).
+- O aviso amarelo "conhecimento geral" continua na tela do médico (é para ele revisar), não vai ao paciente.
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").
@@ -2858,6 +2865,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 **Medicamentos (ANVISA)**
 - [x] Painel do dono > Medicamentos (ANVISA): importar o DADOS_ABERTOS_MEDICAMENTOS.csv; conferir o total e testar "Poviztra" - validado 2026-10-23 no media-dev: arquivo real importado (17.932 pares nome/princípio ativo), "Poviztra = semaglutida" (situação "Ativo", Novo Nordisk)
 - [ ] Chat (WhatsApp ou portal): "Preciso parar o Poviztra?" -> as IAs tratam como semaglutida (não varfarina) e comparam com o preparo
+- [ ] Chat: "Vou sentir dor no exame?" -> resposta direta, sem "Em geral"/"geralmente"
 - [ ] Chat: "Preciso parar o Wegovy?" -> responde direto que deve ser suspenso 14 dias antes (como o Ozempic do preparo), sem "não está cadastrado"
 - [ ] Chat: "Posso comer pepino?" -> as IAs reconhecem o pepino (sem "não reconheci"), respondem pela regra do preparo ou com orientação geral marcada, e o rascunho não manda confirmar com a secretaria
 - [ ] Chat: perguntar por um nome inventado (ex.: "Posso tomar Zorvantex?") -> resposta "Não reconheci..." pedindo o nome da embalagem/princípio ativo, e vai para o médico mesmo com a aprovação automática desligada

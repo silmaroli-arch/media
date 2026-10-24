@@ -89,6 +89,14 @@ with app.app_context():
            == " (princípio ativo segundo a ANVISA: SEMAGLUTIDA; TIRZEPATIDA)")
     checar("... e nada quando não acha", _principios_anvisa("Remédio para pressão") == "")
 
+    from app.ia_preparo import _tirar_incerteza
+    checar("Prompt pede tom direto, sem 'em geral'", "TOM DAS RESPOSTAS" in PROMPT_SISTEMA and "Em geral," not in PROMPT_SISTEMA)
+    checar("'Em geral,' no começo das frases sai do texto",
+           _tirar_incerteza("Em geral, a colonoscopia é feita com sedação. Geralmente, os gases passam rápido.")
+           == "A colonoscopia é feita com sedação. Os gases passam rápido.")
+    texto, *_ = _perguntar_claude(cliente("CONHECIMENTO_GERAL_REVISAR\nEm geral, chegue 30 minutos antes."), "x?", "contexto")
+    checar("... também na sugestão de cada IA", texto == "Chegue 30 minutos antes.")
+
     config = PlataformaConfig.obter()
     config.ia_chat_provedor_1, config.ia_chat_provedor_2 = "Claude", "ChatGPT"
     db.session.commit()
