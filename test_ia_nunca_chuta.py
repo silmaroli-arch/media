@@ -78,6 +78,17 @@ with app.app_context():
     checar("Síntese não manda confirmar com a secretaria e prefere a IA que identificou",
            "NUNCA recomende ao paciente confirmar" in sistemas[0] and "use a que identificou" in sistemas[0])
 
+    checar("Prompt: mesmo princípio ativo é o item do preparo, e nunca 'não está cadastrado'",
+           "MESMO PRINCÍPIO ATIVO" in PROMPT_SISTEMA and "NUNCA escreva para o paciente que algo \"não está cadastrado\"" in PROMPT_SISTEMA
+           and "diga claramente que esse medicamento específico não está cadastrado" not in PROMPT_SISTEMA)
+    checar("Síntese também não diz 'não está cadastrado'", "não está cadastrado" in sistemas[0] and "Nunca escreva" in sistemas[0])
+    from app.ia_preparo import _principios_anvisa
+    importar_csv(CSV + "OZEMPIC;ANTIDIABETICOS;Ativo;SEMAGLUTIDA\nMOUNJARO;ANTIDIABETICOS;Ativo;TIRZEPATIDA\n".encode("latin-1"))
+    checar("Medicamento do preparo ganha o princípio ativo da ANVISA no contexto",
+           _principios_anvisa("Ozempic, Mounjaro, Trulicity ou similares")
+           == " (princípio ativo segundo a ANVISA: SEMAGLUTIDA; TIRZEPATIDA)")
+    checar("... e nada quando não acha", _principios_anvisa("Remédio para pressão") == "")
+
     config = PlataformaConfig.obter()
     config.ia_chat_provedor_1, config.ia_chat_provedor_2 = "Claude", "ChatGPT"
     db.session.commit()
