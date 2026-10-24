@@ -1547,9 +1547,13 @@ def preparo_modelos_aviso_mobile():
     medico.preparo_modelos_novo (nunca existe `modelo` para editar nesse
     caminho - a importação pelo celular só cria modelo NOVO, nunca edita
     um existente)."""
+    # Pedido do Silvan (2026-10-24): o celular passou a ter a tela completa
+    # (menu leva a medico.preparo_modelos_lista). Esta rota fica só para
+    # links antigos (GET vai para a lista) e para o "Salvar" de uma
+    # importação aberta por aqui (POST, ver acima).
     if request.method == "POST":
         return preparo_modelos_novo()
-    return render_template("medico/preparo_modelos_aviso_mobile.html")
+    return redirect(url_for("medico.preparo_modelos_lista"))
 
 
 @medico_bp.route("/preparo-modelos")

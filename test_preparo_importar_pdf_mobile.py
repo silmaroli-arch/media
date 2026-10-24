@@ -44,10 +44,11 @@ with app.app_context():
     centro_id = Grupo.query.filter_by(nome="Grupo Saúde Total - Centro").first().id
 client.post("/equipe/clinica", data={"clinica_id": str(centro_id)}, follow_redirects=True)
 
-# A tela em si (GET) continua funcionando normalmente.
+# Desde 2026-10-24 o celular tem a tela completa: o endereço antigo (GET)
+# leva para a lista de Exames & preparo.
 r0 = client.get("/equipe/preparo-modelos/aviso-mobile")
-checar("GET na tela do celular responde 200", r0.status_code == 200)
-checar("Botão de importar continua na tela", "Importar de um PDF" in r0.get_data(as_text=True))
+checar("GET no endereço antigo do celular leva à lista completa",
+       r0.status_code == 302 and r0.location.endswith("/equipe/preparo-modelos"))
 
 # POST na MESMA URL (o que o navegador manda depois de importar um PDF
 # pelo celular e clicar em Salvar, ver docstring do módulo) - antes desta

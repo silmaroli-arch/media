@@ -2757,6 +2757,13 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - "Apagar todos os dados" e a exclusão de usuário tratam a tabela nova.
 - Teste novo: `test_preparo_pdf_original.py` (validado também no Postgres local).
 
+## "Exames & preparo" completo também no celular do médico (2026-10-24, pedido do Silvan)
+
+- Antes, no celular, o menu do médico levava à tela de aviso ("cadastrar/editar só pelo computador"), que só permitia importar um PDF. Agora o menu leva à lista completa em qualquer tela: cadastrar, editar (todas as abas), importar PDF e anexar o preparo original.
+- `base.html`: um item só de "Exames & preparo", sem a cópia `d-md-none`. `medico.preparo_modelos_aviso_mobile` ficou só para links antigos (GET redireciona para a lista; POST continua salvando uma importação aberta por lá); template `preparo_modelos_aviso_mobile.html` removido.
+- Lista de modelos no celular: só o nome (com o médico criador embaixo) e os botões Editar/Remover; as colunas de detalhe aparecem a partir de tablet/computador (antes a tabela estourava a largura da tela).
+- Teste ajustado: `test_preparo_importar_pdf_mobile.py`.
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").
@@ -2884,6 +2891,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Modelos de preparo > editar: anexar o PDF do preparo em "Preparo original (PDF)"; abrir o link do WhatsApp do paciente e conferir "Preparo do médico" primeiro e a linha do tempo embaixo
 - [ ] Importar um PDF para criar um modelo novo: a revisão já vem com "Usar o PDF importado" marcado e, depois de salvar, o PDF aparece no modelo
 - [ ] No celular: "Abrir o preparo (PDF)" abre o arquivo e "Baixar" baixa
+
+**Exames & preparo no celular**
+- [ ] Logado como médico no celular: menu "Exames & preparo" abre a lista (sem a tela de aviso); "Novo modelo", "Importar de um PDF" e "Editar" funcionam; a lista cabe na tela
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

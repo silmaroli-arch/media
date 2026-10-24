@@ -251,21 +251,14 @@
          Grupos de trabalho / Minha licença ("Médico + IA" foi removido -
          ver comentário mais abaixo). #}
 
-      <li class="nav-item mb-1 {% if current_user.tipo == 'medico' %}d-none d-md-block{% endif %}">
+      {# Também no celular do médico, com a tela completa (pedido do Silvan,
+         2026-10-24) - antes ia para a tela de aviso, que só deixava importar
+         um PDF (medico.preparo_modelos_aviso_mobile, mantida para links antigos). #}
+      <li class="nav-item mb-1">
         <a class="nav-link {% if request.endpoint and request.endpoint.startswith('medico.preparo_modelos') %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_lista') }}">
           <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
         </a>
       </li>
-      {% if current_user.tipo == 'medico' %}
-      {# Cópia do celular (mesma posição do menu): no celular o cadastro manual
-         completo é feito pela versão web, então leva a uma tela que explica isso
-         e permite importar um PDF (ver medico.preparo_modelos_aviso_mobile). #}
-      <li class="nav-item mb-1 d-md-none">
-        <a class="nav-link {% if request.endpoint == 'medico.preparo_modelos_aviso_mobile' %}active{% endif %}" href="{{ url_for('medico.preparo_modelos_aviso_mobile') }}">
-          <i class="bi bi-sliders me-2"></i>Exames &amp; preparo
-        </a>
-      </li>
-      {% endif %}
 
       {# Quais médicos fazem cada preparo/exame (pedido do Silvan, 2026-10-21);
          só com a permissão "Associar médicos aos exames". #}
