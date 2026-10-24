@@ -46,6 +46,9 @@ class PlataformaConfig(db.Model):
     # julgamento mais simples (classificar, não responder), não precisa
     # da mesma cautela.
     ia_validador_pergunta = db.Column(db.String(20), nullable=False, default="Claude")
+    # IA do chat de ajuda sobre o uso do app (botão "Ajuda" da equipe -
+    # pedido do Silvan, 2026-10-23, ver app.ajuda_app).
+    ia_ajuda_app = db.Column(db.String(20), nullable=False, default="Claude")
 
     # "Terceira IA" - base de conhecimento compartilhada (pedido do Silvan,
     # 2026-09-29, ver BaseConhecimentoItem e app.base_conhecimento). Liga/
@@ -103,7 +106,7 @@ class PlataformaConfig(db.Model):
         if not config:
             config = cls(
                 trial_dias=14, ia_chat_provedor_1="Claude", ia_chat_provedor_2="ChatGPT",
-                ia_validador_pergunta="Claude", aviso_inadimplencia_meses=2,
+                ia_validador_pergunta="Claude", ia_ajuda_app="Claude", aviso_inadimplencia_meses=2,
                 verificar_dicionario_chat=True,
             )
             db.session.add(config)
@@ -2016,6 +2019,12 @@ class PerguntaPendente(db.Model):
         """Alguma IA respondeu com conhecimento geral, fora do preparo
         cadastrado (ver app.ia_preparo.MARCADOR_CONHECIMENTO_GERAL)."""
         return "=respondeu_geral" in (self.ias_situacao or "")
+
+    @property
+    def ia_nao_reconheceu(self):
+        """Alguma IA disse que não reconheceu um nome citado (ver
+        app.ia_preparo.MARCADOR_NAO_RECONHECIDO, 2026-10-23)."""
+        return "=respondeu_nao_reconhecido" in (self.ias_situacao or "")
     # "Terceira IA" (base de conhecimento compartilhada, ver
     # BaseConhecimentoItem e app.ia_preparo.responder_com_ia): a resposta do
     # item da base que foi consultado nesta pergunta (None quando a base
@@ -2155,6 +2164,44 @@ class SolicitacaoExclusao(db.Model):
     status = db.Column(db.String(20), nullable=False, default="pendente")
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
     resolvido_em = db.Column(db.DateTime)
+
+    usuario = db.relationship("Usuario")
+
+
+class MedicamentoAnvisa(db.Model):
+    """Medicamento registrado na ANVISA (nome comercial -> princípio ativo),
+    importado pelo dono a partir do CSV de dados abertos (pedido do Silvan,
+    2026-10-23, ver app.medicamentos_anvisa). Um registro por par
+    nome/princípio ativo; a importação substitui a lista inteira."""
+    __tablename__ = "medicamentos_anvisa"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome_produto = db.Column(db.String(255), nullable=False)
+    nome_normalizado = db.Column(db.String(255), nullable=False, index=True)
+    principio_ativo = db.Column(db.Text, nullable=False)
+    situacao = db.Column(db.String(60))
+    classe_terapeutica = db.Column(db.String(255))
+    empresa = db.Column(db.String(255))
+    importado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AjudaMensagem(db.Model):
+    """Pergunta da equipe no chat de ajuda sobre o uso do app e a resposta
+    da IA (pedido do Silvan, 2026-10-23, ver app.ajuda_app). O dono vê a
+    lista em Painel do dono > Ajuda do app, para saber onde os usuários
+    se perdem. `nao_soube`: a IA não achou a resposta no manual;
+    `enviada_suporte`: a pessoa mandou a dúvida para o "Fale com a gente"."""
+    __tablename__ = "ajuda_mensagens"
+
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
+    pergunta = db.Column(db.Text, nullable=False)
+    resposta = db.Column(db.Text)
+    tela = db.Column(db.String(120))
+    provedor = db.Column(db.String(20))
+    nao_soube = db.Column(db.Boolean, nullable=False, default=False)
+    enviada_suporte = db.Column(db.Boolean, nullable=False, default=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     usuario = db.relationship("Usuario")
 

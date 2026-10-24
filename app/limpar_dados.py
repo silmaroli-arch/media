@@ -32,7 +32,16 @@ O que este módulo NÃO apaga (de propósito):
   esta limpeza foi publicada)."""
 from app.extensions import db
 from app.models import (
+    AjudaMensagem,
     Agendamento,
+    BaseConhecimentoHistorico,
+    BaseConhecimentoItem,
+    BaseConhecimentoSugestao,
+    ContagemPerguntasDia,
+    MensagemSuporte,
+    Notificacao,
+    SolicitacaoExclusao,
+    TipoExameSugestao,
     ChamadaIA,
     ChatMensagem,
     ConversaWhatsapp,
@@ -76,6 +85,33 @@ def apagar_todos_os_dados(dono_atual):
     ConversaWhatsapp.query.delete(synchronize_session=False)
     PerguntaPendente.query.delete(synchronize_session=False)
     FaqItem.query.delete(synchronize_session=False)
+    # Tabelas criadas depois desta limpeza e que apontam para usuários,
+    # pacientes ou exames - sem elas o Postgres recusava apagar os
+    # usuários (500 em /dono/limpar-dados, 2026-10-23). Contador de
+    # perguntas/dia, pedidos de exclusão, "Fale com a gente" e
+    # notificações (as do dono ficam).
+    ContagemPerguntasDia.query.delete(synchronize_session=False)
+    SolicitacaoExclusao.query.delete(synchronize_session=False)
+    nao_donos = db.session.query(Usuario.id).filter(Usuario.tipo != "dono")
+    MensagemSuporte.query.filter(MensagemSuporte.usuario_id.in_(nao_donos)).delete(synchronize_session=False)
+    AjudaMensagem.query.filter(AjudaMensagem.usuario_id.in_(nao_donos)).delete(synchronize_session=False)
+    Notificacao.query.filter(Notificacao.usuario_id.in_(nao_donos)).delete(synchronize_session=False)
+    # FAQ do MedIA (pedido do Silvan, 2026-10-23): saem os itens que vieram
+    # de médicos (respostas de teste) e todas as sugestões dos médicos;
+    # ficam os itens cadastrados pelo dono e o arquivo da carga inicial
+    # (base_conhecimento_arquivo).
+    BaseConhecimentoSugestao.query.delete(synchronize_session=False)
+    TipoExameSugestao.query.delete(synchronize_session=False)
+    itens_de_medicos = db.session.query(BaseConhecimentoItem.id).filter(BaseConhecimentoItem.origem == "medico")
+    BaseConhecimentoHistorico.query.filter(BaseConhecimentoHistorico.item_id.in_(itens_de_medicos)).delete(
+        synchronize_session=False
+    )
+    BaseConhecimentoItem.query.filter(BaseConhecimentoItem.origem == "medico").delete(synchronize_session=False)
+    # Item que o dono cadastrou mas um médico editou (sugestão aprovada)
+    # fica, só sem o vínculo do autor.
+    BaseConhecimentoItem.query.filter(BaseConhecimentoItem.autor_usuario_id.in_(nao_donos)).update(
+        {"autor_usuario_id": None}, synchronize_session=False
+    )
 
     # 2. Agendamentos (o ResultadoExame ligado a cada um já foi acima).
     Agendamento.query.delete(synchronize_session=False)

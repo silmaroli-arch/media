@@ -26,6 +26,7 @@ from datetime import datetime
 
 from app.extensions import db
 from app.models import (
+    AjudaMensagem,
     SolicitacaoExclusao,
     Agendamento,
     BaseConhecimentoItem,
@@ -116,6 +117,7 @@ def excluir_usuario_e_dados(usuario):
     # nada mais dependendo deles (usuario_id é NOT NULL nos dois modelos,
     # então não dá pra só desvincular: precisam ser apagados).
     MensagemSuporte.query.filter_by(usuario_id=uid).delete(synchronize_session=False)
+    AjudaMensagem.query.filter_by(usuario_id=uid).delete(synchronize_session=False)
     Notificacao.query.filter_by(usuario_id=uid).delete(synchronize_session=False)
 
     # 2. Convites de grupo — ele convidado, ou ele quem convidou.

@@ -169,6 +169,16 @@
         </a>
       </li>
       <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.ajuda_app') %}active{% endif %}" href="{{ url_for('dono.ajuda_app_perguntas') }}">
+          <i class="bi bi-question-circle me-2"></i>Ajuda do app
+        </a>
+      </li>
+      <li class="nav-item mb-1">
+        <a class="nav-link {% if ep_dono.startswith('dono.medicamentos_anvisa') %}active{% endif %}" href="{{ url_for('dono.medicamentos_anvisa') }}">
+          <i class="bi bi-capsule me-2"></i>Medicamentos (ANVISA)
+        </a>
+      </li>
+      <li class="nav-item mb-1">
         <a class="nav-link {% if ep_dono.startswith('dono.anuncio') %}active{% endif %}" href="{{ url_for('dono.anuncios') }}">
           <i class="bi bi-megaphone me-2"></i>Anúncios
         </a>
@@ -824,6 +834,114 @@ window.addEventListener('load', function () {
       if (fecharBtn) {
         fecharBtn.addEventListener("click", esconderBanner);
       }
+    });
+  })();
+</script>
+{% endif %}
+{# ---------- Ajuda do app (pedido do Silvan, 2026-10-23) ----------
+   Botão flutuante, só para a equipe: abre um chat com a IA escolhida pelo
+   dono, que responde dúvidas sobre o USO do MedIA (ver app/ajuda_app.py).
+   A conversa fica guardada só nesta aba do navegador (sessionStorage). #}
+{% if current_user.is_authenticated and current_user.is_staff %}
+<style>
+  #ajudaBotao { position: fixed; right: 16px; bottom: 16px; z-index: 1040; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+  #ajudaPainel { position: fixed; right: 16px; bottom: 72px; z-index: 1041; width: 360px; max-width: calc(100vw - 32px);
+                 height: 480px; max-height: calc(100vh - 100px); display: none; flex-direction: column; }
+  #ajudaPainel.aberto { display: flex; }
+  #ajudaMensagens { flex: 1; overflow-y: auto; background: #f6f8fb; }
+  .ajuda-balao { padding: .5rem .75rem; border-radius: .75rem; margin-bottom: .5rem; white-space: pre-wrap; font-size: .9rem; max-width: 90%; }
+  .ajuda-balao.eu { background: #1660B0; color: #fff; margin-left: auto; }
+  .ajuda-balao.ia { background: #fff; border: 1px solid #e3e7ee; }
+</style>
+<button type="button" id="ajudaBotao" class="btn btn-primary so-fora-da-janela" aria-controls="ajudaPainel" aria-expanded="false">
+  <i class="bi bi-question-circle me-1"></i>Ajuda
+</button>
+<div id="ajudaPainel" class="card so-fora-da-janela" role="dialog" aria-label="Ajuda do MedIA">
+  <div class="card-header d-flex justify-content-between align-items-center py-2">
+    <strong><i class="bi bi-question-circle me-1"></i>Ajuda do MedIA</strong>
+    <button type="button" class="btn-close" id="ajudaFechar" aria-label="Fechar"></button>
+  </div>
+  <div id="ajudaMensagens" class="p-2">
+    <div class="ajuda-balao ia">Olá! Tire aqui suas dúvidas sobre como usar o MedIA - por exemplo, "como remarco um exame?" ou "como associo outro médico ao preparo?".</div>
+  </div>
+  <form id="ajudaForm" class="card-footer p-2 d-flex gap-2">
+    <input type="text" id="ajudaTexto" class="form-control form-control-sm" maxlength="1000" placeholder="Escreva sua dúvida" autocomplete="off" required>
+    <button type="submit" class="btn btn-primary btn-sm" id="ajudaEnviar"><i class="bi bi-send"></i></button>
+  </form>
+</div>
+<script>
+  (function () {
+    var painel = document.getElementById('ajudaPainel');
+    var lista = document.getElementById('ajudaMensagens');
+    var form = document.getElementById('ajudaForm');
+    var campo = document.getElementById('ajudaTexto');
+    var botao = document.getElementById('ajudaBotao');
+    var urlPerguntar = '{{ url_for('medico.ajuda_perguntar') }}';
+    var urlSuporte = '{{ url_for('medico.ajuda_enviar_suporte', mensagem_id=0) }}';
+    var tela = '{{ request.endpoint or '' }}';
+    var CHAVE = 'media_ajuda_conversa';
+    var conversa = [];
+    try { conversa = JSON.parse(sessionStorage.getItem(CHAVE) || '[]'); } catch (e) { conversa = []; }
+    function guardar() { try { sessionStorage.setItem(CHAVE, JSON.stringify(conversa.slice(-30))); } catch (e) {} }
+
+    function balao(item) {
+      var div = document.createElement('div');
+      div.className = 'ajuda-balao ' + (item.de === 'eu' ? 'eu' : 'ia');
+      div.textContent = item.texto;
+      if (item.de === 'ia' && item.nao_soube && item.id) {
+        var acao = document.createElement('div');
+        acao.className = 'mt-2';
+        if (item.enviada) {
+          acao.innerHTML = '<span class="small text-success"><i class="bi bi-check2"></i> Enviada ao suporte - a resposta vai aparecer em "Fale com a gente".</span>';
+        } else {
+          var b = document.createElement('button');
+          b.type = 'button'; b.className = 'btn btn-outline-primary btn-sm'; b.textContent = 'Enviar para o suporte';
+          b.addEventListener('click', function () {
+            b.disabled = true;
+            fetch(urlSuporte.replace('/0/', '/' + item.id + '/'), { method: 'POST' })
+              .then(function (r) { if (!r.ok) throw new Error(); item.enviada = true; guardar(); desenhar(); })
+              .catch(function () { b.disabled = false; });
+          });
+          acao.appendChild(b);
+        }
+        div.appendChild(acao);
+      }
+      lista.appendChild(div);
+    }
+    function desenhar() {
+      lista.querySelectorAll('.ajuda-balao:not(:first-child)').forEach(function (n) { n.remove(); });
+      conversa.forEach(balao);
+      lista.scrollTop = lista.scrollHeight;
+    }
+    function abrir(aberto) {
+      painel.classList.toggle('aberto', aberto);
+      botao.setAttribute('aria-expanded', aberto ? 'true' : 'false');
+      if (aberto) { desenhar(); campo.focus(); }
+    }
+    botao.addEventListener('click', function () { abrir(!painel.classList.contains('aberto')); });
+    document.getElementById('ajudaFechar').addEventListener('click', function () { abrir(false); });
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var texto = campo.value.trim();
+      if (!texto) return;
+      conversa.push({ de: 'eu', texto: texto });
+      campo.value = '';
+      desenhar();
+      var esperando = document.createElement('div');
+      esperando.className = 'ajuda-balao ia text-muted';
+      esperando.textContent = 'Pensando...';
+      lista.appendChild(esperando);
+      lista.scrollTop = lista.scrollHeight;
+      document.getElementById('ajudaEnviar').disabled = true;
+      fetch(urlPerguntar, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pergunta: texto, tela: tela })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { conversa.push({ de: 'ia', texto: d.resposta || d.erro, nao_soube: d.nao_soube, id: d.id }); })
+        .catch(function () { conversa.push({ de: 'ia', texto: 'Não consegui responder agora. Tente de novo em instantes.' }); })
+        .finally(function () { guardar(); desenhar(); document.getElementById('ajudaEnviar').disabled = false; });
     });
   })();
 </script>

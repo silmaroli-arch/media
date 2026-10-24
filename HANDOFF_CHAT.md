@@ -2689,6 +2689,72 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Log do deploy (commit 6899df1): `INSERT INTO base_conhecimento_arquivo ... SELECT p0::INTEGER ... (425498 characters truncated)` -> `OperationalError: consuming input failed: SSL error: unexpected eof while reading`. A 1ª versão de `arquivar_carga_inicial` trazia os 866 itens para o Python e mandava UM INSERT com todos (cada vetor ~30 mil caracteres, ~26 MB num comando só); o Postgres do plano Free derrubou a conexão (o app no ar também recebeu "Connection refused" por alguns instantes). A transação voltou atrás - nada foi perdido.
 - Correção: tudo no próprio banco (`INSERT ... SELECT` + UPDATE/DELETE) em lotes de 50 ids, um commit por lote; se cair no meio, o próximo deploy continua de onde parou (só move o que ainda está na principal e não está no arquivo). Validado em PostgreSQL com vetores de 1536 posições nos 866 itens: 1,6 s, 866 no arquivo (todos com vetor), 0 na principal.
 
+## "Apagar todos os dados" dava 500 (2026-10-23, relatado pelo Silvan)
+
+- Causa (reproduzida em PostgreSQL): `app/limpar_dados.apagar_todos_os_dados` não conhecia tabelas criadas depois dela - `ForeignKeyViolation` em `contagem_perguntas_dia` (e também `solicitacoes_exclusao`, `mensagens_suporte`, `notificacoes` apontando para usuários apagados).
+- Correção: apaga contador de perguntas/dia, pedidos de exclusão, "Fale com a gente" e notificações de quem não é dono (as do dono ficam); FAQ do MedIA, sugestões de médicos e sugestões de tipo de exame ficam, só perdem o vínculo do autor (mesma regra da exclusão de uma conta).
+- Teste novo: `test_limpar_dados.py`, com chave estrangeira LIGADA no SQLite (PRAGMA foreign_keys=ON) - falha com o código antigo, passa com o novo. Ao criar tabela nova que aponte para usuário/paciente/exame, lembrar de tratar aqui e em `app/exclusao_usuario.py`.
+
+## "Apagar todos os dados" também limpa o FAQ do MedIA vindo de médicos (2026-10-23, pedido do Silvan)
+
+- `limpar_dados.apagar_todos_os_dados`: apaga os itens do FAQ do MedIA com origem "medico" (e o histórico deles), todas as sugestões de médicos (`BaseConhecimentoSugestao`, `TipoExameSugestao`). Ficam os itens cadastrados pelo dono e o arquivo da carga inicial (`base_conhecimento_arquivo`). Texto do botão/janela no painel atualizado.
+- Teste: `test_limpar_dados.py`; conferido também em PostgreSQL.
+
+## Chat de ajuda sobre o uso do app (2026-10-23, pedido do Silvan)
+
+- Botão flutuante "Ajuda" (canto inferior direito) em todas as telas da EQUIPE (médico/secretária; não para dono/paciente; escondido dentro de janelas embutidas). Abre um chat; a conversa fica só na aba do navegador (sessionStorage). Código no fim de `base.html`.
+- `app/ajuda_app.py`: MANUAL do app (texto, por tela - ATUALIZAR quando uma tela mudar), `PROMPT_SISTEMA` (só uso do MedIA; nada médico/preparo; não vê dados de paciente; não inventa telas), `TELAS` (endpoint -> nome da tela atual, enviado junto) e `responder()` - chama a IA escolhida pelo dono (`PlataformaConfig.ia_ajuda_app`: Claude/ChatGPT/Gemini; migração ADD COLUMN), com as últimas 6 mensagens dos últimos 30 min como contexto; custo em ChamadaIA tipo "ajuda_app". Sem resposta no manual, a IA começa com `AJUDA_NAO_SEI` -> tela mostra "Enviar para o suporte".
+- Rotas: `medico.ajuda_perguntar` (POST JSON /equipe/ajuda), `medico.ajuda_enviar_suporte` (cria MensagemSuporte categoria duvida, uma vez só). Dono: `dono.configuracoes_ia_ajuda` (card "IA da ajuda do app" em Configurações) e `dono.ajuda_app_perguntas` (menu "Ajuda do app": perguntas feitas, filtro "só as que a IA não soube").
+- Modelo novo `AjudaMensagem` (tabela `ajuda_mensagens`, create_all): pergunta, resposta, tela, provedor, nao_soube, enviada_suporte. Apagada na exclusão do usuário e no "Apagar todos os dados".
+- Teste novo: `test_ajuda_app.py`. Conferido no navegador (computador e celular). Migração conferida em PostgreSQL.
+
+## Lista de medicamentos da ANVISA, importada à mão (2026-10-23, pedido do Silvan)
+
+- Objetivo: o sistema saber o princípio ativo de nomes comerciais que as IAs não conhecem (caso Poviztra = semaglutida). Fonte: dados abertos da ANVISA, arquivo `DADOS_ABERTOS_MEDICAMENTOS.csv` (https://dados.anvisa.gov.br/dados/DADOS_ABERTOS_MEDICAMENTOS.csv - não acessível do ambiente do Claude; formato/colunas a confirmar com o arquivo real). O dono baixa e importa à mão (sem custo de IA).
+- Painel do dono > menu "Medicamentos (ANVISA)" (`dono.medicamentos_anvisa`): mostra o total e a data da última importação, importa o CSV (substitui a lista inteira) e tem "Testar um nome".
+- `app/medicamentos_anvisa.py`: `importar_csv` (ponto e vírgula ou vírgula; UTF-8 ou Latin-1 detectado sem montar o texto todo; colunas pelo nome do cabeçalho - NOME_PRODUTO e PRINCIPIO_ATIVO obrigatórias, SITUACAO_REGISTRO/CLASSE_TERAPEUTICA/EMPRESA_DETENTORA_REGISTRO opcionais; um registro por par nome/princípio ativo; lê e grava em lotes de 1000; só apaga a lista atual quando já tem o primeiro lote válido) e `buscar(nome)` (sem acento/maiúscula, válidos primeiro). Carga de teste: 60 mil linhas em ~3 s, +22 MB de memória.
+- Modelo novo `MedicamentoAnvisa` (tabela `medicamentos_anvisa`, create_all). Não é apagada pelo "Apagar todos os dados" (dado da plataforma, como a configuração).
+- Teste novo: `test_medicamentos_anvisa.py`.
+
+## A IA nunca chuta + lista da ANVISA nas respostas (2026-10-23, regra do Silvan)
+
+- Caso: "Preciso parar o Poviztra?" (semaglutida) - Claude e ChatGPT responderam como se fosse varfarina.
+- `PROMPT_SISTEMA` (`app/ia_preparo.py`): "REGRA PRINCIPAL - NUNCA CHUTE" (medicamento, alimento, bebida, produto, exame: só afirma o que é com certeza). Nome que a IA não reconhece com certeza e que não está no preparo nem na lista da ANVISA: não deduz por semelhança, classe "provável" nem histórico, não diz se pode ou não; responde "Não reconheci ... pode informar o nome da embalagem ou o princípio ativo?" com o marcador novo `MARCADOR_NAO_RECONHECIDO` (`NAO_RECONHECIDO_REVISAR`) - removido do texto e com revisão obrigatória do médico, igual a MEDICAMENTO_NAO_CADASTRADO/CONHECIMENTO_GERAL (`MARCADORES_REVISAO`). Identificar pela marca só com certeza; o histórico nunca serve para deduzir o que é um nome novo.
+- Validadora: ao corrigir a digitação, nunca troca nome de medicamento/marca/produto (mesmo desconhecido) por outro.
+- Lista da ANVISA no contexto: `app/medicamentos_anvisa.contexto_medicamentos(pergunta)` procura na tabela os nomes citados - cada palavra de 4+ letras fora do dicionário de português (palavra comum como "calma" não conta) e pares de palavras vizinhas ("AAS Protect", que vence a palavra solta); até 5 nomes, até 3 princípios cada, ativos primeiro. `_responder_com_duas_ias` acrescenta ao contexto das IAs "Medicamentos citados na pergunta, segundo a lista oficial da ANVISA: - POVIZTRA = SEMAGLUTIDA (classe: ...)", e o prompt diz que essa lista é a fonte da verdade. Falha na consulta só tira a ajuda (log + rollback), não derruba o chat.
+- Teste novo: `test_ia_nunca_chuta.py`.
+
+## "Posso comer pepino?" virou "não reconheci" - ajuste da regra de não chutar (2026-10-24, relatado pelo Silvan)
+
+- Caso: Claude respondeu "não identifiquei o pepino... é o pepino mesmo?", ChatGPT respondeu "NÃO_RECONHECIDO_REVISAR Não reconheci o alimento pepino" (marcador com acento: não foi reconhecido e apareceu na tela) e a síntese mandou "confirme com a secretaria".
+- `PROMPT_SISTEMA`: "reconhecer" é saber o que o item é, não ele estar no preparo. Alimento/bebida/medicamento comum é reconhecido mesmo sem estar escrito: a IA confere item ou categoria do preparo (pepino = legume com casca e sementes) e, se o preparo não cobre, responde com a orientação geral do tipo de exame (CONHECIMENTO_GERAL_REVISAR, que agora vale também para alimento/bebida comum). O "não reconheci" fica só para nome que a IA não sabe o que é.
+- Marcadores escritos com acento, minúscula, espaço no lugar de "_" ou em negrito (`NÃO_RECONHECIDO_REVISAR`, `**nao_sei_encaminhar**`) agora são entendidos: `_normalizar_marcadores` nas 3 `_perguntar_*`.
+- Síntese (`_sintetizar_resposta`): nunca recomenda confirmar com secretaria/clínica/médico; contradição -> fica com o mais seguro sem afirmar o ponto de dúvida; se uma IA não reconheceu e a outra identificou com clareza, usa a que identificou.
+- Tela: situação nova `respondeu_nao_reconhecido` (`_extrair_marcador_medicamento_nao_cadastrado` devolve o próprio marcador); sugestão com "(não reconheceu o nome)" e aviso próprio ("Uma IA não reconheceu um nome citado...") no portal de atendimento e em Perguntas (`PerguntaPendente.ia_nao_reconheceu`), em vez de "conhecimento geral".
+- Testes: `test_ia_nunca_chuta.py` ampliado.
+
+## Sem "não está cadastrado no preparo" nas respostas; Wegovy = Ozempic pelo princípio ativo (2026-10-24, pedido do Silvan)
+
+- Caso: "Wegovy" (semaglutida) com o preparo tendo "Ozempic, Mounjaro, Trulicity ou similares: suspender 14 dias". As IAs responderam "O Wegovy não está cadastrado no preparo deste exame..." (Silvan pediu para tirar esse tipo de frase) e trataram como não cadastrado.
+- `PROMPT_SISTEMA`: nunca escrever ao paciente que algo "não está cadastrado / não consta no preparo / não está nas orientações / não está na lista"; a regra do medicamento não cadastrado não pede mais para dizer isso. Mesmo princípio ativo de um item do preparo (ou coberto por "ou similares" da mesma classe) = é o item do preparo: responde direto com o prazo dele, sem marcador. A síntese das 2 IAs segue a mesma regra.
+- Contexto: cada medicamento do preparo (suspensos e mantidos) ganha "(princípio ativo segundo a ANVISA: SEMAGLUTIDA; TIRZEPATIDA)" quando os nomes dele estão na lista da ANVISA (`_principios_anvisa`), então a comparação Wegovy x Ozempic fica pelo princípio ativo dos dois lados.
+- Teste: `test_ia_nunca_chuta.py` ampliado.
+
+## Respostas sem tom de incerteza ("Em geral...") (2026-10-24, pedido do Silvan: "não gosto de incerteza")
+
+- `PROMPT_SISTEMA`: "TOM DAS RESPOSTAS" - sempre direto e afirmativo, sem "em geral", "geralmente", "normalmente", "costuma", "na maioria dos casos"...; a resposta passa pela aprovação do médico e vale como orientação da clínica. Não autoriza chutar: sem certeza, usa os marcadores. Exemplos do prompt reescritos no tom direto ("Chegue de 30 a 60 minutos antes...").
+- Síntese das 2 IAs com a mesma regra.
+- Rede de segurança `_tirar_incerteza`: tira "Em geral," / "Geralmente," / "Normalmente," / "Via de regra," etc. do começo das frases (nas sugestões de cada IA e na síntese).
+- O aviso amarelo "conhecimento geral" continua na tela do médico (é para ele revisar), não vai ao paciente.
+- Ajuste (2026-10-24): "O exame dói." passou a receber "não sei" das 2 IAs - sem poder dizer "em geral", elas preferiram não responder. O prompt agora diz que o que é bem estabelecido para o tipo de exame (sedação, sem dor durante, gases depois) é conhecimento certo, a ser respondido em tom direto pela regra do conhecimento geral; nunca trocar uma resposta conhecida por NAO_SEI por causa do tom; o que varia de pessoa para pessoa é dito de forma direta ("alguns pacientes sentem..."). "Se o exame dói / se tem sedação" entrou nos exemplos do conhecimento geral.
+
+## BACKLOG (Silvan) - combinado para fazer depois
+
+- [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").
+- [x] **Usar a lista da ANVISA nas respostas das IAs**: achar na pergunta nomes de medicamentos da tabela `medicamentos_anvisa` (só palavras com 5+ letras que não sejam palavras do português - dicionário do projeto) e mandar às IAs "Medicamentos citados (lista oficial da ANVISA): Poviztra = semaglutida". Junto com o item acima (não chutar o que não estiver na lista). - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").
+- [ ] Remarcar/desmarcar pelo WhatsApp (talvez com menu) - Silvan vai definir depois.
+- [ ] Aviso ao paciente no WhatsApp ao remarcar/cancelar exame - precisa de modelos novos aprovados na Meta (exame_remarcado, exame_cancelado).
+
 ## PENDENTE DE TESTE (Silvan) - lembrete, por tela
 
 Itens já implementados e enviados que o Silvan ainda vai testar no ambiente real (dev e, depois, produção). Detalhes nas seções acima.
@@ -2792,6 +2858,18 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 
 **FAQ do MedIA sem a carga inicial**
 - [ ] Depois do deploy: Painel do dono > FAQ do MedIA sem os itens da carga inicial (só os de médicos/dono); nas perguntas novas, a sugestão do FAQ do MedIA só aparece quando houver item vindo de médico
+
+**Ajuda do app**
+- [ ] Botão "Ajuda" (canto inferior direito) para médico/secretária: perguntar "como remarco um exame?" responde com o caminho certo; pergunta fora do manual oferece "Enviar para o suporte" (aparece em Mensagens do dono)
+- [ ] Painel do dono > Configurações > "IA da ajuda do app" troca a IA; menu "Ajuda do app" lista as perguntas
+
+**Medicamentos (ANVISA)**
+- [x] Painel do dono > Medicamentos (ANVISA): importar o DADOS_ABERTOS_MEDICAMENTOS.csv; conferir o total e testar "Poviztra" - validado 2026-10-23 no media-dev: arquivo real importado (17.932 pares nome/princípio ativo), "Poviztra = semaglutida" (situação "Ativo", Novo Nordisk)
+- [ ] Chat (WhatsApp ou portal): "Preciso parar o Poviztra?" -> as IAs tratam como semaglutida (não varfarina) e comparam com o preparo
+- [ ] Chat: "Vou sentir dor no exame?" -> resposta direta, sem "Em geral"/"geralmente"
+- [ ] Chat: "Preciso parar o Wegovy?" -> responde direto que deve ser suspenso 14 dias antes (como o Ozempic do preparo), sem "não está cadastrado"
+- [ ] Chat: "Posso comer pepino?" -> as IAs reconhecem o pepino (sem "não reconheci"), respondem pela regra do preparo ou com orientação geral marcada, e o rascunho não manda confirmar com a secretaria
+- [ ] Chat: perguntar por um nome inventado (ex.: "Posso tomar Zorvantex?") -> resposta "Não reconheci..." pedindo o nome da embalagem/princípio ativo, e vai para o médico mesmo com a aprovação automática desligada
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

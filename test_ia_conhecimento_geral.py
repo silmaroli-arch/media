@@ -35,7 +35,7 @@ with app.app_context():
     resposta = f"{MARCADOR_CONHECIMENTO_GERAL}\nEm geral, pede-se para chegar de 30 a 60 minutos antes da colonoscopia."
     texto, chamada, sem_sentido, exige_revisao = _perguntar_claude(cliente(resposta), "Que horas chego?", "contexto")
     checar("Marcador sai do texto e a resposta exige revisão",
-           texto.startswith("Em geral") and MARCADOR_CONHECIMENTO_GERAL not in texto and exige_revisao)
+           texto.startswith("Pede-se") and MARCADOR_CONHECIMENTO_GERAL not in texto and exige_revisao)
     resposta = (f"{MARCADOR_CONHECIMENTO_GERAL}\nO preparo não traz essa informação, mas em geral pede-se chegar "
                 "30 minutos antes. Confirme com a secretaria.")
     texto, *_ = _perguntar_claude(cliente(resposta), "Que horas chego?", "contexto")

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block titulo %}Ajuda do app{% endblock %}
+{% block conteudo %}
+{# O que a equipe perguntou no botão "Ajuda" (pedido do Silvan, 2026-10-23)
+   - para ver onde os usuários se perdem e melhorar o app ou o manual
+   (app/ajuda_app.py). A IA usada se escolhe em Configurações. #}
+<h3 class="mb-1">Ajuda do app</h3>
+<p class="text-muted small">
+  Perguntas que médicos e secretárias fizeram no botão "Ajuda". As que a IA não soube responder mostram onde o app (ou o manual
+  da ajuda) pode melhorar; as enviadas ao suporte também aparecem em "Mensagens".
+</p>
+<div class="mb-3">
+  {% if so_nao_soube %}
+  <a href="{{ url_for('dono.ajuda_app_perguntas') }}" class="btn btn-sm btn-outline-secondary">Ver todas</a>
+  {% else %}
+  <a href="{{ url_for('dono.ajuda_app_perguntas', nao_soube=1) }}" class="btn btn-sm btn-outline-secondary">Só as que a IA não soube responder</a>
+  {% endif %}
+</div>
+<div class="card p-3">
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Quando</th><th>Quem</th><th>Tela</th><th>Pergunta</th><th>Resposta</th></tr></thead>
+    <tbody>
+      {% for m in mensagens %}
+      <tr>
+        <td class="text-nowrap small">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td class="small">{{ m.usuario.nome if m.usuario else '-' }}</td>
+        <td class="small text-muted">{{ m.tela or '-' }}</td>
+        <td>{{ m.pergunta }}</td>
+        <td class="small" style="white-space: pre-wrap;">{% if m.nao_soube %}<span class="badge bg-warning text-dark me-1">não soube</span>{% endif %}{% if m.enviada_suporte %}<span class="badge bg-info text-dark me-1">enviada ao suporte</span>{% endif %}{{ m.resposta or '' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="text-muted text-center">Nenhuma pergunta ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

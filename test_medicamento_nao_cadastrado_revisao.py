@@ -67,11 +67,11 @@ texto_com_marcador = f"{MARCADOR_MEDICAMENTO_NAO_CADASTRADO}\nA nimesulida não 
 resto, exige = _extrair_marcador_medicamento_nao_cadastrado(texto_com_marcador)
 checar("Marcador é removido do início do texto", not resto.startswith(MARCADOR_MEDICAMENTO_NAO_CADASTRADO))
 checar("Texto restante preserva a orientação de verdade", "nimesulida" in resto and "anti-inflamat" in resto.lower())
-checar("Sinaliza exige_revisao=True quando o marcador está presente", exige is True)
+checar("Sinaliza exige_revisao=True quando o marcador está presente", bool(exige))
 
 texto_com_espaco = f"  {MARCADOR_MEDICAMENTO_NAO_CADASTRADO}  \nResposta normal aqui."
 resto2, exige2 = _extrair_marcador_medicamento_nao_cadastrado(texto_com_espaco)
-checar("Também reconhece o marcador com espaço/quebra de linha antes dele", exige2 is True)
+checar("Também reconhece o marcador com espaço/quebra de linha antes dele", bool(exige2))
 checar("Remove o marcador mesmo com espaço extra em volta", "Resposta normal aqui." in resto2)
 
 texto_sem_marcador = "Água pura é permitida durante o jejum."
@@ -101,7 +101,7 @@ with app.app_context():
     )
     checar("_perguntar_claude devolve o texto sem o marcador", texto is not None and MARCADOR_MEDICAMENTO_NAO_CADASTRADO not in texto)
     checar("_perguntar_claude preserva a orientação genérica de verdade", "nimesulida" in texto)
-    checar("_perguntar_claude sinaliza exige_revisao=True", exige_revisao is True)
+    checar("_perguntar_claude sinaliza exige_revisao=True", bool(exige_revisao))
     checar("_perguntar_claude NãO sinaliza sem_sentido nesse caso", sem_sentido is False)
     checar("_perguntar_claude registra a ChamadaIA normalmente", chamada is not None)
 

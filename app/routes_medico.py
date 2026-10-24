@@ -17,7 +17,7 @@ from sqlalchemy import or_, and_, func
 
 from app.extensions import db
 from app.models import (
-    Paciente, Usuario, Exame, Agendamento, FaqItem,
+    AjudaMensagem, Paciente, Usuario, Exame, Agendamento, FaqItem,
     PerguntaPendente, GrupoPaciente, Grupo, GrupoMembro, GrupoConvite,
     PreparoModelo, PreparoCorte, PreparoMedicamentoSuspenso, PreparoInfoGeral, PreparoAlimento,
     PreparoExameAnterior, PreparoMedicamentoMantido, Medicamento, normalizar_telefone,
@@ -4741,6 +4741,44 @@ def fale_com_a_gente():
 
 
 # ---------- Sininho de notificações ----------
+
+@medico_bp.route("/ajuda", methods=["POST"])
+@login_required
+@staff_required
+def ajuda_perguntar():
+    """Chat de ajuda sobre o uso do app (botão "Ajuda" flutuante, pedido
+    do Silvan, 2026-10-23 - ver app.ajuda_app). Recebe e devolve JSON."""
+    from app.ajuda_app import responder
+
+    dados = request.get_json(silent=True) or {}
+    pergunta = (dados.get("pergunta") or "").strip()[:1000]
+    if not pergunta:
+        return jsonify({"erro": "Escreva sua dúvida."}), 400
+    mensagem = responder(pergunta, current_user, tela=dados.get("tela"))
+    return jsonify({
+        "id": mensagem.id,
+        "resposta": mensagem.resposta or "Não consegui responder agora. Você pode mandar sua dúvida para o suporte.",
+        "nao_soube": mensagem.nao_soube,
+    })
+
+
+@medico_bp.route("/ajuda/<int:mensagem_id>/suporte", methods=["POST"])
+@login_required
+@staff_required
+def ajuda_enviar_suporte(mensagem_id):
+    """"Enviar para o suporte": a dúvida que a ajuda não resolveu vira uma
+    mensagem do "Fale com a gente" (o dono responde por lá)."""
+    mensagem = AjudaMensagem.query.filter_by(id=mensagem_id, usuario_id=current_user.id).first_or_404()
+    if not mensagem.enviada_suporte:
+        tela = f" (tela: {mensagem.tela})" if mensagem.tela else ""
+        db.session.add(MensagemSuporte(
+            usuario_id=current_user.id, categoria="duvida",
+            mensagem=f"Dúvida enviada pela Ajuda do app{tela}:\n{mensagem.pergunta}",
+        ))
+        mensagem.enviada_suporte = True
+        db.session.commit()
+    return jsonify({"ok": True})
+
 
 @medico_bp.route("/notificacoes/<int:notificacao_id>/abrir")
 @login_required
