@@ -62,6 +62,7 @@ from app.models import (
     PreparoMedicamentoMantido,
     PreparoMedicamentoSuspenso,
     PreparoModelo,
+    PreparoPdfOriginal,
     PushSubscription,
     ResultadoExame,
     Usuario,
@@ -134,6 +135,7 @@ def apagar_todos_os_dados(dono_atual):
     PreparoExameAnterior.query.delete(synchronize_session=False)
     PreparoMedicamentoSuspenso.query.delete(synchronize_session=False)
     PreparoMedicamentoMantido.query.delete(synchronize_session=False)
+    PreparoPdfOriginal.query.delete(synchronize_session=False)
     PreparoModelo.query.delete(synchronize_session=False)
 
     # 5. Grupos e tudo ligado a eles.

@@ -277,6 +277,14 @@ def create_app():
         return float(valor_usd) * COTACAO_USD_PARA_BRL
 
     @app.context_processor
+    def _pdf_original_pendente():
+        # PDF recém-importado que vira o preparo original ao salvar o
+        # modelo (2026-10-24, ver app.preparo_pdf_original).
+        from app.preparo_pdf_original import pendente_da_sessao
+
+        return {"pdf_original_pendente": pendente_da_sessao}
+
+    @app.context_processor
     def injetar_contexto_clinica():
         """Disponibiliza em todos os templates o GRUPO atual (o que
         delimita o que a pessoa vê - ver app/clinica_utils.py, Fatia 5), as

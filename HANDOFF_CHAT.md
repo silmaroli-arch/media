@@ -2748,6 +2748,15 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - O aviso amarelo "conhecimento geral" continua na tela do médico (é para ele revisar), não vai ao paciente.
 - Ajuste (2026-10-24): "O exame dói." passou a receber "não sei" das 2 IAs - sem poder dizer "em geral", elas preferiram não responder. O prompt agora diz que o que é bem estabelecido para o tipo de exame (sedação, sem dor durante, gases depois) é conhecimento certo, a ser respondido em tom direto pela regra do conhecimento geral; nunca trocar uma resposta conhecida por NAO_SEI por causa do tom; o que varia de pessoa para pessoa é dito de forma direta ("alguns pacientes sentem..."). "Se o exame dói / se tem sedação" entrou nos exemplos do conhecimento geral.
 
+## Preparo original do médico (PDF) no link do WhatsApp (2026-10-24, pedido do Silvan)
+
+- Objetivo: o paciente acessar primeiro o preparo como o médico escreveu; a linha do tempo fica como segunda opção. Decisões do Silvan: "original" = PDF do médico; só na página do link do WhatsApp (por enquanto não na área do paciente logado).
+- Modelo novo `PreparoPdfOriginal` (tabela `preparo_pdfs_originais`, create_all): um PDF por modelo de preparo (`PreparoModelo.pdf_original`, apagado junto com o modelo), guardado no banco (o disco do Render não é permanente), máx. 10 MB, conteúdo `deferred`. `app/preparo_pdf_original.py`: validação, PDF pendente da importação, `aplicar_no_modelo`, `resposta_pdf_original`.
+- Formulário do modelo de preparo (novo e editar): bloco "Preparo original (PDF)" - anexar, trocar, abrir e remover. Ao IMPORTAR um PDF para criar o modelo, o mesmo arquivo fica guardado como pendente (id na sessão) e a revisão já vem com "Usar o PDF importado como preparo original" marcado; ao salvar, vira o PDF do modelo. Pendentes esquecidos são apagados depois de 1 dia. Equipe abre em `medico.preparo_modelos_pdf_original` / `medico.preparo_modelos_pdf_importado`.
+- Página do link (`paciente/preparo_publico.html`): com PDF, botões "Preparo do médico" | "Linha do tempo" e o cartão "Abrir o preparo (PDF)" / "Baixar" no topo; a linha do tempo vem embaixo, com "Baixar a linha do tempo (PDF)". Sem PDF, a página fica como antes. Rota pública `paciente.preparo_publico_original` (mesmo token do link; `?baixar=1` para baixar).
+- "Apagar todos os dados" e a exclusão de usuário tratam a tabela nova.
+- Teste novo: `test_preparo_pdf_original.py` (validado também no Postgres local).
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").
@@ -2870,6 +2879,11 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Chat: "Preciso parar o Wegovy?" -> responde direto que deve ser suspenso 14 dias antes (como o Ozempic do preparo), sem "não está cadastrado"
 - [ ] Chat: "Posso comer pepino?" -> as IAs reconhecem o pepino (sem "não reconheci"), respondem pela regra do preparo ou com orientação geral marcada, e o rascunho não manda confirmar com a secretaria
 - [ ] Chat: perguntar por um nome inventado (ex.: "Posso tomar Zorvantex?") -> resposta "Não reconheci..." pedindo o nome da embalagem/princípio ativo, e vai para o médico mesmo com a aprovação automática desligada
+
+**Preparo original (PDF)**
+- [ ] Modelos de preparo > editar: anexar o PDF do preparo em "Preparo original (PDF)"; abrir o link do WhatsApp do paciente e conferir "Preparo do médico" primeiro e a linha do tempo embaixo
+- [ ] Importar um PDF para criar um modelo novo: a revisão já vem com "Usar o PDF importado" marcado e, depois de salvar, o PDF aparece no modelo
+- [ ] No celular: "Abrir o preparo (PDF)" abre o arquivo e "Baixar" baixa
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

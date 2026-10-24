@@ -51,6 +51,10 @@ from app.whatsapp_envio import (
 )
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
+from app.preparo_pdf_original import (
+    aplicar_no_modelo as aplicar_pdf_original, guardar_pendente as guardar_pdf_pendente, pendente_da_sessao,
+    resposta_pdf_original,
+)
 from cryptography.hazmat.primitives.serialization import pkcs12
 
 medico_bp = Blueprint("medico", __name__, url_prefix="/equipe")
@@ -2032,6 +2036,9 @@ def preparo_modelos_novo():
             except Exception:
                 db.session.rollback()
 
+        erro_pdf = aplicar_pdf_original(modelo, request.form, request.files)
+        if erro_pdf:
+            flash(f"{erro_pdf} O modelo foi salvo sem ele.", "warning")
         flash("Modelo de preparo cadastrado com sucesso — o exame correspondente também foi criado.", "success")
         if wizard:
             return redirect(url_for("medico.primeiros_passos"))
@@ -2174,6 +2181,9 @@ def preparo_modelos_editar(modelo_id):
 
         db.session.commit()
 
+        erro_pdf = aplicar_pdf_original(modelo, request.form, request.files)
+        if erro_pdf:
+            flash(f"{erro_pdf} O restante foi salvo.", "warning")
         flash("Modelo de preparo atualizado.", "success")
         return redirect(url_for("medico.preparo_modelos_lista"))
 
@@ -2205,6 +2215,28 @@ def preparo_modelos_remover(modelo_id):
     db.session.commit()
     flash("Modelo de preparo removido.", "success")
     return redirect(url_for("medico.preparo_modelos_lista"))
+
+
+@medico_bp.route("/preparo-modelos/<int:modelo_id>/pdf-original")
+@login_required
+@staff_required
+def preparo_modelos_pdf_original(modelo_id):
+    modelo = PreparoModelo.query.filter(
+        PreparoModelo.id == modelo_id, filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
+    ).first_or_404()
+    if not modelo.pdf_original:
+        abort(404)
+    return resposta_pdf_original(modelo.pdf_original)
+
+
+@medico_bp.route("/preparo-modelos/pdf-importado")
+@login_required
+@staff_required
+def preparo_modelos_pdf_importado():
+    pdf = pendente_da_sessao()
+    if not pdf:
+        abort(404)
+    return resposta_pdf_original(pdf)
 
 
 def _processar_stream_de_ia_pdf(pdf_bytes):
@@ -2376,6 +2408,11 @@ def preparo_modelos_importar_xlsx():
         nome_arquivo = arquivo.filename.lower()
 
         if nome_arquivo.endswith(".pdf"):
+            # O PDF importado vira o "preparo original" que o paciente abre
+            # pelo link (2026-10-24) - guardado antes de qualquer caminho,
+            # porque a resposta em streaming não consegue mais gravar a sessão.
+            guardar_pdf_pendente(arquivo.stream.read(), arquivo.filename)
+            arquivo.stream.seek(0)
             texto_extraido_cliente = (request.form.get("texto_extraido_cliente") or "").strip()
 
             if texto_extraido_cliente:

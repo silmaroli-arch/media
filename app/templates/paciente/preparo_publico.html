@@ -148,6 +148,43 @@
     text-align: center;
   }
 
+  /* Preparo original do médico - primeira opção (2026-10-24) */
+  .opcoes-preparo {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 20px;
+  }
+  .opcoes-preparo a {
+    flex: 1;
+    text-align: center;
+    padding: 10px 8px;
+    border-radius: 8px;
+    border: 2px solid var(--azul);
+    color: var(--azul);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .opcoes-preparo a.principal { background: var(--azul); color: #fff; }
+  .cartao-original {
+    border: 2px solid var(--azul);
+    border-radius: 10px;
+    padding: 18px;
+    background: #f3f8fe;
+    margin-bottom: 8px;
+  }
+  .cartao-original h2 { font-size: 1.15rem; margin: 0 0 6px; color: #14213d; }
+  .cartao-original p { margin: 0 0 14px; color: var(--cinza-texto); font-size: 0.95rem; }
+  .cartao-original .acoes { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .cartao-original .abrir {
+    background: var(--azul);
+    color: #fff;
+    text-decoration: none;
+    padding: 12px 18px;
+    border-radius: 8px;
+    font-weight: 700;
+  }
+  .cartao-original .baixar { color: var(--azul); font-size: 0.9rem; }
   @media print {
     body { background: #fff; padding: 0; }
     .documento { box-shadow: none; border-radius: 0; max-width: 100%; }
@@ -165,15 +202,37 @@
       <span>Médico: <strong>{{ agendamento.medico.nome }}</strong></span>
       {% endif %}
     </div>
+    {% if not pdf_original %}
     <a class="botao-pdf" href="{{ url_for('paciente.preparo_publico_pdf', token=agendamento.token_preparo_publico) }}">
       Baixar PDF
     </a>
+    {% endif %}
     <p class="aviso-gerado">Documento informativo - em caso de dúvida sobre o preparo, fale com a clínica.</p>
   </div>
 
+  {% if pdf_original %}
+  {# O preparo como o médico escreveu vem primeiro; a linha do tempo é a
+     segunda opção (pedido do Silvan, 2026-10-24). #}
+  <nav class="opcoes-preparo">
+    <a class="principal" href="#preparo-medico">Preparo do médico</a>
+    <a href="#linha-do-tempo">Linha do tempo</a>
+  </nav>
+  <div class="cartao-original" id="preparo-medico">
+    <h2>Preparo do médico</h2>
+    <p>As instruções do preparo exatamente como o médico escreveu.</p>
+    <div class="acoes">
+      <a class="abrir" href="{{ url_for('paciente.preparo_publico_original', token=agendamento.token_preparo_publico) }}" target="_blank" rel="noopener">Abrir o preparo (PDF)</a>
+      <a class="baixar" href="{{ url_for('paciente.preparo_publico_original', token=agendamento.token_preparo_publico, baixar=1) }}">Baixar</a>
+    </div>
+  </div>
+  {% endif %}
+
   {% if preparo %}
     {% if linha_do_tempo %}
-    <h2 class="secao-titulo">Linha do tempo do preparo</h2>
+    <h2 class="secao-titulo" id="linha-do-tempo">Linha do tempo do preparo{% if pdf_original %} <span style="font-weight:400;font-size:0.9rem;color:#555">(com as datas do seu exame)</span>{% endif %}</h2>
+    {% if pdf_original %}
+    <a class="botao-pdf" style="margin:0 0 14px" href="{{ url_for('paciente.preparo_publico_pdf', token=agendamento.token_preparo_publico) }}">Baixar a linha do tempo (PDF)</a>
+    {% endif %}
     <div class="linha-do-tempo">
       {# A data aparece uma vez, com os itens do dia embaixo (2026-10-21). #}
       {% for dia in linha_do_tempo_por_dia %}

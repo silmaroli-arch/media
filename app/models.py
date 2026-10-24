@@ -1426,6 +1426,9 @@ class PreparoModelo(db.Model):
         "PreparoMedicamentoMantido", back_populates="preparo_modelo", cascade="all, delete-orphan",
         order_by="PreparoMedicamentoMantido.nome",
     )
+    pdf_original = db.relationship(
+        "PreparoPdfOriginal", back_populates="preparo_modelo", uselist=False, cascade="all, delete-orphan",
+    )
 
 
 class PreparoCorte(db.Model):
@@ -1592,6 +1595,28 @@ class PreparoMedicamentoMantido(db.Model):
     observacao = db.Column(db.String(300))
 
     preparo_modelo = db.relationship("PreparoModelo", back_populates="medicamentos_mantidos")
+
+
+class PreparoPdfOriginal(db.Model):
+    """O PDF original do preparo, como o médico escreveu (pedido do Silvan,
+    2026-10-24): o paciente abre ESTE arquivo primeiro pelo link do
+    WhatsApp, e a linha do tempo fica como segunda opção. Guardado no banco
+    (o disco do Render não é permanente). `preparo_modelo_id` vazio = PDF
+    recém-importado que ainda não foi salvo num modelo (ver
+    app.preparo_pdf_original)."""
+    __tablename__ = "preparo_pdfs_originais"
+
+    id = db.Column(db.Integer, primary_key=True)
+    preparo_modelo_id = db.Column(
+        db.Integer, db.ForeignKey("preparo_modelos.id", ondelete="CASCADE"), nullable=True, unique=True,
+    )
+    nome_arquivo = db.Column(db.String(255), nullable=False)
+    tamanho = db.Column(db.Integer, nullable=False)
+    conteudo = db.deferred(db.Column(db.LargeBinary, nullable=False))
+    enviado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    enviado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    preparo_modelo = db.relationship("PreparoModelo", back_populates="pdf_original")
 
 
 class Agendamento(db.Model):
