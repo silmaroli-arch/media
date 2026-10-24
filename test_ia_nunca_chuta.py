@@ -91,6 +91,8 @@ with app.app_context():
 
     from app.ia_preparo import _tirar_incerteza
     checar("Prompt pede tom direto, sem 'em geral'", "TOM DAS RESPOSTAS" in PROMPT_SISTEMA and "Em geral," not in PROMPT_SISTEMA)
+    checar("Tom direto não vira 'não sei': o que é estabelecido é conhecimento certo (caso 'O exame dói')",
+           "conhecimento CERTO" in PROMPT_SISTEMA and "se o exame dói" in PROMPT_SISTEMA)
     checar("'Em geral,' no começo das frases sai do texto",
            _tirar_incerteza("Em geral, a colonoscopia é feita com sedação. Geralmente, os gases passam rápido.")
            == "A colonoscopia é feita com sedação. Os gases passam rápido.")

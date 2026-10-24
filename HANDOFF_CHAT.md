@@ -2746,6 +2746,7 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Síntese das 2 IAs com a mesma regra.
 - Rede de segurança `_tirar_incerteza`: tira "Em geral," / "Geralmente," / "Normalmente," / "Via de regra," etc. do começo das frases (nas sugestões de cada IA e na síntese).
 - O aviso amarelo "conhecimento geral" continua na tela do médico (é para ele revisar), não vai ao paciente.
+- Ajuste (2026-10-24): "O exame dói." passou a receber "não sei" das 2 IAs - sem poder dizer "em geral", elas preferiram não responder. O prompt agora diz que o que é bem estabelecido para o tipo de exame (sedação, sem dor durante, gases depois) é conhecimento certo, a ser respondido em tom direto pela regra do conhecimento geral; nunca trocar uma resposta conhecida por NAO_SEI por causa do tom; o que varia de pessoa para pessoa é dito de forma direta ("alguns pacientes sentem..."). "Se o exame dói / se tem sedação" entrou nos exemplos do conhecimento geral.
 
 ## BACKLOG (Silvan) - combinado para fazer depois
 
