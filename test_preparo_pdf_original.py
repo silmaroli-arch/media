@@ -62,9 +62,10 @@ paciente = app.test_client()
 html = paciente.get(f"/paciente/preparo/{token}").get_data(as_text=True)
 checar("Link do WhatsApp: 'Preparo do médico' vem antes da linha do tempo",
        "Abrir o preparo (PDF)" in html and html.index("Preparo do médico") < html.index("Linha do tempo do preparo"))
-checar("... e a linha do tempo continua, com o PDF dela", "Baixar a linha do tempo (PDF)" in html)
-checar("'Baixar PDF' continua no topo e baixa o PDF do médico",
-       f'href="/paciente/preparo/{token}/original?baixar=1">\n      Baixar PDF' in html)
+checar("Os dois botões funcionam como abas: médico aberto, linha do tempo à parte",
+       'class="cartao-original aba-conteudo ativa" id="aba-medico"' in html and 'class="aba-conteudo" id="aba-linha"' in html)
+checar("'Baixar PDF' no topo baixa o PDF da aba aberta (médico ou linha do tempo)",
+       f'data-medico="/paciente/preparo/{token}/original?baixar=1"' in html and f'data-linha="/paciente/preparo/{token}/pdf"' in html)
 r = paciente.get(f"/paciente/preparo/{token}/original")
 checar("Paciente abre o PDF original sem login", r.status_code == 200 and r.data == PDF
        and r.headers["Content-Disposition"].startswith("inline"))

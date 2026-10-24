@@ -165,7 +165,10 @@
     font-weight: 600;
     font-size: 0.95rem;
   }
-  .opcoes-preparo a.principal { background: var(--azul); color: #fff; }
+  .opcoes-preparo a.ativa { background: var(--azul); color: #fff; }
+  /* Abas (2026-10-24): com JS, só a aba escolhida aparece; sem JS, as duas. */
+  .com-abas .aba-conteudo { display: none; }
+  .com-abas .aba-conteudo.ativa { display: block; }
   .cartao-original {
     border: 2px solid var(--azul);
     border-radius: 10px;
@@ -196,6 +199,8 @@
   .pagina-preparo th, .pagina-preparo td { border: 1px solid #cfd8e3; padding: 6px; text-align: left; vertical-align: top; }
   .pagina-preparo th { background: #e8f0fb; }
   @media print {
+    .com-abas .aba-conteudo { display: block; }
+    .opcoes-preparo { display: none; }
     body { background: #fff; padding: 0; }
     .documento { box-shadow: none; border-radius: 0; max-width: 100%; }
     .botao-pdf { display: none; }
@@ -213,10 +218,13 @@
       {% endif %}
     </div>
     {# "Baixar PDF" sempre no topo, como era antes (pedido do Silvan,
-       2026-10-24): com o PDF do médico anexado, baixa esse PDF (o preparo
-       prioritário); sem ele, o PDF da linha do tempo. #}
+       2026-10-24): baixa o PDF da aba aberta - o do médico ou o da linha do
+       tempo (ver o script no fim); sem PDF do médico, o da linha do tempo. #}
     {% if pdf_original %}
-    <a class="botao-pdf" href="{{ url_for('paciente.preparo_publico_original', token=agendamento.token_preparo_publico, baixar=1) }}">
+    <a class="botao-pdf" id="botao-baixar"
+       href="{{ url_for('paciente.preparo_publico_original', token=agendamento.token_preparo_publico, baixar=1) }}"
+       data-medico="{{ url_for('paciente.preparo_publico_original', token=agendamento.token_preparo_publico, baixar=1) }}"
+       data-linha="{{ url_for('paciente.preparo_publico_pdf', token=agendamento.token_preparo_publico) }}">
       Baixar PDF
     </a>
     {% else %}
@@ -229,12 +237,13 @@
 
   {% if pdf_original %}
   {# O preparo como o médico escreveu vem primeiro; a linha do tempo é a
-     segunda opção (pedido do Silvan, 2026-10-24). #}
+     segunda opção (pedido do Silvan, 2026-10-24). Os dois botões funcionam
+     como abas: cada um mostra só o seu conteúdo. #}
   <nav class="opcoes-preparo">
-    <a class="principal" href="#preparo-medico">Preparo do médico</a>
-    <a href="#linha-do-tempo">Linha do tempo</a>
+    <a class="ativa" href="#preparo-medico" data-aba="aba-medico">Preparo do médico</a>
+    <a href="#linha-do-tempo" data-aba="aba-linha">Linha do tempo</a>
   </nav>
-  <div class="cartao-original" id="preparo-medico">
+  <div class="cartao-original aba-conteudo ativa" id="aba-medico">
     <h2>Preparo do médico</h2>
     {% if pdf_original.pagina_para_paciente %}
     <div class="pagina-preparo">{{ pdf_original.pagina_para_paciente | safe }}</div>
@@ -252,12 +261,10 @@
   </div>
   {% endif %}
 
+  <div class="{{ 'aba-conteudo' if pdf_original else '' }}" id="aba-linha">
   {% if preparo %}
     {% if linha_do_tempo %}
     <h2 class="secao-titulo" id="linha-do-tempo">Linha do tempo do preparo{% if pdf_original %} <span style="font-weight:400;font-size:0.9rem;color:#555">(com as datas do seu exame)</span>{% endif %}</h2>
-    {% if pdf_original %}
-    <a class="botao-pdf" style="margin:0 0 14px" href="{{ url_for('paciente.preparo_publico_pdf', token=agendamento.token_preparo_publico) }}">Baixar a linha do tempo (PDF)</a>
-    {% endif %}
     <div class="linha-do-tempo">
       {# A data aparece uma vez, com os itens do dia embaixo (2026-10-21). #}
       {% for dia in linha_do_tempo_por_dia %}
@@ -344,8 +351,27 @@
   {% else %}
     <p class="sem-preparo">Este agendamento não tem instruções de preparo — não é necessário nenhum preparo prévio. Em caso de dúvida, entre em contato com a secretaria.</p>
   {% endif %}
+  </div>
 
   <div class="rodape">Gerado em {{ agora.strftime('%d/%m/%Y %H:%M') if agora else '' }}</div>
 </div>
+{% if pdf_original %}
+<script>
+  (function () {
+    document.body.classList.add('com-abas');
+    var botoes = document.querySelectorAll('.opcoes-preparo a');
+    var baixar = document.getElementById('botao-baixar');
+    function abrir(id) {
+      botoes.forEach(function (b) { b.classList.toggle('ativa', b.dataset.aba === id); });
+      document.querySelectorAll('.aba-conteudo').forEach(function (c) { c.classList.toggle('ativa', c.id === id); });
+      if (baixar) baixar.href = id === 'aba-linha' ? baixar.dataset.linha : baixar.dataset.medico;
+    }
+    botoes.forEach(function (b) {
+      b.addEventListener('click', function (ev) { ev.preventDefault(); abrir(b.dataset.aba); history.replaceState(null, '', b.getAttribute('href')); });
+    });
+    if (location.hash === '#linha-do-tempo') abrir('aba-linha');
+  })();
+</script>
+{% endif %}
 </body>
 </html>

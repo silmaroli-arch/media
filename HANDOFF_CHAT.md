@@ -2771,6 +2771,7 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - `PreparoPdfOriginal`: colunas `pagina_html`, `pagina_status` (None/gerando/revisar/aprovada/erro), `pagina_avisos`, `pagina_atualizada_em`, `pagina_aprovada_em`, `pagina_aprovada_por_id` (migrar_banco.py, ADD COLUMN IF NOT EXISTS - validado no Postgres local com a tabela já existente).
 - Anexar um PDF novo (ou salvar um modelo com o PDF importado) já começa a gerar a página e mostra "Revise e aprove aqui". Tela `medico.preparo_modelos_pdf_pagina` (`/equipe/preparo-modelos/<id>/pdf-original/pagina`): texto editável (toque para corrigir), PDF ao lado (no celular, botão para abrir), "Aprovar e publicar", "Salvar sem publicar", "Tirar do ar", "Gerar de novo". Só quem pode editar o modelo aprova. O formulário do modelo mostra a situação da página.
 - Ajuste (2026-10-24, pedido do Silvan): o botão "Baixar PDF" voltou ao topo da página do link, como era antes - com o PDF do médico anexado, baixa esse PDF; sem ele, o PDF da linha do tempo (que continua com o próprio botão na seção dela).
+- Abas (2026-10-24, pedido do Silvan): na página do link, "Preparo do médico" e "Linha do tempo" funcionam como abas - cada uma mostra só o seu conteúdo (abre no do médico; `#linha-do-tempo` no endereço abre a outra). O "Baixar PDF" do topo baixa o PDF da aba aberta (o do médico ou o da linha do tempo); o botão separado "Baixar a linha do tempo (PDF)" saiu. Sem JS ou na impressão, as duas aparecem.
 - Teste novo: `test_preparo_pdf_pagina.py` (IA simulada - a qualidade da transcrição com um PDF real ainda precisa ser conferida no media-dev).
 
 ## BACKLOG (Silvan) - combinado para fazer depois
@@ -2903,6 +2904,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 
 **Versão em página do PDF**
 - [ ] Anexar o PDF de um preparo real: aparece "Revise e aprove aqui"; em 1-2 min a página fica pronta; conferir a transcrição ao lado do PDF (avisos em vermelho), corrigir algo e aprovar
+- [ ] Link do WhatsApp: tocar em "Linha do tempo" mostra só a linha do tempo e "Preparo do médico" só o preparo; o "Baixar PDF" do topo baixa o PDF da aba aberta
 - [ ] Link do WhatsApp do paciente: com a página aprovada, "Preparo do médico" mostra o texto direto, com "Ver o PDF original" embaixo; "Tirar do ar" volta para o PDF
 - [ ] Painel do dono > custo de IA: chamada "Página do PDF de preparo" registrada
 
