@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block titulo %}Versão em página do preparo{% endblock %}
+{% block conteudo %}
+{# Revisão da versão em página (HTML) do PDF original do preparo (pedido do
+   Silvan, 2026-10-24, ver app.ia_pdf_html): a IA transcreve o PDF, o médico
+   confere ao lado do PDF, corrige o texto e aprova. #}
+{% set situacao = pdf.situacao_pagina %}
+{% if situacao == "gerando" %}<meta http-equiv="refresh" content="5">{% endif %}
+<style>
+  .pagina-preparo h2 { font-size: 1.15rem; margin: 1.1rem 0 .5rem; color: #14213d; }
+  .pagina-preparo h3 { font-size: 1rem; margin: .9rem 0 .4rem; color: #14213d; }
+  .pagina-preparo table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+  .pagina-preparo th, .pagina-preparo td { border: 1px solid #dee2e6; padding: 4px 6px; vertical-align: top; }
+  .pagina-preparo[contenteditable="true"] { outline: 2px dashed #9ec5fe; outline-offset: 4px; min-height: 200px; }
+  .pdf-ao-lado { width: 100%; height: 75vh; border: 1px solid #dee2e6; border-radius: 6px; }
+</style>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <h3 class="mb-0">Versão em página do preparo</h3>
+  <a href="{{ url_for('medico.preparo_modelos_editar', modelo_id=modelo.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Voltar ao modelo</a>
+</div>
+<p class="text-muted mb-3">{{ modelo.nome }} · PDF: <a href="{{ url_for('medico.preparo_modelos_pdf_original', modelo_id=modelo.id) }}" target="_blank">{{ pdf.nome_arquivo }}</a></p>
+
+<div class="alert alert-light border small">
+  A IA transcreve o seu PDF numa página para o paciente ler no celular. <strong>Confira com atenção ao lado do PDF</strong>:
+  a página só aparece para o paciente depois que você aprovar. Até lá, e sempre como "Ver o PDF original", o paciente tem o PDF.
+</div>
+
+{% if situacao == "gerando" %}
+<div class="alert alert-info d-flex align-items-center gap-2">
+  <div class="spinner-border spinner-border-sm"></div>
+  Gerando a página com a IA... pode levar até 1 ou 2 minutos. Esta tela se atualiza sozinha.
+</div>
+{% elif situacao == "erro" or not situacao %}
+<div class="alert {{ 'alert-danger' if situacao == 'erro' else 'alert-secondary' }}">
+  {% if situacao == "erro" %}Não foi possível gerar a página (IA indisponível ou PDF ilegível). Tente de novo.{% else %}A versão em página ainda não foi gerada.{% endif %}
+</div>
+{% if pode_editar %}
+<form method="post"><input type="hidden" name="acao" value="gerar">
+  <button class="btn btn-primary" onclick="this.disabled=true;this.form.submit();"><i class="bi bi-magic"></i> Gerar a página com IA</button>
+</form>
+{% endif %}
+{% else %}
+  {% if situacao == "aprovada" %}
+  <div class="alert alert-success py-2">
+    <i class="bi bi-check-circle"></i> <strong>Publicada:</strong> o paciente vê esta página no link do WhatsApp
+    (aprovada em {{ pdf.pagina_aprovada_em.strftime('%d/%m/%Y %H:%M') if pdf.pagina_aprovada_em else '-' }}).
+  </div>
+  {% else %}
+  <div class="alert alert-warning py-2"><i class="bi bi-hourglass-split"></i> <strong>Aguardando a sua aprovação</strong> - o paciente ainda vê só o PDF.</div>
+  {% endif %}
+
+  {% if pdf.lista_avisos_pagina %}
+  <div class="alert alert-danger py-2 small">
+    <i class="bi bi-exclamation-triangle-fill"></i> <strong>Confira:</strong> estes números/palavras do PDF não aparecem na página -
+    pode ser só formatação, mas verifique se nada foi omitido:
+    <div class="mt-1">{% for a in pdf.lista_avisos_pagina %}<span class="badge bg-light text-dark border me-1">{{ a }}</span>{% endfor %}</div>
+  </div>
+  {% endif %}
+
+  <form method="post" id="form-pagina">
+    <input type="hidden" name="pagina_html" id="campo-pagina-html">
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <strong>Página para o paciente</strong>
+          {% if pode_editar %}<span class="small text-muted"><i class="bi bi-pencil"></i> toque no texto para corrigir</span>{% endif %}
+        </div>
+        <div class="card p-3">
+          <div class="pagina-preparo" id="pagina-editavel" {% if pode_editar %}contenteditable="true"{% endif %}>{{ pdf.pagina_html | safe }}</div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <strong class="d-block mb-1">PDF original</strong>
+        <iframe class="pdf-ao-lado d-none d-lg-block" src="{{ url_for('medico.preparo_modelos_pdf_original', modelo_id=modelo.id) }}"></iframe>
+        <a class="btn btn-outline-secondary d-lg-none" href="{{ url_for('medico.preparo_modelos_pdf_original', modelo_id=modelo.id) }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> Abrir o PDF para comparar</a>
+      </div>
+    </div>
+    {% if pode_editar %}
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      <button type="submit" name="acao" value="aprovar" class="btn btn-success"><i class="bi bi-check2-circle"></i> {{ 'Salvar e manter publicada' if situacao == 'aprovada' else 'Aprovar e publicar para o paciente' }}</button>
+      <button type="submit" name="acao" value="salvar" class="btn btn-outline-primary">Salvar sem publicar</button>
+      {% if situacao == "aprovada" %}
+      <button type="submit" name="acao" value="tirar" class="btn btn-outline-danger" onclick="return confirm('Tirar a página do ar? O paciente volta a ver só o PDF.');">Tirar do ar</button>
+      {% endif %}
+    </div>
+    {% endif %}
+  </form>
+  {% if pode_editar %}
+  <form method="post" class="mt-2" onsubmit="return confirm('Gerar a página de novo com a IA? As suas correções serão perdidas e será preciso aprovar de novo.');">
+    <input type="hidden" name="acao" value="gerar">
+    <button class="btn btn-link btn-sm px-0"><i class="bi bi-arrow-repeat"></i> Gerar de novo com a IA</button>
+  </form>
+  {% endif %}
+{% endif %}
+
+<script>
+  (function () {
+    var form = document.getElementById('form-pagina');
+    if (!form) return;
+    form.addEventListener('submit', function () {
+      document.getElementById('campo-pagina-html').value = document.getElementById('pagina-editavel').innerHTML;
+    });
+  })();
+</script>
+{% endblock %}

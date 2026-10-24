@@ -185,6 +185,16 @@
     font-weight: 700;
   }
   .cartao-original .baixar { color: var(--azul); font-size: 0.9rem; }
+  /* Versão em página do PDF, aprovada pelo médico (2026-10-24) */
+  .pagina-preparo { color: #212529; font-size: 0.98rem; line-height: 1.5; margin-bottom: 16px; }
+  .pagina-preparo h2 { font-size: 1.1rem; margin: 18px 0 8px; color: #14213d; }
+  .pagina-preparo h3 { font-size: 1rem; margin: 14px 0 6px; color: #14213d; }
+  .pagina-preparo p { margin: 0 0 10px; }
+  .pagina-preparo ul, .pagina-preparo ol { margin: 0 0 10px; padding-left: 22px; }
+  .pagina-preparo li { margin-bottom: 4px; }
+  .pagina-preparo table { width: 100%; border-collapse: collapse; margin: 0 0 12px; font-size: 0.9rem; display: block; overflow-x: auto; }
+  .pagina-preparo th, .pagina-preparo td { border: 1px solid #cfd8e3; padding: 6px; text-align: left; vertical-align: top; }
+  .pagina-preparo th { background: #e8f0fb; }
   @media print {
     body { background: #fff; padding: 0; }
     .documento { box-shadow: none; border-radius: 0; max-width: 100%; }
@@ -219,11 +229,19 @@
   </nav>
   <div class="cartao-original" id="preparo-medico">
     <h2>Preparo do médico</h2>
+    {% if pdf_original.pagina_para_paciente %}
+    <div class="pagina-preparo">{{ pdf_original.pagina_para_paciente | safe }}</div>
+    <div class="acoes">
+      <a class="baixar" href="{{ url_for('paciente.preparo_publico_original', token=agendamento.token_preparo_publico) }}" target="_blank" rel="noopener">Ver o PDF original</a>
+      <a class="baixar" href="{{ url_for('paciente.preparo_publico_original', token=agendamento.token_preparo_publico, baixar=1) }}">Baixar o PDF</a>
+    </div>
+    {% else %}
     <p>As instruções do preparo exatamente como o médico escreveu.</p>
     <div class="acoes">
       <a class="abrir" href="{{ url_for('paciente.preparo_publico_original', token=agendamento.token_preparo_publico) }}" target="_blank" rel="noopener">Abrir o preparo (PDF)</a>
       <a class="baixar" href="{{ url_for('paciente.preparo_publico_original', token=agendamento.token_preparo_publico, baixar=1) }}">Baixar</a>
     </div>
+    {% endif %}
   </div>
   {% endif %}
 

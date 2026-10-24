@@ -26,6 +26,8 @@
         <td>
           {% if c.tipo_uso == "importacao_pdf_preparo" %}
             Importação de PDF
+          {% elif c.tipo_uso == "pagina_pdf_preparo" %}
+            Página do PDF de preparo
           {% else %}
             Chat de dúvidas
           {% endif %}

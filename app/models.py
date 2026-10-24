@@ -1615,8 +1615,39 @@ class PreparoPdfOriginal(db.Model):
     conteudo = db.deferred(db.Column(db.LargeBinary, nullable=False))
     enviado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
     enviado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    # Versão em página (HTML) do PDF, feita pela IA e aprovada pelo médico
+    # (2026-10-24, ver app.ia_pdf_html). Status: None (não gerada),
+    # "gerando", "revisar" (pronta, falta aprovar), "aprovada" ou "erro".
+    # O paciente só vê a página com status "aprovada".
+    pagina_html = db.Column(db.Text)
+    pagina_status = db.Column(db.String(20))
+    # Números/palavras do PDF que não apareceram na página (um por linha).
+    pagina_avisos = db.Column(db.Text)
+    pagina_atualizada_em = db.Column(db.DateTime)
+    pagina_aprovada_em = db.Column(db.DateTime)
+    pagina_aprovada_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
 
     preparo_modelo = db.relationship("PreparoModelo", back_populates="pdf_original")
+
+    # Geração que não terminou nesse tempo (ex.: o servidor reiniciou no
+    # meio) é tratada como erro - dá para gerar de novo.
+    LIMITE_GERANDO_MINUTOS = 10
+
+    @property
+    def situacao_pagina(self):
+        if self.pagina_status == "gerando" and self.pagina_atualizada_em and (
+            datetime.utcnow() - self.pagina_atualizada_em
+        ).total_seconds() > self.LIMITE_GERANDO_MINUTOS * 60:
+            return "erro"
+        return self.pagina_status
+
+    @property
+    def pagina_para_paciente(self):
+        return self.pagina_html if self.pagina_status == "aprovada" and self.pagina_html else None
+
+    @property
+    def lista_avisos_pagina(self):
+        return [a for a in (self.pagina_avisos or "").split("\n") if a]
 
 
 class Agendamento(db.Model):

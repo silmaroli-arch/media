@@ -9,6 +9,7 @@ from app.models import Agendamento, PreparoModelo, PreparoPdfOriginal
 
 app = create_app()
 app.config["WTF_CSRF_ENABLED"] = False
+app.config["PAGINA_PDF_SINCRONO"] = True
 
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
 

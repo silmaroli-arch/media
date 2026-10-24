@@ -2764,6 +2764,14 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Lista de modelos no celular: só o nome (com o médico criador embaixo) e os botões Editar/Remover; as colunas de detalhe aparecem a partir de tablet/computador (antes a tabela estourava a largura da tela).
 - Teste ajustado: `test_preparo_importar_pdf_mobile.py`.
 
+## Versão em página (HTML) do PDF do preparo, aprovada pelo médico (2026-10-24, pedido do Silvan - "opção 3")
+
+- A IA transcreve o PDF original numa página para o celular (mesmo visual da linha do tempo); o médico revisa ao lado do PDF, corrige o texto e aprova; só então o paciente vê a página no link do WhatsApp (com "Ver o PDF original" / "Baixar o PDF" embaixo). Sem aprovação, o paciente continua vendo o cartão do PDF.
+- `app/ia_pdf_html.py`: cadeia Gemini (PDF nativo) -> Claude (PDF nativo) -> ChatGPT (texto extraído); prompt de TRANSCRIÇÃO (sem resumir, omitir, completar ou trocar termos/números); `sanitizar_html` (allowlist: h2/h3/p/ul/ol/li/strong/em/br/tabela, sem atributos fora colspan/rowspan) aplicado ao que a IA devolve e ao que o médico edita; `conferir_fidelidade` (sem IA) lista números/palavras do PDF que não aparecem na página, mostrados em vermelho na revisão. Custo registrado como `pagina_pdf_preparo` ("Página do PDF de preparo" no painel de custo do dono). Roda em segundo plano (thread; >120s do gunicorn); "gerando" há mais de 10 min conta como erro.
+- `PreparoPdfOriginal`: colunas `pagina_html`, `pagina_status` (None/gerando/revisar/aprovada/erro), `pagina_avisos`, `pagina_atualizada_em`, `pagina_aprovada_em`, `pagina_aprovada_por_id` (migrar_banco.py, ADD COLUMN IF NOT EXISTS - validado no Postgres local com a tabela já existente).
+- Anexar um PDF novo (ou salvar um modelo com o PDF importado) já começa a gerar a página e mostra "Revise e aprove aqui". Tela `medico.preparo_modelos_pdf_pagina` (`/equipe/preparo-modelos/<id>/pdf-original/pagina`): texto editável (toque para corrigir), PDF ao lado (no celular, botão para abrir), "Aprovar e publicar", "Salvar sem publicar", "Tirar do ar", "Gerar de novo". Só quem pode editar o modelo aprova. O formulário do modelo mostra a situação da página.
+- Teste novo: `test_preparo_pdf_pagina.py` (IA simulada - a qualidade da transcrição com um PDF real ainda precisa ser conferida no media-dev).
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").
@@ -2891,6 +2899,11 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Modelos de preparo > editar: anexar o PDF do preparo em "Preparo original (PDF)"; abrir o link do WhatsApp do paciente e conferir "Preparo do médico" primeiro e a linha do tempo embaixo
 - [ ] Importar um PDF para criar um modelo novo: a revisão já vem com "Usar o PDF importado" marcado e, depois de salvar, o PDF aparece no modelo
 - [ ] No celular: "Abrir o preparo (PDF)" abre o arquivo e "Baixar" baixa
+
+**Versão em página do PDF**
+- [ ] Anexar o PDF de um preparo real: aparece "Revise e aprove aqui"; em 1-2 min a página fica pronta; conferir a transcrição ao lado do PDF (avisos em vermelho), corrigir algo e aprovar
+- [ ] Link do WhatsApp do paciente: com a página aprovada, "Preparo do médico" mostra o texto direto, com "Ver o PDF original" embaixo; "Tirar do ar" volta para o PDF
+- [ ] Painel do dono > custo de IA: chamada "Página do PDF de preparo" registrada
 
 **Exames & preparo no celular**
 - [ ] Logado como médico no celular: menu "Exames & preparo" abre a lista (sem a tela de aviso); "Novo modelo", "Importar de um PDF" e "Editar" funcionam; a lista cabe na tela

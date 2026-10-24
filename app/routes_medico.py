@@ -11,6 +11,7 @@ from flask import (
     Blueprint, render_template, redirect, url_for, request, flash, session,
     current_app, jsonify, Response, stream_with_context, abort,
 )
+from markupsafe import Markup
 from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_, and_, func
@@ -51,6 +52,10 @@ from app.whatsapp_envio import (
 )
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
+from app.ia_pdf_html import (
+    agendar_geracao as agendar_geracao_pagina, conferir_fidelidade as conferir_fidelidade_pagina,
+    sanitizar_html as sanitizar_html_pagina, texto_do_pdf,
+)
 from app.preparo_pdf_original import (
     aplicar_no_modelo as aplicar_pdf_original, guardar_pendente as guardar_pdf_pendente, pendente_da_sessao,
     resposta_pdf_original,
@@ -2043,6 +2048,7 @@ def preparo_modelos_novo():
         erro_pdf = aplicar_pdf_original(modelo, request.form, request.files)
         if erro_pdf:
             flash(f"{erro_pdf} O modelo foi salvo sem ele.", "warning")
+        _gerar_pagina_se_pdf_novo(modelo)
         flash("Modelo de preparo cadastrado com sucesso — o exame correspondente também foi criado.", "success")
         if wizard:
             return redirect(url_for("medico.primeiros_passos"))
@@ -2188,6 +2194,7 @@ def preparo_modelos_editar(modelo_id):
         erro_pdf = aplicar_pdf_original(modelo, request.form, request.files)
         if erro_pdf:
             flash(f"{erro_pdf} O restante foi salvo.", "warning")
+        _gerar_pagina_se_pdf_novo(modelo)
         flash("Modelo de preparo atualizado.", "success")
         return redirect(url_for("medico.preparo_modelos_lista"))
 
@@ -2231,6 +2238,79 @@ def preparo_modelos_pdf_original(modelo_id):
     if not modelo.pdf_original:
         abort(404)
     return resposta_pdf_original(modelo.pdf_original)
+
+
+def _gerar_pagina_se_pdf_novo(modelo):
+    """PDF recém-anexado: já começa a gerar a versão em página (2026-10-24,
+    ver app.ia_pdf_html) - o médico revisa e aprova depois."""
+    pdf = modelo.pdf_original
+    if pdf is None or pdf.pagina_status is not None:
+        return
+    try:
+        agendar_geracao_pagina(pdf, current_user.id)
+    except Exception:
+        current_app.logger.exception("Não foi possível iniciar a página do PDF do preparo %s", modelo.id)
+        db.session.rollback()
+        return
+    flash(
+        Markup(
+            "A IA está montando a versão em página do PDF para o celular. "
+            f'<a href="{url_for("medico.preparo_modelos_pdf_pagina", modelo_id=modelo.id)}">Revise e aprove aqui</a> '
+            "- até lá o paciente vê o PDF."
+        ),
+        "info",
+    )
+
+
+@medico_bp.route("/preparo-modelos/<int:modelo_id>/pdf-original/pagina", methods=["GET", "POST"])
+@login_required
+@staff_required
+def preparo_modelos_pdf_pagina(modelo_id):
+    """Revisão da versão em página do PDF original (2026-10-24): o médico
+    confere ao lado do PDF, corrige o texto e aprova - só então o paciente
+    vê a página no link do WhatsApp."""
+    modelo = PreparoModelo.query.filter(
+        PreparoModelo.id == modelo_id, filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
+    ).first_or_404()
+    pdf = modelo.pdf_original
+    if not pdf:
+        flash("Anexe primeiro o PDF do preparo.", "warning")
+        return redirect(url_for("medico.preparo_modelos_editar", modelo_id=modelo.id))
+    pode_editar = modelo.pode_ser_editado_por(current_user)
+
+    if request.method == "POST":
+        if not pode_editar:
+            abort(403)
+        acao = request.form.get("acao")
+        if acao == "gerar":
+            agendar_geracao_pagina(pdf, current_user.id)
+            flash("Gerando a versão em página. Isso pode levar até 1 ou 2 minutos.", "info")
+        elif acao in ("salvar", "aprovar") and pdf.pagina_html is not None:
+            texto = sanitizar_html_pagina(request.form.get("pagina_html", ""))
+            if not texto:
+                flash("A página ficou vazia - nada foi salvo.", "danger")
+                return redirect(url_for("medico.preparo_modelos_pdf_pagina", modelo_id=modelo.id))
+            pdf.pagina_html = texto
+            pdf.pagina_avisos = "\n".join(conferir_fidelidade_pagina(texto_do_pdf(pdf), texto))
+            pdf.pagina_atualizada_em = datetime.utcnow()
+            if acao == "aprovar":
+                pdf.pagina_status = "aprovada"
+                pdf.pagina_aprovada_em = datetime.utcnow()
+                pdf.pagina_aprovada_por_id = current_user.id
+                flash("Página aprovada: o paciente já vê esta versão no link do WhatsApp.", "success")
+            else:
+                pdf.pagina_status = "revisar"
+                pdf.pagina_aprovada_em = pdf.pagina_aprovada_por_id = None
+                flash("Correções salvas. O paciente continua vendo o PDF até você aprovar.", "success")
+            db.session.commit()
+        elif acao == "tirar" and pdf.pagina_status == "aprovada":
+            pdf.pagina_status = "revisar"
+            pdf.pagina_aprovada_em = pdf.pagina_aprovada_por_id = None
+            db.session.commit()
+            flash("Página tirada do ar: o paciente volta a ver só o PDF.", "success")
+        return redirect(url_for("medico.preparo_modelos_pdf_pagina", modelo_id=modelo.id))
+
+    return render_template("medico/preparo_pdf_pagina.html", modelo=modelo, pdf=pdf, pode_editar=pode_editar)
 
 
 @medico_bp.route("/preparo-modelos/pdf-importado")

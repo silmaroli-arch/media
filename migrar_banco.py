@@ -516,6 +516,14 @@ ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS pergunta_faq TEXT;
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS ias_situacao VARCHAR(120);
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS ia_ajuda_app VARCHAR(20) NOT NULL DEFAULT 'Claude';
 
+-- Versao em pagina (HTML) do PDF original do preparo, aprovada pelo medico (2026-10-24).
+ALTER TABLE preparo_pdfs_originais ADD COLUMN IF NOT EXISTS pagina_html TEXT;
+ALTER TABLE preparo_pdfs_originais ADD COLUMN IF NOT EXISTS pagina_status VARCHAR(20);
+ALTER TABLE preparo_pdfs_originais ADD COLUMN IF NOT EXISTS pagina_avisos TEXT;
+ALTER TABLE preparo_pdfs_originais ADD COLUMN IF NOT EXISTS pagina_atualizada_em TIMESTAMP;
+ALTER TABLE preparo_pdfs_originais ADD COLUMN IF NOT EXISTS pagina_aprovada_em TIMESTAMP;
+ALTER TABLE preparo_pdfs_originais ADD COLUMN IF NOT EXISTS pagina_aprovada_por_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
+
 -- LGPD, minimizacao (pedido do Silvan, 2026-10-20): o sistema deixou de pedir
 -- o endereco pessoal da equipe e o e-mail, o endereco e o contato de emergencia
 -- do paciente, porque nao usava esses dados para nada. Aqui eles sao APAGADOS.
