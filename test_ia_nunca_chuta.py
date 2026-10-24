@@ -61,6 +61,23 @@ with app.app_context():
     checar("'Não reconheci': marcador sai, resposta fica e exige revisão do médico",
            texto.startswith("Não reconheci") and MARCADOR_NAO_RECONHECIDO not in texto and exige_revisao)
 
+    checar("O prompt separa 'reconhecer o que é' de 'estar no preparo' (caso do pepino)",
+           "pepino" in PROMPT_SISTEMA and "NUNCA diga que não reconheceu" in PROMPT_SISTEMA)
+    for escrito in ("NÃO_RECONHECIDO_REVISAR", "**nao_reconhecido_revisar**", "NAO RECONHECIDO REVISAR:"):
+        texto, _, _, exige = _perguntar_claude(cliente(f"{escrito} Não reconheci o \"Xyz\"."), "Xyz?", "contexto")
+        checar(f"Marcador escrito como '{escrito}' também é reconhecido e removido",
+               texto == 'Não reconheci o "Xyz".' and exige == MARCADOR_NAO_RECONHECIDO)
+    texto, chamada, *_ = _perguntar_claude(cliente("NÃO_SEI_ENCAMINHAR"), "x?", "contexto")
+    checar("'NÃO_SEI' com acento conta como não sabe", texto is None and chamada is not None)
+
+    from app.ia_preparo import _sintetizar_resposta
+    sistemas = []
+    sintese = SimpleNamespace(messages=SimpleNamespace(create=lambda **k: sistemas.append(k["system"]) or SimpleNamespace(
+        content=[SimpleNamespace(text="ok")], usage=SimpleNamespace(input_tokens=1, output_tokens=1), model="claude")))
+    _sintetizar_resposta(sintese, "Posso comer pepino?", "a", "b")
+    checar("Síntese não manda confirmar com a secretaria e prefere a IA que identificou",
+           "NUNCA recomende ao paciente confirmar" in sistemas[0] and "use a que identificou" in sistemas[0])
+
     config = PlataformaConfig.obter()
     config.ia_chat_provedor_1, config.ia_chat_provedor_2 = "Claude", "ChatGPT"
     db.session.commit()
@@ -76,6 +93,19 @@ with app.app_context():
         _responder_com_duas_ias("Posso tomar Poviztra?", exame)
     checar("As duas IAs recebem a linha da ANVISA no contexto",
            len(contextos) >= 2 and all("POVIZTRA = SEMAGLUTIDA" in c for c in contextos[:2]))
+
+    respostas = {"Claude": ("Não reconheci o Xyz.", MagicMock(), True, False, MARCADOR_NAO_RECONHECIDO),
+                 "ChatGPT": ("Em geral, evite.", MagicMock(), True, False, "CONHECIMENTO_GERAL_REVISAR")}
+    with patch("app.ia_preparo._tentar_provedor", side_effect=lambda nome, *a, **k: respostas[nome]), \
+            patch("app.ia_preparo._cliente_anthropic", return_value=None):
+        r = _responder_com_duas_ias("Posso tomar Xyz?", exame)
+    checar("Situação própria para 'não reconheceu' (não é 'conhecimento geral')",
+           r["situacao"] == {"Claude": "respondeu_nao_reconhecido", "ChatGPT": "respondeu_geral"}
+           and r["exige_revisao_medicamento"] is True)
+    from app.ia_preparo import formatar_situacao_ias
+    from app.models import PerguntaPendente
+    p = PerguntaPendente(ias_situacao=formatar_situacao_ias(r))
+    checar("Pergunta marca 'IA não reconheceu' para o aviso da tela", p.ia_nao_reconheceu and p.usou_conhecimento_geral)
 
     contextos.clear()
     with patch("app.ia_preparo._tentar_provedor", side_effect=tentar), \

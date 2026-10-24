@@ -2019,6 +2019,12 @@ class PerguntaPendente(db.Model):
         """Alguma IA respondeu com conhecimento geral, fora do preparo
         cadastrado (ver app.ia_preparo.MARCADOR_CONHECIMENTO_GERAL)."""
         return "=respondeu_geral" in (self.ias_situacao or "")
+
+    @property
+    def ia_nao_reconheceu(self):
+        """Alguma IA disse que não reconheceu um nome citado (ver
+        app.ia_preparo.MARCADOR_NAO_RECONHECIDO, 2026-10-23)."""
+        return "=respondeu_nao_reconhecido" in (self.ias_situacao or "")
     # "Terceira IA" (base de conhecimento compartilhada, ver
     # BaseConhecimentoItem e app.ia_preparo.responder_com_ia): a resposta do
     # item da base que foi consultado nesta pergunta (None quando a base

@@ -122,6 +122,11 @@
    respondido (pedido do Silvan, 2026-10-21). Perguntas antigas, sem
    ias_situacao gravada, não mostram nada aqui. #}
 {% macro situacao_ias(p) %}
+  {% if p.ia_nao_reconheceu %}
+  <div class="alert alert-warning py-2 small mb-2">
+    <i class="bi bi-question-circle"></i> Uma IA <strong>não reconheceu um nome</strong> citado pelo paciente e pediu o nome da embalagem ou o princípio ativo. Confira antes de enviar.
+  </div>
+  {% endif %}
   {% if p.usou_conhecimento_geral %}
   <div class="alert alert-warning py-2 small mb-2">
     <i class="bi bi-lightbulb"></i> Resposta com <strong>conhecimento geral</strong> da IA - não está no preparo cadastrado. Revise e ajuste ao que vale na sua clínica.
@@ -129,6 +134,7 @@
   {% endif %}
   {% for nome, estado, texto in p.situacao_ias %}
     {% if estado == "respondeu_geral" %}{{ sugestao("Sugestão do " ~ nome ~ " (conhecimento geral)", texto) }}
+    {% elif estado == "respondeu_nao_reconhecido" %}{{ sugestao("Sugestão do " ~ nome ~ " (não reconheceu o nome)", texto) }}
     {% elif estado == "respondeu" %}{{ sugestao("Sugestão do " ~ nome, texto) }}
     {% else %}<div class="campo"><span class="rotulo">{{ nome }}:</span> <em class="text-muted">{{ texto }}</em></div>{% endif %}
   {% endfor %}

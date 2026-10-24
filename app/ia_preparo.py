@@ -282,14 +282,15 @@ REGRA PRINCIPAL - NUNCA CHUTE: só afirme o que um medicamento, alimento, bebida
 
 Regras importantes:
 - Quando os dados trouxerem "Medicamentos citados na pergunta, segundo a lista oficial da ANVISA", essa lista é a fonte da verdade sobre o princípio ativo de cada nome comercial citado - ela vale mais do que o que você acha que sabe sobre aquele nome. Compare o preparo com o princípio ativo/classe que ela informa.
-- Se a pergunta cita um nome (medicamento, alimento, bebida, produto, exame) que você NÃO reconhece com certeza - nome comercial que você não conhece, nome parecido com outro, possível erro de digitação - e ele não está nos dados do preparo nem na lista da ANVISA, NÃO deduza o que ele é pela semelhança do nome, pela classe "provável", nem pelo histórico da conversa, e NÃO diga se pode ou não pode. Comece a resposta EXATAMENTE com o texto NAO_RECONHECIDO_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta dizendo que não reconheceu esse nome e pedindo o nome exatamente como está na embalagem ou o princípio ativo (ex.: "Não reconheci o medicamento \"Xyz\". Pode me informar o nome como está na embalagem ou o princípio ativo dele?"). Essa resposta sempre passa pela revisão do médico antes de chegar ao paciente. O marcador é removido automaticamente antes de qualquer exibição.
+- "Reconhecer" é saber O QUE o item é - não é ele estar escrito no preparo. Um alimento comum (pepino, arroz, banana, pão), uma bebida comum ou um medicamento conhecido você reconhece com certeza, mesmo que o preparo não cite esse nome: nesse caso NUNCA diga que não reconheceu nem pergunte se é aquilo mesmo. Verifique se ele é coberto por algum item ou categoria do preparo (ex.: pepino é um legume/vegetal com casca e sementes; laranja é uma fruta) e responda pela regra cadastrada. Se o preparo não cobre esse item nem a categoria dele, responda com o que normalmente se orienta para esse tipo de exame, pela regra do CONHECIMENTO_GERAL_REVISAR abaixo (ex.: "Em geral, no preparo para colonoscopia, legumes com casca e sementes, como o pepino, são evitados nos dias anteriores ao exame.").
+- Se a pergunta cita um nome (medicamento, alimento, bebida, produto, exame) que você NÃO sabe o que é - nome comercial que você não conhece, nome parecido com outro, possível erro de digitação - e ele não está nos dados do preparo nem na lista da ANVISA, NÃO deduza o que ele é pela semelhança do nome, pela classe "provável", nem pelo histórico da conversa, e NÃO diga se pode ou não pode. Comece a resposta EXATAMENTE com o texto NAO_RECONHECIDO_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta dizendo que não reconheceu esse nome e pedindo o nome exatamente como está na embalagem ou o princípio ativo (ex.: "Não reconheci o medicamento \"Xyz\". Pode me informar o nome como está na embalagem ou o princípio ativo dele?"). Essa resposta sempre passa pela revisão do médico antes de chegar ao paciente. O marcador é removido automaticamente antes de qualquer exibição.
 - Responda em português do Brasil, de forma direta, curta (no máximo 3-4 frases) e acolhedora.
 - Você pode (e deve) fazer um pequeno raciocínio sobre IDENTIDADE do que foi cadastrado — por exemplo, reconhecer que "gatorade" citado na pergunta é o mesmo item cadastrado como "Gatorade de cor clara", ou que uma fruta específica (ex.: laranja) está coberta por uma categoria genérica cadastrada (ex.: "Frutas"), ou que um medicamento citado pela marca corresponde a um item cadastrado por outro nome.
 - Preste atenção especial a essa identidade quando a pergunta for sobre um MEDICAMENTO citado por nome comercial/marca (ex.: "Ecasil", "Somalgin", "AAS", "Aspirina" são todos nomes comerciais de ácido acetilsalicílico no Brasil) — use a lista da ANVISA (quando vier nos dados) ou seu conhecimento geral de farmácia, SÓ quando tiver certeza, para identificar o princípio ativo ou a classe do medicamento perguntado, e então verifique se esse princípio ativo/classe corresponde a algum item já cadastrado no preparo (pelo nome ou pela categoria informada), mesmo que o nome comercial citado pelo paciente seja diferente do nome cadastrado.
 - Quando a pergunta for sobre um MEDICAMENTO que você consegue identificar (nome, princípio ativo ou classe), mas que não corresponde a NENHUM item cadastrado neste preparo (nem pelo nome, nem pela categoria) — por exemplo, um anticoagulante que não está na lista —, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto MEDICAMENTO_NAO_CADASTRADO_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta que: (1) diga claramente que esse medicamento específico não está cadastrado no preparo deste exame; e (2) compartilhe, de forma genérica, o que normalmente se sabe sobre esse tipo de medicamento em relação a exames como este (ex.: "anticoagulantes geralmente precisam ser suspensos antes de exames com risco de sangramento, como colonoscopia"). NUNCA afirme um prazo de suspensão específico (em dias/horas) para um medicamento que não está cadastrado — isso continua proibido mesmo nesse tipo de resposta. Não é preciso terminar orientando o paciente a confirmar com a secretaria/médico — essa resposta sempre passa pela revisão e aprovação do médico antes de chegar ao paciente (o marcador MEDICAMENTO_NAO_CADASTRADO_REVISAR garante isso, mesmo quando a aprovação geral está desativada), então essa recomendação final é redundante; o médico que revisa decide se quer complementar a resposta. O marcador é removido automaticamente antes de qualquer exibição — nunca omita-o quando esta regra se aplicar, mesmo que pareça repetitivo.
 - NUNCA faça o raciocínio de identidade acima sobre uma CARACTERÍSTICA do produto que os dados não informam (ex.: qual é a cor de um sabor específico de bebida, se um alimento tem ou não determinado ingrediente). Isso é inventar informação, mesmo que pareça um "senso comum" — cores de sabores variam por marca/país e você pode errar. Nesses casos, explique a regra cadastrada (ex.: "só é permitido líquido de cor clara") e oriente o paciente a verificar essa característica específica por conta própria (observando a embalagem) ou perguntar à secretaria — nunca afirme se aquele sabor/produto específico atende ou não à regra quando isso não estiver explícito nos dados.
 - Cite os prazos do jeito que estão nos dados (ex.: "3 dias antes do exame", "12 horas antes do exame"). NUNCA escreva uma data ou um horário concreto do paciente (dia ou hora do exame dele, ou a data de um prazo), nem o nome dele: a resposta aprovada é reaproveitada para outros pacientes. Quando a data concreta ajudar, use estes marcadores, que o sistema troca pelos dados de cada paciente na hora de enviar: {data_exame} (dia do exame), {hora_exame} (horário do exame), {N dias antes} e {N horas antes} (ex.: "suspenda 3 dias antes do exame, a partir de {3 dias antes}"; "chegue de 30 a 60 minutos antes do horário do exame ({hora_exame} do dia {data_exame})").
-- Quando a pergunta for uma dúvida prática sobre ESTE exame ou o atendimento dele (ex.: que horas chegar, quanto tempo dura, o que levar, se precisa de acompanhante, se pode ir dirigindo, como é a recuperação) e os dados do preparo NÃO trazem essa informação, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto CONHECIMENTO_GERAL_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta com o que normalmente se pratica para esse tipo de exame, dita claramente como orientação geral (ex.: "Em geral, pede-se para chegar de 30 a 60 minutos antes da colonoscopia, para a recepção e o preparo."). Não afirme isso como regra desta clínica, não diga que "não tem a informação" e não oriente a confirmar com a secretaria/médico - a resposta sempre passa pela revisão do médico antes de chegar ao paciente (o marcador garante isso), e ele ajusta o que for desta clínica. Nunca use este caminho para diagnóstico, resultado de exame, tratamento ou medicamento (para medicamento, siga a regra própria acima). O marcador é removido automaticamente antes de qualquer exibição.
+- Quando a pergunta for uma dúvida prática sobre ESTE exame ou o atendimento dele (ex.: que horas chegar, quanto tempo dura, o que levar, se precisa de acompanhante, se pode ir dirigindo, como é a recuperação) e os dados do preparo NÃO trazem essa informação, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto CONHECIMENTO_GERAL_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta com o que normalmente se pratica para esse tipo de exame, dita claramente como orientação geral (ex.: "Em geral, pede-se para chegar de 30 a 60 minutos antes da colonoscopia, para a recepção e o preparo."). Não afirme isso como regra desta clínica, não diga que "não tem a informação" e não oriente a confirmar com a secretaria/médico - a resposta sempre passa pela revisão do médico antes de chegar ao paciente (o marcador garante isso), e ele ajusta o que for desta clínica. Este caminho também vale para um alimento ou bebida comum que o preparo não cobre (nem pelo nome, nem pela categoria). Nunca use este caminho para diagnóstico, resultado de exame, tratamento ou medicamento (para medicamento, siga a regra própria acima). O marcador é removido automaticamente antes de qualquer exibição.
 - Reserve o texto NAO_SEI_ENCAMINHAR só para perguntas que genuinamente não têm nenhuma informação útil a dar (ex.: assunto totalmente fora do preparo, ou um item que você não consegue identificar de jeito nenhum) — nesse caso, responda EXATAMENTE com esse texto, nada mais, nenhuma outra palavra, nenhuma pontuação extra.
 - Antes de aplicar qualquer regra acima, avalie se o texto do paciente é sequer uma pergunta ou comentário coerente (mesmo que informal, curto ou com erros de digitação/ortografia). Se o texto for palavras reais mas sem nenhum sentido coerente entre si, ou for sobre um assunto qualquer que nem chega a formar uma pergunta/comentário compreensível, responda EXATAMENTE com o texto SEM_SENTIDO_ENCAMINHAR, nada mais. NÃO use SEM_SENTIDO_ENCAMINHAR para uma pergunta coerente que só está fora do preparo ou que você não consegue identificar (esses casos usam NAO_SEI_ENCAMINHAR, acima) — a diferença é: NAO_SEI_ENCAMINHAR é "entendi a pergunta, mas não tenho a informação"; SEM_SENTIDO_ENCAMINHAR é "isso nem é uma pergunta/comentário que eu consiga entender". Na dúvida entre os dois, ou na dúvida entre usar SEM_SENTIDO_ENCAMINHAR e simplesmente responder, prefira responder normalmente ou usar NAO_SEI_ENCAMINHAR — evite usar SEM_SENTIDO_ENCAMINHAR para um texto que dá pra entender, mesmo que mal escrito.
 - NUNCA termine (nem inclua em nenhum ponto) uma resposta recomendando que o paciente "confirme/consulte/converse/fale com o médico" - isso não faz sentido neste contexto: esta própria pergunta já está sendo respondida pelo médico (ela passa pela revisão/aprovação dele antes de chegar ao paciente), então pedir para o paciente confirmar com o médico por fora é redundante e confuso. Se realmente não houver informação suficiente para responder, use o marcador NAO_SEI_ENCAMINHAR (abaixo) em vez de tentar responder e sugerir que o paciente pergunte ao médico.
@@ -476,6 +477,33 @@ def _formatar_historico_conversa(historico):
     return "\n".join(linhas) + "\n\n"
 
 
+def _padrao_marcador(marcador):
+    """Aceita o marcador como a IA às vezes escreve: com acento ("NÃO_..."),
+    em minúscula, com espaço no lugar de "_" ou em negrito (visto em
+    2026-10-24: o ChatGPT escreveu "NÃO_RECONHECIDO_REVISAR" e o marcador
+    apareceu na tela do médico)."""
+    variantes = {"A": "[AÃÁÂÀ]", "E": "[EÉÊ]", "I": "[IÍ]", "O": "[OÕÓÔ]", "U": "[UÚ]", "_": "[_ ]"}
+    return re.compile(r"\**" + "".join(variantes.get(c, re.escape(c)) for c in marcador) + r"\**:?", re.IGNORECASE)
+
+
+_PADROES_MARCADORES = None
+
+
+def _normalizar_marcadores(texto):
+    """Troca qualquer variante dos marcadores pela forma exata."""
+    global _PADROES_MARCADORES
+    if not texto:
+        return texto
+    if _PADROES_MARCADORES is None:
+        _PADROES_MARCADORES = [
+            (_padrao_marcador(m), m)
+            for m in (MARCADOR_NAO_SEI, MARCADOR_SEM_SENTIDO, MARCADOR_FORA_DO_EXAME) + MARCADORES_REVISAO
+        ]
+    for padrao, marcador in _PADROES_MARCADORES:
+        texto = padrao.sub(marcador, texto)
+    return texto
+
+
 def _extrair_marcador_medicamento_nao_cadastrado(texto):
     """Detecta o marcador MARCADOR_MEDICAMENTO_NAO_CADASTRADO no início do
     texto (ver docstring dele e a regra correspondente em PROMPT_SISTEMA),
@@ -488,10 +516,11 @@ def _extrair_marcador_medicamento_nao_cadastrado(texto):
     texto_lstrip = texto.lstrip()
     # Conhecimento geral sobre o exame (2026-10-21) tem o mesmo efeito.
     # O "não reconheci" (2026-10-23) também.
+    # Devolve o próprio marcador (verdadeiro) para a tela saber qual foi.
     for marcador in MARCADORES_REVISAO:
         if texto_lstrip.startswith(marcador):
             resto = texto_lstrip[len(marcador):].lstrip("\n ")
-            return resto, True
+            return resto, marcador
     return texto, False
 
 
@@ -542,6 +571,7 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
         sucesso=True, paciente_id=paciente_id,
     )
     texto = "".join(getattr(bloco, "text", "") for bloco in mensagem.content).strip()
+    texto = _normalizar_marcadores(texto)
     if not texto or MARCADOR_NAO_SEI in texto or (
         _eh_recusa_generica_disfarcada(texto) and not any(m in texto for m in MARCADORES_REVISAO)
     ):
@@ -582,6 +612,7 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
         sucesso=True, paciente_id=paciente_id,
     )
     texto = (resposta.choices[0].message.content or "").strip()
+    texto = _normalizar_marcadores(texto)
     if not texto or MARCADOR_NAO_SEI in texto or (
         _eh_recusa_generica_disfarcada(texto) and not any(m in texto for m in MARCADORES_REVISAO)
     ):
@@ -625,6 +656,7 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
         sucesso=True, paciente_id=paciente_id,
     )
     texto = (getattr(resposta, "text", None) or "").strip()
+    texto = _normalizar_marcadores(texto)
     if not texto or MARCADOR_NAO_SEI in texto or (
         _eh_recusa_generica_disfarcada(texto) and not any(m in texto for m in MARCADORES_REVISAO)
     ):
@@ -715,11 +747,15 @@ def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, respos
                 "duas — priorizando a informação mais completa e mais segura "
                 "(quando uma resposta é mais cautelosa que a outra, prefira a mais "
                 "cautelosa). NUNCA invente uma informação que não esteja em "
-                "nenhuma das duas respostas. Se as duas realmente se contradizem "
-                "num ponto que mudaria o que o paciente deveria fazer (e não dá "
-                "para saber qual está certa), não tente adivinhar: responda "
-                "recomendando que o paciente confirme com a secretaria/clínica "
-                "esse ponto específico, deixando claro qual é o ponto de dúvida. "
+                "nenhuma das duas respostas e nunca chute. Se as duas realmente se "
+                "contradizem num ponto que mudaria o que o paciente deveria fazer "
+                "(e não dá para saber qual está certa), não tente adivinhar: fique "
+                "com a orientação mais segura e não afirme o ponto de dúvida. Se uma "
+                "das respostas diz que não reconheceu um nome que a outra "
+                "identificou com clareza (ex.: um alimento comum), use a que "
+                "identificou. NUNCA recomende ao paciente confirmar com a "
+                "secretaria, a clínica ou o médico - esta resposta já passa pela "
+                "revisão do médico antes de ser enviada. "
                 "Responda SOMENTE com o texto que será enviado direto ao "
                 "paciente — sem títulos como 'Resposta final:', sem aspas "
                 "envolvendo tudo, e sem nenhum comentário sobre as duas IAs ou "
@@ -947,6 +983,8 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
             return "nao_configurada"
         if resposta:
             # Respondeu com conhecimento geral (fora do preparo cadastrado).
+            if exige_revisao == MARCADOR_NAO_RECONHECIDO:
+                return "respondeu_nao_reconhecido"
             return "respondeu_geral" if exige_revisao else "respondeu"
         return "nao_sabe" if chamada is not None else "erro"
 

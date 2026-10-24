@@ -65,6 +65,11 @@
               {% if p.pergunta_faq and p.pergunta_faq != p.pergunta %}
               <p class="small mb-2"><strong>Pergunta corrigida pela IA:</strong> {{ p.pergunta_faq }}</p>
               {% endif %}
+              {% if p.ia_nao_reconheceu %}
+              <div class="alert alert-warning py-2 small mb-2">
+                <i class="bi bi-question-circle"></i> Uma IA <strong>não reconheceu um nome</strong> citado pelo paciente e pediu o nome da embalagem ou o princípio ativo. Confira antes de enviar.
+              </div>
+              {% endif %}
               {% if p.usou_conhecimento_geral %}
               <div class="alert alert-warning py-2 small mb-2">
                 <i class="bi bi-lightbulb"></i> Resposta com <strong>conhecimento geral</strong> da IA - não está no preparo cadastrado. Revise e ajuste ao que vale na sua clínica.
