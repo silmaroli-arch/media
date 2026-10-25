@@ -107,6 +107,10 @@ import unicodedata
 
 from flask import current_app
 
+from app.ia_modelos import (
+    MODELO_CLAUDE, MODELO_CLAUDE_VALIDADOR, MODELO_OPENAI, criar_chat_openai, criar_mensagem_claude, texto_claude,
+)
+
 from app.custo_ia import registrar_chamada_ia
 
 MARCADOR_NAO_SEI = "NAO_SEI_ENCAMINHAR"
@@ -265,12 +269,14 @@ def _remover_recomendacao_de_consultar_medico(texto):
 # testes reais. Custa mais por chamada, mas o volume de perguntas de
 # paciente é baixo o suficiente pra isso não pesar, e o ganho de acerto
 # nesse tipo de pergunta compensa.
-MODELO_PADRAO = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+# 2026-10-25: Sonnet 4.5 descontinuado - padrão Claude Sonnet 5.5 (ver
+# app.ia_modelos, que também adapta as chamadas aos modelos novos).
+MODELO_PADRAO = MODELO_CLAUDE
 # Mantido no gpt-4o-mini (mais barato) do lado da OpenAI — como as duas IAs
 # são consultadas juntas e comparadas (reforço mútuo, ver
 # responder_com_ia), a Claude já mais forte reconhecendo a marca cobre boa
 # parte do ganho sem precisar subir o custo dos dois lados ao mesmo tempo.
-MODELO_OPENAI_PADRAO = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+MODELO_OPENAI_PADRAO = MODELO_OPENAI
 # Mesma variável de ambiente já usada pelo import de PDF (ver
 # app.ia_pdf_preparo.MODELO_PADRAO) - um único lugar para trocar o modelo
 # do Gemini em toda a aplicação.
@@ -582,9 +588,10 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
     responder_com_ia que esta resposta específica precisa SEMPRE passar
     pelo médico, mesmo com a aprovação geral desativada."""
     try:
-        mensagem = cliente.messages.create(
-            model=MODELO_PADRAO,
-            max_tokens=300,
+        # Resposta ao paciente: raciocínio médio (regras de identidade de
+        # medicamento, nunca chutar...).
+        mensagem = criar_mensagem_claude(
+            cliente, MODELO_PADRAO, 300, esforco="medium",
             system=PROMPT_SISTEMA,
             messages=[{
                 "role": "user",
@@ -612,7 +619,7 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
         getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
         sucesso=True, paciente_id=paciente_id,
     )
-    texto = "".join(getattr(bloco, "text", "") for bloco in mensagem.content).strip()
+    texto = texto_claude(mensagem)
     texto = _normalizar_marcadores(texto)
     if not texto or MARCADOR_NAO_SEI in texto or (
         _eh_recusa_generica_disfarcada(texto) and not any(m in texto for m in MARCADORES_REVISAO)
@@ -630,9 +637,8 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
     retorno `(texto_ou_None, chamada_ou_None, sem_sentido_bool,
     exige_revisao_medicamento_bool)`."""
     try:
-        resposta = cliente.chat.completions.create(
-            model=MODELO_OPENAI_PADRAO,
-            max_tokens=300,
+        resposta = criar_chat_openai(
+            cliente, MODELO_OPENAI_PADRAO, 300, esforco="medium",
             messages=[
                 {"role": "system", "content": PROMPT_SISTEMA},
                 {
@@ -730,9 +736,9 @@ def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=N
         # concordância sem checar).
         return True
     try:
-        veredito = cliente_anthropic.messages.create(
-            model=MODELO_PADRAO,
-            max_tokens=5,
+        # Só classifica SIM/NAO - o modelo barato do validador basta.
+        veredito = criar_mensagem_claude(
+            cliente_anthropic, MODELO_CLAUDE_VALIDADOR, 5, esforco="low",
             system=(
                 "Compare as duas respostas abaixo, dadas por assistentes diferentes à "
                 "mesma pergunta de um paciente sobre preparo de exame. Responda SOMENTE "
@@ -753,11 +759,11 @@ def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=N
         )
         uso = getattr(veredito, "usage", None)
         registrar_chamada_ia(
-            "chat_duvida_paciente", "Claude", getattr(veredito, "model", MODELO_PADRAO),
+            "chat_duvida_paciente", "Claude", getattr(veredito, "model", MODELO_CLAUDE_VALIDADOR),
             getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
             sucesso=True, paciente_id=paciente_id,
         )
-        texto = "".join(getattr(bloco, "text", "") for bloco in veredito.content).strip().upper()
+        texto = texto_claude(veredito).upper()
         return texto.startswith("NAO")
     except Exception:
         return True
@@ -781,9 +787,8 @@ def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, respos
     if not cliente_anthropic:
         return None
     try:
-        sintese = cliente_anthropic.messages.create(
-            model=MODELO_PADRAO,
-            max_tokens=300,
+        sintese = criar_mensagem_claude(
+            cliente_anthropic, MODELO_PADRAO, 300, esforco="medium",
             system=(
                 "Duas IAs diferentes responderam à mesma pergunta de um paciente "
                 "sobre preparo de exame, com respostas que divergem em algum ponto. "
@@ -820,7 +825,7 @@ def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, respos
             }],
         )
         uso = getattr(sintese, "usage", None)
-        texto = "".join(getattr(bloco, "text", "") for bloco in sintese.content).strip()
+        texto = texto_claude(sintese)
         # Quando dá certo, o texto desta chamada é literalmente o que vira
         # a resposta final (ver responder_com_ia) - diferente das duas
         # respostas "cruas" que ela concilia, que nesse caso NÃO são a
@@ -1359,20 +1364,21 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
 
     try:
         if provedor == "Claude":
-            resposta = cliente.messages.create(
-                model=MODELO_PADRAO, max_tokens=120, system=PROMPT_SISTEMA_VALIDADOR,
+            # Validador: Claude Haiku 5.5 (rápido e barato), ver app.ia_modelos.
+            resposta = criar_mensagem_claude(
+                cliente, MODELO_CLAUDE_VALIDADOR, 120, esforco="low", system=PROMPT_SISTEMA_VALIDADOR,
                 messages=[{"role": "user", "content": conteudo}],
             )
             uso = getattr(resposta, "usage", None)
             chamada = registrar_chamada_ia(
-                "validador_pergunta_paciente", "Claude", getattr(resposta, "model", MODELO_PADRAO),
+                "validador_pergunta_paciente", "Claude", getattr(resposta, "model", MODELO_CLAUDE_VALIDADOR),
                 getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
                 sucesso=True, paciente_id=paciente_id,
             )
-            texto = "".join(getattr(bloco, "text", "") for bloco in resposta.content).strip()
+            texto = texto_claude(resposta)
         elif provedor == "ChatGPT":
-            resposta = cliente.chat.completions.create(
-                model=MODELO_OPENAI_PADRAO, max_tokens=120,
+            resposta = criar_chat_openai(
+                cliente, MODELO_OPENAI_PADRAO, 120, esforco="low",
                 messages=[
                     {"role": "system", "content": PROMPT_SISTEMA_VALIDADOR},
                     {"role": "user", "content": conteudo},

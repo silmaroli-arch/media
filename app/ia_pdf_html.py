@@ -29,6 +29,7 @@ from app.ia_pdf_preparo import (
     MODELO_ANTHROPIC_PADRAO, MODELO_OPENAI_PADRAO, MODELO_PADRAO, _cliente_claude, _cliente_gemini,
     _cliente_openai,
 )
+from app.ia_modelos import criar_chat_openai, criar_mensagem_claude, texto_claude
 from app.pdf_preparo import extrair_texto
 
 logger = logging.getLogger(__name__)
@@ -155,8 +156,8 @@ def _via_gemini(cliente, pdf_bytes, texto, uso):
 
 
 def _via_claude(cliente, pdf_bytes, texto, uso):
-    resposta = cliente.messages.create(
-        model=MODELO_ANTHROPIC_PADRAO, max_tokens=16384, system=PROMPT_SISTEMA,
+    resposta = criar_mensagem_claude(
+        cliente, MODELO_ANTHROPIC_PADRAO, 16384, system=PROMPT_SISTEMA,
         messages=[{"role": "user", "content": [
             {"type": "document", "source": {"type": "base64", "media_type": "application/pdf",
                                              "data": base64.standard_b64encode(pdf_bytes).decode("ascii")}},
@@ -166,15 +167,15 @@ def _via_claude(cliente, pdf_bytes, texto, uso):
     meta = getattr(resposta, "usage", None)
     uso.update(modelo=getattr(resposta, "model", None) or MODELO_ANTHROPIC_PADRAO,
                tokens_entrada=getattr(meta, "input_tokens", None), tokens_saida=getattr(meta, "output_tokens", None))
-    return "".join(getattr(bloco, "text", "") for bloco in resposta.content)
+    return texto_claude(resposta)
 
 
 def _via_openai(cliente, pdf_bytes, texto, uso):
     # O ChatGPT recebe o texto extraído (sem o PDF) - não serve para PDF escaneado.
     if not texto.strip():
         raise ValueError("PDF sem texto selecionável")
-    resposta = cliente.chat.completions.create(
-        model=MODELO_OPENAI_PADRAO, max_tokens=16384,
+    resposta = criar_chat_openai(
+        cliente, MODELO_OPENAI_PADRAO, 16384,
         messages=[{"role": "system", "content": PROMPT_SISTEMA},
                   {"role": "user", "content": f"Texto extraído do PDF de preparo:\n\n---\n{texto}\n---"}],
     )

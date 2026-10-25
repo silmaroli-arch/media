@@ -112,8 +112,10 @@ Regras importantes:
 # chat de dúvidas do paciente (ver app.ia_preparo.MODELO_PADRAO/
 # MODELO_OPENAI_PADRAO), de propósito: um único par de chaves/modelo por
 # provedor serve os dois usos, sem precisar manter configuração duplicada.
-MODELO_OPENAI_PADRAO = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-MODELO_ANTHROPIC_PADRAO = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+# Os mesmos modelos do chat (ver app.ia_modelos, 2026-10-25).
+from app.ia_modelos import MODELO_CLAUDE as MODELO_ANTHROPIC_PADRAO  # noqa: E402
+from app.ia_modelos import MODELO_OPENAI as MODELO_OPENAI_PADRAO  # noqa: E402
+from app.ia_modelos import criar_chat_openai, criar_mensagem_claude, texto_claude  # noqa: E402
 
 
 def _cliente_gemini():
@@ -368,9 +370,8 @@ def _extrair_via_openai(cliente, texto_extraido, uso):
     indisponível (ver docstring do módulo). Sempre recebe o texto
     extraído (nunca o PDF nativo) - ver docstring do módulo sobre essa
     limitação intencional. `uso`: ver docstring de _extrair_via_gemini."""
-    resposta = cliente.chat.completions.create(
-        model=MODELO_OPENAI_PADRAO,
-        max_tokens=16384,
+    resposta = criar_chat_openai(
+        cliente, MODELO_OPENAI_PADRAO, 16384,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": PROMPT_SISTEMA},
@@ -400,9 +401,8 @@ def _extrair_via_claude(cliente, texto_extraido, uso):
     ChatGPT estiverem ambos indisponíveis (ver docstring do módulo).
     Sempre recebe o texto extraído (nunca o PDF nativo) - mesma limitação
     intencional do ChatGPT. `uso`: ver docstring de _extrair_via_gemini."""
-    resposta = cliente.messages.create(
-        model=MODELO_ANTHROPIC_PADRAO,
-        max_tokens=16384,
+    resposta = criar_mensagem_claude(
+        cliente, MODELO_ANTHROPIC_PADRAO, 16384,
         system=PROMPT_SISTEMA,
         messages=[{
             "role": "user",
@@ -418,7 +418,7 @@ def _extrair_via_claude(cliente, texto_extraido, uso):
     uso["tokens_entrada"] = getattr(meta, "input_tokens", None)
     uso["tokens_saida"] = getattr(meta, "output_tokens", None)
 
-    texto = "".join(getattr(bloco, "text", "") for bloco in resposta.content)
+    texto = texto_claude(resposta)
     dados = _extrair_json(texto)
     finish_reason = getattr(resposta, "stop_reason", "?")
     _log_diagnostico("Claude", dados, finish_reason)

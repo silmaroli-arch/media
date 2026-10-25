@@ -45,6 +45,13 @@ PRECOS_POR_MILHAO_TOKENS = {
     # Anthropic (preço estável entre Sonnet 3.7 e 4.6, incluindo o 4.5
     # usado hoje como padrão - ver app.ia_preparo.MODELO_PADRAO)
     "claude-sonnet-4-5": (3.00, 15.00),
+    # Modelos novos (2026-10-25, preços oficiais da Anthropic; os da OpenAI
+    # são aproximados - conferir no painel da OpenAI).
+    "claude-sonnet-5-5": (2.00, 10.00),
+    "claude-opus-5-5": (4.00, 20.00),
+    "claude-haiku-5-5": (0.10, 0.50),
+    "gpt-5.4-mini": (0.75, 4.50),
+    "gpt-5.4-nano": (0.20, 1.25),
 }
 
 

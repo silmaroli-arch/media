@@ -2783,6 +2783,16 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Chat em modal (2026-10-25, pedido do Silvan - o painel solto ficou ruim no tablet): o chat da Malu abre num modal do Bootstrap como os outros do app (centralizado, fundo escurecido, fecha no X, no fundo ou com Esc); a conversa continua guardada na aba (sessionStorage).
 - Teste: `test_ajuda_app.py` ampliado.
 
+## Modelos de IA novos: Claude Sonnet 5.5 e Haiku 5.5, GPT-5 suportado (2026-10-25, decisão do Silvan)
+
+- Motivo: o Claude Sonnet 4.5 (padrão até aqui) foi descontinuado pela Anthropic; Sonnet 5.5 custa menos por token (US$ 2/10 por milhão vs 3/15) e é mais capaz. Silvan quer manter mais de uma IA (Claude + ChatGPT/Gemini).
+- `app/ia_modelos.py` (novo): padrões `MODELO_CLAUDE` = `claude-sonnet-5-5` (env `ANTHROPIC_MODEL`), `MODELO_CLAUDE_VALIDADOR` = `claude-haiku-5-5` (env nova `ANTHROPIC_MODEL_VALIDADOR`), `MODELO_OPENAI` (env `OPENAI_MODEL`, padrão ainda gpt-4o-mini). `criar_mensagem_claude`: nos modelos 5.x soma 4.000 tokens de folga ao max_tokens (o raciocínio, sempre ligado, usa a saída), manda `output_config.effort` (respostas ao paciente e síntese: medium; validador, divergência, ajuda, aprendizado, PDF: low) e, no Sonnet 5.5/Opus 5/Fable, o fallback do servidor (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`; se a conta não aceitar, segue sem). `texto_claude` ignora blocos de raciocínio/fallback e devolve vazio em recusa (`stop_reason: refusal`). `criar_chat_openai`: GPT-5/"o" usam `max_completion_tokens` (+ folga) e `reasoning_effort`.
+- Todas as chamadas Claude/OpenAI passam por lá: chat do paciente, divergência (agora no Haiku), síntese, validador (Claude = Haiku 5.5), ajuda (Malu), aprendizado do FAQ, importação de PDF e página do PDF.
+- `custo_ia.PRECOS_POR_MILHAO_TOKENS`: claude-sonnet-5-5 (2/10), claude-opus-5-5 (4/20), claude-haiku-5-5 (0,10/0,50) oficiais; gpt-5.4-mini (0,75/4,50) e gpt-5.4-nano (0,20/1,25) aproximados (conferir no painel da OpenAI).
+- Cache de prompt NÃO ligado: o cache dura 5 min e cada gravação custa 25% a mais - com o volume atual de perguntas sairia mais caro. Reavaliar se o volume crescer.
+- **No Render (media-dev e media-prod)**: trocar/remover `ANTHROPIC_MODEL=claude-sonnet-4-5` (se existir, ele manda) -> `claude-sonnet-5-5`; opcional `OPENAI_MODEL=gpt-5.4-mini` depois de conferir o nome exato no painel da OpenAI. Na área do dono, IA validadora = Claude (Haiku 5.5).
+- Teste novo: `test_ia_modelos.py` (confere o pedido HTTP montado pelo SDK, sem rede).
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").
@@ -2916,6 +2926,10 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Link do WhatsApp: tocar em "Linha do tempo" mostra só a linha do tempo e "Preparo do médico" só o preparo; o "Baixar PDF" do topo baixa o PDF da aba aberta
 - [ ] Link do WhatsApp do paciente: com a página aprovada, "Preparo do médico" mostra o texto direto, com "Ver o PDF original" embaixo; "Tirar do ar" volta para o PDF
 - [ ] Painel do dono > custo de IA: chamada "Página do PDF de preparo" registrada
+
+**Modelos de IA novos**
+- [ ] Render: `ANTHROPIC_MODEL=claude-sonnet-5-5` (ou apagar a variável) e, se for usar, `OPENAI_MODEL=gpt-5.4-mini`; Configurações do dono: IA validadora = Claude
+- [ ] Repetir no media-dev: Poviztra, Wegovy, pepino, "O exame dói", nome inventado; conferir no painel de custo os modelos novos e o custo por chamada
 
 **Malu (ajuda do app)**
 - [ ] Botão "Fale com a Malu" na barra do topo, ao lado do menu, destacado (pulsando até abrir a primeira vez); o chat abre num modal como os outros do app; perguntar "qual o seu nome?" e "como anexo o PDF do preparo?"

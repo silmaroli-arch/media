@@ -113,6 +113,7 @@ def responder(pergunta, usuario, tela=None):
     from app.ia_preparo import (
         MODELO_GEMINI_PADRAO, MODELO_OPENAI_PADRAO, MODELO_PADRAO, _PROVEDORES_CHAT,
     )
+    from app.ia_modelos import criar_chat_openai, criar_mensagem_claude, texto_claude
     from app.models import AjudaMensagem, PlataformaConfig
 
     provedor = PlataformaConfig.obter().ia_ajuda_app or "Claude"
@@ -130,8 +131,8 @@ def responder(pergunta, usuario, tela=None):
     if cliente:
         try:
             if provedor == "Claude":
-                resposta = cliente.messages.create(
-                    model=MODELO_PADRAO, max_tokens=600, system=PROMPT_SISTEMA, messages=mensagens,
+                resposta = criar_mensagem_claude(
+                    cliente, MODELO_PADRAO, 600, esforco="low", system=PROMPT_SISTEMA, messages=mensagens,
                 )
                 uso = getattr(resposta, "usage", None)
                 registrar_chamada_ia(
@@ -139,10 +140,10 @@ def responder(pergunta, usuario, tela=None):
                     getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
                     sucesso=True, usuario_id=usuario.id,
                 )
-                texto = "".join(getattr(bloco, "text", "") for bloco in resposta.content).strip()
+                texto = texto_claude(resposta)
             elif provedor == "ChatGPT":
-                resposta = cliente.chat.completions.create(
-                    model=MODELO_OPENAI_PADRAO, max_tokens=600,
+                resposta = criar_chat_openai(
+                    cliente, MODELO_OPENAI_PADRAO, 600, esforco="low",
                     messages=[{"role": "system", "content": PROMPT_SISTEMA}] + mensagens,
                 )
                 uso = getattr(resposta, "usage", None)
