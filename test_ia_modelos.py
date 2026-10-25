@@ -136,7 +136,9 @@ falso = SimpleNamespace(messages=SimpleNamespace(create=lambda **k: _Resp()))
 with patch("app.ia_preparo._cliente_anthropic", return_value=falso), \
         patch("app.ia_preparo._cliente_openai", return_value=None), patch("app.ia_preparo._cliente_gemini", return_value=None):
     html = d.post("/dono/configuracoes/modelos-ia/testar", follow_redirects=True).get_data(as_text=True)
-checar("Testar mostra quem respondeu e quem está sem chave",
-       "claude-sonnet-5-5 respondeu (ok)" in html and "ChatGPT: sem chave de API" in html)
+checar("Testar mostra, dentro do card, quem respondeu e quem está sem chave",
+       'id="resultado-teste-modelos"' in html and "<code>claude-sonnet-5-5</code>: respondeu (ok)" in html
+       and "<strong>ChatGPT</strong> - <code>gpt-5.4-mini</code>: sem chave de API" in html)
+checar("... e o resultado some ao recarregar", 'id="resultado-teste-modelos"' not in d.get("/dono/").get_data(as_text=True))
 
 print("\nTodos os testes dos modelos novos passaram.")

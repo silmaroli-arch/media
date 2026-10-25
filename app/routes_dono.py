@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from functools import wraps
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, abort, current_app
+from flask import Blueprint, render_template, redirect, url_for, request, flash, abort, current_app, session
 from sqlalchemy import func
 from flask_login import login_required, current_user
 
@@ -183,7 +183,7 @@ def dashboard():
         linhas_usuarios=linhas_usuarios, custo_total_usuarios=custo_total_usuarios,
         mensagens_suporte_novas=mensagens_suporte_novas,
         solicitacoes_exclusao=_solicitacoes_exclusao_pendentes(),
-        modelos_ia=_linhas_modelos_ia(config),
+        modelos_ia=_linhas_modelos_ia(config), teste_modelos_ia=session.pop("teste_modelos_ia", None),
     )
 
 
@@ -402,12 +402,15 @@ def configuracoes_modelos_ia_testar():
     from app.ia_preparo import _cliente_anthropic, _cliente_gemini, _cliente_openai
 
     pergunta = [{"role": "user", "content": "Responda apenas: ok"}]
+    # O resultado aparece dentro do próprio card (2026-10-25: como mensagem
+    # no topo da página, ficava fora da tela).
+    resultados = []
     for papel, rotulo in PAPEIS_MODELO.items():
         nome = modelo(papel)
         fabrica = {"openai": _cliente_openai, "gemini": _cliente_gemini}.get(papel, _cliente_anthropic)
         cliente = fabrica()
         if not cliente:
-            flash(f"{rotulo}: sem chave de API configurada no servidor.", "warning")
+            resultados.append({"rotulo": rotulo, "nome": nome, "tipo": "warning", "texto": "sem chave de API configurada no servidor"})
             continue
         try:
             if papel == "openai":
@@ -421,10 +424,12 @@ def configuracoes_modelos_ia_testar():
                 r = criar_mensagem_claude(cliente, nome, 20, messages=pergunta)
                 texto, uso = texto_claude(r), (getattr(r.usage, "input_tokens", None), getattr(r.usage, "output_tokens", None))
             registrar_chamada_ia("teste_modelo_ia", rotulo.split(" ")[0], nome, *uso, sucesso=True, usuario_id=current_user.id)
-            flash(f"{rotulo}: {nome} respondeu ({(texto or '').strip()[:30] or 'resposta vazia'}).", "success")
+            resultados.append({"rotulo": rotulo, "nome": nome, "tipo": "success",
+                               "texto": f"respondeu ({(texto or '').strip()[:30] or 'resposta vazia'})"})
         except Exception as erro:
-            flash(f"{rotulo}: {nome} NÃO funcionou - {str(erro)[:180]}", "danger")
+            resultados.append({"rotulo": rotulo, "nome": nome, "tipo": "danger", "texto": f"NÃO funcionou - {str(erro)[:180]}"})
     db.session.commit()
+    session["teste_modelos_ia"] = resultados
     return redirect(url_for("dono.dashboard") + "#painel-config")
 
 
