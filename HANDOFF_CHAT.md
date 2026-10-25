@@ -2810,6 +2810,7 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - `PlataformaConfig.modelo_claude`, `modelo_claude_validador`, `modelo_openai`, `modelo_gemini` (migrar_banco.py; validado no Postgres local).
 - Custo de IA (detalhe por usuário): rótulos por tipo de uso (validador, ajuda, aprendizado, busca na internet, teste de modelo, PDF...).
 - Ajuste (2026-10-25, pedido do Silvan): os campos viraram listas de seleção ("Padrão (modelo do servidor)", as sugestões com o preço por milhão de tokens tirado de `custo_ia`, e "Outro..." que abre um campo para digitar; um modelo digitado continua aparecendo na lista).
+- Perfis e junção (2026-10-25, pedido do Silvan, para vender um plano ~R$ 150/mês): novo papel `claude_sintese` (junção das respostas quando as 2 IAs divergem; coluna `modelo_claude_sintese`, env `ANTHROPIC_MODEL_SINTESE`, padrão Sonnet 5.5), separado das respostas para poder usar Haiku nas respostas e Sonnet só na junção. Botões "Perfis prontos" no card: **Essencial** (respostas e validador Haiku 5.5, junção Sonnet 5.5, ChatGPT gpt-5.4-nano; IA ~R$ 25 a 40 por médico/mês, 48 perguntas/dia) e **Completo** (respostas Sonnet 5.5, validador Haiku 5.5, junção Sonnet 5.5, gpt-5.4-mini; IA ~R$ 115 a 160). Qualidade do Haiku 5.5 nas respostas AINDA NÃO testada com as perguntas problemáticas (Poviztra, Wegovy, pepino, "o exame dói", nome inventado). Planos com preços diferentes por perfil no sistema (licença por plano) não foram feitos - hoje há um valor de licença só.
 - Ajuste: o resultado do "Testar" aparece dentro do card (a tela rola até ele), não mais como mensagem no topo da página, que ficava fora da tela. Validado pelo Silvan no media-dev (2026-10-25): claude-opus-5-5, claude-sonnet-5-5 (validador), gpt-5.4-mini e gemini-flash-latest responderam.
 - Com isso, não é mais preciso mexer no Render para trocar modelo (a variável antiga, se existir, só vale com o campo em branco).
 
@@ -2948,6 +2949,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Painel do dono > custo de IA: chamada "Página do PDF de preparo" registrada
 
 **Modelos de IA novos**
+- [ ] Perfis prontos (Essencial/Completo) no card Modelos das IAs: aplicar, Testar, e repetir as perguntas problemáticas com o Essencial (Haiku 5.5 nas respostas) comparando com o Completo
 - [ ] Painel do dono > Configurações > "Modelos das IAs": conferir "Em uso agora" (se aparecer claude-sonnet-4-5, digitar claude-sonnet-5-5), escolher o ChatGPT (ex.: gpt-5.4-mini), Salvar e Testar; IA validadora = Claude
 - [ ] Repetir no media-dev: Poviztra, Wegovy, pepino, "O exame dói", nome inventado; conferir no painel de custo os modelos novos e o custo por chamada
 

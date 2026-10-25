@@ -525,6 +525,7 @@ ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_claude VARCHAR(60)
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_claude_validador VARCHAR(60);
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_openai VARCHAR(60);
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_gemini VARCHAR(60);
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_claude_sintese VARCHAR(60);
 
 -- Versao em pagina (HTML) do PDF original do preparo, aprovada pelo medico (2026-10-24).
 ALTER TABLE preparo_pdfs_originais ADD COLUMN IF NOT EXISTS pagina_html TEXT;

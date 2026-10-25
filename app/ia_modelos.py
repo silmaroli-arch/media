@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 MODELOS = {
     "claude": ("modelo_claude", "ANTHROPIC_MODEL", "claude-sonnet-5-5"),
     "claude_validador": ("modelo_claude_validador", "ANTHROPIC_MODEL_VALIDADOR", "claude-haiku-5-5"),
+    # Junção das respostas quando as 2 IAs divergem (2026-10-25): separada
+    # das respostas para poder usar um modelo mais forte só nessa etapa.
+    "claude_sintese": ("modelo_claude_sintese", "ANTHROPIC_MODEL_SINTESE", "claude-sonnet-5-5"),
     "openai": ("modelo_openai", "OPENAI_MODEL", "gpt-4o-mini"),
     "gemini": ("modelo_gemini", "GEMINI_MODEL", "gemini-flash-latest"),
 }
@@ -57,6 +60,10 @@ def modelo_claude():
 
 def modelo_claude_validador():
     return modelo("claude_validador")
+
+
+def modelo_claude_sintese():
+    return modelo("claude_sintese")
 
 
 def modelo_openai():

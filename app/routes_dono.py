@@ -191,6 +191,7 @@ def dashboard():
 SUGESTOES_MODELO = {
     "claude": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
     "claude_validador": ["claude-haiku-5-5", "claude-sonnet-5-5"],
+    "claude_sintese": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
     "openai": ["gpt-5.4-mini", "gpt-5.4-nano", "gpt-4o-mini"],
     "gemini": ["gemini-flash-latest", "gemini-flash-lite-latest"],
 }
@@ -361,8 +362,9 @@ def configuracoes_ia_ajuda():
 
 
 PAPEIS_MODELO = {
-    "claude": "Claude - respostas ao paciente, síntese, ajuda, PDF",
+    "claude": "Claude - respostas ao paciente, ajuda, PDF",
     "claude_validador": "Claude - validador e checagem de divergência",
+    "claude_sintese": "Claude - junção das respostas quando as IAs divergem",
     "openai": "ChatGPT",
     "gemini": "Gemini",
 }
@@ -388,6 +390,39 @@ def configuracoes_modelos_ia():
         setattr(config, campo, valor or None)
     db.session.commit()
     flash("Modelos das IAs salvos. Use \"Testar\" para conferir se cada um responde.", "success")
+    return redirect(url_for("dono.dashboard") + "#painel-config")
+
+
+# Perfis prontos de modelos (2026-10-25, pedido do Silvan): "Essencial" para
+# um plano de ~R$ 150/mês por médico (custo de IA ~R$ 25 a 40) e "Completo"
+# para ~R$ 497 (~R$ 115 a 160). Valores None = Padrão do servidor.
+PERFIS_MODELOS = {
+    "essencial": {
+        "modelo_claude": "claude-haiku-5-5", "modelo_claude_validador": "claude-haiku-5-5",
+        "modelo_claude_sintese": "claude-sonnet-5-5", "modelo_openai": "gpt-5.4-nano", "modelo_gemini": None,
+    },
+    "completo": {
+        "modelo_claude": "claude-sonnet-5-5", "modelo_claude_validador": "claude-haiku-5-5",
+        "modelo_claude_sintese": "claude-sonnet-5-5", "modelo_openai": "gpt-5.4-mini", "modelo_gemini": None,
+    },
+}
+
+
+@dono_bp.route("/configuracoes/modelos-ia/perfil", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_modelos_ia_perfil():
+    """Aplica um perfil pronto de modelos (Essencial ou Completo) de uma vez."""
+    nome = request.form.get("perfil")
+    perfil = PERFIS_MODELOS.get(nome)
+    if not perfil:
+        flash("Perfil inválido.", "danger")
+        return redirect(url_for("dono.dashboard") + "#painel-config")
+    config = PlataformaConfig.obter()
+    for campo, valor in perfil.items():
+        setattr(config, campo, valor)
+    db.session.commit()
+    flash(f'Perfil "{nome.capitalize()}" aplicado. Clique em "Testar" para conferir se cada modelo responde.', "success")
     return redirect(url_for("dono.dashboard") + "#painel-config")
 
 

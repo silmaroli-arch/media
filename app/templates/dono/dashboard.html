@@ -485,6 +485,20 @@
         <button type="submit" formaction="{{ url_for('dono.configuracoes_modelos_ia_testar') }}" class="btn btn-outline-secondary"
                 onclick="this.innerText='Testando... (até 1 minuto)';">Testar</button>
       </form>
+      <div class="mt-3 pt-3 border-top">
+        <strong class="small">Perfis prontos</strong>
+        <div class="small text-muted mb-2">Aplicam os quatro modelos de uma vez (depois dá para ajustar na lista acima).</div>
+        <form method="post" action="{{ url_for('dono.configuracoes_modelos_ia_perfil') }}" class="d-flex gap-2 flex-wrap">
+          <button name="perfil" value="essencial" class="btn btn-outline-primary btn-sm"
+                  onclick="return confirm('Aplicar o perfil Essencial (Haiku 5.5 + gpt-5.4-nano)?');">
+            Essencial <span class="text-muted">- IA ~R$ 25 a 40 por médico/mês</span>
+          </button>
+          <button name="perfil" value="completo" class="btn btn-outline-primary btn-sm"
+                  onclick="return confirm('Aplicar o perfil Completo (Sonnet 5.5 + gpt-5.4-mini)?');">
+            Completo <span class="text-muted">- IA ~R$ 115 a 160 por médico/mês</span>
+          </button>
+        </form>
+      </div>
       {% if teste_modelos_ia %}
       <div class="mt-3" id="resultado-teste-modelos">
         <strong class="small">Resultado do teste:</strong>

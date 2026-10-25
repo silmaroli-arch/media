@@ -141,4 +141,30 @@ checar("Testar mostra, dentro do card, quem respondeu e quem está sem chave",
        and "<strong>ChatGPT</strong> - <code>gpt-5.4-mini</code>: sem chave de API" in html)
 checar("... e o resultado some ao recarregar", 'id="resultado-teste-modelos"' not in d.get("/dono/").get_data(as_text=True))
 
+# Perfis prontos e junção das respostas com modelo próprio (2026-10-25).
+from app.ia_modelos import modelo_claude_sintese
+
+with app.app_context():
+    checar("Junção das respostas tem modelo próprio (padrão Sonnet 5.5)", modelo_claude_sintese() == "claude-sonnet-5-5")
+d.post("/dono/configuracoes/modelos-ia/perfil", data={"perfil": "essencial"})
+with app.app_context():
+    c = PlataformaConfig.obter()
+    checar("Perfil Essencial: Haiku nas respostas e no validador, Sonnet na junção, gpt-5.4-nano",
+           (c.modelo_claude, c.modelo_claude_validador, c.modelo_claude_sintese, c.modelo_openai)
+           == ("claude-haiku-5-5", "claude-haiku-5-5", "claude-sonnet-5-5", "gpt-5.4-nano")
+           and modelo_claude() == "claude-haiku-5-5" and modelo_claude_sintese() == "claude-sonnet-5-5")
+sistemas = []
+sintese = SimpleNamespace(messages=SimpleNamespace(create=lambda **k: sistemas.append(k["model"]) or SimpleNamespace(
+    content=[SimpleNamespace(type="text", text="ok")], usage=SimpleNamespace(input_tokens=1, output_tokens=1), model=k["model"],
+    stop_reason="end_turn")))
+from app.ia_preparo import _sintetizar_resposta
+with app.app_context():
+    _sintetizar_resposta(sintese, "Posso comer pepino?", "a", "b")
+checar("Com o Essencial, a junção usa o Sonnet e não o Haiku das respostas", sistemas == ["claude-sonnet-5-5"])
+d.post("/dono/configuracoes/modelos-ia/perfil", data={"perfil": "completo"})
+with app.app_context():
+    c = PlataformaConfig.obter()
+    checar("Perfil Completo: Sonnet nas respostas e gpt-5.4-mini", c.modelo_claude == "claude-sonnet-5-5" and c.modelo_openai == "gpt-5.4-mini")
+checar("Perfil inválido é recusado", "Perfil inválido" in d.post("/dono/configuracoes/modelos-ia/perfil", data={"perfil": "x"}, follow_redirects=True).get_data(as_text=True))
+
 print("\nTodos os testes dos modelos novos passaram.")

@@ -58,6 +58,7 @@ class PlataformaConfig(db.Model):
     # app.ia_modelos.modelo): vazio = variável de ambiente ou padrão.
     modelo_claude = db.Column(db.String(60), nullable=True)
     modelo_claude_validador = db.Column(db.String(60), nullable=True)
+    modelo_claude_sintese = db.Column(db.String(60), nullable=True)
     modelo_openai = db.Column(db.String(60), nullable=True)
     modelo_gemini = db.Column(db.String(60), nullable=True)
 

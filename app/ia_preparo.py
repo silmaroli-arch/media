@@ -108,7 +108,8 @@ import unicodedata
 from flask import current_app
 
 from app.ia_modelos import (
-    criar_chat_openai, criar_mensagem_claude, modelo_claude, modelo_claude_validador, modelo_gemini, modelo_openai,
+    criar_chat_openai, criar_mensagem_claude, modelo_claude, modelo_claude_sintese, modelo_claude_validador,
+    modelo_gemini, modelo_openai,
     texto_claude,
 )
 
@@ -771,7 +772,7 @@ def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, respos
         return None
     try:
         sintese = criar_mensagem_claude(
-            cliente_anthropic, modelo_claude(), 300, esforco="medium",
+            cliente_anthropic, modelo_claude_sintese(), 300, esforco="medium",
             system=(
                 "Duas IAs diferentes responderam à mesma pergunta de um paciente "
                 "sobre preparo de exame, com respostas que divergem em algum ponto. "
@@ -814,7 +815,7 @@ def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, respos
         # respostas "cruas" que ela concilia, que nesse caso NÃO são a
         # resposta final (ver marcação em responder_com_ia).
         registrar_chamada_ia(
-            "chat_duvida_paciente", "Claude", getattr(sintese, "model", modelo_claude()),
+            "chat_duvida_paciente", "Claude", getattr(sintese, "model", modelo_claude_sintese()),
             getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
             sucesso=True, paciente_id=paciente_id, resposta_final_usada=bool(texto),
         )
