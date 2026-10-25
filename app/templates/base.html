@@ -837,8 +837,28 @@ window.addEventListener('load', function () {
    A conversa fica guardada só nesta aba do navegador (sessionStorage). #}
 {% if current_user.is_authenticated and current_user.is_staff %}
 <style>
-  #ajudaBotao { position: fixed; right: 16px; bottom: 16px; z-index: 1040; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
-  #ajudaPainel { position: fixed; right: 16px; bottom: 72px; z-index: 1041; width: 360px; max-width: calc(100vw - 32px);
+  /* Assistente "Malu" (pedido do Silvan, 2026-10-25): botão mais destacado,
+     com avatar e nome; pulsa até a pessoa abrir a primeira vez. */
+  #ajudaBotao { position: fixed; right: 16px; bottom: 16px; z-index: 1040; border: 0; border-radius: 999px;
+                padding: 6px 18px 6px 6px; display: flex; align-items: center; gap: 10px; color: #fff; text-align: left;
+                background: linear-gradient(135deg, #0fb5a6, #1660B0); box-shadow: 0 6px 20px rgba(22,96,176,.45); }
+  #ajudaBotao:hover { filter: brightness(1.08); }
+  .malu-avatar { width: 42px; height: 42px; border-radius: 50%; background: #fff; color: #1660B0; flex: 0 0 auto;
+                 display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.15rem;
+                 box-shadow: inset 0 0 0 2px rgba(15,181,166,.6); position: relative; }
+  .malu-avatar::after { content: ""; position: absolute; right: 1px; bottom: 1px; width: 11px; height: 11px; border-radius: 50%;
+                        background: #22c55e; border: 2px solid #fff; }
+  .malu-textos { line-height: 1.15; }
+  .malu-textos strong { display: block; font-size: 1rem; }
+  .malu-textos small { font-size: .78rem; opacity: .9; }
+  #ajudaBotao.chamando { animation: maluPulso 2s ease-out infinite; }
+  @keyframes maluPulso { 0% { box-shadow: 0 0 0 0 rgba(15,181,166,.6), 0 6px 20px rgba(22,96,176,.45); }
+                         70% { box-shadow: 0 0 0 16px rgba(15,181,166,0), 0 6px 20px rgba(22,96,176,.45); }
+                         100% { box-shadow: 0 0 0 0 rgba(15,181,166,0), 0 6px 20px rgba(22,96,176,.45); } }
+  #ajudaPainel .card-header { background: linear-gradient(135deg, #0fb5a6, #1660B0); color: #fff; }
+  @media (max-width: 576px) { #ajudaBotao { padding-right: 14px; } .malu-textos small { display: none; } }
+  #ajudaPainel .card-header .malu-avatar { width: 36px; height: 36px; font-size: 1rem; }
+  #ajudaPainel { position: fixed; right: 16px; bottom: 76px; z-index: 1041; width: 360px; max-width: calc(100vw - 32px);
                  height: 480px; max-height: calc(100vh - 100px); display: none; flex-direction: column; }
   #ajudaPainel.aberto { display: flex; }
   #ajudaMensagens { flex: 1; overflow-y: auto; background: #f6f8fb; }
@@ -846,16 +866,20 @@ window.addEventListener('load', function () {
   .ajuda-balao.eu { background: #1660B0; color: #fff; margin-left: auto; }
   .ajuda-balao.ia { background: #fff; border: 1px solid #e3e7ee; }
 </style>
-<button type="button" id="ajudaBotao" class="btn btn-primary so-fora-da-janela" aria-controls="ajudaPainel" aria-expanded="false">
-  <i class="bi bi-question-circle me-1"></i>Ajuda
+<button type="button" id="ajudaBotao" class="so-fora-da-janela" aria-controls="ajudaPainel" aria-expanded="false" aria-label="Ajuda: fale com a Malu">
+  <span class="malu-avatar">M</span>
+  <span class="malu-textos"><strong>Fale com a Malu</strong><small>Dúvidas sobre o MedIA</small></span>
 </button>
 <div id="ajudaPainel" class="card so-fora-da-janela" role="dialog" aria-label="Ajuda do MedIA">
   <div class="card-header d-flex justify-content-between align-items-center py-2">
-    <strong><i class="bi bi-question-circle me-1"></i>Ajuda do MedIA</strong>
-    <button type="button" class="btn-close" id="ajudaFechar" aria-label="Fechar"></button>
+    <div class="d-flex align-items-center gap-2">
+      <span class="malu-avatar">M</span>
+      <div class="lh-sm"><strong>Malu</strong><div class="small opacity-75">Assistente do MedIA</div></div>
+    </div>
+    <button type="button" class="btn-close btn-close-white" id="ajudaFechar" aria-label="Fechar"></button>
   </div>
   <div id="ajudaMensagens" class="p-2">
-    <div class="ajuda-balao ia">Olá! Tire aqui suas dúvidas sobre como usar o MedIA - por exemplo, "como remarco um exame?" ou "como associo outro médico ao preparo?".</div>
+    <div class="ajuda-balao ia">Oi! Eu sou a Malu, assistente do MedIA. Tire aqui suas dúvidas sobre como usar o sistema - por exemplo, "como remarco um exame?" ou "como associo outro médico ao preparo?".</div>
   </div>
   <form id="ajudaForm" class="card-footer p-2 d-flex gap-2">
     <input type="text" id="ajudaTexto" class="form-control form-control-sm" maxlength="1000" placeholder="Escreva sua dúvida" autocomplete="off" required>
@@ -906,7 +930,10 @@ window.addEventListener('load', function () {
       conversa.forEach(balao);
       lista.scrollTop = lista.scrollHeight;
     }
+    // Pulsa até a primeira vez que a pessoa abre (guardado no navegador).
+    try { if (!localStorage.getItem('media_malu_vista')) botao.classList.add('chamando'); } catch (e) {}
     function abrir(aberto) {
+      if (aberto) { botao.classList.remove('chamando'); try { localStorage.setItem('media_malu_vista', '1'); } catch (e) {} }
       painel.classList.toggle('aberto', aberto);
       botao.setAttribute('aria-expanded', aberto ? 'true' : 'false');
       if (aberto) { desenhar(); campo.focus(); }

@@ -44,6 +44,9 @@ c = app.test_client()
 c.post("/login", data={"identificador": "secretaria@clinicavitoria.com", "senha": "123456"})
 html = c.get("/equipe/medico-agenda", follow_redirects=True).get_data(as_text=True)
 checar("O botão 'Ajuda' aparece para a equipe", 'id="ajudaBotao"' in html and "/equipe/ajuda" in html)
+checar("A assistente se chama Malu, com botão destacado", "Fale com a Malu" in html and "Eu sou a Malu" in html)
+from app.ajuda_app import PROMPT_SISTEMA as PROMPT_AJUDA
+checar("O prompt da ajuda diz que ela é a Malu", "Você é a Malu" in PROMPT_AJUDA)
 
 with ia('Na "Agenda de Exames", clique no exame e use "Remarcar para".'):
     r = c.post("/equipe/ajuda", json={"pergunta": "Como remarco um exame?", "tela": "medico.medico_agenda_pessoal"})

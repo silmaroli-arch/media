@@ -2775,6 +2775,12 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - PDF ao lado na revisão (2026-10-25, relatado pelo Silvan no tablet Android): o `<iframe>` não mostra PDF no Chrome do Android (aparecia só "pdf-original / Abrir"). Agora o PDF é desenhado na própria página com o pdf.js 3.11.174 (cdnjs), página por página, em qualquer tela; "Abrir o PDF em outra aba" fica como alternativa.
 - Teste novo: `test_preparo_pdf_pagina.py` (IA simulada - a qualidade da transcrição com um PDF real ainda precisa ser conferida no media-dev).
 
+## Ajuda do app vira a assistente "Malu", com botão destacado (2026-10-25, pedido do Silvan)
+
+- `base.html`: o botão flutuante "Ajuda" virou "Fale com a Malu" (avatar "M" com bolinha verde, degradê verde-azulado, subtítulo "Dúvidas sobre o MedIA"; no celular só o nome). Pulsa até a pessoa abrir a primeira vez (localStorage `media_malu_vista`). Cabeçalho do chat: "Malu - Assistente do MedIA"; saudação "Oi! Eu sou a Malu...".
+- `app/ajuda_app.py`: o prompt começa com "Você é a Malu"; o manual ganhou o PDF original do preparo, as abas do link do paciente, a versão em página e a revisão/aprovação, e que Exames & preparo funciona pelo celular.
+- Teste: `test_ajuda_app.py` ampliado.
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").
@@ -2908,6 +2914,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Link do WhatsApp: tocar em "Linha do tempo" mostra só a linha do tempo e "Preparo do médico" só o preparo; o "Baixar PDF" do topo baixa o PDF da aba aberta
 - [ ] Link do WhatsApp do paciente: com a página aprovada, "Preparo do médico" mostra o texto direto, com "Ver o PDF original" embaixo; "Tirar do ar" volta para o PDF
 - [ ] Painel do dono > custo de IA: chamada "Página do PDF de preparo" registrada
+
+**Malu (ajuda do app)**
+- [ ] Botão "Fale com a Malu" aparece destacado (pulsando até abrir a primeira vez); perguntar "qual o seu nome?" e "como anexo o PDF do preparo?"
 
 **Exames & preparo no celular**
 - [ ] Logado como médico no celular: menu "Exames & preparo" abre a lista (sem a tela de aviso); "Novo modelo", "Importar de um PDF" e "Editar" funcionam; a lista cabe na tela
