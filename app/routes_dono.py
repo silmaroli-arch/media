@@ -196,14 +196,34 @@ SUGESTOES_MODELO = {
 }
 
 
+def _rotulo_modelo(nome):
+    """"claude-sonnet-5-5 - US$ 2,00 / 10,00 por milhão" (preço da tabela de
+    custo, quando conhecido)."""
+    from app.custo_ia import PRECOS_POR_MILHAO_TOKENS
+
+    chave = next((k for k in PRECOS_POR_MILHAO_TOKENS if nome.startswith(k)), None)
+    if not chave:
+        return nome
+    entrada, saida = PRECOS_POR_MILHAO_TOKENS[chave]
+    preco = f"US$ {entrada:.2f} / {saida:.2f} por milhão".replace(".", ",")
+    return f"{nome} - {preco}"
+
+
 def _linhas_modelos_ia(config):
     from app.ia_modelos import MODELOS, modelo, modelo_sem_painel
 
-    return [
-        {"papel": papel, "rotulo": PAPEIS_MODELO[papel], "campo": campo, "escolhido": getattr(config, campo),
-         "em_uso": modelo(papel), "padrao": modelo_sem_painel(papel), "sugestoes": SUGESTOES_MODELO[papel]}
-        for papel, (campo, _, _) in MODELOS.items()
-    ]
+    linhas = []
+    for papel, (campo, _, _) in MODELOS.items():
+        escolhido = getattr(config, campo)
+        nomes = list(SUGESTOES_MODELO[papel])
+        if escolhido and escolhido not in nomes:
+            nomes.append(escolhido)  # digitado em "Outro..." - continua na lista
+        linhas.append({
+            "papel": papel, "rotulo": PAPEIS_MODELO[papel], "campo": campo, "escolhido": escolhido,
+            "em_uso": modelo(papel), "padrao": modelo_sem_painel(papel),
+            "opcoes": [{"nome": n, "rotulo": _rotulo_modelo(n)} for n in nomes],
+        })
+    return linhas
 
 
 @dono_bp.route("/configuracoes", methods=["POST"])
@@ -360,6 +380,8 @@ def configuracoes_modelos_ia():
     config = PlataformaConfig.obter()
     for papel, (campo, _, _) in MODELOS.items():
         valor = (request.form.get(campo) or "").strip()
+        if valor == "__outro__":
+            valor = (request.form.get(f"{campo}_outro") or "").strip()
         if valor and not NOME_MODELO_VALIDO.match(valor):
             flash(f'Nome de modelo inválido: "{valor}" ({PAPEIS_MODELO[papel]}).', "danger")
             return redirect(url_for("dono.dashboard") + "#painel-config")

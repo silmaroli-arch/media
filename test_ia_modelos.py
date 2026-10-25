@@ -106,12 +106,22 @@ d.post("/login", data={"identificador": dono_email, "senha": "123456"})
 html = d.get("/dono/").get_data(as_text=True)
 checar("Painel do dono mostra o card 'Modelos das IAs' com o modelo em uso",
        "Modelos das IAs" in html and "claude-sonnet-5-5" in html and 'name="modelo_openai"' in html)
+checar("Modelos numa lista de seleção, com o preço e a opção 'Outro...'",
+       '<select name="modelo_claude"' in html and "claude-opus-5-5 - US$ 4,00 / 20,00 por milhão" in html
+       and 'value="__outro__"' in html)
 d.post("/dono/configuracoes/modelos-ia", data={"modelo_claude": "", "modelo_openai": "gpt-5.4-mini",
                                                "modelo_claude_validador": "", "modelo_gemini": ""})
 with app.app_context():
     checar("Salvar grava o modelo informado e deixa vazio o que ficou em branco",
            PlataformaConfig.obter().modelo_openai == "gpt-5.4-mini" and PlataformaConfig.obter().modelo_claude is None
            and modelo_openai() == "gpt-5.4-mini")
+d.post("/dono/configuracoes/modelos-ia", data={"modelo_claude": "__outro__", "modelo_claude_outro": "claude-sonnet-5-6",
+                                               "modelo_openai": "gpt-5.4-mini"})
+with app.app_context():
+    checar("'Outro...' grava o nome digitado", PlataformaConfig.obter().modelo_claude == "claude-sonnet-5-6")
+html = d.get("/dono/").get_data(as_text=True)
+checar("... e ele continua aparecendo selecionado na lista", '<option value="claude-sonnet-5-6" selected>' in html)
+d.post("/dono/configuracoes/modelos-ia", data={"modelo_claude": "", "modelo_openai": "gpt-5.4-mini"})
 r = d.post("/dono/configuracoes/modelos-ia", data={"modelo_openai": "gpt 5; drop table"}, follow_redirects=True)
 checar("Nome inválido é recusado", "Nome de modelo inválido" in r.get_data(as_text=True))
 

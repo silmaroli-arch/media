@@ -2809,6 +2809,7 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - `app/ia_modelos.py`: `MODELOS` (campo, variável, padrão), `modelo(papel)`, `modelo_claude()`, `modelo_claude_validador()`, `modelo_openai()`, `modelo_gemini()`, `modelo_sem_painel()`; nome validado por `NOME_MODELO_VALIDO`. Todas as chamadas de IA usam as funções (as constantes MODELO_PADRAO etc. saíram).
 - `PlataformaConfig.modelo_claude`, `modelo_claude_validador`, `modelo_openai`, `modelo_gemini` (migrar_banco.py; validado no Postgres local).
 - Custo de IA (detalhe por usuário): rótulos por tipo de uso (validador, ajuda, aprendizado, busca na internet, teste de modelo, PDF...).
+- Ajuste (2026-10-25, pedido do Silvan): os campos viraram listas de seleção ("Padrão (modelo do servidor)", as sugestões com o preço por milhão de tokens tirado de `custo_ia`, e "Outro..." que abre um campo para digitar; um modelo digitado continua aparecendo na lista).
 - Com isso, não é mais preciso mexer no Render para trocar modelo (a variável antiga, se existir, só vale com o campo em branco).
 
 ## BACKLOG (Silvan) - combinado para fazer depois
