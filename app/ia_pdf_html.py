@@ -25,11 +25,10 @@ from html.parser import HTMLParser
 from flask import current_app
 
 from app.extensions import db
-from app.ia_pdf_preparo import (
-    MODELO_ANTHROPIC_PADRAO, MODELO_OPENAI_PADRAO, MODELO_PADRAO, _cliente_claude, _cliente_gemini,
-    _cliente_openai,
+from app.ia_pdf_preparo import _cliente_claude, _cliente_gemini, _cliente_openai
+from app.ia_modelos import (
+    criar_chat_openai, criar_mensagem_claude, modelo_claude, modelo_gemini, modelo_openai, texto_claude,
 )
-from app.ia_modelos import criar_chat_openai, criar_mensagem_claude, texto_claude
 from app.pdf_preparo import extrair_texto
 
 logger = logging.getLogger(__name__)
@@ -141,7 +140,7 @@ def _via_gemini(cliente, pdf_bytes, texto, uso):
     from google.genai import types as genai_types
 
     resposta = cliente.models.generate_content(
-        model=MODELO_PADRAO,
+        model=modelo_gemini(),
         contents=[
             genai_types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
             "Transcreva este PDF de preparo para HTML seguindo as instruções.",
@@ -149,7 +148,7 @@ def _via_gemini(cliente, pdf_bytes, texto, uso):
         config=genai_types.GenerateContentConfig(system_instruction=PROMPT_SISTEMA, max_output_tokens=16384),
     )
     meta = getattr(resposta, "usage_metadata", None)
-    uso.update(modelo=getattr(resposta, "model_version", None) or MODELO_PADRAO,
+    uso.update(modelo=getattr(resposta, "model_version", None) or modelo_gemini(),
                tokens_entrada=getattr(meta, "prompt_token_count", None),
                tokens_saida=getattr(meta, "candidates_token_count", None))
     return resposta.text
@@ -157,7 +156,7 @@ def _via_gemini(cliente, pdf_bytes, texto, uso):
 
 def _via_claude(cliente, pdf_bytes, texto, uso):
     resposta = criar_mensagem_claude(
-        cliente, MODELO_ANTHROPIC_PADRAO, 16384, system=PROMPT_SISTEMA,
+        cliente, modelo_claude(), 16384, system=PROMPT_SISTEMA,
         messages=[{"role": "user", "content": [
             {"type": "document", "source": {"type": "base64", "media_type": "application/pdf",
                                              "data": base64.standard_b64encode(pdf_bytes).decode("ascii")}},
@@ -165,7 +164,7 @@ def _via_claude(cliente, pdf_bytes, texto, uso):
         ]}],
     )
     meta = getattr(resposta, "usage", None)
-    uso.update(modelo=getattr(resposta, "model", None) or MODELO_ANTHROPIC_PADRAO,
+    uso.update(modelo=getattr(resposta, "model", None) or modelo_claude(),
                tokens_entrada=getattr(meta, "input_tokens", None), tokens_saida=getattr(meta, "output_tokens", None))
     return texto_claude(resposta)
 
@@ -175,12 +174,12 @@ def _via_openai(cliente, pdf_bytes, texto, uso):
     if not texto.strip():
         raise ValueError("PDF sem texto selecionável")
     resposta = criar_chat_openai(
-        cliente, MODELO_OPENAI_PADRAO, 16384,
+        cliente, modelo_openai(), 16384,
         messages=[{"role": "system", "content": PROMPT_SISTEMA},
                   {"role": "user", "content": f"Texto extraído do PDF de preparo:\n\n---\n{texto}\n---"}],
     )
     meta = getattr(resposta, "usage", None)
-    uso.update(modelo=getattr(resposta, "model", None) or MODELO_OPENAI_PADRAO,
+    uso.update(modelo=getattr(resposta, "model", None) or modelo_openai(),
                tokens_entrada=getattr(meta, "prompt_tokens", None), tokens_saida=getattr(meta, "completion_tokens", None))
     return resposta.choices[0].message.content or ""
 

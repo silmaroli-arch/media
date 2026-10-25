@@ -2803,6 +2803,14 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - migrar_banco.py: `plataforma_config.busca_internet_ativa`, `busca_internet_limite_dia`, `perguntas_pendentes.pesquisa_internet` (validado no Postgres local).
 - Teste novo: `test_busca_internet.py` (API simulada no nível HTTP, sem rede).
 
+## Modelos das IAs escolhidos no painel do dono (2026-10-25, pedido do Silvan)
+
+- Painel do dono > Configurações > card "Modelos das IAs": um campo por papel (Claude respostas/síntese/ajuda/PDF, Claude validador/divergência, ChatGPT, Gemini), com sugestões; mostra o modelo em uso agora e o que vale em branco. O que o dono informa vale mais que a variável de ambiente do servidor (ANTHROPIC_MODEL etc.), que vale mais que o padrão. Botão "Testar": manda "Responda apenas: ok" a cada modelo em uso e mostra quem respondeu, quem deu erro (com a mensagem) e quem está sem chave; o custo entra como "Teste de modelo".
+- `app/ia_modelos.py`: `MODELOS` (campo, variável, padrão), `modelo(papel)`, `modelo_claude()`, `modelo_claude_validador()`, `modelo_openai()`, `modelo_gemini()`, `modelo_sem_painel()`; nome validado por `NOME_MODELO_VALIDO`. Todas as chamadas de IA usam as funções (as constantes MODELO_PADRAO etc. saíram).
+- `PlataformaConfig.modelo_claude`, `modelo_claude_validador`, `modelo_openai`, `modelo_gemini` (migrar_banco.py; validado no Postgres local).
+- Custo de IA (detalhe por usuário): rótulos por tipo de uso (validador, ajuda, aprendizado, busca na internet, teste de modelo, PDF...).
+- Com isso, não é mais preciso mexer no Render para trocar modelo (a variável antiga, se existir, só vale com o campo em branco).
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").
@@ -2938,7 +2946,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Painel do dono > custo de IA: chamada "Página do PDF de preparo" registrada
 
 **Modelos de IA novos**
-- [ ] Render: `ANTHROPIC_MODEL=claude-sonnet-5-5` (ou apagar a variável) e, se for usar, `OPENAI_MODEL=gpt-5.4-mini`; Configurações do dono: IA validadora = Claude
+- [ ] Painel do dono > Configurações > "Modelos das IAs": conferir "Em uso agora" (se aparecer claude-sonnet-4-5, digitar claude-sonnet-5-5), escolher o ChatGPT (ex.: gpt-5.4-mini), Salvar e Testar; IA validadora = Claude
 - [ ] Repetir no media-dev: Poviztra, Wegovy, pepino, "O exame dói", nome inventado; conferir no painel de custo os modelos novos e o custo por chamada
 
 **Busca na internet**

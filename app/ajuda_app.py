@@ -110,10 +110,10 @@ def responder(pergunta, usuario, tela=None):
     IA escolhida não está disponível ou falhou)."""
     from app.custo_ia import registrar_chamada_ia
     from app.extensions import db
-    from app.ia_preparo import (
-        MODELO_GEMINI_PADRAO, MODELO_OPENAI_PADRAO, MODELO_PADRAO, _PROVEDORES_CHAT,
+    from app.ia_modelos import (
+        criar_chat_openai, criar_mensagem_claude, modelo_claude, modelo_gemini, modelo_openai, texto_claude,
     )
-    from app.ia_modelos import criar_chat_openai, criar_mensagem_claude, texto_claude
+    from app.ia_preparo import _PROVEDORES_CHAT
     from app.models import AjudaMensagem, PlataformaConfig
 
     provedor = PlataformaConfig.obter().ia_ajuda_app or "Claude"
@@ -132,23 +132,23 @@ def responder(pergunta, usuario, tela=None):
         try:
             if provedor == "Claude":
                 resposta = criar_mensagem_claude(
-                    cliente, MODELO_PADRAO, 600, esforco="low", system=PROMPT_SISTEMA, messages=mensagens,
+                    cliente, modelo_claude(), 600, esforco="low", system=PROMPT_SISTEMA, messages=mensagens,
                 )
                 uso = getattr(resposta, "usage", None)
                 registrar_chamada_ia(
-                    "ajuda_app", "Claude", getattr(resposta, "model", MODELO_PADRAO),
+                    "ajuda_app", "Claude", getattr(resposta, "model", modelo_claude()),
                     getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
                     sucesso=True, usuario_id=usuario.id,
                 )
                 texto = texto_claude(resposta)
             elif provedor == "ChatGPT":
                 resposta = criar_chat_openai(
-                    cliente, MODELO_OPENAI_PADRAO, 600, esforco="low",
+                    cliente, modelo_openai(), 600, esforco="low",
                     messages=[{"role": "system", "content": PROMPT_SISTEMA}] + mensagens,
                 )
                 uso = getattr(resposta, "usage", None)
                 registrar_chamada_ia(
-                    "ajuda_app", "ChatGPT", getattr(resposta, "model", MODELO_OPENAI_PADRAO),
+                    "ajuda_app", "ChatGPT", getattr(resposta, "model", modelo_openai()),
                     getattr(uso, "prompt_tokens", None), getattr(uso, "completion_tokens", None),
                     sucesso=True, usuario_id=usuario.id,
                 )
@@ -160,12 +160,12 @@ def responder(pergunta, usuario, tela=None):
                     ("Usuário: " if m["role"] == "user" else "Assistente: ") + m["content"] for m in mensagens
                 )
                 resposta = cliente.models.generate_content(
-                    model=MODELO_GEMINI_PADRAO, contents=conversa,
+                    model=modelo_gemini(), contents=conversa,
                     config=genai_types.GenerateContentConfig(system_instruction=PROMPT_SISTEMA, max_output_tokens=600),
                 )
                 uso = getattr(resposta, "usage_metadata", None)
                 registrar_chamada_ia(
-                    "ajuda_app", "Gemini", getattr(resposta, "model_version", None) or MODELO_GEMINI_PADRAO,
+                    "ajuda_app", "Gemini", getattr(resposta, "model_version", None) or modelo_gemini(),
                     getattr(uso, "prompt_token_count", None), getattr(uso, "candidates_token_count", None),
                     sucesso=True, usuario_id=usuario.id,
                 )

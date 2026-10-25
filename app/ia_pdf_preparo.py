@@ -76,7 +76,6 @@ logger = logging.getLogger(__name__)
 # aponta pro Flash mais recente disponível sem fixar uma versão que a
 # Google pode descontinuar por conta de novo (evita repetir esse mesmo
 # problema no futuro).
-MODELO_PADRAO = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
 
 # Abaixo desse número de caracteres de texto extraído, o PDF é tratado como
 # "sem texto selecionável o suficiente" (provavelmente escaneado/imagem) -
@@ -109,13 +108,13 @@ Regras importantes:
 
 # Modelos padrão do ChatGPT/Claude usados como 2º e 3º provedores da
 # cadeia - as MESMAS variáveis de ambiente e valores-padrão já usados no
-# chat de dúvidas do paciente (ver app.ia_preparo.MODELO_PADRAO/
-# MODELO_OPENAI_PADRAO), de propósito: um único par de chaves/modelo por
+# chat de dúvidas do paciente (ver app.ia_modelos/
+# modelo_openai()), de propósito: um único par de chaves/modelo por
 # provedor serve os dois usos, sem precisar manter configuração duplicada.
 # Os mesmos modelos do chat (ver app.ia_modelos, 2026-10-25).
-from app.ia_modelos import MODELO_CLAUDE as MODELO_ANTHROPIC_PADRAO  # noqa: E402
-from app.ia_modelos import MODELO_OPENAI as MODELO_OPENAI_PADRAO  # noqa: E402
-from app.ia_modelos import criar_chat_openai, criar_mensagem_claude, texto_claude  # noqa: E402
+from app.ia_modelos import (  # noqa: E402
+    criar_chat_openai, criar_mensagem_claude, modelo_claude, modelo_gemini, modelo_openai, texto_claude,
+)
 
 
 def _cliente_gemini():
@@ -340,7 +339,7 @@ def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido, uso):
     for tentativa in range(1, tentativas + 1):
         try:
             resposta = cliente.models.generate_content(
-                model=MODELO_PADRAO, contents=conteudo, config=config,
+                model=modelo_gemini(), contents=conteudo, config=config,
             )
             break
         except genai_errors.ServerError:
@@ -353,7 +352,7 @@ def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido, uso):
             time.sleep(tentativa * 5)
 
     meta = getattr(resposta, "usage_metadata", None)
-    uso["modelo"] = getattr(resposta, "model_version", None) or MODELO_PADRAO
+    uso["modelo"] = getattr(resposta, "model_version", None) or modelo_gemini()
     uso["tokens_entrada"] = getattr(meta, "prompt_token_count", None)
     uso["tokens_saida"] = getattr(meta, "candidates_token_count", None)
 
@@ -371,7 +370,7 @@ def _extrair_via_openai(cliente, texto_extraido, uso):
     extraído (nunca o PDF nativo) - ver docstring do módulo sobre essa
     limitação intencional. `uso`: ver docstring de _extrair_via_gemini."""
     resposta = criar_chat_openai(
-        cliente, MODELO_OPENAI_PADRAO, 16384,
+        cliente, modelo_openai(), 16384,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": PROMPT_SISTEMA},
@@ -386,7 +385,7 @@ def _extrair_via_openai(cliente, texto_extraido, uso):
         ],
     )
     meta = getattr(resposta, "usage", None)
-    uso["modelo"] = getattr(resposta, "model", None) or MODELO_OPENAI_PADRAO
+    uso["modelo"] = getattr(resposta, "model", None) or modelo_openai()
     uso["tokens_entrada"] = getattr(meta, "prompt_tokens", None)
     uso["tokens_saida"] = getattr(meta, "completion_tokens", None)
 
@@ -402,7 +401,7 @@ def _extrair_via_claude(cliente, texto_extraido, uso):
     Sempre recebe o texto extraído (nunca o PDF nativo) - mesma limitação
     intencional do ChatGPT. `uso`: ver docstring de _extrair_via_gemini."""
     resposta = criar_mensagem_claude(
-        cliente, MODELO_ANTHROPIC_PADRAO, 16384,
+        cliente, modelo_claude(), 16384,
         system=PROMPT_SISTEMA,
         messages=[{
             "role": "user",
@@ -414,7 +413,7 @@ def _extrair_via_claude(cliente, texto_extraido, uso):
         }],
     )
     meta = getattr(resposta, "usage", None)
-    uso["modelo"] = getattr(resposta, "model", None) or MODELO_ANTHROPIC_PADRAO
+    uso["modelo"] = getattr(resposta, "model", None) or modelo_claude()
     uso["tokens_entrada"] = getattr(meta, "input_tokens", None)
     uso["tokens_saida"] = getattr(meta, "output_tokens", None)
 

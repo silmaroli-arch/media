@@ -439,6 +439,36 @@
       </form>
     </div>
 
+    <div class="card p-3 mb-4" id="modelos-ia">
+      <h5 class="mb-1">Modelos das IAs</h5>
+      <p class="text-muted small mb-3">
+        Qual modelo cada IA usa. O que for informado aqui vale mais que a configuração do servidor; em branco, usa o que está
+        em "Sem preencher". Depois de trocar, clique em <strong>Testar</strong> para conferir se cada modelo responde
+        (custa centavos). Os preços por modelo aparecem em Custo de IA.
+      </p>
+      <form method="post" action="{{ url_for('dono.configuracoes_modelos_ia') }}">
+        <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>IA</th><th>Em uso agora</th><th>Modelo</th><th class="small text-muted">Sem preencher</th></tr></thead>
+          <tbody>
+            {% for linha in modelos_ia %}
+            <tr>
+              <td class="small">{{ linha.rotulo }}</td>
+              <td><code>{{ linha.em_uso }}</code></td>
+              <td><input type="text" name="{{ linha.campo }}" value="{{ linha.escolhido or '' }}" list="sugestoes-{{ linha.papel }}" class="form-control form-control-sm" style="min-width: 190px" placeholder="{{ linha.padrao }}">
+                <datalist id="sugestoes-{{ linha.papel }}">{% for sug in linha.sugestoes %}<option value="{{ sug }}">{% endfor %}</datalist></td>
+              <td class="small text-muted"><code>{{ linha.padrao }}</code></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+        <button type="submit" formaction="{{ url_for('dono.configuracoes_modelos_ia_testar') }}" class="btn btn-outline-secondary"
+                onclick="this.innerText='Testando...';">Testar</button>
+      </form>
+    </div>
+
     <div class="card p-3 mb-4">
       <h5 class="mb-1">Busca na internet quando a IA não reconhece um nome</h5>
       <p class="text-muted small mb-3">

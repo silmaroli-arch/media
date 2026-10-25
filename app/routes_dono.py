@@ -183,7 +183,27 @@ def dashboard():
         linhas_usuarios=linhas_usuarios, custo_total_usuarios=custo_total_usuarios,
         mensagens_suporte_novas=mensagens_suporte_novas,
         solicitacoes_exclusao=_solicitacoes_exclusao_pendentes(),
+        modelos_ia=_linhas_modelos_ia(config),
     )
+
+
+# Sugestões no campo de modelo (o dono pode digitar outro nome).
+SUGESTOES_MODELO = {
+    "claude": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
+    "claude_validador": ["claude-haiku-5-5", "claude-sonnet-5-5"],
+    "openai": ["gpt-5.4-mini", "gpt-5.4-nano", "gpt-4o-mini"],
+    "gemini": ["gemini-flash-latest", "gemini-flash-lite-latest"],
+}
+
+
+def _linhas_modelos_ia(config):
+    from app.ia_modelos import MODELOS, modelo, modelo_sem_painel
+
+    return [
+        {"papel": papel, "rotulo": PAPEIS_MODELO[papel], "campo": campo, "escolhido": getattr(config, campo),
+         "em_uso": modelo(papel), "padrao": modelo_sem_painel(papel), "sugestoes": SUGESTOES_MODELO[papel]}
+        for papel, (campo, _, _) in MODELOS.items()
+    ]
 
 
 @dono_bp.route("/configuracoes", methods=["POST"])
@@ -320,6 +340,72 @@ def configuracoes_ia_ajuda():
     return redirect(url_for("dono.dashboard"))
 
 
+PAPEIS_MODELO = {
+    "claude": "Claude - respostas ao paciente, síntese, ajuda, PDF",
+    "claude_validador": "Claude - validador e checagem de divergência",
+    "openai": "ChatGPT",
+    "gemini": "Gemini",
+}
+
+
+@dono_bp.route("/configuracoes/modelos-ia", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_modelos_ia():
+    """Modelo de cada IA, informado pelo dono (pedido do Silvan, 2026-10-25,
+    ver app.ia_modelos): vale mais que a variável de ambiente do servidor;
+    em branco volta para ela (ou para o padrão)."""
+    from app.ia_modelos import MODELOS, NOME_MODELO_VALIDO
+
+    config = PlataformaConfig.obter()
+    for papel, (campo, _, _) in MODELOS.items():
+        valor = (request.form.get(campo) or "").strip()
+        if valor and not NOME_MODELO_VALIDO.match(valor):
+            flash(f'Nome de modelo inválido: "{valor}" ({PAPEIS_MODELO[papel]}).', "danger")
+            return redirect(url_for("dono.dashboard") + "#painel-config")
+        setattr(config, campo, valor or None)
+    db.session.commit()
+    flash("Modelos das IAs salvos. Use \"Testar\" para conferir se cada um responde.", "success")
+    return redirect(url_for("dono.dashboard") + "#painel-config")
+
+
+@dono_bp.route("/configuracoes/modelos-ia/testar", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_modelos_ia_testar():
+    """Manda uma pergunta mínima a cada modelo em uso e mostra quem
+    respondeu - para conferir um nome de modelo novo antes de depender dele."""
+    from app.custo_ia import registrar_chamada_ia
+    from app.ia_modelos import criar_chat_openai, criar_mensagem_claude, modelo, texto_claude
+    from app.ia_preparo import _cliente_anthropic, _cliente_gemini, _cliente_openai
+
+    pergunta = [{"role": "user", "content": "Responda apenas: ok"}]
+    for papel, rotulo in PAPEIS_MODELO.items():
+        nome = modelo(papel)
+        fabrica = {"openai": _cliente_openai, "gemini": _cliente_gemini}.get(papel, _cliente_anthropic)
+        cliente = fabrica()
+        if not cliente:
+            flash(f"{rotulo}: sem chave de API configurada no servidor.", "warning")
+            continue
+        try:
+            if papel == "openai":
+                r = criar_chat_openai(cliente, nome, 20, messages=pergunta)
+                texto, uso = r.choices[0].message.content, (getattr(r.usage, "prompt_tokens", None), getattr(r.usage, "completion_tokens", None))
+            elif papel == "gemini":
+                r = cliente.models.generate_content(model=nome, contents="Responda apenas: ok")
+                meta = getattr(r, "usage_metadata", None)
+                texto, uso = r.text, (getattr(meta, "prompt_token_count", None), getattr(meta, "candidates_token_count", None))
+            else:
+                r = criar_mensagem_claude(cliente, nome, 20, messages=pergunta)
+                texto, uso = texto_claude(r), (getattr(r.usage, "input_tokens", None), getattr(r.usage, "output_tokens", None))
+            registrar_chamada_ia("teste_modelo_ia", rotulo.split(" ")[0], nome, *uso, sucesso=True, usuario_id=current_user.id)
+            flash(f"{rotulo}: {nome} respondeu ({(texto or '').strip()[:30] or 'resposta vazia'}).", "success")
+        except Exception as erro:
+            flash(f"{rotulo}: {nome} NÃO funcionou - {str(erro)[:180]}", "danger")
+    db.session.commit()
+    return redirect(url_for("dono.dashboard") + "#painel-config")
+
+
 @dono_bp.route("/configuracoes/busca-internet", methods=["POST"])
 @login_required
 @dono_required
@@ -332,11 +418,11 @@ def configuracoes_busca_internet():
     limite = request.form.get("busca_internet_limite_dia", type=int)
     if limite is None or limite < 0 or limite > 1000:
         flash("Informe um limite de buscas por dia entre 0 e 1000.", "danger")
-        return redirect(url_for("dono.dashboard"))
+        return redirect(url_for("dono.dashboard") + "#painel-config")
     config.busca_internet_limite_dia = limite
     db.session.commit()
     flash("Busca na internet " + ("ligada" if config.busca_internet_ativa else "desligada") + f" (até {limite} por dia).", "success")
-    return redirect(url_for("dono.dashboard"))
+    return redirect(url_for("dono.dashboard") + "#painel-config")
 
 
 @dono_bp.route("/nomes-pesquisados", methods=["GET", "POST"])

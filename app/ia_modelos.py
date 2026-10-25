@@ -12,17 +12,59 @@ isso as chamadas passam por aqui:
 - ChatGPT: a família GPT-5 (e os "o" de raciocínio) não aceita `max_tokens`
   - usa `max_completion_tokens` e `reasoning_effort`.
 
-Os modelos continuam trocáveis pelas variáveis de ambiente (ANTHROPIC_MODEL,
-ANTHROPIC_MODEL_VALIDADOR, OPENAI_MODEL, GEMINI_MODEL)."""
+Qual modelo usar (pedido do Silvan, 2026-10-25): o que o dono informou no
+painel (PlataformaConfig.modelo_*) vale mais que a variável de ambiente
+(ANTHROPIC_MODEL, ANTHROPIC_MODEL_VALIDADOR, OPENAI_MODEL, GEMINI_MODEL), que
+vale mais que o padrão daqui - ver modelo_claude() e companhia."""
 import logging
 import os
 import re
 
 logger = logging.getLogger(__name__)
 
-MODELO_CLAUDE = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5")
-MODELO_CLAUDE_VALIDADOR = os.environ.get("ANTHROPIC_MODEL_VALIDADOR", "claude-haiku-5-5")
-MODELO_OPENAI = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+# (campo do painel, variável de ambiente, padrão) de cada papel.
+MODELOS = {
+    "claude": ("modelo_claude", "ANTHROPIC_MODEL", "claude-sonnet-5-5"),
+    "claude_validador": ("modelo_claude_validador", "ANTHROPIC_MODEL_VALIDADOR", "claude-haiku-5-5"),
+    "openai": ("modelo_openai", "OPENAI_MODEL", "gpt-4o-mini"),
+    "gemini": ("modelo_gemini", "GEMINI_MODEL", "gemini-flash-latest"),
+}
+NOME_MODELO_VALIDO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{1,59}$")
+
+
+def modelo_sem_painel(papel):
+    """Variável de ambiente ou padrão - o que vale com o campo do painel vazio."""
+    _, variavel, padrao = MODELOS[papel]
+    return os.environ.get(variavel) or padrao
+
+
+def modelo(papel):
+    """O modelo em uso para o papel: painel do dono > variável de ambiente >
+    padrão. Fora de uma requisição (sem banco), ignora o painel."""
+    campo = MODELOS[papel][0]
+    try:
+        from app.models import PlataformaConfig
+
+        escolhido = getattr(PlataformaConfig.obter(), campo, None)
+    except Exception:
+        escolhido = None
+    return escolhido or modelo_sem_painel(papel)
+
+
+def modelo_claude():
+    return modelo("claude")
+
+
+def modelo_claude_validador():
+    return modelo("claude_validador")
+
+
+def modelo_openai():
+    return modelo("openai")
+
+
+def modelo_gemini():
+    return modelo("gemini")
 
 # Folga para o raciocínio dos modelos novos, somada ao tamanho de resposta
 # que cada chamada já pedia.

@@ -54,6 +54,12 @@ class PlataformaConfig(db.Model):
     # o limite diário segura o custo.
     busca_internet_ativa = db.Column(db.Boolean, nullable=False, default=False)
     busca_internet_limite_dia = db.Column(db.Integer, nullable=False, default=20)
+    # Modelos das IAs informados pelo dono (2026-10-25, ver
+    # app.ia_modelos.modelo): vazio = variável de ambiente ou padrão.
+    modelo_claude = db.Column(db.String(60), nullable=True)
+    modelo_claude_validador = db.Column(db.String(60), nullable=True)
+    modelo_openai = db.Column(db.String(60), nullable=True)
+    modelo_gemini = db.Column(db.String(60), nullable=True)
 
     # "Terceira IA" - base de conhecimento compartilhada (pedido do Silvan,
     # 2026-09-29, ver BaseConhecimentoItem e app.base_conhecimento). Liga/

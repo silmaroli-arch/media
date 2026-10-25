@@ -520,6 +520,11 @@ ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS ia_ajuda_app VARCHAR(20) 
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS busca_internet_ativa BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS busca_internet_limite_dia INTEGER NOT NULL DEFAULT 20;
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS pesquisa_internet TEXT;
+-- Modelos das IAs informados pelo dono no painel (2026-10-25).
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_claude VARCHAR(60);
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_claude_validador VARCHAR(60);
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_openai VARCHAR(60);
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_gemini VARCHAR(60);
 
 -- Versao em pagina (HTML) do PDF original do preparo, aprovada pelo medico (2026-10-24).
 ALTER TABLE preparo_pdfs_originais ADD COLUMN IF NOT EXISTS pagina_html TEXT;
