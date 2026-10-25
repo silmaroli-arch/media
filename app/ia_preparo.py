@@ -873,7 +873,7 @@ def _tentar_provedor(nome_provedor, pergunta_usuario, contexto, paciente_id=None
     return texto, chamada, True, sem_sentido, exige_revisao
 
 
-def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico=None):
+def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico=None, contexto_extra=""):
     """Tenta responder a pergunta do paciente usando IA, com o preparo do
     exame como contexto. As duas IAs que respondem são escolhidas pelo
     dono da plataforma entre Gemini/ChatGPT/Claude (ver
@@ -1020,6 +1020,9 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
         bloco_anvisa = ""
     if bloco_anvisa:
         contexto = f"{contexto}\n\n{bloco_anvisa}"
+    # Resultado de uma busca na internet (ver _pesquisar_nome_nao_reconhecido).
+    if contexto_extra:
+        contexto = f"{contexto}\n\n{contexto_extra}"
 
     resposta_a, chamada_a, tentou_a, sem_sentido_a, exige_revisao_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id, historico)
     resposta_b, chamada_b, tentou_b, sem_sentido_b, exige_revisao_b = _tentar_provedor(provedor_b, pergunta_usuario, contexto, paciente_id, historico)
@@ -1277,6 +1280,13 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     derruba o chat: é registrada no log e o resultado das duas IAs segue
     intacto."""
     resultado = _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=paciente_id, historico=historico)
+    try:
+        resultado = _pesquisar_nome_nao_reconhecido(resultado, pergunta_usuario, exame, paciente_id, historico)
+    except Exception:
+        current_app.logger.exception("Falha na busca na internet - seguindo só com as IAs.")
+        from app.extensions import db
+
+        db.session.rollback()
     resultado.setdefault("base", None)
     resultado.setdefault("exige_revisao_base", False)
     resultado["por_provedor"].setdefault("Base", None)
@@ -1285,6 +1295,35 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     except Exception:
         current_app.logger.exception("Falha ao consultar a base de conhecimento - seguindo só com as IAs.")
     return resultado
+
+
+def _pesquisar_nome_nao_reconhecido(resultado, pergunta_usuario, exame, paciente_id, historico):
+    """Busca na internet (2026-10-25, ver app.busca_internet): se alguma IA
+    disse que não reconheceu um nome e a busca está ligada, pesquisa o nome
+    uma vez e, achando, pergunta de novo às 2 IAs com o resultado no
+    contexto. A resposta sempre passa pelo médico, que vê o que foi achado
+    (resultado["pesquisa_internet"])."""
+    from app import busca_internet
+
+    resultado.setdefault("pesquisa_internet", None)
+    situacao = resultado.get("situacao") or {}
+    if "respondeu_nao_reconhecido" not in situacao.values() or not busca_internet.busca_ativa():
+        return resultado
+    textos = [t for t in (resultado.get("por_provedor") or {}).values() if t]
+    nome = busca_internet.nome_nao_reconhecido(textos, pergunta_usuario)
+    registro = busca_internet.pesquisar(nome, paciente_id=paciente_id) if nome else None
+    if not registro:
+        return resultado
+    resultado["pesquisa_internet"] = busca_internet.texto_para_medico(registro)
+    linha = busca_internet.linha_contexto(registro)
+    if not linha:
+        return resultado
+    novo = _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=paciente_id, historico=historico,
+                                   contexto_extra=linha)
+    novo["pesquisa_internet"] = resultado["pesquisa_internet"]
+    # Informação da internet: o médico sempre confere antes de ir ao paciente.
+    novo["exige_revisao_medicamento"] = True
+    return novo
 
 
 # Ver docstring do módulo ("Validador de pergunta dedicado", 2026-09-24).

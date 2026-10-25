@@ -320,6 +320,51 @@ def configuracoes_ia_ajuda():
     return redirect(url_for("dono.dashboard"))
 
 
+@dono_bp.route("/configuracoes/busca-internet", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_busca_internet():
+    """Liga/desliga a busca na internet quando uma IA não reconhece um nome,
+    e o limite de buscas por dia (pedido do Silvan, 2026-10-25, ver
+    app.busca_internet)."""
+    config = PlataformaConfig.obter()
+    config.busca_internet_ativa = request.form.get("busca_internet_ativa") == "1"
+    limite = request.form.get("busca_internet_limite_dia", type=int)
+    if limite is None or limite < 0 or limite > 1000:
+        flash("Informe um limite de buscas por dia entre 0 e 1000.", "danger")
+        return redirect(url_for("dono.dashboard"))
+    config.busca_internet_limite_dia = limite
+    db.session.commit()
+    flash("Busca na internet " + ("ligada" if config.busca_internet_ativa else "desligada") + f" (até {limite} por dia).", "success")
+    return redirect(url_for("dono.dashboard"))
+
+
+@dono_bp.route("/nomes-pesquisados", methods=["GET", "POST"])
+@login_required
+@dono_required
+def nomes_pesquisados():
+    """O que a busca na internet achou (app.busca_internet): o dono confirma,
+    rejeita (não é mais usado nas respostas) ou apaga (pesquisa de novo na
+    próxima vez)."""
+    from app.models import NomePesquisado
+
+    if request.method == "POST":
+        registro = NomePesquisado.query.get_or_404(request.form.get("id", type=int))
+        acao = request.form.get("acao")
+        if acao == "apagar":
+            db.session.delete(registro)
+            flash(f'"{registro.nome}" apagado - será pesquisado de novo na próxima vez.', "success")
+        elif acao in ("confirmado", "rejeitado"):
+            registro.status = acao
+            registro.revisado_em = datetime.utcnow()
+            registro.revisado_por_id = current_user.id
+            flash(f'"{registro.nome}" {acao}.', "success")
+        db.session.commit()
+        return redirect(url_for("dono.nomes_pesquisados"))
+    registros = NomePesquisado.query.order_by(NomePesquisado.criado_em.desc()).limit(500).all()
+    return render_template("dono/nomes_pesquisados.html", registros=registros, config=PlataformaConfig.obter())
+
+
 @dono_bp.route("/ajuda-app")
 @login_required
 @dono_required

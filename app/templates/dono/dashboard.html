@@ -440,6 +440,28 @@
     </div>
 
     <div class="card p-3 mb-4">
+      <h5 class="mb-1">Busca na internet quando a IA não reconhece um nome</h5>
+      <p class="text-muted small mb-3">
+        Quando uma IA responde que não reconheceu um nome (medicamento, produto...), o sistema pesquisa esse nome
+        uma única vez em sites oficiais e de referência (gov.br/ANVISA, Consulta Remédios, MedlinePlus, Drugs.com,
+        Manual MSD) e as IAs respondem de novo com o resultado - sempre com revisão do médico. Custo: cerca de
+        R$ 0,05 por busca mais a leitura das páginas. O resultado fica em
+        <a href="{{ url_for('dono.nomes_pesquisados') }}">Nomes pesquisados</a> e o mesmo nome nunca é pesquisado duas vezes.
+      </p>
+      <form method="post" action="{{ url_for('dono.configuracoes_busca_internet') }}" class="d-flex align-items-end gap-3 flex-wrap">
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" role="switch" name="busca_internet_ativa" value="1" id="busca-internet-ativa" {% if config.busca_internet_ativa %}checked{% endif %}>
+          <label class="form-check-label" for="busca-internet-ativa">Ligada</label>
+        </div>
+        <div>
+          <label class="form-label small mb-0">Máximo de buscas por dia</label>
+          <input type="number" min="0" max="1000" name="busca_internet_limite_dia" class="form-control" style="max-width: 140px" value="{{ config.busca_internet_limite_dia }}">
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </form>
+    </div>
+
+    <div class="card p-3 mb-4">
       <h5 class="mb-1">Limite diário de mensagens por exame (WhatsApp)</h5>
       <p class="text-muted small mb-3">
         Quantas mensagens um mesmo paciente pode mandar por dia sobre um mesmo exame, pelo chat de

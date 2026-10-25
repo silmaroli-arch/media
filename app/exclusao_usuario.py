@@ -49,6 +49,7 @@ from app.models import (
     PerguntaPendente,
     PreparoModelo,
     PreparoPdfOriginal,
+    NomePesquisado,
     PushSubscription,
     exame_medicos_associados,
 )
@@ -180,6 +181,7 @@ def excluir_usuario_e_dados(usuario):
     PreparoModelo.query.filter_by(criado_por_id=uid).update({"criado_por_id": None}, synchronize_session=False)
     PreparoPdfOriginal.query.filter_by(enviado_por_id=uid).update({"enviado_por_id": None}, synchronize_session=False)
     PreparoPdfOriginal.query.filter_by(pagina_aprovada_por_id=uid).update({"pagina_aprovada_por_id": None}, synchronize_session=False)
+    NomePesquisado.query.filter_by(revisado_por_id=uid).update({"revisado_por_id": None}, synchronize_session=False)
 
     # 6. Agendamentos em que ele é o médico responsável, mas o exame não
     # era dele (ex.: cobrindo um colega) — continuam sendo agendamentos

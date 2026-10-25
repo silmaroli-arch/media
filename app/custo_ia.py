@@ -90,7 +90,7 @@ def calcular_custo_usd(modelo, tokens_entrada, tokens_saida):
 
 def registrar_chamada_ia(
     tipo_uso, provedor, modelo, tokens_entrada, tokens_saida, sucesso,
-    usuario_id=None, paciente_id=None, resposta_final_usada=None,
+    usuario_id=None, paciente_id=None, resposta_final_usada=None, custo_extra_usd=0.0,
 ):
     """Persiste um `ChamadaIA` com o custo estimado já calculado - chamar
     logo depois de CADA tentativa a um provedor que chegou a receber uma
@@ -108,6 +108,10 @@ def registrar_chamada_ia(
     from app.models import ChamadaIA
 
     custo = calcular_custo_usd(modelo, tokens_entrada, tokens_saida)
+    # Cobranças fora dos tokens (ex.: buscas na internet, ver
+    # app.busca_internet).
+    if custo is not None and custo_extra_usd:
+        custo += custo_extra_usd
     chamada = ChamadaIA(
         usuario_id=usuario_id,
         paciente_id=paciente_id,

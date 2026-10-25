@@ -455,6 +455,7 @@ def chat():
                         # saiu normal (ver medico/perguntas.html).
                         ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
                         ias_situacao=formatar_situacao_ias(resultado_ia),
+                        pesquisa_internet=(resultado_ia or {}).get("pesquisa_internet"),
                     )
                     db.session.add(pendente)
                     # Pedido do Silvan (2026-09-28 - ver docstring de
@@ -500,6 +501,7 @@ def chat():
                         # app.ia_preparo.responder_com_ia.
                         ias_com_erro=(",".join(resultado_ia.get("falhas") or []) or None) if resultado_ia else None,
                         ias_situacao=formatar_situacao_ias(resultado_ia),
+                        pesquisa_internet=(resultado_ia or {}).get("pesquisa_internet"),
                     )
                     db.session.add(pendente)
                     db.session.commit()

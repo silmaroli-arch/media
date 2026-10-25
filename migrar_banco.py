@@ -516,6 +516,11 @@ ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS pergunta_faq TEXT;
 ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS ias_situacao VARCHAR(120);
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS ia_ajuda_app VARCHAR(20) NOT NULL DEFAULT 'Claude';
 
+-- Busca na internet quando uma IA nao reconhece um nome (2026-10-25). A tabela nomes_pesquisados vem do create_all.
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS busca_internet_ativa BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS busca_internet_limite_dia INTEGER NOT NULL DEFAULT 20;
+ALTER TABLE perguntas_pendentes ADD COLUMN IF NOT EXISTS pesquisa_internet TEXT;
+
 -- Versao em pagina (HTML) do PDF original do preparo, aprovada pelo medico (2026-10-24).
 ALTER TABLE preparo_pdfs_originais ADD COLUMN IF NOT EXISTS pagina_html TEXT;
 ALTER TABLE preparo_pdfs_originais ADD COLUMN IF NOT EXISTS pagina_status VARCHAR(20);

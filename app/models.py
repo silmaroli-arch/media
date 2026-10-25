@@ -49,6 +49,11 @@ class PlataformaConfig(db.Model):
     # IA do chat de ajuda sobre o uso do app (botão "Ajuda" da equipe -
     # pedido do Silvan, 2026-10-23, ver app.ajuda_app).
     ia_ajuda_app = db.Column(db.String(20), nullable=False, default="Claude")
+    # Busca na internet quando uma IA não reconhece um nome (pedido do
+    # Silvan, 2026-10-25, ver app.busca_internet). Desligada por padrão;
+    # o limite diário segura o custo.
+    busca_internet_ativa = db.Column(db.Boolean, nullable=False, default=False)
+    busca_internet_limite_dia = db.Column(db.Integer, nullable=False, default=20)
 
     # "Terceira IA" - base de conhecimento compartilhada (pedido do Silvan,
     # 2026-09-29, ver BaseConhecimentoItem e app.base_conhecimento). Liga/
@@ -1597,6 +1602,31 @@ class PreparoMedicamentoMantido(db.Model):
     preparo_modelo = db.relationship("PreparoModelo", back_populates="medicamentos_mantidos")
 
 
+class NomePesquisado(db.Model):
+    """Nome (medicamento, produto...) que uma IA não reconheceu e o sistema
+    pesquisou na internet, em sites escolhidos (2026-10-25, ver
+    app.busca_internet). Fica guardado para nunca pesquisar o mesmo nome de
+    novo; o dono confirma ou rejeita em "Nomes pesquisados". Rejeitado não é
+    mais usado nas respostas."""
+    __tablename__ = "nomes_pesquisados"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(255), nullable=False)
+    nome_normalizado = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    # Uma linha "Nome = o que é", ou None quando as fontes não confirmaram.
+    resultado = db.Column(db.Text)
+    fontes = db.Column(db.Text)  # uma URL por linha
+    # "pesquisado" (aguarda o dono) | "confirmado" | "rejeitado"
+    status = db.Column(db.String(20), nullable=False, default="pesquisado")
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    revisado_em = db.Column(db.DateTime)
+    revisado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+
+    @property
+    def lista_fontes(self):
+        return [f for f in (self.fontes or "").split("\n") if f]
+
+
 class PreparoPdfOriginal(db.Model):
     """O PDF original do preparo, como o médico escreveu (pedido do Silvan,
     2026-10-24): o paciente abre ESTE arquivo primeiro pelo link do
@@ -2011,6 +2041,10 @@ class PerguntaPendente(db.Model):
     # formatar_situacao_ias) - a tela de aprovação mostra sempre as IAs
     # escolhidas, mesmo a que não respondeu (pedido do Silvan, 2026-10-21).
     ias_situacao = db.Column(db.String(120), nullable=True)
+    # O que a busca na internet achou para esta pergunta, quando uma IA não
+    # reconheceu um nome (2026-10-25, ver app.busca_internet) - mostrado ao
+    # médico na aprovação.
+    pesquisa_internet = db.Column(db.Text, nullable=True)
 
     TEXTO_SITUACAO_IA = {
         "nao_sabe": "não soube responder com base no preparo cadastrado",

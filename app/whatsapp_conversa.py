@@ -661,6 +661,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 # e o rascunho final saiu normal (ver medico/perguntas.html).
                 ias_com_erro=",".join(resultado_ia.get("falhas") or []) or None,
                 ias_situacao=formatar_situacao_ias(resultado_ia),
+                pesquisa_internet=(resultado_ia or {}).get("pesquisa_internet"),
                 telefone_whatsapp=telefone,
             )
             db.session.add(pergunta_pendente_criada)
@@ -699,6 +700,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 # app.ia_preparo.responder_com_ia.
                 ias_com_erro=(",".join(resultado_ia.get("falhas") or []) or None) if resultado_ia else None,
                 ias_situacao=formatar_situacao_ias(resultado_ia),
+                pesquisa_internet=(resultado_ia or {}).get("pesquisa_internet"),
                 telefone_whatsapp=telefone,
             )
             db.session.add(pergunta_pendente_criada)

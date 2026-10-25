@@ -2793,6 +2793,16 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - **No Render (media-dev e media-prod)**: trocar/remover `ANTHROPIC_MODEL=claude-sonnet-4-5` (se existir, ele manda) -> `claude-sonnet-5-5`; opcional `OPENAI_MODEL=gpt-5.4-mini` depois de conferir o nome exato no painel da OpenAI. Na área do dono, IA validadora = Claude (Haiku 5.5).
 - Teste novo: `test_ia_modelos.py` (confere o pedido HTTP montado pelo SDK, sem rede).
 
+## Busca na internet quando uma IA não reconhece um nome (2026-10-25, decisão do Silvan)
+
+- `app/busca_internet.py`: com a busca LIGADA pelo dono (`PlataformaConfig.busca_internet_ativa`, padrão desligada; limite `busca_internet_limite_dia`, padrão 20), quando alguma IA responde "não reconheci" (situação `respondeu_nao_reconhecido`), `responder_com_ia` -> `_pesquisar_nome_nao_reconhecido`: pega o nome entre aspas da resposta (ou a 1ª palavra fora do dicionário da pergunta), pesquisa UMA vez com o Claude Sonnet 5.5 + ferramenta de busca da Anthropic (`web_search_20260209`, máx. 2 buscas, só em `DOMINIOS_PERMITIDOS`: gov.br, consultaremedios.com.br, medlineplus.gov, drugs.com, msdmanuals.com; país BR), resposta "Nome = o que é" ou NAO_ENCONTRADO (nunca chute). Achando, as 2 IAs respondem de novo com a linha no contexto e a resposta SEMPRE vai para o médico.
+- Modelo novo `NomePesquisado` (tabela `nomes_pesquisados`, create_all): nome, resultado, fontes, status (pesquisado/confirmado/rejeitado); o mesmo nome nunca é pesquisado de novo. Rejeitado não entra mais no contexto.
+- `PerguntaPendente.pesquisa_internet` (o que foi achado + fontes) - aviso azul "Pesquisa na internet: ..." no portal de atendimento e em Perguntas.
+- Dono: card "Busca na internet quando a IA não reconhece um nome" (liga/desliga + máximo por dia) e menu "Nomes pesquisados" (confirmar, rejeitar, apagar = pesquisar de novo).
+- Custo: `registrar_chamada_ia(..., custo_extra_usd=)` soma US$ 0,01 por busca (US$ 10/1.000, oficial) aos tokens; tipo de uso `busca_internet`.
+- migrar_banco.py: `plataforma_config.busca_internet_ativa`, `busca_internet_limite_dia`, `perguntas_pendentes.pesquisa_internet` (validado no Postgres local).
+- Teste novo: `test_busca_internet.py` (API simulada no nível HTTP, sem rede).
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").
@@ -2930,6 +2940,9 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 **Modelos de IA novos**
 - [ ] Render: `ANTHROPIC_MODEL=claude-sonnet-5-5` (ou apagar a variável) e, se for usar, `OPENAI_MODEL=gpt-5.4-mini`; Configurações do dono: IA validadora = Claude
 - [ ] Repetir no media-dev: Poviztra, Wegovy, pepino, "O exame dói", nome inventado; conferir no painel de custo os modelos novos e o custo por chamada
+
+**Busca na internet**
+- [ ] Painel do dono: ligar "Busca na internet quando a IA não reconhece um nome"; perguntar por um produto que as IAs não conhecem; a pergunta chega ao médico com o aviso azul "Pesquisa na internet" e as fontes; o nome aparece em "Nomes pesquisados" (confirmar/rejeitar); custo em Custo de IA
 
 **Malu (ajuda do app)**
 - [ ] Botão "Fale com a Malu" na barra do topo, ao lado do menu, destacado (pulsando até abrir a primeira vez); o chat abre num modal como os outros do app; perguntar "qual o seu nome?" e "como anexo o PDF do preparo?"
