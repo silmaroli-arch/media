@@ -12,7 +12,10 @@
   .pagina-preparo table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
   .pagina-preparo th, .pagina-preparo td { border: 1px solid #dee2e6; padding: 4px 6px; vertical-align: top; }
   .pagina-preparo[contenteditable="true"] { outline: 2px dashed #9ec5fe; outline-offset: 4px; min-height: 200px; }
-  .pdf-ao-lado { width: 100%; height: 75vh; border: 1px solid #dee2e6; border-radius: 6px; }
+  /* PDF desenhado pelo pdf.js (2026-10-25): o Chrome do Android não mostra
+     PDF dentro de <iframe> (aparecia só "pdf-original / Abrir"). */
+  .pdf-ao-lado { width: 100%; max-height: 75vh; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 6px; background: #e9ecef; padding: 6px; }
+  .pdf-ao-lado canvas { display: block; width: 100%; height: auto; margin: 0 auto 6px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
 </style>
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
@@ -72,8 +75,10 @@
       </div>
       <div class="col-lg-6">
         <strong class="d-block mb-1">PDF original</strong>
-        <iframe class="pdf-ao-lado d-none d-lg-block" src="{{ url_for('medico.preparo_modelos_pdf_original', modelo_id=modelo.id) }}"></iframe>
-        <a class="btn btn-outline-secondary d-lg-none" href="{{ url_for('medico.preparo_modelos_pdf_original', modelo_id=modelo.id) }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> Abrir o PDF para comparar</a>
+        <div class="pdf-ao-lado" id="pdf-ao-lado" data-url="{{ url_for('medico.preparo_modelos_pdf_original', modelo_id=modelo.id) }}">
+          <div class="text-muted small p-2" id="pdf-carregando">Carregando o PDF...</div>
+        </div>
+        <a class="small d-inline-block mt-1" href="{{ url_for('medico.preparo_modelos_pdf_original', modelo_id=modelo.id) }}" target="_blank"><i class="bi bi-box-arrow-up-right"></i> Abrir o PDF em outra aba</a>
       </div>
     </div>
     {% if pode_editar %}
@@ -94,7 +99,30 @@
   {% endif %}
 {% endif %}
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
+  (function () {
+    var caixa = document.getElementById('pdf-ao-lado');
+    if (!caixa) return;
+    var aviso = document.getElementById('pdf-carregando');
+    if (!window.pdfjsLib) { aviso.textContent = 'Não foi possível mostrar o PDF aqui - use "Abrir o PDF em outra aba".'; return; }
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.getDocument(caixa.dataset.url).promise.then(function (pdf) {
+      aviso.remove();
+      var largura = caixa.clientWidth - 12, cadeia = Promise.resolve();
+      for (var n = 1; n <= pdf.numPages; n++) {
+        cadeia = cadeia.then(pdf.getPage.bind(pdf, n)).then(function (pagina) {
+          var escala = largura / pagina.getViewport({ scale: 1 }).width * (window.devicePixelRatio || 1);
+          var vista = pagina.getViewport({ scale: escala });
+          var canvas = document.createElement('canvas');
+          canvas.width = vista.width; canvas.height = vista.height;
+          caixa.appendChild(canvas);
+          return pagina.render({ canvasContext: canvas.getContext('2d'), viewport: vista }).promise;
+        });
+      }
+    }).catch(function () { aviso.textContent = 'Não foi possível mostrar o PDF aqui - use "Abrir o PDF em outra aba".'; });
+  })();
+
   (function () {
     var form = document.getElementById('form-pagina');
     if (!form) return;

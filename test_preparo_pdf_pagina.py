@@ -70,7 +70,7 @@ checar("Antes de aprovar, o paciente vê só o PDF", "Suspender Ozempic 14 dias 
 
 html = medico.get(url_pagina).get_data(as_text=True)
 checar("Tela de revisão: página editável ao lado do PDF",
-       'contenteditable="true"' in html and "Aprovar e publicar para o paciente" in html and "<iframe" in html)
+       'contenteditable="true"' in html and "Aprovar e publicar para o paciente" in html and 'id="pdf-ao-lado"' in html and "pdf.min.js" in html)
 checar("Formulário do modelo mostra 'aguardando sua aprovação'",
        "aguardando sua aprovação" in medico.get(f"/equipe/preparo-modelos/{modelo_id}/editar").get_data(as_text=True))
 
