@@ -44,6 +44,7 @@ Regras OBRIGATÓRIAS - é um documento médico, o paciente segue exatamente o qu
 - Use apenas estas tags HTML: h2, h3, p, ul, ol, li, strong, em, br, table, thead, tbody, tr, th, td. Sem atributos (exceto colspan/rowspan em td/th), sem estilos, sem links, sem imagens, sem scripts.
 - Títulos e seções do PDF viram h2/h3; listas viram ul/ol; tabelas (ex.: horários, cardápio) viram table; destaques do PDF (negrito, AVISOS, IMPORTANTE) viram strong.
 - Não repita o nome da clínica, endereço, telefone ou logotipo se forem só cabeçalho/rodapé de página; todo o resto do conteúdo do preparo entra.
+- Campos em branco para preencher à mão (ex.: "Data e hora do exame: ___/___/___ às ___h", "Nome: ______") não entram - o paciente já vê a data do exame dele na página.
 - Responda SOMENTE com o HTML (sem ```, sem <html>, <head> ou <body>, sem comentários)."""
 
 
