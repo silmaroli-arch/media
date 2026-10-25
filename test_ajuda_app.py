@@ -44,7 +44,10 @@ c = app.test_client()
 c.post("/login", data={"identificador": "secretaria@clinicavitoria.com", "senha": "123456"})
 html = c.get("/equipe/medico-agenda", follow_redirects=True).get_data(as_text=True)
 checar("O botão 'Ajuda' aparece para a equipe", 'id="ajudaBotao"' in html and "/equipe/ajuda" in html)
-checar("A assistente se chama Malu, com botão destacado", "Fale com a Malu" in html and "Eu sou a Malu" in html)
+topo = html.index('<div class="app-topbar')
+checar("A assistente Malu fica na barra do topo, ao lado do menu (não mais flutuando)",
+       html.count('id="ajudaBotao"') == 1 and topo < html.index('id="ajudaBotao"') < html.index("Sair", topo)
+       and 'aria-label="Ajuda: fale com a Malu"' in html and "Eu sou a Malu" in html)
 from app.ajuda_app import PROMPT_SISTEMA as PROMPT_AJUDA
 checar("O prompt da ajuda diz que ela é a Malu", "Você é a Malu" in PROMPT_AJUDA)
 

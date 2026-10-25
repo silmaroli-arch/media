@@ -2779,6 +2779,7 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 
 - `base.html`: o botão flutuante "Ajuda" virou "Fale com a Malu" (avatar "M" com bolinha verde, degradê verde-azulado, subtítulo "Dúvidas sobre o MedIA"; no celular só o nome). Pulsa até a pessoa abrir a primeira vez (localStorage `media_malu_vista`). Cabeçalho do chat: "Malu - Assistente do MedIA"; saudação "Oi! Eu sou a Malu...".
 - `app/ajuda_app.py`: o prompt começa com "Você é a Malu"; o manual ganhou o PDF original do preparo, as abas do link do paciente, a versão em página e a revisão/aprovação, e que Exames & preparo funciona pelo celular.
+- Posição (2026-10-25, pedido do Silvan): a Malu saiu do canto inferior e foi para a barra do topo, ao lado do menu (☰) e do logo - "Fale com a Malu" no computador/tablet, "Malu" no celular; o chat abre logo abaixo dela (canto superior esquerdo).
 - Teste: `test_ajuda_app.py` ampliado.
 
 ## BACKLOG (Silvan) - combinado para fazer depois
@@ -2916,7 +2917,7 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Painel do dono > custo de IA: chamada "Página do PDF de preparo" registrada
 
 **Malu (ajuda do app)**
-- [ ] Botão "Fale com a Malu" aparece destacado (pulsando até abrir a primeira vez); perguntar "qual o seu nome?" e "como anexo o PDF do preparo?"
+- [ ] Botão "Fale com a Malu" na barra do topo, ao lado do menu, destacado (pulsando até abrir a primeira vez); o chat abre embaixo dele; perguntar "qual o seu nome?" e "como anexo o PDF do preparo?"
 
 **Exames & preparo no celular**
 - [ ] Logado como médico no celular: menu "Exames & preparo" abre a lista (sem a tela de aviso); "Novo modelo", "Importar de um PDF" e "Editar" funcionam; a lista cabe na tela
