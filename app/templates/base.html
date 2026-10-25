@@ -860,32 +860,36 @@ window.addEventListener('load', function () {
   @keyframes maluPulso { 0% { box-shadow: 0 0 0 0 rgba(15,181,166,.8); }
                          70% { box-shadow: 0 0 0 10px rgba(15,181,166,0); }
                          100% { box-shadow: 0 0 0 0 rgba(15,181,166,0); } }
-  #ajudaPainel .card-header { background: linear-gradient(135deg, #0fb5a6, #1660B0); color: #fff; }
+  /* Chat da Malu num modal como os outros do app (pedido do Silvan,
+     2026-10-25 - o painel solto ficou ruim no tablet). */
+  #ajudaPainel .modal-header { background: linear-gradient(135deg, #0fb5a6, #1660B0); color: #fff; }
   @media (max-width: 576px) { #ajudaBotao { padding-right: 10px; } }
-  #ajudaPainel .card-header .malu-avatar { width: 36px; height: 36px; font-size: 1rem; }
-  #ajudaPainel { position: fixed; left: 16px; top: 64px; z-index: 1041; width: 360px; max-width: calc(100vw - 32px);
-                 height: 480px; max-height: calc(100vh - 100px); display: none; flex-direction: column; }
-  #ajudaPainel.aberto { display: flex; }
-  #ajudaMensagens { flex: 1; overflow-y: auto; background: #f6f8fb; }
+  #ajudaPainel .modal-header .malu-avatar { width: 36px; height: 36px; font-size: 1rem; }
+  #ajudaPainel .modal-content { height: min(620px, 85vh); }
+  #ajudaMensagens { background: #f6f8fb; }
   .ajuda-balao { padding: .5rem .75rem; border-radius: .75rem; margin-bottom: .5rem; white-space: pre-wrap; font-size: .9rem; max-width: 90%; }
   .ajuda-balao.eu { background: #1660B0; color: #fff; margin-left: auto; }
   .ajuda-balao.ia { background: #fff; border: 1px solid #e3e7ee; }
 </style>
-<div id="ajudaPainel" class="card so-fora-da-janela" role="dialog" aria-label="Ajuda do MedIA">
-  <div class="card-header d-flex justify-content-between align-items-center py-2">
-    <div class="d-flex align-items-center gap-2">
-      <span class="malu-avatar">M</span>
-      <div class="lh-sm"><strong>Malu</strong><div class="small opacity-75">Assistente do MedIA</div></div>
+<div class="modal fade so-fora-da-janela" id="ajudaPainel" tabindex="-1" aria-labelledby="ajudaTitulo" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="malu-avatar">M</span>
+          <div class="lh-sm"><strong id="ajudaTitulo">Malu</strong><div class="small opacity-75">Assistente do MedIA</div></div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div id="ajudaMensagens" class="modal-body p-2">
+        <div class="ajuda-balao ia">Oi! Eu sou a Malu, assistente do MedIA. Tire aqui suas dúvidas sobre como usar o sistema - por exemplo, "como remarco um exame?" ou "como associo outro médico ao preparo?".</div>
+      </div>
+      <form id="ajudaForm" class="modal-footer p-2 d-flex flex-nowrap gap-2">
+        <input type="text" id="ajudaTexto" class="form-control form-control-sm" maxlength="1000" placeholder="Escreva sua dúvida" autocomplete="off" required>
+        <button type="submit" class="btn btn-primary btn-sm" id="ajudaEnviar"><i class="bi bi-send"></i></button>
+      </form>
     </div>
-    <button type="button" class="btn-close btn-close-white" id="ajudaFechar" aria-label="Fechar"></button>
   </div>
-  <div id="ajudaMensagens" class="p-2">
-    <div class="ajuda-balao ia">Oi! Eu sou a Malu, assistente do MedIA. Tire aqui suas dúvidas sobre como usar o sistema - por exemplo, "como remarco um exame?" ou "como associo outro médico ao preparo?".</div>
-  </div>
-  <form id="ajudaForm" class="card-footer p-2 d-flex gap-2">
-    <input type="text" id="ajudaTexto" class="form-control form-control-sm" maxlength="1000" placeholder="Escreva sua dúvida" autocomplete="off" required>
-    <button type="submit" class="btn btn-primary btn-sm" id="ajudaEnviar"><i class="bi bi-send"></i></button>
-  </form>
 </div>
 <script>
   (function () {
@@ -933,14 +937,15 @@ window.addEventListener('load', function () {
     }
     // Pulsa até a primeira vez que a pessoa abre (guardado no navegador).
     try { if (!localStorage.getItem('media_malu_vista')) botao.classList.add('chamando'); } catch (e) {}
-    function abrir(aberto) {
-      if (aberto) { botao.classList.remove('chamando'); try { localStorage.setItem('media_malu_vista', '1'); } catch (e) {} }
-      painel.classList.toggle('aberto', aberto);
-      botao.setAttribute('aria-expanded', aberto ? 'true' : 'false');
-      if (aberto) { desenhar(); campo.focus(); }
-    }
-    botao.addEventListener('click', function () { abrir(!painel.classList.contains('aberto')); });
-    document.getElementById('ajudaFechar').addEventListener('click', function () { abrir(false); });
+    botao.addEventListener('click', function () { bootstrap.Modal.getOrCreateInstance(painel).show(); });
+    painel.addEventListener('show.bs.modal', function () {
+      botao.classList.remove('chamando');
+      try { localStorage.setItem('media_malu_vista', '1'); } catch (e) {}
+      botao.setAttribute('aria-expanded', 'true');
+      desenhar();
+    });
+    painel.addEventListener('shown.bs.modal', function () { lista.scrollTop = lista.scrollHeight; campo.focus(); });
+    painel.addEventListener('hidden.bs.modal', function () { botao.setAttribute('aria-expanded', 'false'); });
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
