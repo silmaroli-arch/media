@@ -219,6 +219,15 @@ def create_app():
     from app import login_google
     login_google.init_app(app)
 
+    @app.template_filter("hora_br")
+    def hora_br(valor, formato="%d/%m/%Y %H:%M"):
+        """Data/hora gravada em UTC no banco (criado_em, *_em) como texto no
+        horário de Brasília; '' quando vazio."""
+        from app.fuso import utc_para_brasilia
+
+        valor = utc_para_brasilia(valor)
+        return valor.strftime(formato) if valor else ""
+
     @app.template_filter("hora_hhmm")
     def hora_hhmm(valor):
         """Formata um horário (objeto `time` do banco, ou string 'HH:MM'

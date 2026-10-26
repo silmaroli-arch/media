@@ -494,7 +494,7 @@
               <a href="{{ url_for('medico.notificacao_abrir', notificacao_id=n.id) }}" class="dropdown-item py-2 border-bottom {% if not n.lida %}fw-semibold{% endif %}">
                 <div class="small">{{ n.titulo }}</div>
                 <div class="text-muted small text-truncate" style="max-width: 280px;">{{ n.mensagem }}</div>
-                <div class="text-muted" style="font-size: .72rem;">{{ n.criado_em.strftime('%d/%m %H:%M') }}</div>
+                <div class="text-muted" style="font-size: .72rem;">{{ n.criado_em|hora_br('%d/%m %H:%M') }}</div>
               </a>
               {% endfor %}
             {% else %}
@@ -621,7 +621,7 @@
         <div class="{% if not loop.last %}mb-3 pb-3 border-bottom{% endif %}">
           {% if notificacoes_popup|length > 1 %}<h6 class="mb-1">{{ n.titulo }}</h6>{% endif %}
           <p class="mb-1" style="white-space: pre-line;">{{ n.mensagem }}</p>
-          <div class="text-muted small">{{ n.criado_em.strftime('%d/%m/%Y') }}</div>
+          <div class="text-muted small">{{ n.criado_em|hora_br('%d/%m/%Y') }}</div>
         </div>
         {% endfor %}
       </div>

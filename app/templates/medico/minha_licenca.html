@@ -18,7 +18,7 @@
         <input type="text" class="form-control form-control-sm" value="{{ p.pix_qr_code }}" id="pix-codigo-{{ p.id }}" readonly>
         <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('pix-codigo-{{ p.id }}').value)">Copiar</button>
       </div>
-      <div class="text-muted small mt-1">Pix válido até {{ p.pix_expira_em.strftime('%H:%M') }} (expira em ~30min)</div>
+      <div class="text-muted small mt-1">Pix válido até {{ p.pix_expira_em|hora_br('%H:%M') }} (expira em ~30min)</div>
     </div>
   {% else %}
     {% if p.pix_qr_code_base64 %}
@@ -180,7 +180,7 @@
             {% if p.pago %}
               <span class="badge bg-success">Pago</span>
               {% if p.origem_anual %}<span class="badge bg-info text-dark ms-1">Anual</span>{% endif %}
-              {% if p.pago_em %}<span class="text-muted small ms-1">em {{ p.pago_em.strftime('%d/%m/%Y') }}</span>{% endif %}
+              {% if p.pago_em %}<span class="text-muted small ms-1">em {{ p.pago_em|hora_br('%d/%m/%Y') }}</span>{% endif %}
             {% else %}
               <span class="badge bg-warning text-dark">Não pago</span>
             {% endif %}

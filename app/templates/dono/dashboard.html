@@ -234,7 +234,7 @@
                 <span class="badge bg-secondary">conta solo</span>
               {% endif %}
             </td>
-            <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
+            <td>{{ l.usuario.criado_em|hora_br('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
           </tr>
           {% else %}
           <tr><td colspan="7" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
@@ -273,7 +273,7 @@
                 -
               {% endif %}
             </td>
-            <td>{{ g.criado_em.strftime('%d/%m/%Y') }}</td>
+            <td>{{ g.criado_em|hora_br('%d/%m/%Y') }}</td>
             <td><a href="{{ url_for('dono.grupo_detalhe', grupo_id=g.id) }}" class="btn btn-sm btn-outline-secondary">Gerenciar</a></td>
           </tr>
           {% else %}

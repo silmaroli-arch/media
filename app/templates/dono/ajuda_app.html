@@ -23,7 +23,7 @@
     <tbody>
       {% for m in mensagens %}
       <tr>
-        <td class="text-nowrap small">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td class="text-nowrap small">{{ m.criado_em|hora_br('%d/%m/%Y %H:%M') }}</td>
         <td class="small">{{ m.usuario.nome if m.usuario else '-' }}</td>
         <td class="small text-muted">{{ m.tela or '-' }}</td>
         <td>{{ m.pergunta }}</td>

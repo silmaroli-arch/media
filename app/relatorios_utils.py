@@ -6,6 +6,7 @@ import io
 from datetime import date, datetime, timedelta
 
 from flask import Response, request
+from app.fuso import agora_brasilia
 
 
 def periodo_do_filtro(padrao_dias=30):
@@ -130,7 +131,7 @@ def exportar_pdf(base_nome, data_inicio, data_fim, titulo, cabecalho, linhas, li
         Paragraph(titulo, estilos["Title"]),
         Paragraph(
             f"Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')} — "
-            f"gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+            f"gerado em {agora_brasilia().strftime('%d/%m/%Y %H:%M')}",
             estilos["Normal"],
         ),
         Spacer(1, 0.4 * cm),

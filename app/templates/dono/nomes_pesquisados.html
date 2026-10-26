@@ -18,7 +18,7 @@
     <tbody>
       {% for r in registros %}
       <tr>
-        <td class="text-nowrap small">{{ r.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td class="text-nowrap small">{{ r.criado_em|hora_br('%d/%m/%Y %H:%M') }}</td>
         <td><strong>{{ r.nome }}</strong></td>
         <td>{{ r.resultado or "As fontes não confirmaram o que é." }}</td>
         <td class="small">{% for f in r.lista_fontes %}<a href="{{ f }}" target="_blank" rel="noopener" class="d-block text-truncate" style="max-width: 260px">{{ f }}</a>{% else %}-{% endfor %}</td>

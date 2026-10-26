@@ -16,6 +16,7 @@ from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_, and_, func
 
+from app.fuso import agora_brasilia, utc_para_brasilia
 from app.extensions import db
 from app.models import (
     AjudaMensagem, Paciente, Usuario, Exame, Agendamento, FaqItem,
@@ -966,7 +967,7 @@ def pacientes_agendamentos(paciente_id):
         consulta = consulta.filter(Agendamento.medico_id == current_user.id)
     agendamentos = consulta.order_by(Agendamento.data_hora.desc()).all()
     return render_template(
-        "medico/_paciente_agendamentos.html", agendamentos=agendamentos, agora=datetime.now(),
+        "medico/_paciente_agendamentos.html", agendamentos=agendamentos, agora=agora_brasilia(),
     )
 
 

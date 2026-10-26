@@ -2851,6 +2851,13 @@ Caso "posso tomar Poviztra?": Claude respondeu "Não" e ChatGPT "Sim, deve ser s
 - Checagem de divergência: "Sim" contra "Não" sempre conta como divergência.
 - Testes em `test_ia_nunca_chuta.py`. PENDENTE DE TESTE (Silvan): repetir "posso tomar Poviztra?" e ver se o rascunho sai direto, com {data} trocada.
 
+## Horário de Brasília nas telas (2026-10-26)
+
+Pergunta recebida às 18:43 aparecia como 21:43: o servidor grava em UTC e as telas mostravam o valor cru.
+- `app/fuso.py` (`utc_para_brasilia`, `agora_brasilia`) e filtro Jinja `hora_br`; todos os `*_em.strftime(...)` dos templates (criado_em, pago_em, pix_expira_em...) passaram a `|hora_br(...)`. Relatórios CSV/PDF, "Gerado em" e o selo "Próximo" da lista de agendamentos usam o horário de Brasília. `Agendamento.data_hora` NÃO é convertido (já é o horário marcado).
+- Síntese das respostas: mantém os marcadores ({14 dias antes}...) e não cria condicional ("caso falte menos de 14 dias") - visto no teste do Poviztra.
+- Teste: `test_fuso_brasilia.py`. PENDENTE DE TESTE (Silvan): hora de "Recebida em" bate com o relógio; repetir o Poviztra.
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").

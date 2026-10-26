@@ -8,7 +8,7 @@
   {% if agendamento.resultado %}
   <p class="mb-3">
     <i class="bi bi-file-earmark-pdf"></i> Já existe um resultado anexado: <strong>{{ agendamento.resultado.nome_arquivo }}</strong>
-    (enviado por {{ agendamento.resultado.enviado_por }} em {{ agendamento.resultado.criado_em.strftime('%d/%m/%Y %H:%M') }}).
+    (enviado por {{ agendamento.resultado.enviado_por }} em {{ agendamento.resultado.criado_em|hora_br('%d/%m/%Y %H:%M') }}).
     Enviar um novo arquivo abaixo substitui esse.
   </p>
   {% endif %}

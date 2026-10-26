@@ -105,7 +105,7 @@
     <div class="card p-4 mt-3 border-danger-subtle">
       <h6 class="mb-2 text-danger"><i class="bi bi-person-x"></i> Excluir minha conta</h6>
       {% if pedido %}
-      <p class="small mb-2">Pedido de exclusão enviado em {{ pedido.criado_em.strftime('%d/%m/%Y') }} - aguardando o administrador da plataforma.</p>
+      <p class="small mb-2">Pedido de exclusão enviado em {{ pedido.criado_em|hora_br('%d/%m/%Y') }} - aguardando o administrador da plataforma.</p>
       <p class="small text-muted mb-2">Motivo: {{ pedido.motivo }}</p>
       <form method="post" action="{{ url_for('auth.cancelar_solicitacao_exclusao') }}" onsubmit="return confirm('Cancelar o pedido de exclusão?');">
         <button type="submit" class="btn btn-outline-secondary btn-sm">Cancelar pedido</button>

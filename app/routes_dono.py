@@ -5,6 +5,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from sqlalchemy import func
 from flask_login import login_required, current_user
 
+from app.fuso import agora_brasilia, utc_para_brasilia
 from app.extensions import db
 from app.models import Grupo, Agendamento, PlataformaConfig, GrupoPaciente, ChamadaIA, Usuario, Paciente, GrupoMembro, LicencaPagamento, garantir_meses_licenca, meses_consecutivos_sem_pagar, MensagemSuporte, Notificacao, TipoExame, PreparoModelo, BaseConhecimentoItem, BaseConhecimentoHistorico, BaseConhecimentoSugestao, tipos_exame_ordenados, TipoExameSugestao, SolicitacaoExclusao, AjudaMensagem
 from app.base_conhecimento import (
@@ -1158,7 +1159,7 @@ def tipos_exame_pendencias_txt():
         linhas.append(
             "- %s | especialidade: %s | preparos aguardando: %s | pedido em %s" % (
                 s.nome, s.especialidade or "não informada", preparos.get(s.id, 0),
-                s.criado_em.strftime("%d/%m/%Y") if s.criado_em else "-",
+                utc_para_brasilia(s.criado_em).strftime("%d/%m/%Y") if s.criado_em else "-",
             )
         )
     return Response("\n".join(linhas) + "\n", mimetype="text/plain; charset=utf-8")

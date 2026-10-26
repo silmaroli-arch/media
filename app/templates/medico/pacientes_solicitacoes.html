@@ -14,7 +14,7 @@
         <td>{{ p.cpf }}</td>
         <td>{{ p.telefone|telefone or '-' }}</td>
         <td>{{ p.data_nascimento.strftime('%d/%m/%Y') if p.data_nascimento else '-' }}</td>
-        <td>{{ p.criado_em.strftime('%d/%m/%Y %H:%M') if p.criado_em else '-' }}</td>
+        <td>{{ p.criado_em|hora_br('%d/%m/%Y %H:%M') if p.criado_em else '-' }}</td>
         <td class="d-flex gap-2">
           <form method="post" action="{{ url_for('medico.pacientes_cadastro_decidir', paciente_id=p.id) }}">
             <input type="hidden" name="acao" value="aceitar">

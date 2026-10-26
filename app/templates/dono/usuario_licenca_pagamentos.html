@@ -44,7 +44,7 @@
             {% if p.pago %}
               <span class="badge bg-success">Pago</span>
               {% if p.origem_anual %}<span class="badge bg-info text-dark ms-1">Anual</span>{% endif %}
-              {% if p.pago_em %}<span class="text-muted small ms-1">em {{ p.pago_em.strftime('%d/%m/%Y') }}</span>{% endif %}
+              {% if p.pago_em %}<span class="text-muted small ms-1">em {{ p.pago_em|hora_br('%d/%m/%Y') }}</span>{% endif %}
             {% else %}
               <span class="badge bg-warning text-dark">Não pago</span>
             {% endif %}

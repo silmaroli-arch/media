@@ -364,7 +364,7 @@
   {% endif %}
   </div>
 
-  <div class="rodape">Gerado em {{ agora.strftime('%d/%m/%Y %H:%M') if agora else '' }}</div>
+  <div class="rodape">Gerado em {{ agora|hora_br('%d/%m/%Y %H:%M') }}</div>
 </div>
 {% if pdf_original %}
 <script>

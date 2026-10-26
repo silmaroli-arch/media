@@ -12,7 +12,7 @@
       <td>{{ p.paciente.nome }}</td>
       {{ td_filial(p) }}
       <td>{{ p.exame.nome if p.exame else "—" }}</td>
-      <td class="text-nowrap">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+      <td class="text-nowrap">{{ p.criado_em|hora_br('%d/%m/%Y %H:%M') }}</td>
       <td>{{ p.pergunta }}</td>
       <td>{{ p.resposta_para_paciente }}</td>
       <td>{{ p.respondida_por }}</td>

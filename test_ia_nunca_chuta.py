@@ -90,6 +90,7 @@ with app.app_context():
         content=[SimpleNamespace(text="NAO")], usage=SimpleNamespace(input_tokens=1, output_tokens=1), model="claude")))
     checar("Checagem de divergência: 'Sim' contra 'Não' sempre diverge",
            _respostas_divergem(arbitro, "Não, suspenda.", "Sim, suspenda.") is True and "SEMPRE divergem" in divergencias[0])
+    checar("Síntese mantém os marcadores de data e evita condicional", "Mantenha, exatamente como estão, os marcadores" in sistemas[0] and "caso falte menos de" in sistemas[0])
     checar("Síntese também não diz 'não está cadastrado'", "não está cadastrado" in sistemas[0] and "Nunca escreva" in sistemas[0])
     from app.ia_preparo import _principios_anvisa
     importar_csv(CSV + "OZEMPIC;ANTIDIABETICOS;Ativo;SEMAGLUTIDA\nMOUNJARO;ANTIDIABETICOS;Ativo;TIRZEPATIDA\n".encode("latin-1"))

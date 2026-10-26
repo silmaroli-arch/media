@@ -18,7 +18,7 @@
   </div>
   <div class="mb-3">
     <label class="form-label">Data</label>
-    <input type="text" class="form-control" value="{{ pergunta.criado_em.strftime('%d/%m/%Y %H:%M') }}" disabled>
+    <input type="text" class="form-control" value="{{ pergunta.criado_em|hora_br('%d/%m/%Y %H:%M') }}" disabled>
   </div>
   <form method="post" action="{{ url_for('medico.pergunta_respondida_editar', pergunta_id=pergunta.id) }}">
     <div class="mb-3">

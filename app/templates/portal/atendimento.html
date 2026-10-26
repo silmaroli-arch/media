@@ -62,7 +62,7 @@
       <span class="badge bg-danger badge-urgente"><i class="bi bi-clock-history"></i> aguardando há tempo</span>
     </div>
     <div class="pergunta-texto">{{ p.pergunta }}</div>
-    <div class="pergunta-meta">Recebida em {{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</div>
+    <div class="pergunta-meta">Recebida em {{ p.criado_em|hora_br('%d/%m/%Y %H:%M') }}</div>
   </div>
 {% endmacro %}
 
@@ -74,7 +74,7 @@
       <div class="mt-2">
         {% for m in mensagens_paciente %}
           <div class="historico-item">
-            <small>{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}{% if m.exame %} · {{ m.exame.nome }}{% endif %}</small>
+            <small>{{ m.criado_em|hora_br('%d/%m/%Y %H:%M') }}{% if m.exame %} · {{ m.exame.nome }}{% endif %}</small>
             <div><span class="rotulo">Pergunta:</span> {{ m.pergunta }}</div>
             {% if m.resposta %}<div><span class="rotulo">Resposta:</span> {{ m.resposta }}</div>{% endif %}
           </div>
@@ -158,7 +158,7 @@
           {# A versão corrigida pela IA validadora, que vai para o FAQ
              (pedido do Silvan, 2026-10-21). #}
           {% if p.pergunta_faq and p.pergunta_faq != p.pergunta %}{{ campo("Pergunta corrigida pela IA", p.pergunta_faq) }}{% endif %}
-          {{ campo("Recebida em", p.criado_em.strftime('%d/%m/%Y %H:%M')) }}
+          {{ campo("Recebida em", p.criado_em|hora_br('%d/%m/%Y %H:%M')) }}
           {{ historico(p.paciente_id) }}
           {% if aguardando_ia %}
             {# Só mostra a coluna da IA que o dono escolheu pra esta

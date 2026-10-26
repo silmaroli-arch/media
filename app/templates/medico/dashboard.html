@@ -85,7 +85,7 @@
       <div class="d-flex justify-content-between align-items-center bg-white border rounded p-3 mb-2">
         <div>
           <strong class="fs-5">{{ convite.grupo.nome }}</strong>
-          <div class="text-muted small">Convite de {{ convite.criado_em.strftime('%d/%m/%Y') }}</div>
+          <div class="text-muted small">Convite de {{ convite.criado_em|hora_br('%d/%m/%Y') }}</div>
         </div>
         <a href="{{ url_for('grupo.meus_convites') }}" class="btn btn-success">Ver convite</a>
       </div>

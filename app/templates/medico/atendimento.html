@@ -4,7 +4,7 @@
 <h3 class="mb-1">Atendimento — {{ agendamento.paciente.nome }}</h3>
 <p class="text-muted mb-4">
   {{ agendamento.exame.nome }} · {{ agendamento.data_hora.strftime('%d/%m/%Y %H:%M') }}
-  {% if agendamento.encerrada %}<span class="badge bg-dark ms-2">Encerrado em {{ agendamento.encerrado_em.strftime('%d/%m/%Y %H:%M') }}</span>{% endif %}
+  {% if agendamento.encerrada %}<span class="badge bg-dark ms-2">Encerrado em {{ agendamento.encerrado_em|hora_br('%d/%m/%Y %H:%M') }}</span>{% endif %}
 </p>
 
 <div class="card p-4 mb-4">
@@ -39,7 +39,7 @@
           <div class="border-bottom py-2">
             <div class="fw-semibold">{{ m.pergunta }}</div>
             <div class="text-muted small">{{ m.resposta or '(encaminhada para a secretaria, sem resposta automática)' }}</div>
-            <div class="text-muted small">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}</div>
+            <div class="text-muted small">{{ m.criado_em|hora_br('%d/%m/%Y %H:%M') }}</div>
           </div>
           {% endfor %}
         {% else %}
@@ -70,7 +70,7 @@
                   <div class="border-bottom py-2">
                     <div class="fw-semibold">{{ m.pergunta }}</div>
                     <div class="text-muted small">{{ m.resposta or '(encaminhada para a secretaria, sem resposta automática)' }}</div>
-                    <div class="text-muted small">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}</div>
+                    <div class="text-muted small">{{ m.criado_em|hora_br('%d/%m/%Y %H:%M') }}</div>
                   </div>
                   {% endfor %}
                 {% else %}
