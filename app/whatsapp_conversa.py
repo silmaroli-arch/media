@@ -187,6 +187,7 @@ from app.extensions import db
 from app.faq_engine import buscar_resposta
 from app.marcadores_resposta import agendamento_do_paciente, preencher_marcadores
 from app.ia_preparo import responder_com_ia, validar_pergunta, formatar_situacao_ias
+from app.monitor_perguntas import registrar as registrar_no_monitor
 from app.preparo_publico import montar_link_preparo
 from app.models import (
     Agendamento, ChatMensagem, ContagemPerguntasDia, ConversaWhatsapp, Paciente,
@@ -582,6 +583,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
         historico=_historico_recente_chat(paciente.id, exame.id) if exame else None,
     )
     if resultado_validacao["classificacao"] == "sem_sentido":
+        registrar_no_monitor("whatsapp", paciente, exame, grupo_id_ancora, pergunta_texto, "sem_sentido", validacao="sem_sentido")
         return MENSAGEM_MENSAGEM_SEM_SENTIDO, None, True
     # "Fora do exame" não encerra mais sozinho (2026-10-21: a validadora
     # bloqueou "Que horas tenho que chegar na clínica?" várias vezes): a
@@ -592,6 +594,8 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
     resposta_final = None
     origem = None
     pergunta_pendente_criada = None
+    resultado_ia = None
+    pendente_do_monitor = None
     agendamento_paciente = agendamento or (agendamento_do_paciente(paciente.id, exame.id) if exame else None)
 
     # A FAQ é procurada pela pergunta com a digitação corrigida pela IA
@@ -633,10 +637,15 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             # pedindo pra reescrever, sem criar PerguntaPendente nem
             # ChatMensagem - não faz sentido registrar isso no histórico
             # nem na fila da equipe.
+            registrar_no_monitor("whatsapp", paciente, exame, grupo_id_ancora, pergunta_texto, "sem_sentido",
+                                 resultado_ia=resultado_ia, pergunta_corrigida=pergunta_corrigida,
+                                 validacao=resultado_validacao["classificacao"])
             return MENSAGEM_MENSAGEM_SEM_SENTIDO, None, True
         if validador_disse_fora and not (resultado_ia and resultado_ia["final"]):
             # A validadora disse "fora do exame" e as IAs confirmaram (não
             # tinham nada a responder): aviso, sem ir para a fila da equipe.
+            registrar_no_monitor("whatsapp", paciente, exame, grupo_id_ancora, pergunta_texto, "fora_do_exame",
+                                 resultado_ia=resultado_ia, pergunta_corrigida=pergunta_corrigida, validacao="fora_do_exame")
             return MENSAGEM_PERGUNTA_FORA_DO_EXAME, None, True
         if resultado_ia and resultado_ia["final"]:
             origem = "ia_aguardando"
@@ -685,6 +694,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
                 aprovar_pergunta_automaticamente(pergunta_pendente_criada, resultado_ia["final"])
                 resposta_final = preencher_marcadores(resultado_ia["final"], agendamento_paciente)
                 origem = "ia"
+                pendente_do_monitor = pergunta_pendente_criada
                 pergunta_pendente_criada = None
         else:
             origem = "pendente"
@@ -705,6 +715,12 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             )
             db.session.add(pergunta_pendente_criada)
 
+    registrar_no_monitor(
+        "whatsapp", paciente, exame, grupo_id_ancora, pergunta_texto,
+        {"faq": "faq", "ia_aguardando": "ia_aguardando", "ia": "ia_automatica", "pendente": "pendente"}[origem],
+        resultado_ia=resultado_ia, pendente=pergunta_pendente_criada or pendente_do_monitor, resposta_final=resposta_final,
+        pergunta_corrigida=pergunta_corrigida, validacao=resultado_validacao["classificacao"], faq_item=faq_item,
+    )
     db.session.add(ChatMensagem(
         paciente_id=paciente.id,
         exame_id=exame.id if exame else None,

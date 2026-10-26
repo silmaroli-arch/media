@@ -1989,10 +1989,15 @@ class FaqItem(db.Model):
     # só uma string solta pra exibição) — ver
     # clinica_utils.filtro_escopo_atual().
     criado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
+    # Quem respondeu/aprovou (pedido do Silvan, 2026-10-26; só na área da equipe).
+    # Vazio na aprovação automática, onde nenhum médico revisou.
+    respondido_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    respondido_em = db.Column(db.DateTime, nullable=True)
     vezes_utilizada = db.Column(db.Integer, default=0)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
+    respondido_por = db.relationship("Usuario", foreign_keys=[respondido_por_id])
     exame = db.relationship("Exame", back_populates="faqs")
 
 
@@ -2375,6 +2380,71 @@ class Notificacao(db.Model):
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     usuario = db.relationship("Usuario", foreign_keys=[usuario_id])
+
+
+class MonitorPergunta(db.Model):
+    """Um registro por pergunta de paciente tratada pelo sistema, com o
+    caminho que ela fez (pedido do Silvan, 2026-10-26: "monitor" na área do
+    dono): validador, correção da frase, FAQ, consulta à lista da ANVISA,
+    busca na internet, respostas de cada IA, rascunho, resposta final.
+    Gravado por app.monitor_perguntas.registrar; sem chaves estrangeiras de
+    propósito (o monitor nunca atrapalha a exclusão de paciente/exame -
+    ver app.limpar_dados e a exclusão de pacientes, que também o apagam)."""
+    __tablename__ = "monitor_perguntas"
+
+    id = db.Column(db.Integer, primary_key=True)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    canal = db.Column(db.String(20))  # whatsapp | web
+    paciente_id = db.Column(db.Integer, index=True)
+    exame_id = db.Column(db.Integer)
+    grupo_id = db.Column(db.Integer)
+    pergunta = db.Column(db.Text, nullable=False)
+    pergunta_corrigida = db.Column(db.Text)  # só quando a IA mudou a frase
+    # valida | sem_sentido | fora_do_exame | None (validador não rodou)
+    validacao = db.Column(db.String(20))
+    # faq | ia_aguardando | ia_automatica | pendente | sem_sentido | fora_do_exame
+    desfecho = db.Column(db.String(20), index=True)
+    faq_item_id = db.Column(db.Integer)
+    resposta_claude = db.Column(db.Text)
+    resposta_chatgpt = db.Column(db.Text)
+    resposta_gemini = db.Column(db.Text)
+    resposta_base = db.Column(db.Text)
+    ias_situacao = db.Column(db.String(120))
+    ias_com_erro = db.Column(db.String(60))
+    modelos = db.Column(db.String(300))  # "Claude=claude-sonnet-5-5;ChatGPT=gpt-4o-mini"
+    modelo_validador = db.Column(db.String(60))
+    consultou_anvisa = db.Column(db.Boolean, nullable=False, default=False)
+    anvisa_texto = db.Column(db.Text)
+    consultou_internet = db.Column(db.Boolean, nullable=False, default=False)
+    internet_texto = db.Column(db.Text)
+    divergiu = db.Column(db.Boolean)  # as 2 IAs divergiram (None: só uma respondeu)
+    sintese_usada = db.Column(db.Boolean, nullable=False, default=False)
+    exige_revisao = db.Column(db.Boolean, nullable=False, default=False)
+    rascunho = db.Column(db.Text)  # resposta sugerida pela IA (já com a junção)
+    resposta_final = db.Column(db.Text)  # FAQ ou aprovação automática (gravada na hora)
+    pergunta_pendente_id = db.Column(db.Integer)  # fila do médico: a resposta final vem de lá
+
+    @property
+    def pendente(self):
+        return db.session.get(PerguntaPendente, self.pergunta_pendente_id) if self.pergunta_pendente_id else None
+
+    @property
+    def final(self):
+        """(texto ou None, situação): a resposta que chegou ao paciente."""
+        if self.resposta_final:
+            return self.resposta_final, "enviada"
+        pendente = self.pendente
+        if pendente is not None:
+            if pendente.status == "respondida" and pendente.resposta:
+                return pendente.resposta, "aprovada pelo médico"
+            return None, "aguardando o médico" if pendente.status != "respondida" else "sem resposta"
+        if self.pergunta_pendente_id:
+            return None, "pergunta apagada da fila"
+        return None, "sem resposta (aviso ao paciente)"
+
+    @property
+    def corrigida(self):
+        return bool(self.pergunta_corrigida and self.pergunta_corrigida.strip() != self.pergunta.strip())
 
 
 def _preparo_pode_ser_editado_por(self, usuario):

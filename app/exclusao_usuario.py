@@ -202,6 +202,7 @@ def excluir_usuario_e_dados(usuario):
     # 7. Perguntas/FAQ que ele só criou/respondeu (atribuição, não é dado
     # clínico do paciente).
     FaqItem.query.filter_by(criado_por_id=uid).update({"criado_por_id": None}, synchronize_session=False)
+    FaqItem.query.filter_by(respondido_por_id=uid).update({"respondido_por_id": None}, synchronize_session=False)
     PerguntaPendente.query.filter_by(criado_por_id=uid).update({"criado_por_id": None}, synchronize_session=False)
 
     # 8. Pacientes que ele cadastrou (conta solo, sem Grupo) — o CADASTRO

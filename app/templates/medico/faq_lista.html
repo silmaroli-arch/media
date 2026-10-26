@@ -25,7 +25,7 @@
   {% if busca or filtro_exame %}<div class="col-auto"><a href="{{ url_for('medico.faq_lista') }}" class="btn btn-sm btn-link">Limpar</a></div>{% endif %}
 </form>
 <table class="table table-hover">
-  <thead><tr><th>Exame</th>{{ th_filial() }}<th>Pergunta</th><th>Resposta</th><th>Usada</th><th>Origem</th><th>Ações</th></tr></thead>
+  <thead><tr><th>Exame</th>{{ th_filial() }}<th>Pergunta</th><th>Resposta</th><th>Usada</th><th>Respondido por</th><th>Ações</th></tr></thead>
   <tbody>
     {% for i in itens %}
     <tr>
@@ -34,7 +34,7 @@
       <td>{{ i.pergunta }}</td>
       <td>{{ i.resposta|legivel }}</td>
       <td>{{ i.vezes_utilizada }}x</td>
-      <td>{{ i.criado_por or '-' }}</td>
+      <td>{{ (i.respondido_por.nome if i.respondido_por else i.criado_por) or '-' }}{% if i.respondido_em %}<div class="small text-muted">{{ i.respondido_em|hora_br('%d/%m/%Y') }}</div>{% endif %}</td>
       <td class="text-nowrap">
         <a href="{{ url_for('medico.faq_editar', item_id=i.id) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
         <form method="post" action="{{ url_for('medico.faq_excluir', item_id=i.id) }}" class="d-inline" onsubmit="return confirm('Excluir este item da base de conhecimento? A IA deixa de reaproveitar essa resposta.');">
