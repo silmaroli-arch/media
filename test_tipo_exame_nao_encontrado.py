@@ -54,7 +54,7 @@ with app.app_context():
     medico_id = medico.id
 
 login("outro.exame@example.com")
-html = client.get("/equipe/preparo-modelos/novo").get_data(as_text=True)
+html = client.get("/equipe/preparo-modelos/novo?manual=1").get_data(as_text=True)
 checar("Formulario tem o campo de especialidade do medico", 'name="especialidade"' in html and "Gastroenterologia" in html)
 checar("Tipos trazem as especialidades para o filtro", 'data-esp="' in html and "gastroenterologia" in html)
 checar("Lista tem 'Nao encontrei o meu exame'", 'value="outro"' in html and "Não encontrei o meu exame" in html)

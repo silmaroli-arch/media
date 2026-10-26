@@ -39,7 +39,7 @@ html_lista = r.get_data(as_text=True)
 checar("Lista NÃO tem mais o botão de importar", "Importar de um Excel" not in html_lista)
 checar("Lista continua com o botão de novo modelo", "Novo modelo" in html_lista)
 
-r = client.get("/equipe/preparo-modelos/novo")
+r = client.get("/equipe/preparo-modelos/novo?manual=1")
 html_form = r.get_data(as_text=True)
 # Pedido do Silvan (2026-09): a tela oferece só "Importar de um PDF" - o
 # Excel saiu da tela (o backend ainda aceita .xlsx, ver HANDOFF_CHAT.md).

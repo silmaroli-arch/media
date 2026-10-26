@@ -2394,18 +2394,8 @@ def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None):
     aparece no aviso pra quem importou saber qual IA realmente
     respondeu, já que agora existem 3 provedores possíveis na cadeia
     (ver app.ia_pdf_preparo)."""
-    if provedor_usado:
-        flash(
-            f"Dados extraídos do PDF via {provedor_usado}. Revise com cuidado antes de salvar — "
-            "a extração é automática e pode ter interpretado algo errado.",
-            "warning",
-        )
-    else:
-        flash(
-            "Dados extraídos do PDF. Revise com cuidado antes de salvar — a extração é "
-            "automática e pode ter interpretado algo errado.",
-            "warning",
-        )
+    # (O aviso de "revise com cuidado" agora é desenhado na própria tela, com
+    # o nome da IA - 2026-10-26 - em vez de uma mensagem solta no topo.)
     # Renderiza a tela de revisão direto aqui (sem redirect) em vez de
     # guardar a sugestão na sessão - o texto extraído de um PDF de preparo
     # pode ser longo o bastante para estourar o limite de 4KB do cookie de
@@ -2415,7 +2405,7 @@ def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None):
     # /preparo-modelos/novo?de_importacao=1 usaria, só que sem depender do
     # cookie para carregar o payload.
     return render_template(
-        "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
+        "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao, provedor_usado=provedor_usado,
         medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
         medicos=medicos_das_filiais(_filiais_da_empresa()), eh_medico_logado=eh_medico(),
         tipos_exame=_tipos_exame_ativos(),

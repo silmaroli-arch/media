@@ -75,6 +75,8 @@ html = medico.get(url_pagina).get_data(as_text=True)
 checar("Tela de revisão: página editável ao lado do PDF",
        'contenteditable="true"' in html and "Aprovar e publicar para o paciente" in html and 'id="pdf-ao-lado"' in html and "pdf.min.js" in html)
 html = medico.get(f"/equipe/preparo-modelos/{modelo_id}/editar").get_data(as_text=True)
+checar("O PDF do médico não pode ser trocado nem removido pelo formulário",
+       'name="remover_pdf_original"' not in html and 'name="pdf_original"' not in html)
 checar("Formulário do modelo mostra o passo a passo e o botão 'Revisar e aprovar agora'",
        'class="passos-pagina"' in html and "Revisar e aprovar agora" in html and "Obrigatório" in html)
 checar("Lista de modelos avisa 'falta aprovar'",

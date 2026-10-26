@@ -541,7 +541,7 @@ r = client.post(
 )
 html_pdf = r.get_data(as_text=True)
 checar("Importar o PDF responde 200 e leva direto pra revisão do formulário",
-       r.status_code == 200 and "Revise com cuidado" in html_pdf)
+       r.status_code == 200 and "revise e salve" in html_pdf)
 checar("Formulário preenchido sugere o corte de jejum de 12 horas",
        "JEJUM de 12 horas" in html_pdf)
 checar("Formulário preenchido sugere os medicamentos separados (não uma lista só)",

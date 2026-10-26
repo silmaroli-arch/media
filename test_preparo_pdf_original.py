@@ -82,6 +82,12 @@ r = medico.post("/equipe/preparo-modelos/importar-xlsx", content_type="multipart
     "arquivo_xlsx": (io.BytesIO(PDF), "importado.pdf"), "texto_extraido_cliente": "Jejum de 8 horas antes do exame."})
 html = r.get_data(as_text=True)
 checar("Revisão da importação já marca 'Usar o PDF importado'", 'name="usar_pdf_importado"' in html and "importado.pdf" in html)
+checar("Revisão da importação não pede escolher outro arquivo nem tem botão de importar solto",
+       'name="pdf_original"' not in html and "Passo 2 de 2" in html)
+html_inicio = medico.get("/equipe/preparo-modelos/novo").get_data(as_text=True)
+checar("Modelo novo começa só com o botão de importar (sem campos), e 'sem PDF' leva ao formulário",
+       "Comece importando o PDF do preparo" in html_inicio and 'id="form-preparo"' not in html_inicio
+       and 'id="form-preparo"' in medico.get("/equipe/preparo-modelos/novo?manual=1").get_data(as_text=True))
 checar("... e a equipe consegue abrir o PDF importado", medico.get("/equipe/preparo-modelos/pdf-importado").data == PDF)
 medico.post("/equipe/preparo-modelos/novo", data={
     "nome": "Preparo com PDF importado", "instrucoes": "Jejum.", "tipo_exame_id": "outro",

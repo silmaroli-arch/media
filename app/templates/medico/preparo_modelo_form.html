@@ -15,6 +15,12 @@
 </p>
 {% endif %}
 
+{# Em modelo NOVO, a tela começa só com o botão de importar o PDF; os campos
+   aparecem depois da importação (ou em "Prefiro preencher sem PDF") - pedido do
+   Silvan, 2026-10-26, a tela cheia logo de cara confundia. Só no GET: um POST
+   (importação ou erro ao salvar) já tem o que mostrar. #}
+{% set fase_inicial = (not modelo) and (not sugestao) and request.method == "GET" and request.args.get("manual") != "1" %}
+
 {% if varios_exames_vinculados %}
 <div class="alert alert-info">
   Este modelo é usado por {{ modelo.exames|length }} exames ao mesmo tempo (cadastro antigo, ex.:
@@ -25,10 +31,13 @@
 {% endif %}
 
 {% if sugestao %}
-<div class="alert alert-warning">
-  Dados extraídos automaticamente do arquivo enviado.
-  <strong>Revise com cuidado</strong> — a extração é automática e pode ter interpretado algo errado ou
-  deixado de reconhecer alguma regra. Nada foi salvo ainda.
+<div class="alert alert-warning d-flex flex-wrap align-items-center gap-2">
+  <div>
+    <strong>Passo 2 de 2 - revise e salve.</strong>
+    Os dados foram extraídos do PDF{% if provedor_usado %} (via {{ provedor_usado }}){% endif %}.
+    A extração é automática e pode errar: <strong>confira cada aba</strong>. Nada foi salvo ainda.
+  </div>
+  <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx">Importar outro PDF</button>
 </div>
 {% endif %}
 
@@ -38,17 +47,26 @@
   {% endfor %}
 </datalist>
 
-{% if not modelo %}
+{% if fase_inicial %}
+<div class="card p-4 text-center mx-auto" style="max-width: 640px;">
+  <div class="text-muted small mb-1">Passo 1 de 2</div>
+  <i class="bi bi-file-earmark-arrow-up display-4 text-primary"></i>
+  <h5 class="mt-2">Comece importando o PDF do preparo</h5>
+  <p class="text-muted">
+    A IA lê o PDF e preenche tudo para você revisar no passo seguinte. O mesmo PDF fica guardado como o
+    <strong>preparo original</strong> que o paciente abre pelo link do WhatsApp.
+  </p>
+  <div>
+    <button type="button" class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx">
+      <i class="bi bi-file-earmark-arrow-up"></i> Importar de um PDF
+    </button>
+  </div>
+  <div class="mt-3">
+    <a href="{{ url_for('medico.preparo_modelos_novo', manual=1, wizard=1 if wizard else None) }}" class="small">Prefiro preencher sem PDF</a>
+  </div>
+</div>
+{% elif not modelo and not sugestao %}
 <div class="mb-3">
-  {# Importar preenche este formulário - por isso o botão mora aqui, não
-     na lista. Abre um popup pra escolher o arquivo. PDF é lido
-     diretamente pela IA (ver app.ia_pdf_preparo), com fallback automático
-     pra extração por regex se a IA não estiver disponível - não existe
-     mais uma etapa intermediária de gerar Excel a partir do PDF.
-     Importação por planilha (.xlsx) continua existindo no backend (ver
-     medico.preparo_modelos_importar_xlsx), mas deixou de aparecer aqui
-     nesta tela (pedido do Silvan, 2026-09-11) - só a opção de PDF é
-     mostrada, pra não confundir quem está cadastrando. #}
   <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx">
     <i class="bi bi-file-earmark-arrow-up"></i> Importar de um PDF
   </button>
@@ -56,6 +74,7 @@
 </div>
 {% endif %}
 
+{% if not fase_inicial %}
 <div class="card p-4">
   <form method="post" id="form-preparo" enctype="multipart/form-data">
     {% if wizard %}<input type="hidden" name="wizard" value="1">{% endif %}
@@ -98,24 +117,24 @@
           <a href="{{ url_for('medico.preparo_modelos_pdf_pagina', modelo_id=modelo.id) }}" class="btn btn-outline-primary btn-sm">{{ 'Acompanhar' if situacao_pagina == 'gerando' else 'Gerar a página' }}</a>
           {% endif %}
         </div>
-        <div class="form-check mt-1">
-          <input class="form-check-input" type="checkbox" name="remover_pdf_original" value="1" id="remover-pdf-original">
-          <label class="form-check-label small" for="remover-pdf-original">Remover o PDF (o paciente vê só a linha do tempo)</label>
-        </div>
       </div>
       {% elif pendente %}
-      <div class="form-check mb-2">
-        <input class="form-check-input" type="checkbox" name="usar_pdf_importado" value="1" id="usar-pdf-importado" checked>
-        <label class="form-check-label" for="usar-pdf-importado">
-          Usar o PDF importado
-          (<a href="{{ url_for('medico.preparo_modelos_pdf_importado') }}" target="_blank">{{ pendente.nome_arquivo }}</a>)
-          como preparo original
-        </label>
+      {# PDF importado: já vem como preparo original, sem pedir para escolher arquivo de novo. #}
+      {# O PDF é o documento do médico: não se troca nem se remove por aqui
+         (2026-10-26). O importado é sempre guardado, sem escolha. #}
+      <input type="hidden" name="usar_pdf_importado" value="1">
+      <div class="mb-1">
+        <i class="bi bi-check-circle-fill text-success"></i>
+        <a href="{{ url_for('medico.preparo_modelos_pdf_importado') }}" target="_blank">{{ pendente.nome_arquivo }}</a>
+        será guardado como o preparo original.
       </div>
+      <div class="form-text mb-1">Depois de salvar, a IA monta a versão em página para o celular e você revisa e aprova.</div>
       {% endif %}
+      {% if not pendente and not (modelo and modelo.pdf_original) %}
       <input type="file" name="pdf_original" accept="application/pdf,.pdf" class="form-control form-control-sm">
-      <div class="form-text">{% if (modelo and modelo.pdf_original) or pendente %}Escolha outro arquivo só se quiser trocar.{% else %}Opcional. Máximo 10 MB.{% endif %}</div>
-      {% if pendente or not (modelo and modelo.pdf_original) %}
+      <div class="form-text">Opcional. Máximo 10 MB.</div>
+      {% endif %}
+      {% if not pendente and not (modelo and modelo.pdf_original) %}
       <div class="alert alert-info small mt-2 mb-0 py-2">
         <strong>O que acontece depois de salvar:</strong>
         <ol class="mb-0 ps-3">
@@ -157,12 +176,6 @@
         {% endif %}
         <option value="outro" data-esp="" {% if modelo and modelo.tipo_exame_sugestao_id %}selected{% endif %}>Não encontrei o meu exame na lista</option>
       </select>
-      {% if current_user.tipo == 'medico' %}
-      <div class="form-check mt-1">
-        <input class="form-check-input" type="checkbox" id="check-todos-tipos">
-        <label class="form-check-label small" for="check-todos-tipos">Mostrar exames de todas as especialidades</label>
-      </div>
-      {% endif %}
       <div id="campo-tipo-outro" class="mt-2 {% if not (modelo and modelo.tipo_exame_sugestao_id) %}d-none{% endif %}">
         <input type="text" name="tipo_exame_outro" id="input-tipo-outro" class="form-control" maxlength="150"
                placeholder="Qual é o exame? (ex.: Colonoscopia com biópsia)"
@@ -181,15 +194,13 @@
     (function () {
       var selEsp = document.getElementById('select-especialidade');
       var selTipo = document.getElementById('select-tipo-exame');
-      var chkTodos = document.getElementById('check-todos-tipos');
       var campoOutro = document.getElementById('campo-tipo-outro');
       var inputOutro = document.getElementById('input-tipo-outro');
       if (!selTipo) return;
       function normalizar(t) { return (t || '').toLowerCase(); }
       function filtrar() {
         var esp = selEsp ? normalizar(selEsp.value) : '';
-        var todos = chkTodos ? chkTodos.checked : true;
-        var semFiltro = todos || !esp;
+        var semFiltro = !esp;
         Array.prototype.forEach.call(selTipo.options, function (op) {
           if (!op.value || op.value === 'outro') { op.hidden = false; op.disabled = false; return; }
           var lista = (op.getAttribute('data-esp') || '').split('|').filter(Boolean);
@@ -210,10 +221,9 @@
       }
       if (selEsp) selEsp.addEventListener('change', function () {
         var op = selTipo.selectedOptions[0];
-        if (op && op.value && op.value !== 'outro' && !(chkTodos && chkTodos.checked) && !casa(op)) selTipo.value = '';
+        if (op && op.value && op.value !== 'outro' && !casa(op)) selTipo.value = '';
         filtrar(); alternarOutro();
       });
-      if (chkTodos) chkTodos.addEventListener('change', filtrar);
       selTipo.addEventListener('change', alternarOutro);
       filtrar(); alternarOutro();
     })();
@@ -495,6 +505,7 @@
     {% endif %}
   </form>
 </div>
+{% endif %}
 
 {% if not modelo %}
 {# ---------- Popup de importação (fora do <form> principal - formulário
@@ -503,6 +514,8 @@
    medico/_importar_preparo_pdf.html) ---------- #}
 {% include "medico/_importar_preparo_pdf.html" %}
 {% endif %}
+
+{% if not fase_inicial %}
 
 <script>
   // Campo obrigatório inválido escondido numa aba não focada impede o
@@ -604,4 +617,5 @@
     document.getElementById('lista_exames_anteriores').appendChild(div);
   }
 </script>
+{% endif %}
 {% endblock %}

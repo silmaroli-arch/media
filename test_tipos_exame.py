@@ -93,7 +93,7 @@ with app.app_context():
     endo_id = TipoExame.query.filter_by(nome="Endoscopia digestiva alta").first().id
 
 # ---------- 3. Com tipos: obrigatorio ----------
-html = client.get("/equipe/preparo-modelos/novo").get_data(as_text=True)
+html = client.get("/equipe/preparo-modelos/novo?manual=1").get_data(as_text=True)
 checar("Formulario mostra o dropdown de tipo", 'name="tipo_exame_id"' in html and "Colonoscopia" in html)
 checar("Dropdown nao lista tipo inativo", "Retossigmoidoscopia" not in html)
 

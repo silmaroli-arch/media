@@ -33,7 +33,7 @@ r = client.get("/equipe/")
 checar("O menu lateral NÃO tem mais o item separado 'Gerar Excel a partir de PDF'",
        "Gerar Excel a partir de PDF" not in r.get_data(as_text=True))
 
-html_novo = client.get("/equipe/preparo-modelos/novo").get_data(as_text=True)
+html_novo = client.get("/equipe/preparo-modelos/novo?manual=1").get_data(as_text=True)
 # (desde 2026-09 o botão oferece só PDF - pedido do Silvan)
 checar("A tela de novo modelo tem o botão de importar PDF",
        "Importar de um PDF" in html_novo)
@@ -61,7 +61,7 @@ r = client.post(
 checar("Importar o PDF responde 200", r.status_code == 200)
 html = r.get_data(as_text=True)
 checar("Leva direto pra tela de revisão do formulário (nada de download de Excel)",
-       "Revise com cuidado" in html)
+       "revise e salve" in html)
 checar("O nome sugerido do exame foi extraído do PDF",
        'value="PREPARO TESTE IMPORTACAO DE PDF"' in html)
 checar("As instruções extraídas aparecem no formulário", "JEJUM de 10 horas" in html)
