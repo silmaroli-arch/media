@@ -1989,10 +1989,15 @@ class FaqItem(db.Model):
     # só uma string solta pra exibição) — ver
     # clinica_utils.filtro_escopo_atual().
     criado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
+    # Quem respondeu/aprovou (pedido do Silvan, 2026-10-26; só na área da equipe).
+    # Vazio na aprovação automática, onde nenhum médico revisou.
+    respondido_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    respondido_em = db.Column(db.DateTime, nullable=True)
     vezes_utilizada = db.Column(db.Integer, default=0)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow)
 
     grupo = db.relationship("Grupo", foreign_keys=[grupo_id])
+    respondido_por = db.relationship("Usuario", foreign_keys=[respondido_por_id])
     exame = db.relationship("Exame", back_populates="faqs")
 
 

@@ -94,7 +94,7 @@
               <div class="mb-2"><strong>Sugestão do {{ nome }}:</strong><div class="border rounded p-2 bg-body">{{ texto }}</div></div>
               {% endfor %}
               {% if r.rascunho %}<div class="mb-2"><strong>Rascunho sugerido (após a junção):</strong><div class="border rounded p-2 bg-body">{{ r.rascunho }}</div></div>{% endif %}
-              <div><strong>Resposta final ({{ situacao }}):</strong><div class="border rounded p-2 bg-body">{{ final or "-" }}</div></div>
+              <div><strong>Resposta final ({{ situacao }}{% if r.pendente and r.pendente.respondida_por %} - {{ r.pendente.respondida_por }}{% endif %}):</strong><div class="border rounded p-2 bg-body">{{ final or "-" }}</div></div>
             </div>
           </div>
         </td>

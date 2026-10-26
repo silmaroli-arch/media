@@ -4271,6 +4271,8 @@ def perguntas_responder(pergunta_id):
         pergunta=pergunta.pergunta_faq or pergunta.pergunta,
         resposta=resposta,
         criado_por=current_user.nome,
+        respondido_por_id=current_user.id,
+        respondido_em=datetime.utcnow(),
     )
     if novo_faq:
         db.session.add(novo_faq)
@@ -4408,6 +4410,8 @@ def faq_novo():
             pergunta=pergunta,
             resposta=de_leitura(resposta),
             criado_por=current_user.nome,
+            respondido_por_id=current_user.id,
+            respondido_em=datetime.utcnow(),
         )
         db.session.add(item)
         db.session.commit()

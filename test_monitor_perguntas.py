@@ -91,6 +91,16 @@ html = dono.get("/dono/monitor-perguntas").get_data(as_text=True)
 checar("Depois da aprovação, o monitor mostra a resposta final do médico",
        "Suspenda o Poviztra 14 dias antes do exame." in html and "aprovada pelo médico" in html)
 
+# O FAQ grava quem respondeu (só aparece na área da equipe).
+from app.models import FaqItem
+with app.app_context():
+    faq = FaqItem.query.order_by(FaqItem.id.desc()).first()
+    medica = Usuario.query.filter_by(email="medica2@clinicavitoria.com").first()
+    checar("FAQ guarda o id e a data de quem aprovou", faq.respondido_por_id == medica.id and faq.respondido_em is not None
+           and faq.criado_por == medica.nome)
+html = medico.get("/equipe/faq").get_data(as_text=True)
+checar("Meu FAQ mostra quem respondeu", "Respondido por" in html and medica.nome in html)
+
 # Mesma pergunta de novo: vem do FAQ.
 with app.app_context():
     with validador("VALIDA\nPERGUNTA: Posso tomar Poviztra?"), patch("app.whatsapp_conversa.responder_com_ia") as chamada:
