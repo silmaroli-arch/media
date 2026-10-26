@@ -104,17 +104,22 @@
       <div class="mb-2">
         <a href="{{ url_for('medico.preparo_modelos_pdf_original', modelo_id=modelo.id) }}" target="_blank">{{ modelo.pdf_original.nome_arquivo }}</a>
         <span class="text-muted small">({{ (modelo.pdf_original.tamanho / 1024) | round | int }} KB)</span>
-        {# Versão em página (HTML) feita pela IA, que o médico aprova (2026-10-24). #}
-        {% set situacao_pagina = modelo.pdf_original.situacao_pagina %}
-        <div class="mt-2">
-          <div class="small fw-semibold mb-1"><i class="bi bi-phone"></i> Versão em página para o celular</div>
-          {% with situacao = situacao_pagina, pdf = modelo.pdf_original %}{% include "medico/_passos_pagina_pdf.html" %}{% endwith %}
-          {% if situacao_pagina == "revisar" %}
-          <a href="{{ url_for('medico.preparo_modelos_pdf_pagina', modelo_id=modelo.id) }}" class="btn btn-warning btn-sm"><i class="bi bi-check2-circle"></i> Revisar e aprovar agora</a>
-          {% elif situacao_pagina == "aprovada" %}
-          <a href="{{ url_for('medico.preparo_modelos_pdf_pagina', modelo_id=modelo.id) }}" class="btn btn-outline-secondary btn-sm">Ver ou corrigir a página publicada</a>
+        {# O paciente vê as páginas do PDF como imagem, exatamente como o médico escreveu (2026-10-26). #}
+        {% set paginas_modelo = modelo.pdf_original.paginas %}
+        <div class="mt-2 small">
+          {% if paginas_modelo %}
+          <div class="text-success mb-1"><i class="bi bi-check-circle-fill"></i>
+            {{ paginas_modelo|length }} página(s) prontas: o paciente vê o seu PDF como está, no link do WhatsApp.</div>
+          <div class="d-flex flex-wrap gap-2">
+            {% for pg in paginas_modelo %}
+            <a href="{{ url_for('medico.preparo_modelos_pdf_pagina_imagem', modelo_id=modelo.id, numero=pg.numero) }}" target="_blank">
+              <img src="{{ url_for('medico.preparo_modelos_pdf_pagina_imagem', modelo_id=modelo.id, numero=pg.numero) }}" alt="Página {{ pg.numero }}"
+                   style="height: 110px; width: auto; border: 1px solid #cfd8e3; border-radius: 4px; background: #fff;" loading="lazy">
+            </a>
+            {% endfor %}
+          </div>
           {% else %}
-          <a href="{{ url_for('medico.preparo_modelos_pdf_pagina', modelo_id=modelo.id) }}" class="btn btn-outline-primary btn-sm">{{ 'Acompanhar' if situacao_pagina == 'gerando' else 'Gerar a página' }}</a>
+          <div class="text-muted">O paciente abre e baixa o PDF pelo link do WhatsApp.</div>
           {% endif %}
         </div>
       </div>
@@ -128,7 +133,7 @@
         <a href="{{ url_for('medico.preparo_modelos_pdf_importado') }}" target="_blank">{{ pendente.nome_arquivo }}</a>
         será guardado como o preparo original.
       </div>
-      <div class="form-text mb-1">Depois de salvar, a IA monta a versão em página para o celular e você revisa e aprova.</div>
+      <div class="form-text mb-1">Depois de salvar, o paciente vê as páginas do seu PDF, como estão, no link do WhatsApp.</div>
       {% endif %}
       {% if not pendente and not (modelo and modelo.pdf_original) %}
       <input type="file" name="pdf_original" accept="application/pdf,.pdf" class="form-control form-control-sm">
@@ -136,12 +141,8 @@
       {% endif %}
       {% if not pendente and not (modelo and modelo.pdf_original) %}
       <div class="alert alert-info small mt-2 mb-0 py-2">
-        <strong>O que acontece depois de salvar:</strong>
-        <ol class="mb-0 ps-3">
-          <li>O paciente já pode abrir o seu PDF pelo link do WhatsApp.</li>
-          <li>A IA monta uma <strong>versão em página para o celular</strong> (leva 1 a 2 minutos).</li>
-          <li><strong>Você revisa e aprova</strong> o texto - só então o paciente passa a ver a página.</li>
-        </ol>
+        <strong>Depois de salvar:</strong> o paciente vê as páginas do seu PDF, exatamente como estão, no link do WhatsApp
+        (e pode baixá-lo).
       </div>
       {% endif %}
     </div>

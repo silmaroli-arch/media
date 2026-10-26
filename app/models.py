@@ -1634,6 +1634,21 @@ class NomePesquisado(db.Model):
         return [f for f in (self.fontes or "").split("\n") if f]
 
 
+class PreparoPdfPagina(db.Model):
+    """Uma página do PDF original do preparo, como imagem JPEG."""
+    __tablename__ = "preparo_pdf_paginas"
+    __table_args__ = (db.UniqueConstraint("pdf_id", "numero", name="uq_preparo_pdf_pagina_numero"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    pdf_id = db.Column(db.Integer, db.ForeignKey("preparo_pdfs_originais.id", ondelete="CASCADE"), nullable=False, index=True)
+    numero = db.Column(db.Integer, nullable=False)  # 1, 2, 3...
+    largura = db.Column(db.Integer, nullable=False)
+    altura = db.Column(db.Integer, nullable=False)
+    imagem = db.deferred(db.Column(db.LargeBinary, nullable=False))
+
+    pdf = db.relationship("PreparoPdfOriginal", back_populates="paginas")
+
+
 class PreparoPdfOriginal(db.Model):
     """O PDF original do preparo, como o médico escreveu (pedido do Silvan,
     2026-10-24): o paciente abre ESTE arquivo primeiro pelo link do
@@ -1652,10 +1667,11 @@ class PreparoPdfOriginal(db.Model):
     conteudo = db.deferred(db.Column(db.LargeBinary, nullable=False))
     enviado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
     enviado_em = db.Column(db.DateTime, default=datetime.utcnow)
-    # Versão em página (HTML) do PDF, feita pela IA e aprovada pelo médico
-    # (2026-10-24, ver app.ia_pdf_html). Status: None (não gerada),
-    # "gerando", "revisar" (pronta, falta aprovar), "aprovada" ou "erro".
-    # O paciente só vê a página com status "aprovada".
+    # LEGADO: versão em texto feita pela IA e aprovada pelo médico (2026-10-24),
+    # retirada em 2026-10-26 em favor das páginas do PDF como imagem
+    # (PreparoPdfPagina, ver app.preparo_pdf_paginas). As colunas pagina_*
+    # seguem no banco sem uso, exceto pagina_status, que agora marca
+    # "imagens" / "imagens_erro" (valores antigos são ignorados).
     pagina_html = db.Column(db.Text)
     pagina_status = db.Column(db.String(20))
     # Números/palavras do PDF que não apareceram na página (um por linha).
@@ -1665,26 +1681,13 @@ class PreparoPdfOriginal(db.Model):
     pagina_aprovada_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
 
     preparo_modelo = db.relationship("PreparoModelo", back_populates="pdf_original")
+    # Páginas do PDF como imagem (2026-10-26, ver app.preparo_pdf_paginas):
+    # o que o paciente vê no link do WhatsApp - o PDF do médico exatamente
+    # como ele escreveu, sem IA no meio.
+    paginas = db.relationship(
+        "PreparoPdfPagina", back_populates="pdf", cascade="all, delete-orphan", order_by="PreparoPdfPagina.numero",
+    )
 
-    # Geração que não terminou nesse tempo (ex.: o servidor reiniciou no
-    # meio) é tratada como erro - dá para gerar de novo.
-    LIMITE_GERANDO_MINUTOS = 10
-
-    @property
-    def situacao_pagina(self):
-        if self.pagina_status == "gerando" and self.pagina_atualizada_em and (
-            datetime.utcnow() - self.pagina_atualizada_em
-        ).total_seconds() > self.LIMITE_GERANDO_MINUTOS * 60:
-            return "erro"
-        return self.pagina_status
-
-    @property
-    def pagina_para_paciente(self):
-        return self.pagina_html if self.pagina_status == "aprovada" and self.pagina_html else None
-
-    @property
-    def lista_avisos_pagina(self):
-        return [a for a in (self.pagina_avisos or "").split("\n") if a]
 
 
 class Agendamento(db.Model):

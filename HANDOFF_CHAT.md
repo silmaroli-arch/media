@@ -2818,6 +2818,19 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Ajuste: o resultado do "Testar" aparece dentro do card (a tela rola até ele), não mais como mensagem no topo da página, que ficava fora da tela. Validado pelo Silvan no media-dev (2026-10-25): claude-opus-5-5, claude-sonnet-5-5 (validador), gpt-5.4-mini e gemini-flash-latest responderam.
 - Com isso, não é mais preciso mexer no Render para trocar modelo (a variável antiga, se existir, só vale com o campo em branco).
 
+## PDF do preparo como imagens na página do link (2026-10-26) - substitui a "versão em página" feita pela IA
+
+Pedido do Silvan: em vez de a IA transcrever o PDF para texto (e o médico aprovar), cada página do PDF vira imagem e é publicada no link do WhatsApp. Sem IA, sem custo, sem aprovação, funciona com PDF escaneado.
+
+- `app/preparo_pdf_paginas.py`: `gerar_paginas` (pypdfium2, até 30 páginas, JPEG qualidade 82) e `garantir_paginas` (gera na hora para PDFs anexados antes; PDF ilegível fica `imagens_erro` e cai no cartão Abrir/Baixar).
+- Tabela nova `preparo_pdf_paginas` (criada pelo `db.create_all`); imagens ficam no banco. `PreparoPdfOriginal.pagina_status` passa a valer "imagens"/"imagens_erro"; as demais colunas `pagina_*` ficam sem uso.
+- Rotas: `/paciente/preparo/<token>/pagina/<n>.jpg` e miniaturas no formulário do modelo.
+- Página do paciente: aba "Preparo do médico" mostra as imagens (ampliar com os dedos) e a aba "Linha do tempo" continua; "Baixar PDF" baixa o original.
+- Removidos: `ia_pdf_html.py`, tela de aprovação, passo-a-passo da página e o selo "Página do celular: falta aprovar". Dependências: pypdfium2, Pillow. Teste: `test_preparo_pdf_paginas.py`; Malu atualizada.
+- Dúvida do Silvan (Remover desabilitado): é proposital, o modelo está em uso por exame(s).
+
+PENDENTE DE TESTE (Silvan): importar PDF real, salvar, abrir o link no celular (imagens legíveis, aba Linha do tempo, Baixar PDF); modelo antigo com PDF gera as imagens na 1ª visita.
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").

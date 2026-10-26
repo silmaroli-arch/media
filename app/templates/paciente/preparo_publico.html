@@ -188,7 +188,10 @@
     font-weight: 700;
   }
   .cartao-original .baixar { color: var(--azul); font-size: 0.9rem; }
-  /* Versão em página do PDF, aprovada pelo médico (2026-10-24) */
+  /* Páginas do PDF do médico como imagem (2026-10-26) */
+  .paginas-pdf img { display: block; width: 100%; height: auto; margin: 0 0 10px; border: 1px solid #cfd8e3; border-radius: 6px; background: #fff; }
+  .dica-zoom { font-size: 0.8rem !important; color: #6c757d; margin: 0 0 10px !important; }
+  /* (estilos da versão em texto da IA, desativada em 2026-10-26) */
   .pagina-preparo { color: #212529; font-size: 0.98rem; line-height: 1.5; margin-bottom: 16px; }
   .pagina-preparo h2 { font-size: 1.1rem; margin: 18px 0 8px; color: #14213d; }
   .pagina-preparo h3 { font-size: 1rem; margin: 14px 0 6px; color: #14213d; }
@@ -245,8 +248,16 @@
   </nav>
   <div class="cartao-original aba-conteudo ativa" id="aba-medico">
     <h2>Preparo do médico</h2>
-    {% if pdf_original.pagina_para_paciente %}
-    <div class="pagina-preparo">{{ pdf_original.pagina_para_paciente | safe }}</div>
+    {% if paginas_pdf %}
+    {# As páginas do PDF do médico como imagem, exatamente como ele escreveu (2026-10-26). #}
+    <div class="paginas-pdf">
+      {% for pg in paginas_pdf %}
+      <img src="{{ url_for('paciente.preparo_publico_pagina', token=agendamento.token_preparo_publico, numero=pg.numero) }}"
+           width="{{ pg.largura }}" height="{{ pg.altura }}" alt="Preparo do médico - página {{ pg.numero }} de {{ paginas_pdf|length }}"
+           {% if not loop.first %}loading="lazy"{% endif %}>
+      {% endfor %}
+    </div>
+    <p class="dica-zoom">Toque e afaste os dedos sobre a página para ampliar.</p>
     <div class="acoes">
       <a class="baixar" href="{{ url_for('paciente.preparo_publico_original', token=agendamento.token_preparo_publico) }}" target="_blank" rel="noopener">Ver o PDF original</a>
       <a class="baixar" href="{{ url_for('paciente.preparo_publico_original', token=agendamento.token_preparo_publico, baixar=1) }}">Baixar o PDF</a>
