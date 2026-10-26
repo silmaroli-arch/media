@@ -30,7 +30,7 @@
 </div>
 {% endif %}
 
-{% if sugestao %}
+{% if sugestao and not sugestao._do_formulario %}
 <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2">
   <div>
     <strong>Passo 2 de 2 - revise e salve.</strong>
@@ -86,7 +86,7 @@
     <div class="mb-3">
       <label class="form-label">Nome do modelo (também é o nome do exame)</label>
       <input type="text" name="nome" class="form-control" required
-             value="{{ modelo.nome if modelo else ((sugestao.nome_sugerido if sugestao else '') or '') }}">
+             value="{{ (sugestao.nome_sugerido if sugestao else (modelo.nome if modelo else '')) or '' }}">
       <div class="form-text">
         Ex.: "Colonoscopia com Picoprep e Manitol (Manhã)", "Teste de Hidrogênio Expirado" — este nome
         é usado tanto para o modelo de preparo quanto para o exame criado/atualizado junto.
@@ -158,7 +158,7 @@
       <select name="especialidade" id="select-especialidade" class="form-select" required>
         <option value="">Selecione a especialidade...</option>
         {% for e in ESPECIALIDADES %}
-        <option value="{{ e }}" {% if current_user.especialidade == e %}selected{% endif %}>{{ e }}</option>
+        <option value="{{ e }}" {% if (request.form.get('especialidade') if sugestao and sugestao._do_formulario else current_user.especialidade) == e %}selected{% endif %}>{{ e }}</option>
         {% endfor %}
       </select>
       <div class="form-text">Mostramos abaixo só os exames da sua especialidade. Ao salvar, ela também é atualizada no seu cadastro.</div>
@@ -169,12 +169,12 @@
       <select name="tipo_exame_id" id="select-tipo-exame" class="form-select" {% if not modelo or modelo.tipo_exame_id %}required{% endif %}>
         <option value="">Selecione o tipo de exame...</option>
         {% for t in tipos_exame %}
-        <option value="{{ t.id }}" data-esp="{{ t.lista_especialidades|join('|')|lower }}" {% if modelo and modelo.tipo_exame_id == t.id %}selected{% endif %}>{{ t.nome }}</option>
+        <option value="{{ t.id }}" data-esp="{{ t.lista_especialidades|join('|')|lower }}" {% if (sugestao and sugestao._do_formulario and request.form.get('tipo_exame_id') == t.id|string) or (not (sugestao and sugestao._do_formulario) and modelo and modelo.tipo_exame_id == t.id) %}selected{% endif %}>{{ t.nome }}</option>
         {% endfor %}
         {% if modelo and modelo.tipo_exame and modelo.tipo_exame not in tipos_exame %}
         <option value="{{ modelo.tipo_exame.id }}" data-esp="" selected>{{ modelo.tipo_exame.nome }} (inativo)</option>
         {% endif %}
-        <option value="outro" data-esp="" {% if modelo and modelo.tipo_exame_sugestao_id %}selected{% endif %}>Não encontrei o meu exame na lista</option>
+        <option value="outro" data-esp="" {% if (sugestao and sugestao._do_formulario and request.form.get('tipo_exame_id') == 'outro') or (not (sugestao and sugestao._do_formulario) and modelo and modelo.tipo_exame_sugestao_id) %}selected{% endif %}>Não encontrei o meu exame na lista</option>
       </select>
       <div id="campo-tipo-outro" class="mt-2 {% if not (modelo and modelo.tipo_exame_sugestao_id) %}d-none{% endif %}">
         <input type="text" name="tipo_exame_outro" id="input-tipo-outro" class="form-control" maxlength="150"
@@ -239,7 +239,7 @@
       <div class="col-md-4">
         <label class="form-label">Duração do exame (minutos, opcional)</label>
         <input type="number" min="0" name="duracao_minutos" class="form-control"
-               value="{{ exame_vinculado.duracao_minutos if exame_vinculado and exame_vinculado.duracao_minutos is not none else '' }}">
+               value="{{ request.form.get('duracao_minutos', '') if sugestao and sugestao._do_formulario else (exame_vinculado.duracao_minutos if exame_vinculado and exame_vinculado.duracao_minutos is not none else '') }}">
       </div>
       {% if not eh_medico_logado %}
       <div class="col-md-4">
@@ -274,7 +274,7 @@
     <div class="tab-pane fade show active" id="aba-geral">
     <div class="mb-3">
       <label class="form-label">Instruções gerais (visíveis ao paciente)</label>
-      <textarea name="instrucoes" class="form-control" rows="10" required>{{ modelo.instrucoes if modelo else ((sugestao.instrucoes if sugestao else '') or '') }}</textarea>
+      <textarea name="instrucoes" class="form-control" rows="10" required>{{ (sugestao.instrucoes if sugestao else (modelo.instrucoes if modelo else '')) or '' }}</textarea>
       <div class="form-text">Dieta por fase, receituário, modo de preparo, observações finais etc. — tudo que não tem campo próprio nas outras abas.</div>
     </div>
     </div>
@@ -286,7 +286,7 @@
       horário exato calculado a partir do agendamento dele, não um horário fixo.
     </p>
     <div id="lista_cortes">
-      {% set cortes = modelo.cortes if modelo else (sugestao.cortes if sugestao else []) %}
+      {% set cortes = sugestao.cortes if sugestao else (modelo.cortes if modelo else []) %}
       {% for c in cortes %}
       <div class="row g-2 mb-2 linha-corte">
         <div class="col-md-6">
@@ -315,7 +315,7 @@
       reaproveitá-lo.
     </p>
     <div id="lista_medicamentos">
-      {% set medicamentos = modelo.medicamentos_suspensos if modelo else (sugestao.medicamentos if sugestao else []) %}
+      {% set medicamentos = sugestao.medicamentos if sugestao else (modelo.medicamentos_suspensos if modelo else []) %}
       {% for ms in medicamentos %}
       <div class="row g-2 mb-2 linha-medicamento">
         <div class="col-md-4">
@@ -353,7 +353,7 @@
       <label class="form-label">Observações sobre medicamentos (opcional, texto livre)</label>
       <input type="text" name="observacoes_medicamentos" class="form-control"
              placeholder="Ex.: Não é necessário suspender o AAS, Somalgin, Aspirina."
-             value="{{ (modelo.observacoes_medicamentos if modelo else (sugestao.observacoes_medicamentos if sugestao else '')) or '' }}">
+             value="{{ (sugestao.observacoes_medicamentos if sugestao else (modelo.observacoes_medicamentos if modelo else '')) or '' }}">
     </div>
 
     <h6>Medicamentos que podem ser mantidos (não precisam ser suspensos)</h6>
@@ -362,7 +362,7 @@
       paciente pergunta se pode continuar tomando um medicamento específico (ex.: "posso tomar AAS?").
     </p>
     <div id="lista_mantidos">
-      {% set mantidos = modelo.medicamentos_mantidos if modelo else (sugestao.medicamentos_mantidos if sugestao else []) %}
+      {% set mantidos = sugestao.medicamentos_mantidos if sugestao else (modelo.medicamentos_mantidos if modelo else []) %}
       {% for mm in mantidos %}
       <div class="row g-2 mb-2 linha-mantido">
         <div class="col-md-7">
@@ -390,7 +390,7 @@
       "dia relativo" + "hora exata" juntos (ex.: "pode comer até as 20:00 do dia anterior" = 1 dia antes, 20:00).
     </p>
     <div id="lista_infos_gerais">
-      {% set infos_gerais = modelo.informacoes_gerais if modelo else (sugestao.informacoes_gerais if sugestao else []) %}
+      {% set infos_gerais = sugestao.informacoes_gerais if sugestao else (modelo.informacoes_gerais if modelo else []) %}
       {% for info in infos_gerais %}
       <div class="row g-2 mb-2 linha-info-geral">
         <div class="col-md-5">
@@ -432,7 +432,7 @@
       exame. Preencha só um dos dois campos de prazo — "horas antes" OU "dias antes" — nunca os dois.
     </p>
     <div id="lista_alimentos">
-      {% set alimentos = modelo.alimentos if modelo else (sugestao.alimentos if sugestao else []) %}
+      {% set alimentos = sugestao.alimentos if sugestao else (modelo.alimentos if modelo else []) %}
       {% for a in alimentos %}
       <div class="row g-2 mb-2 linha-alimento">
         <div class="col-md-4">
@@ -474,7 +474,7 @@
       passado, não uma suspensão futura. O prazo em dias antes é opcional.
     </p>
     <div id="lista_exames_anteriores">
-      {% set exames_anteriores = modelo.exames_anteriores_proibidos if modelo else (sugestao.exames_anteriores if sugestao else []) %}
+      {% set exames_anteriores = sugestao.exames_anteriores if sugestao else (modelo.exames_anteriores_proibidos if modelo else []) %}
       {% for e in exames_anteriores %}
       <div class="row g-2 mb-2 linha-exame-anterior">
         <div class="col-md-7">

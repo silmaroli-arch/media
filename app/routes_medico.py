@@ -1801,6 +1801,45 @@ def _salvar_cortes_e_medicamentos(modelo, form):
         ))
 
 
+def _inteiro_ou_none(valor):
+    try:
+        return int(str(valor).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _sugestao_do_formulario(form):
+    """O que foi preenchido no formulário de preparo, no mesmo formato da
+    sugestão de importação - para o formulário voltar COMPLETO quando o
+    salvar falha (ex.: nome repetido). Antes só o nome e o texto voltavam e
+    todo o resto (cortes, medicamentos, alimentos...) era perdido, inclusive
+    o que a importação do PDF tinha preenchido (2026-10-26)."""
+    def linhas(*campos):
+        listas = [form.getlist(c) for c in campos]
+        total = max((len(l) for l in listas), default=0)
+        return [tuple((l[k] if k < len(l) else "") for l in listas) for k in range(total)]
+
+    return {
+        "_do_formulario": True,
+        "nome_sugerido": form.get("nome", ""),
+        "instrucoes": form.get("instrucoes", ""),
+        "observacoes_medicamentos": form.get("observacoes_medicamentos", ""),
+        "cortes": [{"descricao": d, "horas_antes": _inteiro_ou_none(h)}
+                   for d, h in linhas("corte_descricao[]", "corte_horas[]") if d.strip()],
+        "medicamentos": [{"nome": n, "categoria": c, "dias_antes": _inteiro_ou_none(d), "observacao": o}
+                         for n, c, d, o in linhas("medicamento_nome[]", "medicamento_categoria[]", "medicamento_dias[]", "medicamento_obs[]")
+                         if n.strip()],
+        "medicamentos_mantidos": [{"nome": n, "observacao": o} for n, o in linhas("mantido_nome[]", "mantido_obs[]") if n.strip()],
+        "informacoes_gerais": [{"texto": t, "horas_antes": _inteiro_ou_none(h), "dias_antes": _inteiro_ou_none(d), "hora_exata": x}
+                               for t, h, d, x in linhas("info_geral[]", "info_geral_horas[]", "info_geral_dias[]", "info_geral_hora_exata[]")
+                               if t.strip()],
+        "alimentos": [{"nome": n, "permitido": t == "permitido", "horas_antes": _inteiro_ou_none(h), "dias_antes": _inteiro_ou_none(d)}
+                      for n, t, h, d in linhas("alimento_nome[]", "alimento_tipo[]", "alimento_horas[]", "alimento_dias[]") if n.strip()],
+        "exames_anteriores": [{"nome": n, "dias_antes": _inteiro_ou_none(d)}
+                              for n, d in linhas("exame_anterior_nome[]", "exame_anterior_dias[]") if n.strip()],
+    }
+
+
 def _tipos_exame_ativos():
     """Tipos de exame ativos (dropdown "Tipo de exame" do cadastro de
     preparo) na ordem definida pelo dono - ver app.models.TipoExame."""
@@ -1910,7 +1949,7 @@ def preparo_modelos_novo():
 
     def _rerender_novo():
         return render_template(
-            "medico/preparo_modelo_form.html", modelo=None, sugestao=None,
+            "medico/preparo_modelo_form.html", modelo=None, sugestao=_sugestao_do_formulario(request.form),
             medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
             wizard=wizard, medicos=medicos, eh_medico_logado=eh_medico(),
             tipos_exame=_tipos_exame_ativos(),
@@ -2097,7 +2136,8 @@ def preparo_modelos_editar(modelo_id):
 
     def _rerender_editar():
         return render_template(
-            "medico/preparo_modelo_form.html", modelo=modelo, sugestao=None,
+            "medico/preparo_modelo_form.html", modelo=modelo,
+            sugestao=_sugestao_do_formulario(request.form) if request.method == "POST" else None,
             medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
             medicos=medicos, exame_vinculado=exame_vinculado,
             varios_exames_vinculados=varios_exames_vinculados, eh_medico_logado=eh_medico(),
