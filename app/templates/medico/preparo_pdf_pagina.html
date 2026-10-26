@@ -20,10 +20,14 @@
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
   <h3 class="mb-0">Versão em página do preparo</h3>
-  <a href="{{ url_for('medico.preparo_modelos_editar', modelo_id=modelo.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Voltar ao modelo</a>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('medico.preparo_modelos_editar', modelo_id=modelo.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Voltar ao modelo</a>
+    <a href="{{ url_for('medico.preparo_modelos_lista') }}" class="btn btn-outline-secondary btn-sm">Concluir depois</a>
+  </div>
 </div>
 <p class="text-muted mb-3">{{ modelo.nome }} · PDF: <a href="{{ url_for('medico.preparo_modelos_pdf_original', modelo_id=modelo.id) }}" target="_blank">{{ pdf.nome_arquivo }}</a></p>
 
+{% include "medico/_passos_pagina_pdf.html" %}
 <div class="alert alert-light border small">
   A IA transcreve o seu PDF numa página para o paciente ler no celular. <strong>Confira com atenção ao lado do PDF</strong>:
   a página só aparece para o paciente depois que você aprovar. Até lá, e sempre como "Ver o PDF original", o paciente tem o PDF.
@@ -50,7 +54,11 @@
     (aprovada em {{ pdf.pagina_aprovada_em.strftime('%d/%m/%Y %H:%M') if pdf.pagina_aprovada_em else '-' }}).
   </div>
   {% else %}
-  <div class="alert alert-warning py-2"><i class="bi bi-hourglass-split"></i> <strong>Aguardando a sua aprovação</strong> - o paciente ainda vê só o PDF.</div>
+  <div class="alert alert-warning py-2 d-flex flex-wrap align-items-center gap-2">
+    <span><i class="bi bi-hourglass-split"></i> <strong>Falta a sua aprovação.</strong> Confira o texto abaixo ao lado do PDF e clique em
+      <strong>"Aprovar e publicar para o paciente"</strong> no fim da página - até lá o paciente vê só o PDF.</span>
+    <a href="#form-pagina" class="btn btn-sm btn-warning ms-auto">Ir para a aprovação <i class="bi bi-arrow-down"></i></a>
+  </div>
   {% endif %}
 
   {% if pdf.lista_avisos_pagina %}

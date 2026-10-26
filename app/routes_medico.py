@@ -2048,8 +2048,11 @@ def preparo_modelos_novo():
         erro_pdf = aplicar_pdf_original(modelo, request.form, request.files)
         if erro_pdf:
             flash(f"{erro_pdf} O modelo foi salvo sem ele.", "warning")
-        _gerar_pagina_se_pdf_novo(modelo)
+        iniciou_pagina = _gerar_pagina_se_pdf_novo(modelo)
         flash("Modelo de preparo cadastrado com sucesso — o exame correspondente também foi criado.", "success")
+        # Com PDF novo, leva direto ao passo a passo da página (2026-10-26).
+        if iniciou_pagina:
+            return redirect(url_for("medico.preparo_modelos_pdf_pagina", modelo_id=modelo.id))
         if wizard:
             return redirect(url_for("medico.primeiros_passos"))
         return redirect(url_for("medico.preparo_modelos_lista"))
@@ -2194,8 +2197,10 @@ def preparo_modelos_editar(modelo_id):
         erro_pdf = aplicar_pdf_original(modelo, request.form, request.files)
         if erro_pdf:
             flash(f"{erro_pdf} O restante foi salvo.", "warning")
-        _gerar_pagina_se_pdf_novo(modelo)
+        iniciou_pagina = _gerar_pagina_se_pdf_novo(modelo)
         flash("Modelo de preparo atualizado.", "success")
+        if iniciou_pagina:
+            return redirect(url_for("medico.preparo_modelos_pdf_pagina", modelo_id=modelo.id))
         return redirect(url_for("medico.preparo_modelos_lista"))
 
     return _rerender_editar()
@@ -2245,21 +2250,19 @@ def _gerar_pagina_se_pdf_novo(modelo):
     ver app.ia_pdf_html) - o médico revisa e aprova depois."""
     pdf = modelo.pdf_original
     if pdf is None or pdf.pagina_status is not None:
-        return
+        return False
     try:
         agendar_geracao_pagina(pdf, current_user.id)
     except Exception:
         current_app.logger.exception("Não foi possível iniciar a página do PDF do preparo %s", modelo.id)
         db.session.rollback()
-        return
+        return False
     flash(
-        Markup(
-            "A IA está montando a versão em página do PDF para o celular. "
-            f'<a href="{url_for("medico.preparo_modelos_pdf_pagina", modelo_id=modelo.id)}">Revise e aprove aqui</a> '
-            "- até lá o paciente vê o PDF."
-        ),
+        "Passo 2 de 3: a IA está montando a versão em página do seu PDF para o celular. "
+        "Quando ficar pronta, é preciso revisar e aprovar (passo 3) - só então o paciente vê a página; até lá ele vê o PDF.",
         "info",
     )
+    return True
 
 
 @medico_bp.route("/preparo-modelos/<int:modelo_id>/pdf-original/pagina", methods=["GET", "POST"])

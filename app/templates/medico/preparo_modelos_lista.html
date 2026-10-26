@@ -22,6 +22,11 @@
       <tr>
         <td>
           {{ m.nome }}
+          {% if m.pdf_original %}{% set sp = m.pdf_original.situacao_pagina %}
+          {% if sp == "revisar" %}<a href="{{ url_for('medico.preparo_modelos_pdf_pagina', modelo_id=m.id) }}" class="badge bg-warning text-dark text-decoration-none d-block d-md-inline-block mt-1"><i class="bi bi-hourglass-split"></i> Página do celular: falta aprovar</a>
+          {% elif sp == "gerando" %}<span class="badge bg-info text-dark d-block d-md-inline-block mt-1">Página do celular: gerando...</span>
+          {% elif sp == "erro" %}<a href="{{ url_for('medico.preparo_modelos_pdf_pagina', modelo_id=m.id) }}" class="badge bg-danger text-decoration-none d-block d-md-inline-block mt-1">Página do celular: tentar de novo</a>{% endif %}
+          {% endif %}
           {% if m.exames|length == 1 and m.exames[0].medico %}<div class="d-md-none small text-muted">{{ m.exames[0].medico.nome }}</div>{% endif %}
         </td>
         <td class="d-none d-md-table-cell">

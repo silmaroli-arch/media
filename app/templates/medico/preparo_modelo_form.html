@@ -87,14 +87,16 @@
         <span class="text-muted small">({{ (modelo.pdf_original.tamanho / 1024) | round | int }} KB)</span>
         {# Versão em página (HTML) feita pela IA, que o médico aprova (2026-10-24). #}
         {% set situacao_pagina = modelo.pdf_original.situacao_pagina %}
-        <div class="small mt-1">
-          <i class="bi bi-phone"></i> Versão em página para o celular:
-          {% if situacao_pagina == "aprovada" %}<span class="badge bg-success">publicada</span>
-          {% elif situacao_pagina == "revisar" %}<span class="badge bg-warning text-dark">aguardando sua aprovação</span>
-          {% elif situacao_pagina == "gerando" %}<span class="badge bg-info text-dark">gerando...</span>
-          {% elif situacao_pagina == "erro" %}<span class="badge bg-danger">não foi possível gerar</span>
-          {% else %}<span class="badge bg-secondary">não gerada</span>{% endif %}
-          <a href="{{ url_for('medico.preparo_modelos_pdf_pagina', modelo_id=modelo.id) }}" class="ms-1">{{ 'Revisar e aprovar' if situacao_pagina in ('revisar', 'aprovada') else 'Abrir' }}</a>
+        <div class="mt-2">
+          <div class="small fw-semibold mb-1"><i class="bi bi-phone"></i> Versão em página para o celular</div>
+          {% with situacao = situacao_pagina, pdf = modelo.pdf_original %}{% include "medico/_passos_pagina_pdf.html" %}{% endwith %}
+          {% if situacao_pagina == "revisar" %}
+          <a href="{{ url_for('medico.preparo_modelos_pdf_pagina', modelo_id=modelo.id) }}" class="btn btn-warning btn-sm"><i class="bi bi-check2-circle"></i> Revisar e aprovar agora</a>
+          {% elif situacao_pagina == "aprovada" %}
+          <a href="{{ url_for('medico.preparo_modelos_pdf_pagina', modelo_id=modelo.id) }}" class="btn btn-outline-secondary btn-sm">Ver ou corrigir a página publicada</a>
+          {% else %}
+          <a href="{{ url_for('medico.preparo_modelos_pdf_pagina', modelo_id=modelo.id) }}" class="btn btn-outline-primary btn-sm">{{ 'Acompanhar' if situacao_pagina == 'gerando' else 'Gerar a página' }}</a>
+          {% endif %}
         </div>
         <div class="form-check mt-1">
           <input class="form-check-input" type="checkbox" name="remover_pdf_original" value="1" id="remover-pdf-original">
@@ -113,6 +115,16 @@
       {% endif %}
       <input type="file" name="pdf_original" accept="application/pdf,.pdf" class="form-control form-control-sm">
       <div class="form-text">{% if (modelo and modelo.pdf_original) or pendente %}Escolha outro arquivo só se quiser trocar.{% else %}Opcional. Máximo 10 MB.{% endif %}</div>
+      {% if pendente or not (modelo and modelo.pdf_original) %}
+      <div class="alert alert-info small mt-2 mb-0 py-2">
+        <strong>O que acontece depois de salvar:</strong>
+        <ol class="mb-0 ps-3">
+          <li>O paciente já pode abrir o seu PDF pelo link do WhatsApp.</li>
+          <li>A IA monta uma <strong>versão em página para o celular</strong> (leva 1 a 2 minutos).</li>
+          <li><strong>Você revisa e aprova</strong> o texto - só então o paciente passa a ver a página.</li>
+        </ol>
+      </div>
+      {% endif %}
     </div>
 
     {# Pedido do Silvan (2026-09-29): tipo de exame (lista global mantida pelo

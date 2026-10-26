@@ -57,7 +57,10 @@ url_pagina = f"/equipe/preparo-modelos/{modelo_id}/pdf-original/pagina"
 with patch("app.ia_pdf_html.PROVEDORES", (("Fake", lambda: object(), fake),)):
     r = medico.post(f"/equipe/preparo-modelos/{modelo_id}/editar", content_type="multipart/form-data",
                     follow_redirects=True, data={**dados, "pdf_original": (io.BytesIO(PDF), "preparo.pdf")})
-checar("Anexar o PDF já gera a página e avisa onde revisar", "Revise e aprove aqui" in r.get_data(as_text=True))
+html = r.get_data(as_text=True)
+checar("Anexar o PDF leva direto ao passo a passo, explicando que falta revisar e aprovar",
+       "Passo 2 de 3" in html and 'class="passos-pagina"' in html and "Você revisa e aprova" in html
+       and "Falta a sua aprovação" in html)
 with app.app_context():
     pdf = PreparoModelo.query.get(modelo_id).pdf_original
     checar("Página gerada, limpa, aguardando aprovação",
@@ -71,8 +74,11 @@ checar("Antes de aprovar, o paciente vê só o PDF", "Suspender Ozempic 14 dias 
 html = medico.get(url_pagina).get_data(as_text=True)
 checar("Tela de revisão: página editável ao lado do PDF",
        'contenteditable="true"' in html and "Aprovar e publicar para o paciente" in html and 'id="pdf-ao-lado"' in html and "pdf.min.js" in html)
-checar("Formulário do modelo mostra 'aguardando sua aprovação'",
-       "aguardando sua aprovação" in medico.get(f"/equipe/preparo-modelos/{modelo_id}/editar").get_data(as_text=True))
+html = medico.get(f"/equipe/preparo-modelos/{modelo_id}/editar").get_data(as_text=True)
+checar("Formulário do modelo mostra o passo a passo e o botão 'Revisar e aprovar agora'",
+       'class="passos-pagina"' in html and "Revisar e aprovar agora" in html and "Obrigatório" in html)
+checar("Lista de modelos avisa 'falta aprovar'",
+       "Página do celular: falta aprovar" in medico.get("/equipe/preparo-modelos").get_data(as_text=True))
 
 editado = '<h2>Preparo</h2><p>Suspender Ozempic 14 dias antes do exame.</p><img src=x onerror="alert(1)">'
 medico.post(url_pagina, data={"acao": "aprovar", "pagina_html": editado}, follow_redirects=True)
