@@ -14,6 +14,7 @@ from app.models import Agendamento, Exame, PerguntaPendente, ChatMensagem, Pacie
 from app.faq_engine import buscar_resposta
 from app.marcadores_resposta import resposta_para_paciente
 from app.ia_preparo import responder_com_ia, formatar_situacao_ias
+from app.monitor_perguntas import registrar as registrar_no_monitor
 from app.clinica_utils import verificar_vencimento_grupo
 from app.push_notificacoes import notificar_equipe_nova_pergunta
 from app.preparo_publico import montar_documento_preparo, gerar_pdf_preparo
@@ -412,6 +413,8 @@ def chat():
             # volta direto pro paciente, sem chamar a IA de novo nem passar
             # pelo médico — é a ÚNICA fonte que pode responder direto, já
             # que já foi revisada por alguém da equipe antes.
+            resultado_ia = None
+            pendente = None
             faq_item, score = buscar_resposta(
                 pergunta_enviada,
                 grupo_id=grupo_id_ancora,
@@ -528,6 +531,11 @@ def chat():
             # Registra a pergunta+resposta no histórico do paciente — o
             # médico consegue ver essas dúvidas ao iniciar o atendimento
             # (ver medico.atendimento), já vinculadas ao agendamento certo.
+            registrar_no_monitor(
+                "web", paciente, exame_selecionado, grupo_id_ancora, pergunta_enviada,
+                {"faq": "faq", "ia_aguardando": "ia_aguardando", "ia": "ia_automatica", "pendente": "pendente"}[origem],
+                resultado_ia=resultado_ia, pendente=pendente, resposta_final=resposta_ia, faq_item=faq_item,
+            )
             db.session.add(ChatMensagem(
                 paciente_id=paciente.id,
                 exame_id=exame_selecionado.id if exame_selecionado else None,

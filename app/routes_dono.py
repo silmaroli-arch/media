@@ -471,6 +471,76 @@ def nomes_pesquisados():
     return render_template("dono/nomes_pesquisados.html", registros=registros, config=PlataformaConfig.obter())
 
 
+DESFECHOS_MONITOR = {
+    "faq": ("Respondida pelo FAQ", "success"),
+    "ia_aguardando": ("IA - aguardando o médico", "warning"),
+    "ia_automatica": ("IA - enviada sem aprovação", "primary"),
+    "pendente": ("Sem resposta da IA - fila do médico", "secondary"),
+    "sem_sentido": ("Sem sentido (aviso ao paciente)", "dark"),
+    "fora_do_exame": ("Fora do exame (aviso ao paciente)", "dark"),
+}
+
+
+@dono_bp.route("/monitor-perguntas")
+@login_required
+@dono_required
+def monitor_perguntas():
+    """Monitor das perguntas dos pacientes (pedido do Silvan, 2026-10-26): o
+    caminho de cada uma - correção da frase, FAQ, ANVISA, internet, respostas
+    das IAs, rascunho e resposta final (ver app.monitor_perguntas)."""
+    from datetime import timedelta
+
+    from sqlalchemy import or_
+
+    from app.models import Exame, MonitorPergunta, Paciente
+
+    q = (request.args.get("q") or "").strip()
+    desfecho = request.args.get("desfecho") or ""
+    canal = request.args.get("canal") or ""
+    dias = request.args.get("dias", "7")
+    pagina = max(request.args.get("pagina", 1, type=int), 1)
+    marcas = {k: request.args.get(k) == "1" for k in ("anvisa", "internet", "corrigida", "divergiu")}
+
+    consulta = MonitorPergunta.query
+    if dias.isdigit():
+        consulta = consulta.filter(MonitorPergunta.criado_em >= datetime.utcnow() - timedelta(days=int(dias)))
+    if q:
+        consulta = consulta.filter(or_(MonitorPergunta.pergunta.ilike(f"%{q}%"), MonitorPergunta.rascunho.ilike(f"%{q}%"),
+                                       MonitorPergunta.resposta_final.ilike(f"%{q}%")))
+    if desfecho in DESFECHOS_MONITOR:
+        consulta = consulta.filter(MonitorPergunta.desfecho == desfecho)
+    if canal in ("whatsapp", "web"):
+        consulta = consulta.filter(MonitorPergunta.canal == canal)
+    if marcas["anvisa"]:
+        consulta = consulta.filter(MonitorPergunta.consultou_anvisa.is_(True))
+    if marcas["internet"]:
+        consulta = consulta.filter(MonitorPergunta.consultou_internet.is_(True))
+    if marcas["corrigida"]:
+        consulta = consulta.filter(MonitorPergunta.pergunta_corrigida.isnot(None),
+                                   MonitorPergunta.pergunta_corrigida != MonitorPergunta.pergunta)
+    if marcas["divergiu"]:
+        consulta = consulta.filter(MonitorPergunta.divergiu.is_(True))
+
+    total = consulta.count()
+    por_pagina = 50
+    registros = consulta.order_by(MonitorPergunta.criado_em.desc()).offset((pagina - 1) * por_pagina).limit(por_pagina).all()
+    pacientes = {p.id: p for p in Paciente.query.filter(Paciente.id.in_({r.paciente_id for r in registros if r.paciente_id})).all()} if registros else {}
+    exames = {e.id: e for e in Exame.query.filter(Exame.id.in_({r.exame_id for r in registros if r.exame_id})).all()} if registros else {}
+    contagem = dict(consulta.with_entities(MonitorPergunta.desfecho, db.func.count()).group_by(MonitorPergunta.desfecho).all())
+    resumo = {
+        "anvisa": consulta.filter(MonitorPergunta.consultou_anvisa.is_(True)).count(),
+        "internet": consulta.filter(MonitorPergunta.consultou_internet.is_(True)).count(),
+        "corrigida": consulta.filter(MonitorPergunta.pergunta_corrigida.isnot(None),
+                                     MonitorPergunta.pergunta_corrigida != MonitorPergunta.pergunta).count(),
+        "divergiu": consulta.filter(MonitorPergunta.divergiu.is_(True)).count(),
+    }
+    return render_template(
+        "dono/monitor_perguntas.html", registros=registros, pacientes=pacientes, exames=exames, total=total,
+        pagina=pagina, paginas=max((total + por_pagina - 1) // por_pagina, 1), contagem=contagem, resumo=resumo,
+        desfechos=DESFECHOS_MONITOR, filtros={"q": q, "desfecho": desfecho, "canal": canal, "dias": dias, **marcas},
+    )
+
+
 @dono_bp.route("/ajuda-app")
 @login_required
 @dono_required

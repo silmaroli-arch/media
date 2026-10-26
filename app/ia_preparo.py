@@ -706,6 +706,16 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
     return texto, chamada, False, exige_revisao
 
 
+def _monitor_anotar(**campos):
+    """Anotação para o monitor do dono (ver app.monitor_perguntas); nunca falha."""
+    try:
+        from app.monitor_perguntas import anotar
+
+        anotar(**campos)
+    except Exception:
+        pass
+
+
 def _cliente_do_ponto(ponto):
     """Cliente da empresa do modelo escolhido para o ponto (None sem chave de
     API). Claude passa por `_cliente_anthropic` (como sempre)."""
@@ -1026,6 +1036,7 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
         bloco_anvisa = ""
     if bloco_anvisa:
         contexto = f"{contexto}\n\n{bloco_anvisa}"
+        _monitor_anotar(anvisa=bloco_anvisa)
     # Resultado de uma busca na internet (ver _pesquisar_nome_nao_reconhecido).
     if contexto_extra:
         contexto = f"{contexto}\n\n{contexto_extra}"
@@ -1099,6 +1110,7 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
         elif reserva_respondeu and falhou_b:
             resposta_b, chamada_b, nome_efetivo_b, sem_sentido_b, exige_revisao_b = resposta_c, chamada_c, provedor_c, sem_sentido_c, exige_revisao_c
 
+    _monitor_anotar(modelos=";".join(f"{n}={c.modelo}" for n, c in ((nome_efetivo_a, chamada_a), (nome_efetivo_b, chamada_b)) if c is not None and getattr(c, "modelo", None)) or None)
     respostas_por_provedor[nome_efetivo_a] = resposta_a
     respostas_por_provedor[nome_efetivo_b] = resposta_b
 
@@ -1112,8 +1124,11 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
     cliente_sintese = _cliente_do_ponto("sintese")
 
     if resposta_a and resposta_b:
-        if _respostas_divergem(cliente_arbitro, resposta_a, resposta_b, paciente_id):
+        divergiram = _respostas_divergem(cliente_arbitro, resposta_a, resposta_b, paciente_id)
+        _monitor_anotar(divergiu=bool(divergiram))
+        if divergiram:
             sintese = _sintetizar_resposta(cliente_sintese, pergunta_usuario, resposta_a, resposta_b, paciente_id)
+            _monitor_anotar(sintese_usada=bool(sintese))
             if sintese:
                 # O rascunho final é o próprio texto sintetizado, já pronto
                 # para envio ao paciente — as respostas individuais de cada
@@ -1417,6 +1432,7 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
             sucesso=True, paciente_id=paciente_id,
         )
         texto = resposta.texto
+        _monitor_anotar(modelo_validador=resposta.modelo)
     except Exception:
         current_app.logger.exception(
             "Falha ao consultar %s para validar pergunta do paciente (ponto 'validador')", provedor,
