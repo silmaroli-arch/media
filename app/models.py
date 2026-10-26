@@ -61,6 +61,9 @@ class PlataformaConfig(db.Model):
     modelo_claude_sintese = db.Column(db.String(60), nullable=True)
     modelo_openai = db.Column(db.String(60), nullable=True)
     modelo_gemini = db.Column(db.String(60), nullable=True)
+    # Modelo escolhido pelo dono para cada ponto de uso de IA (JSON
+    # {"resposta_1": "claude-sonnet-5-5", ...}, ver app.ia_modelos.PONTOS).
+    modelos_pontos = db.Column(db.Text, nullable=True)
 
     # "Terceira IA" - base de conhecimento compartilhada (pedido do Silvan,
     # 2026-09-29, ver BaseConhecimentoItem e app.base_conhecimento). Liga/
@@ -1414,6 +1417,13 @@ class PreparoModelo(db.Model):
     tipo_exame = db.relationship("TipoExame", foreign_keys=[tipo_exame_id])
     tipo_exame_sugestao = db.relationship("TipoExameSugestao", foreign_keys=[tipo_exame_sugestao_id])
     exames = db.relationship("Exame", back_populates="preparo_modelo")
+
+    @property
+    def total_agendamentos(self):
+        """Agendamentos de exames que usam este preparo - com algum, o modelo
+        não pode ser removido (pedido do Silvan, 2026-10-26)."""
+        ids = [e.id for e in self.exames]
+        return Agendamento.query.filter(Agendamento.exame_id.in_(ids)).count() if ids else 0
     cortes = db.relationship(
         "PreparoCorte", back_populates="preparo_modelo", cascade="all, delete-orphan",
         order_by="PreparoCorte.horas_antes.desc()",

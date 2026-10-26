@@ -187,14 +187,13 @@ def dashboard():
     )
 
 
-# Sugestões no campo de modelo (o dono pode digitar outro nome).
-SUGESTOES_MODELO = {
-    "claude": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
-    "claude_validador": ["claude-haiku-5-5", "claude-sonnet-5-5"],
-    "claude_sintese": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
-    "openai": ["gpt-5.4-mini", "gpt-5.4-nano", "gpt-4o-mini"],
-    "gemini": ["gemini-flash-latest", "gemini-flash-lite-latest"],
-}
+# Modelos oferecidos na lista de cada ponto (o dono pode digitar outro nome
+# em "Outro..."), do mais usado ao mais barato.
+MODELOS_SUGERIDOS = [
+    "claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5",
+    "gpt-5.4-mini", "gpt-5.4-nano", "gpt-4o-mini",
+    "gemini-flash-latest", "gemini-flash-lite-latest",
+]
 
 
 def _rotulo_modelo(nome):
@@ -211,17 +210,20 @@ def _rotulo_modelo(nome):
 
 
 def _linhas_modelos_ia(config):
-    from app.ia_modelos import MODELOS, modelo, modelo_sem_painel
+    """Uma linha por ponto de uso de IA (ver app.ia_modelos.PONTOS)."""
+    from app.ia_modelos import PONTOS, _escolhas_do_painel, modelo_do_ponto, modelo_padrao_do_ponto, provedor_do_modelo
 
+    escolhas = _escolhas_do_painel(config)
     linhas = []
-    for papel, (campo, _, _) in MODELOS.items():
-        escolhido = getattr(config, campo)
-        nomes = list(SUGESTOES_MODELO[papel])
+    for ponto, (rotulo, onde, so_claude) in PONTOS.items():
+        escolhido = escolhas.get(ponto)
+        nomes = [n for n in MODELOS_SUGERIDOS if not so_claude or provedor_do_modelo(n) == "Claude"]
         if escolhido and escolhido not in nomes:
             nomes.append(escolhido)  # digitado em "Outro..." - continua na lista
+        padrao = modelo_padrao_do_ponto(ponto, config)
         linhas.append({
-            "papel": papel, "rotulo": PAPEIS_MODELO[papel], "campo": campo, "escolhido": escolhido,
-            "em_uso": modelo(papel), "padrao": modelo_sem_painel(papel),
+            "ponto": ponto, "rotulo": rotulo, "onde": onde, "escolhido": escolhido,
+            "em_uso": modelo_do_ponto(ponto), "padrao": padrao,
             "opcoes": [{"nome": n, "rotulo": _rotulo_modelo(n)} for n in nomes],
         })
     return linhas
@@ -287,123 +289,80 @@ def configuracoes_licenca_medico():
     return redirect(url_for("dono.dashboard"))
 
 
-# As 3 IAs suportadas hoje no chat de dúvidas do paciente (ver
-# app.ia_preparo._PROVEDORES_CHAT) - mantido também aqui para validar o
-# formulário sem precisar importar app.ia_preparo (evita import cruzado
-# desnecessário; são só nomes/strings, não lógica).
-PROVEDORES_CHAT_VALIDOS = ("Gemini", "ChatGPT", "Claude")
+def _validar_pontos(modelos, reserva_escolhida=False):
+    """Mensagem de erro (ou None) para as escolhas {ponto: modelo} já com os
+    padrões preenchidos."""
+    from app.ia_modelos import NOME_MODELO_VALIDO, PONTOS, provedor_do_modelo
+
+    for ponto, nome in modelos.items():
+        if not NOME_MODELO_VALIDO.match(nome) or not provedor_do_modelo(nome):
+            return (f'Modelo "{nome}" não reconhecido em "{PONTOS[ponto][0]}": o nome precisa começar com '
+                    "claude, gpt (ou o1/o3/o4) ou gemini.")
+        if PONTOS[ponto][2] and provedor_do_modelo(nome) != "Claude":
+            return f'"{PONTOS[ponto][0]}" usa a busca da Anthropic: escolha um modelo Claude.'
+    p1, p2, p3 = (provedor_do_modelo(modelos[k]) for k in ("resposta_1", "resposta_2", "resposta_reserva"))
+    if p1 == p2:
+        return "As duas IAs que respondem o paciente precisam ser de empresas diferentes (ex.: Claude e ChatGPT)."
+    if reserva_escolhida and p3 in (p1, p2):
+        return "O modelo reserva precisa ser da terceira empresa, a que não responde nas duas IAs principais."
+    return None
 
 
-@dono_bp.route("/configuracoes/ia-chat", methods=["POST"])
-@login_required
-@dono_required
-def configuracoes_ia_chat():
-    """Escolhe quais 2 das 3 IAs (Gemini/ChatGPT/Claude) respondem o chat
-    de dúvidas do paciente - ver PlataformaConfig.ia_chat_provedor_1/2 e
-    app.ia_preparo.responder_com_ia. A Claude continua sempre fazendo o
-    papel de árbitro/síntese quando as duas divergem, mesmo se não for
-    uma das duas escolhidas aqui - ver comentário em responder_com_ia."""
-    config = PlataformaConfig.obter()
-    provedor_1 = request.form.get("ia_chat_provedor_1")
-    provedor_2 = request.form.get("ia_chat_provedor_2")
+def _aplicar_pontos(config, escolhas):
+    """Grava as escolhas {ponto: modelo ou None}; None/"" = padrão. Devolve
+    a mensagem de erro, ou None se salvou."""
+    import json
 
-    if provedor_1 not in PROVEDORES_CHAT_VALIDOS or provedor_2 not in PROVEDORES_CHAT_VALIDOS:
-        flash("Selecione duas IAs válidas.", "danger")
-        return redirect(url_for("dono.dashboard"))
-    if provedor_1 == provedor_2:
-        flash("Escolha duas IAs diferentes para responder o chat de dúvidas.", "danger")
-        return redirect(url_for("dono.dashboard"))
+    from app.ia_modelos import PONTOS, modelo_padrao_do_ponto
 
-    config.ia_chat_provedor_1 = provedor_1
-    config.ia_chat_provedor_2 = provedor_2
+    escolhas = {k: (v or "").strip() for k, v in escolhas.items() if k in PONTOS}
+    efetivos = {k: escolhas.get(k) or modelo_padrao_do_ponto(k, config) for k in PONTOS}
+    erro = _validar_pontos(efetivos, reserva_escolhida=bool(escolhas.get("resposta_reserva")))
+    if erro:
+        return erro
+    config.modelos_pontos = json.dumps({k: v for k, v in escolhas.items() if v}) or None
     db.session.commit()
-    flash(f"Chat de dúvidas do paciente agora responde com {provedor_1} e {provedor_2}.", "success")
-    return redirect(url_for("dono.dashboard"))
-
-
-@dono_bp.route("/configuracoes/ia-validador", methods=["POST"])
-@login_required
-@dono_required
-def configuracoes_ia_validador():
-    """Escolhe qual das 3 IAs (Gemini/ChatGPT/Claude) faz a checagem
-    dedicada de "isso faz sentido e é sobre este exame?" ANTES de
-    qualquer chamada de resposta de verdade (pedido do Silvan,
-    2026-09-24 - ver PlataformaConfig.ia_validador_pergunta e
-    app.ia_preparo.validar_pergunta). Uma ÚNICA IA (diferente do chat de
-    respostas, que usa 2 com reforço mútuo) - independente da escolha em
-    "IAs que respondem o chat de dúvidas" acima."""
-    config = PlataformaConfig.obter()
-    provedor = request.form.get("ia_validador_pergunta")
-
-    if provedor not in PROVEDORES_CHAT_VALIDOS:
-        flash("Selecione uma IA válida para o validador de pergunta.", "danger")
-        return redirect(url_for("dono.dashboard"))
-
-    config.ia_validador_pergunta = provedor
-    db.session.commit()
-    flash(f"Validador de pergunta agora usa {provedor}.", "success")
-    return redirect(url_for("dono.dashboard"))
-
-
-@dono_bp.route("/configuracoes/ia-ajuda", methods=["POST"])
-@login_required
-@dono_required
-def configuracoes_ia_ajuda():
-    """Escolhe a IA do chat de ajuda sobre o uso do app (botão "Ajuda" da
-    equipe - pedido do Silvan, 2026-10-23, ver app.ajuda_app)."""
-    provedor = request.form.get("ia_ajuda_app")
-    if provedor not in PROVEDORES_CHAT_VALIDOS:
-        flash("Selecione uma IA válida para a ajuda do app.", "danger")
-        return redirect(url_for("dono.dashboard"))
-    PlataformaConfig.obter().ia_ajuda_app = provedor
-    db.session.commit()
-    flash(f"A ajuda do app agora usa {provedor}.", "success")
-    return redirect(url_for("dono.dashboard"))
-
-
-PAPEIS_MODELO = {
-    "claude": "Claude - respostas ao paciente, ajuda, PDF",
-    "claude_validador": "Claude - validador e checagem de divergência",
-    "claude_sintese": "Claude - junção das respostas quando as IAs divergem",
-    "openai": "ChatGPT",
-    "gemini": "Gemini",
-}
+    return None
 
 
 @dono_bp.route("/configuracoes/modelos-ia", methods=["POST"])
 @login_required
 @dono_required
 def configuracoes_modelos_ia():
-    """Modelo de cada IA, informado pelo dono (pedido do Silvan, 2026-10-25,
-    ver app.ia_modelos): vale mais que a variável de ambiente do servidor;
-    em branco volta para ela (ou para o padrão)."""
-    from app.ia_modelos import MODELOS, NOME_MODELO_VALIDO
+    """Modelo de cada ponto de uso de IA, informado pelo dono (pedido do
+    Silvan, 2026-10-26, ver app.ia_modelos.PONTOS): o provedor sai do nome do
+    modelo; em branco volta para o padrão do ponto."""
+    from app.ia_modelos import PONTOS
 
-    config = PlataformaConfig.obter()
-    for papel, (campo, _, _) in MODELOS.items():
-        valor = (request.form.get(campo) or "").strip()
+    escolhas = {}
+    for ponto in PONTOS:
+        valor = (request.form.get(f"ponto_{ponto}") or "").strip()
         if valor == "__outro__":
-            valor = (request.form.get(f"{campo}_outro") or "").strip()
-        if valor and not NOME_MODELO_VALIDO.match(valor):
-            flash(f'Nome de modelo inválido: "{valor}" ({PAPEIS_MODELO[papel]}).', "danger")
-            return redirect(url_for("dono.dashboard") + "#painel-config")
-        setattr(config, campo, valor or None)
-    db.session.commit()
-    flash("Modelos das IAs salvos. Use \"Testar\" para conferir se cada um responde.", "success")
+            valor = (request.form.get(f"ponto_{ponto}_outro") or "").strip()
+        escolhas[ponto] = valor
+    erro = _aplicar_pontos(PlataformaConfig.obter(), escolhas)
+    if erro:
+        flash(erro, "danger")
+    else:
+        flash("Modelos salvos. Use \"Testar\" para conferir se cada um responde.", "success")
     return redirect(url_for("dono.dashboard") + "#painel-config")
 
 
-# Perfis prontos de modelos (2026-10-25, pedido do Silvan): "Essencial" para
-# um plano de ~R$ 150/mês por médico (custo de IA ~R$ 25 a 40) e "Completo"
-# para ~R$ 497 (~R$ 115 a 160). Valores None = Padrão do servidor.
+# Perfis prontos (2026-10-25, pedido do Silvan): "Essencial" para um plano de
+# ~R$ 150/mês por médico (custo de IA ~R$ 25 a 40) e "Completo" para ~R$ 497
+# (~R$ 115 a 160). Pontos fora do perfil voltam ao padrão.
 PERFIS_MODELOS = {
     "essencial": {
-        "modelo_claude": "claude-haiku-5-5", "modelo_claude_validador": "claude-haiku-5-5",
-        "modelo_claude_sintese": "claude-sonnet-5-5", "modelo_openai": "gpt-5.4-nano", "modelo_gemini": None,
+        "resposta_1": "claude-haiku-5-5", "resposta_2": "gpt-5.4-nano", "validador": "claude-haiku-5-5",
+        "divergencia": "claude-haiku-5-5", "sintese": "claude-sonnet-5-5", "pdf_2": "gpt-5.4-nano",
+        "pdf_3": "claude-haiku-5-5", "malu": "claude-haiku-5-5", "aprendizado": "claude-haiku-5-5",
+        "busca": "claude-haiku-5-5",
     },
     "completo": {
-        "modelo_claude": "claude-sonnet-5-5", "modelo_claude_validador": "claude-haiku-5-5",
-        "modelo_claude_sintese": "claude-sonnet-5-5", "modelo_openai": "gpt-5.4-mini", "modelo_gemini": None,
+        "resposta_1": "claude-sonnet-5-5", "resposta_2": "gpt-5.4-mini", "validador": "claude-haiku-5-5",
+        "divergencia": "claude-haiku-5-5", "sintese": "claude-sonnet-5-5", "pdf_2": "gpt-5.4-mini",
+        "pdf_3": "claude-sonnet-5-5", "malu": "claude-haiku-5-5", "aprendizado": "claude-sonnet-5-5",
+        "busca": "claude-sonnet-5-5",
     },
 }
 
@@ -418,11 +377,11 @@ def configuracoes_modelos_ia_perfil():
     if not perfil:
         flash("Perfil inválido.", "danger")
         return redirect(url_for("dono.dashboard") + "#painel-config")
-    config = PlataformaConfig.obter()
-    for campo, valor in perfil.items():
-        setattr(config, campo, valor)
-    db.session.commit()
-    flash(f'Perfil "{nome.capitalize()}" aplicado. Clique em "Testar" para conferir se cada modelo responde.', "success")
+    erro = _aplicar_pontos(PlataformaConfig.obter(), perfil)
+    if erro:
+        flash(erro, "danger")
+    else:
+        flash(f'Perfil "{nome.capitalize()}" aplicado. Clique em "Testar" para conferir se cada modelo responde.', "success")
     return redirect(url_for("dono.dashboard") + "#painel-config")
 
 
@@ -430,39 +389,34 @@ def configuracoes_modelos_ia_perfil():
 @login_required
 @dono_required
 def configuracoes_modelos_ia_testar():
-    """Manda uma pergunta mínima a cada modelo em uso e mostra quem
-    respondeu - para conferir um nome de modelo novo antes de depender dele."""
+    """Manda uma pergunta mínima ao modelo de cada ponto e mostra quem
+    respondeu - para conferir um nome de modelo novo antes de depender dele.
+    O mesmo modelo em vários pontos é testado uma vez só."""
     from app.custo_ia import registrar_chamada_ia
-    from app.ia_modelos import criar_chat_openai, criar_mensagem_claude, modelo, texto_claude
-    from app.ia_preparo import _cliente_anthropic, _cliente_gemini, _cliente_openai
+    from app.ia_modelos import PONTOS, chamar_texto, modelo_do_ponto
+    from app.ia_preparo import _cliente_do_ponto
 
-    pergunta = [{"role": "user", "content": "Responda apenas: ok"}]
     # O resultado aparece dentro do próprio card (2026-10-25: como mensagem
     # no topo da página, ficava fora da tela).
-    resultados = []
-    for papel, rotulo in PAPEIS_MODELO.items():
-        nome = modelo(papel)
-        fabrica = {"openai": _cliente_openai, "gemini": _cliente_gemini}.get(papel, _cliente_anthropic)
-        cliente = fabrica()
-        if not cliente:
-            resultados.append({"rotulo": rotulo, "nome": nome, "tipo": "warning", "texto": "sem chave de API configurada no servidor"})
+    resultados, ja_testados = [], {}
+    for ponto, (rotulo, _, _) in PONTOS.items():
+        nome = modelo_do_ponto(ponto)
+        if nome in ja_testados:
+            resultados.append({**ja_testados[nome], "rotulo": rotulo})
             continue
-        try:
-            if papel == "openai":
-                r = criar_chat_openai(cliente, nome, 20, messages=pergunta)
-                texto, uso = r.choices[0].message.content, (getattr(r.usage, "prompt_tokens", None), getattr(r.usage, "completion_tokens", None))
-            elif papel == "gemini":
-                r = cliente.models.generate_content(model=nome, contents="Responda apenas: ok")
-                meta = getattr(r, "usage_metadata", None)
-                texto, uso = r.text, (getattr(meta, "prompt_token_count", None), getattr(meta, "candidates_token_count", None))
-            else:
-                r = criar_mensagem_claude(cliente, nome, 20, messages=pergunta)
-                texto, uso = texto_claude(r), (getattr(r.usage, "input_tokens", None), getattr(r.usage, "output_tokens", None))
-            registrar_chamada_ia("teste_modelo_ia", rotulo.split(" ")[0], nome, *uso, sucesso=True, usuario_id=current_user.id)
-            resultados.append({"rotulo": rotulo, "nome": nome, "tipo": "success",
-                               "texto": f"respondeu ({(texto or '').strip()[:30] or 'resposta vazia'})"})
-        except Exception as erro:
-            resultados.append({"rotulo": rotulo, "nome": nome, "tipo": "danger", "texto": f"NÃO funcionou - {str(erro)[:180]}"})
+        cliente = _cliente_do_ponto(ponto)
+        if not cliente:
+            resultado = {"rotulo": rotulo, "nome": nome, "tipo": "warning", "texto": "sem chave de API configurada no servidor"}
+        else:
+            try:
+                r = chamar_texto(cliente, nome, "Responda só o que for pedido.", [{"role": "user", "content": "Responda apenas: ok"}], 20)
+                registrar_chamada_ia("teste_modelo_ia", r.provedor, nome, r.entrada, r.saida, sucesso=True, usuario_id=current_user.id)
+                resultado = {"rotulo": rotulo, "nome": nome, "tipo": "success",
+                             "texto": f"respondeu ({r.texto[:30] or 'resposta vazia'})"}
+            except Exception as erro:
+                resultado = {"rotulo": rotulo, "nome": nome, "tipo": "danger", "texto": f"NÃO funcionou - {str(erro)[:180]}"}
+        ja_testados[nome] = resultado
+        resultados.append(resultado)
     db.session.commit()
     session["teste_modelos_ia"] = resultados
     return redirect(url_for("dono.dashboard") + "#painel-config")

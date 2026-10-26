@@ -289,7 +289,7 @@ def _log_diagnostico(provedor, dados, finish_reason="?"):
     )
 
 
-def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido, uso):
+def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido, uso, modelo=None):
     """Chama o Gemini e devolve o JSON cru (dict) já parseado, ou levanta
     uma exceção em caso de falha - quem chama (extrair_sugestao_de_pdf_com_ia)
     decide o que fazer (cair pro próximo provedor da cadeia).
@@ -300,6 +300,7 @@ def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido, uso):
     gerou custo real de qualquer forma). Ver app.custo_ia e
     app.routes_medico._registrar_uso_de_ia_do_pdf, que persiste isso
     depois de cada tentativa."""
+    modelo = modelo or modelo_gemini()
     from google.genai import errors as genai_errors
     from google.genai import types as genai_types
 
@@ -339,7 +340,7 @@ def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido, uso):
     for tentativa in range(1, tentativas + 1):
         try:
             resposta = cliente.models.generate_content(
-                model=modelo_gemini(), contents=conteudo, config=config,
+                model=modelo, contents=conteudo, config=config,
             )
             break
         except genai_errors.ServerError:
@@ -352,7 +353,7 @@ def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido, uso):
             time.sleep(tentativa * 5)
 
     meta = getattr(resposta, "usage_metadata", None)
-    uso["modelo"] = getattr(resposta, "model_version", None) or modelo_gemini()
+    uso["modelo"] = getattr(resposta, "model_version", None) or modelo
     uso["tokens_entrada"] = getattr(meta, "prompt_token_count", None)
     uso["tokens_saida"] = getattr(meta, "candidates_token_count", None)
 
@@ -364,13 +365,14 @@ def _extrair_via_gemini(cliente, pdf_bytes, texto_extraido, uso):
     return dados
 
 
-def _extrair_via_openai(cliente, texto_extraido, uso):
+def _extrair_via_openai(cliente, texto_extraido, uso, modelo=None):
     """2º provedor da cadeia - só é chamado se o Gemini estiver
     indisponível (ver docstring do módulo). Sempre recebe o texto
     extraído (nunca o PDF nativo) - ver docstring do módulo sobre essa
     limitação intencional. `uso`: ver docstring de _extrair_via_gemini."""
+    modelo = modelo or modelo_openai()
     resposta = criar_chat_openai(
-        cliente, modelo_openai(), 16384,
+        cliente, modelo, 16384,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": PROMPT_SISTEMA},
@@ -385,7 +387,7 @@ def _extrair_via_openai(cliente, texto_extraido, uso):
         ],
     )
     meta = getattr(resposta, "usage", None)
-    uso["modelo"] = getattr(resposta, "model", None) or modelo_openai()
+    uso["modelo"] = getattr(resposta, "model", None) or modelo
     uso["tokens_entrada"] = getattr(meta, "prompt_tokens", None)
     uso["tokens_saida"] = getattr(meta, "completion_tokens", None)
 
@@ -395,13 +397,14 @@ def _extrair_via_openai(cliente, texto_extraido, uso):
     return dados
 
 
-def _extrair_via_claude(cliente, texto_extraido, uso):
+def _extrair_via_claude(cliente, texto_extraido, uso, modelo=None):
     """3º e último provedor da cadeia - só é chamado se o Gemini e o
     ChatGPT estiverem ambos indisponíveis (ver docstring do módulo).
     Sempre recebe o texto extraído (nunca o PDF nativo) - mesma limitação
     intencional do ChatGPT. `uso`: ver docstring de _extrair_via_gemini."""
+    modelo = modelo or modelo_claude()
     resposta = criar_mensagem_claude(
-        cliente, modelo_claude(), 16384,
+        cliente, modelo, 16384,
         system=PROMPT_SISTEMA,
         messages=[{
             "role": "user",
@@ -413,7 +416,7 @@ def _extrair_via_claude(cliente, texto_extraido, uso):
         }],
     )
     meta = getattr(resposta, "usage", None)
-    uso["modelo"] = getattr(resposta, "model", None) or modelo_claude()
+    uso["modelo"] = getattr(resposta, "model", None) or modelo
     uso["tokens_entrada"] = getattr(meta, "input_tokens", None)
     uso["tokens_saida"] = getattr(meta, "output_tokens", None)
 
@@ -460,11 +463,23 @@ def extrair_sugestao_de_pdf_com_ia_stream(pdf_bytes):
         # docstring do módulo) antes de desistir.
         texto_extraido = ""
 
-    provedores = [
-        ("Gemini", _cliente_gemini, lambda cliente, uso: _extrair_via_gemini(cliente, pdf_bytes, texto_extraido, uso)),
-        ("ChatGPT", _cliente_openai, lambda cliente, uso: _extrair_via_openai(cliente, texto_extraido, uso)),
-        ("Claude", _cliente_claude, lambda cliente, uso: _extrair_via_claude(cliente, texto_extraido, uso)),
-    ]
+    # Cadeia pelos pontos pdf_1, pdf_2 e pdf_3 (o dono escolhe o modelo de
+    # cada um em /dono; o provedor sai do nome do modelo). Só o Gemini lê o
+    # PDF inteiro; os outros recebem o texto extraído.
+    from app.ia_modelos import modelo_do_ponto, provedor_do_modelo
+
+    por_provedor = {
+        "Gemini": (_cliente_gemini, lambda cliente, uso, m: _extrair_via_gemini(cliente, pdf_bytes, texto_extraido, uso, m)),
+        "ChatGPT": (_cliente_openai, lambda cliente, uso, m: _extrair_via_openai(cliente, texto_extraido, uso, m)),
+        "Claude": (_cliente_claude, lambda cliente, uso, m: _extrair_via_claude(cliente, texto_extraido, uso, m)),
+    }
+    provedores = []
+    for ponto in ("pdf_1", "pdf_2", "pdf_3"):
+        modelo_ponto = modelo_do_ponto(ponto)
+        nome_provedor = provedor_do_modelo(modelo_ponto)
+        if nome_provedor in por_provedor:
+            fabrica, extrair = por_provedor[nome_provedor]
+            provedores.append((nome_provedor, fabrica, lambda cliente, uso, e=extrair, m=modelo_ponto: e(cliente, uso, m)))
 
     for nome, obter_cliente, chamar in provedores:
         cliente = obter_cliente()

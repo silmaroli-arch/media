@@ -2252,13 +2252,17 @@ def preparo_modelos_remover(modelo_id):
             "danger",
         )
         return redirect(url_for("medico.preparo_modelos_lista"))
-    if modelo.exames:
+    # Só não remove com agendamento ligado a ele (2026-10-26); exames que
+    # só o usam ficam sem preparo.
+    if modelo.total_agendamentos:
         flash(
-            f"Esse modelo está em uso por {len(modelo.exames)} exame(s) — troque o modelo desses "
-            "exames antes de removê-lo.",
+            f"Esse preparo tem {modelo.total_agendamentos} agendamento(s) ligado(s) a ele - "
+            "só dá para removê-lo quando não houver agendamento.",
             "danger",
         )
         return redirect(url_for("medico.preparo_modelos_lista"))
+    for exame in list(modelo.exames):
+        exame.preparo_modelo_id = None
     db.session.delete(modelo)
     db.session.commit()
     flash("Modelo de preparo removido.", "success")

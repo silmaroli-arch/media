@@ -2831,6 +2831,19 @@ Pedido do Silvan: em vez de a IA transcrever o PDF para texto (e o médico aprov
 
 PENDENTE DE TESTE (Silvan): importar PDF real, salvar, abrir o link no celular (imagens legíveis, aba Linha do tempo, Baixar PDF); modelo antigo com PDF gera as imagens na 1ª visita.
 
+## Modelo de IA por ponto de uso + remover preparo sem agendamento (2026-10-26)
+
+Pedido do Silvan: todo ponto do sistema que chama IA deve ser configurável no painel do dono, escolhendo o MODELO (não o nome da IA).
+
+- `app/ia_modelos.py`: `PONTOS` (12 pontos: resposta_1, resposta_2, resposta_reserva, validador, divergencia, sintese, pdf_1/2/3, malu, aprendizado, busca), `provedor_do_modelo` (claude*/gpt*/o1,o3,o4*/gemini* -> empresa), `modelo_do_ponto` (painel > padrão), `modelo_padrao_do_ponto` (o que valia antes: provedores antigos + modelos por papel/env), `chamar_texto` (uma chamada para qualquer empresa, devolve texto/modelo/tokens/provedor).
+- Coluna nova `plataforma_config.modelos_pontos` (JSON; migração em `migrar_banco.py`). As colunas antigas (`modelo_*`, `ia_chat_provedor_*`, `ia_validador_pergunta`, `ia_ajuda_app`) viram só o PADRÃO; sem escolha no painel nada muda.
+- Painel do dono: os 4 cards antigos (IAs do chat, validador, ajuda, modelos) viraram um só, "Modelo de IA de cada ponto do sistema", com lista por ponto (preço + "Outro..."), Salvar, Testar (um teste por modelo distinto) e Perfis prontos (Essencial/Completo agora preenchem todos os pontos). Regras: 1ª e 2ª IA de empresas diferentes; reserva da terceira; busca só Claude (usa a ferramenta de busca da Anthropic). Rotas antigas `/configuracoes/ia-chat|ia-validador|ia-ajuda` removidas.
+- Chamadas ligadas aos pontos: `ia_preparo.py` (respostas, reserva, validador, divergência, junção), `ia_pdf_preparo.py` (cadeia pdf_1..3; só o Gemini lê o PDF inteiro), `ajuda_app.py`, `base_aprendizado.py`, `busca_internet.py`.
+- Remover modelo de preparo: agora só é bloqueado se houver AGENDAMENTO ligado a ele (`PreparoModelo.total_agendamentos`); exames que só o usam ficam sem preparo (confirmação avisa). A lista mostra "N agendamento(s) ligado(s)" ao lado do botão desabilitado.
+- Testes: `test_ia_modelos.py` (reescrito para os pontos), `test_ajuda_app.py`, `test_preparo_remover.py` (novo).
+
+PENDENTE DE TESTE (Silvan): painel do dono > Configurações: escolher modelos por ponto, Salvar, Testar; trocar a 1ª/2ª IA e conferir uma pergunta no WhatsApp; importar PDF; remover um preparo sem agendamento e um com agendamento.
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").

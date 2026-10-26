@@ -103,27 +103,56 @@ with app.app_context(), patch.dict(os.environ, {"ANTHROPIC_MODEL": "claude-sonne
 
 d = app.test_client()
 d.post("/login", data={"identificador": dono_email, "senha": "123456"})
+from app.ia_modelos import (
+    PONTOS, chamar_texto, modelo_claude_sintese, modelo_do_ponto, modelo_padrao_do_ponto, provedor_do_modelo,
+)
+
+checar("Provedor sai do nome do modelo",
+       [provedor_do_modelo(n) for n in ("claude-haiku-5-5", "gpt-5.4-mini", "o3-mini", "gemini-flash-latest", "llama")]
+       == ["Claude", "ChatGPT", "ChatGPT", "Gemini", None])
+with app.app_context():
+    checar("Sem escolha, cada ponto usa o padrão de antes",
+           modelo_do_ponto("resposta_1") == "claude-sonnet-5-5" and modelo_do_ponto("resposta_2") == "gpt-4o-mini"
+           and modelo_do_ponto("validador") == "claude-haiku-5-5" and modelo_do_ponto("sintese") == "claude-sonnet-5-5"
+           and modelo_do_ponto("pdf_1") == "gemini-flash-latest" and modelo_do_ponto("busca") == "claude-sonnet-5-5")
+
 html = d.get("/dono/").get_data(as_text=True)
-checar("Painel do dono mostra o card 'Modelos das IAs' com o modelo em uso",
-       "Modelos das IAs" in html and "claude-sonnet-5-5" in html and 'name="modelo_openai"' in html)
+checar("Painel do dono: uma linha por ponto de uso, com o modelo em uso",
+       "Modelo de IA de cada ponto do sistema" in html and all(f'name="ponto_{k}"' in html for k in PONTOS)
+       and "Malu (ajuda do app)" in html and "Busca na internet" in html)
 checar("Modelos numa lista de seleção, com o preço e a opção 'Outro...'",
-       '<select name="modelo_claude"' in html and "claude-opus-5-5 - US$ 4,00 / 20,00 por milhão" in html
-       and 'value="__outro__"' in html)
-d.post("/dono/configuracoes/modelos-ia", data={"modelo_claude": "", "modelo_openai": "gpt-5.4-mini",
-                                               "modelo_claude_validador": "", "modelo_gemini": ""})
+       "claude-opus-5-5 - US$ 4,00 / 20,00 por milhão" in html and 'value="__outro__"' in html)
+checar("A busca só oferece modelos Claude", "gpt-5.4-mini" not in html.split('name="ponto_busca"')[1].split("</select>")[0])
+
+r = d.post("/dono/configuracoes/modelos-ia", data={"ponto_malu": "gemini-flash-lite-latest", "ponto_validador": "gpt-5.4-nano"})
 with app.app_context():
-    checar("Salvar grava o modelo informado e deixa vazio o que ficou em branco",
-           PlataformaConfig.obter().modelo_openai == "gpt-5.4-mini" and PlataformaConfig.obter().modelo_claude is None
-           and modelo_openai() == "gpt-5.4-mini")
-d.post("/dono/configuracoes/modelos-ia", data={"modelo_claude": "__outro__", "modelo_claude_outro": "claude-sonnet-5-6",
-                                               "modelo_openai": "gpt-5.4-mini"})
+    checar("Salvar grava o modelo de cada ponto; o provedor vem do nome",
+           modelo_do_ponto("malu") == "gemini-flash-lite-latest" and modelo_do_ponto("validador") == "gpt-5.4-nano"
+           and modelo_do_ponto("resposta_1") == "claude-sonnet-5-5")
+d.post("/dono/configuracoes/modelos-ia", data={"ponto_malu": "__outro__", "ponto_malu_outro": "claude-sonnet-5-6"})
 with app.app_context():
-    checar("'Outro...' grava o nome digitado", PlataformaConfig.obter().modelo_claude == "claude-sonnet-5-6")
+    checar("'Outro...' grava o nome digitado", modelo_do_ponto("malu") == "claude-sonnet-5-6")
 html = d.get("/dono/").get_data(as_text=True)
 checar("... e ele continua aparecendo selecionado na lista", '<option value="claude-sonnet-5-6" selected>' in html)
-d.post("/dono/configuracoes/modelos-ia", data={"modelo_claude": "", "modelo_openai": "gpt-5.4-mini"})
-r = d.post("/dono/configuracoes/modelos-ia", data={"modelo_openai": "gpt 5; drop table"}, follow_redirects=True)
-checar("Nome inválido é recusado", "Nome de modelo inválido" in r.get_data(as_text=True))
+r = d.post("/dono/configuracoes/modelos-ia", data={"ponto_malu": "llama-3"}, follow_redirects=True)
+checar("Nome de outra empresa desconhecida é recusado", "não reconhecido" in r.get_data(as_text=True))
+r = d.post("/dono/configuracoes/modelos-ia", data={"ponto_busca": "gpt-5.4-mini"}, follow_redirects=True)
+checar("Busca na internet recusa modelo que não é Claude", "busca da Anthropic" in r.get_data(as_text=True))
+r = d.post("/dono/configuracoes/modelos-ia", data={"ponto_resposta_1": "claude-haiku-5-5", "ponto_resposta_2": "claude-sonnet-5-5"},
+           follow_redirects=True)
+checar("As duas IAs das respostas precisam ser de empresas diferentes", "empresas diferentes" in r.get_data(as_text=True))
+d.post("/dono/configuracoes/modelos-ia", data={})
+with app.app_context():
+    checar("Tudo em branco volta aos padrões", PlataformaConfig.obter().modelos_pontos in (None, "{}")
+           and modelo_do_ponto("malu") == "claude-sonnet-5-5")
+
+# Respostas com a 1ª IA sendo o ChatGPT e a 2ª o Gemini: reserva precisa ser Claude.
+r = d.post("/dono/configuracoes/modelos-ia", data={"ponto_resposta_1": "gpt-5.4-mini", "ponto_resposta_2": "gemini-flash-latest"},
+           follow_redirects=True)
+with app.app_context():
+    checar("Troca das IAs das respostas é aceita (reserva cai no que sobrar)",
+           modelo_do_ponto("resposta_1") == "gpt-5.4-mini" and modelo_do_ponto("resposta_2") == "gemini-flash-latest")
+d.post("/dono/configuracoes/modelos-ia", data={})
 
 
 class _Resp:
@@ -138,21 +167,29 @@ with patch("app.ia_preparo._cliente_anthropic", return_value=falso), \
     html = d.post("/dono/configuracoes/modelos-ia/testar", follow_redirects=True).get_data(as_text=True)
 checar("Testar mostra, dentro do card, quem respondeu e quem está sem chave",
        'id="resultado-teste-modelos"' in html and "<code>claude-sonnet-5-5</code>: respondeu (ok)" in html
-       and "<strong>ChatGPT</strong> - <code>gpt-5.4-mini</code>: sem chave de API" in html)
+       and "<strong>Resposta ao paciente - 2ª IA</strong> - <code>gpt-4o-mini</code>: sem chave de API" in html)
 checar("... e o resultado some ao recarregar", 'id="resultado-teste-modelos"' not in d.get("/dono/").get_data(as_text=True))
 
-# Perfis prontos e junção das respostas com modelo próprio (2026-10-25).
-from app.ia_modelos import modelo_claude_sintese
+# chamar_texto fala com a API certa conforme o modelo.
+chamadas = []
+cli_claude = SimpleNamespace(messages=SimpleNamespace(create=lambda **k: chamadas.append(("claude", k["model"])) or _Resp()))
+r = chamar_texto(cli_claude, "claude-haiku-5-5", "sys", [{"role": "user", "content": "oi"}], 50)
+checar("chamar_texto com modelo Claude devolve texto, provedor e tokens",
+       r.texto == "ok" and r.provedor == "Claude" and (r.entrada, r.saida) == (1, 1) and chamadas == [("claude", "claude-haiku-5-5")])
+cli_gpt = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **k: chamadas.append(("gpt", k["model"])) or SimpleNamespace(
+    choices=[SimpleNamespace(message=SimpleNamespace(content=" oi "))], usage=SimpleNamespace(prompt_tokens=3, completion_tokens=4), model=k["model"]))))
+r = chamar_texto(cli_gpt, "gpt-5.4-nano", "sys", [{"role": "user", "content": "oi"}], 50)
+checar("chamar_texto com modelo GPT usa a API da OpenAI", r.texto == "oi" and r.provedor == "ChatGPT" and (r.entrada, r.saida) == (3, 4))
 
+# Perfis prontos e junção das respostas com modelo próprio.
 with app.app_context():
     checar("Junção das respostas tem modelo próprio (padrão Sonnet 5.5)", modelo_claude_sintese() == "claude-sonnet-5-5")
 d.post("/dono/configuracoes/modelos-ia/perfil", data={"perfil": "essencial"})
 with app.app_context():
-    c = PlataformaConfig.obter()
-    checar("Perfil Essencial: Haiku nas respostas e no validador, Sonnet na junção, gpt-5.4-nano",
-           (c.modelo_claude, c.modelo_claude_validador, c.modelo_claude_sintese, c.modelo_openai)
-           == ("claude-haiku-5-5", "claude-haiku-5-5", "claude-sonnet-5-5", "gpt-5.4-nano")
-           and modelo_claude() == "claude-haiku-5-5" and modelo_claude_sintese() == "claude-sonnet-5-5")
+    checar("Perfil Essencial: Haiku nas respostas/validador, Sonnet na junção, gpt-5.4-nano na 2ª IA",
+           modelo_do_ponto("resposta_1") == "claude-haiku-5-5" and modelo_do_ponto("resposta_2") == "gpt-5.4-nano"
+           and modelo_do_ponto("validador") == "claude-haiku-5-5" and modelo_do_ponto("sintese") == "claude-sonnet-5-5"
+           and modelo_do_ponto("malu") == "claude-haiku-5-5")
 sistemas = []
 sintese = SimpleNamespace(messages=SimpleNamespace(create=lambda **k: sistemas.append(k["model"]) or SimpleNamespace(
     content=[SimpleNamespace(type="text", text="ok")], usage=SimpleNamespace(input_tokens=1, output_tokens=1), model=k["model"],
@@ -163,8 +200,21 @@ with app.app_context():
 checar("Com o Essencial, a junção usa o Sonnet e não o Haiku das respostas", sistemas == ["claude-sonnet-5-5"])
 d.post("/dono/configuracoes/modelos-ia/perfil", data={"perfil": "completo"})
 with app.app_context():
-    c = PlataformaConfig.obter()
-    checar("Perfil Completo: Sonnet nas respostas e gpt-5.4-mini", c.modelo_claude == "claude-sonnet-5-5" and c.modelo_openai == "gpt-5.4-mini")
+    checar("Perfil Completo: Sonnet na 1ª IA e gpt-5.4-mini na 2ª",
+           modelo_do_ponto("resposta_1") == "claude-sonnet-5-5" and modelo_do_ponto("resposta_2") == "gpt-5.4-mini")
 checar("Perfil inválido é recusado", "Perfil inválido" in d.post("/dono/configuracoes/modelos-ia/perfil", data={"perfil": "x"}, follow_redirects=True).get_data(as_text=True))
+
+# O ponto escolhido chega de fato na chamada: validador com outro modelo.
+from app.ia_preparo import validar_pergunta
+from app.models import Exame
+
+usados = []
+cli_validador = SimpleNamespace(messages=SimpleNamespace(create=lambda **k: usados.append(k["model"]) or SimpleNamespace(
+    content=[SimpleNamespace(type="text", text="VALIDA")], usage=SimpleNamespace(input_tokens=1, output_tokens=1), model=k["model"],
+    stop_reason="end_turn")))
+d.post("/dono/configuracoes/modelos-ia", data={"ponto_validador": "claude-opus-5-5"})
+with app.app_context(), patch.dict("app.ia_preparo._PROVEDORES_CHAT", {"Claude": (lambda: cli_validador, None)}):
+    resultado = validar_pergunta("Posso comer pepino?", Exame.query.first())
+checar("O validador chama o modelo escolhido no ponto", usados == ["claude-opus-5-5"] and resultado["classificacao"] == "valida")
 
 print("\nTodos os testes dos modelos novos passaram.")

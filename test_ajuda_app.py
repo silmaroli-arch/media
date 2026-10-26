@@ -79,9 +79,10 @@ checar("IA indisponível: resposta de aviso e opção de suporte", dados["nao_so
 
 d = app.test_client()
 d.post("/login", data={"identificador": dono_email, "senha": "123456"})
-d.post("/dono/configuracoes/ia-ajuda", data={"ia_ajuda_app": "Gemini"})
+d.post("/dono/configuracoes/modelos-ia", data={"ponto_malu": "gemini-flash-latest"})
 with app.app_context():
-    checar("Dono escolhe a IA da ajuda", PlataformaConfig.obter().ia_ajuda_app == "Gemini")
+    from app.ia_modelos import modelo_do_ponto
+    checar("Dono escolhe o modelo da Malu", modelo_do_ponto("malu") == "gemini-flash-latest")
 html = d.get("/dono/ajuda-app?nao_soube=1").get_data(as_text=True)
 checar("Dono vê as perguntas (filtro 'não soube')",
        "Dá para integrar com o meu sistema de prontuário?" in html and "Como remarco um exame?" not in html)

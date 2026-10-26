@@ -132,3 +132,139 @@ def criar_chat_openai(cliente, modelo, max_tokens, esforco="low", **kwargs):
             model=modelo, max_completion_tokens=max_tokens + FOLGA_RACIOCINIO, reasoning_effort=esforco, **kwargs,
         )
     return cliente.chat.completions.create(model=modelo, max_tokens=max_tokens, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Modelo por PONTO DE USO (pedido do Silvan, 2026-10-26): o dono escolhe, em
+# /dono, o MODELO de cada lugar do sistema que chama IA - o nome do provedor
+# (Claude, ChatGPT, Gemini) sai do próprio nome do modelo. Sem escolha, vale o
+# que já valia antes (provedores e modelos por papel acima), então nada muda
+# em produção até o dono mexer.
+# ---------------------------------------------------------------------------
+import json
+from types import SimpleNamespace
+
+CLAUDE, CHATGPT, GEMINI = "Claude", "ChatGPT", "Gemini"
+_PAPEL_DO_PROVEDOR = {CLAUDE: "claude", CHATGPT: "openai", GEMINI: "gemini"}
+
+# chave -> (rótulo, onde é usado, só_claude)
+# `só_claude`: o ponto usa a ferramenta de busca da Anthropic.
+PONTOS = {
+    "resposta_1": ("Resposta ao paciente - 1ª IA", "Responde a pergunta do paciente no WhatsApp/link", False),
+    "resposta_2": ("Resposta ao paciente - 2ª IA", "Responde a mesma pergunta, para conferir a 1ª (precisa ser de outra empresa)", False),
+    "resposta_reserva": ("Resposta ao paciente - reserva", "Entra no lugar de uma das duas quando ela falha (3ª empresa)", False),
+    "validador": ("Validador da pergunta", "Decide se a mensagem faz sentido e é sobre o exame, e corrige a digitação", False),
+    "divergencia": ("Checagem de divergência", "Compara as duas respostas (e a da base) e diz se divergem", False),
+    "sintese": ("Junção das respostas", "Escreve a resposta única quando as duas IAs divergem", False),
+    "pdf_1": ("Importar PDF - 1ª tentativa", "Lê o PDF do preparo e preenche o modelo (a 1ª recebe o PDF inteiro)", False),
+    "pdf_2": ("Importar PDF - 2ª tentativa", "Usada se a 1ª falhar", False),
+    "pdf_3": ("Importar PDF - 3ª tentativa", "Usada se a 2ª também falhar", False),
+    "malu": ("Malu (ajuda do app)", "Assistente de ajuda da equipe", False),
+    "aprendizado": ("Base de aprendizado", "Generaliza a resposta do médico para a base compartilhada", False),
+    "busca": ("Busca na internet", "Pesquisa nomes que a IA não reconhece (só modelos Claude, usa a busca da Anthropic)", True),
+}
+
+
+def provedor_do_modelo(nome):
+    """Claude / ChatGPT / Gemini conforme o nome do modelo, ou None."""
+    nome = (nome or "").strip().lower()
+    if nome.startswith("claude"):
+        return CLAUDE
+    if nome.startswith(("gpt", "chatgpt", "o1", "o3", "o4")):
+        return CHATGPT
+    if nome.startswith("gemini"):
+        return GEMINI
+    return None
+
+
+def _escolhas_do_painel(config=None):
+    try:
+        if config is None:
+            from app.models import PlataformaConfig
+
+            config = PlataformaConfig.obter()
+        dados = json.loads(getattr(config, "modelos_pontos", None) or "{}")
+        return {k: v for k, v in dados.items() if k in PONTOS and isinstance(v, str) and v}
+    except Exception:
+        return {}
+
+
+def _provedores_antigos(config):
+    """(1ª, 2ª, reserva, validador, malu) pelas escolhas antigas de provedor."""
+    um = getattr(config, "ia_chat_provedor_1", None) or CLAUDE
+    dois = getattr(config, "ia_chat_provedor_2", None) or CHATGPT
+    tres = next(p for p in (CLAUDE, CHATGPT, GEMINI) if p not in (um, dois))
+    return (um, dois, tres, getattr(config, "ia_validador_pergunta", None) or CLAUDE,
+            getattr(config, "ia_ajuda_app", None) or CLAUDE)
+
+
+def modelo_padrao_do_ponto(ponto, config=None):
+    """O modelo que vale para o ponto quando o dono não escolheu nenhum."""
+    try:
+        if config is None:
+            from app.models import PlataformaConfig
+
+            config = PlataformaConfig.obter()
+        um, dois, tres, valida, malu = _provedores_antigos(config)
+    except Exception:
+        um, dois, tres, valida, malu = CLAUDE, CHATGPT, GEMINI, CLAUDE, CLAUDE
+
+    def do_provedor(provedor, validador=False):
+        if provedor == CLAUDE and validador:
+            return modelo("claude_validador")
+        return modelo(_PAPEL_DO_PROVEDOR[provedor])
+
+    return {
+        "resposta_1": lambda: do_provedor(um),
+        "resposta_2": lambda: do_provedor(dois),
+        "resposta_reserva": lambda: do_provedor(tres),
+        "validador": lambda: do_provedor(valida, validador=True),
+        "divergencia": lambda: modelo("claude_validador"),
+        "sintese": lambda: modelo("claude_sintese"),
+        "pdf_1": lambda: modelo("gemini"),
+        "pdf_2": lambda: modelo("openai"),
+        "pdf_3": lambda: modelo("claude"),
+        "malu": lambda: do_provedor(malu),
+        "aprendizado": lambda: modelo("claude"),
+        "busca": lambda: modelo("claude"),
+    }[ponto]()
+
+
+def modelo_do_ponto(ponto):
+    """O modelo em uso no ponto: escolha do dono > padrão. Escolha que não
+    dá para reconhecer (provedor desconhecido, ou busca fora do Claude) é
+    ignorada."""
+    escolhido = _escolhas_do_painel().get(ponto)
+    if escolhido and provedor_do_modelo(escolhido) and (not PONTOS[ponto][2] or provedor_do_modelo(escolhido) == CLAUDE):
+        return escolhido
+    return modelo_padrao_do_ponto(ponto)
+
+
+def chamar_texto(cliente, nome_modelo, system, mensagens, max_tokens, esforco="low", **kwargs):
+    """Uma pergunta ao modelo, de qualquer empresa. `mensagens`: lista de
+    {"role", "content"}. Devolve SimpleNamespace(texto, modelo, entrada,
+    saida, provedor); levanta a exceção da chamada."""
+    provedor = provedor_do_modelo(nome_modelo) or CLAUDE
+    if provedor == CLAUDE:
+        r = criar_mensagem_claude(cliente, nome_modelo, max_tokens, esforco=esforco, system=system, messages=mensagens, **kwargs)
+        uso = getattr(r, "usage", None)
+        return SimpleNamespace(texto=texto_claude(r), modelo=getattr(r, "model", nome_modelo) or nome_modelo,
+                               entrada=getattr(uso, "input_tokens", None), saida=getattr(uso, "output_tokens", None), provedor=provedor)
+    if provedor == CHATGPT:
+        r = criar_chat_openai(cliente, nome_modelo, max_tokens, esforco=esforco,
+                              messages=[{"role": "system", "content": system}] + list(mensagens), **kwargs)
+        uso = getattr(r, "usage", None)
+        return SimpleNamespace(texto=(r.choices[0].message.content or "").strip(), modelo=getattr(r, "model", nome_modelo) or nome_modelo,
+                               entrada=getattr(uso, "prompt_tokens", None), saida=getattr(uso, "completion_tokens", None), provedor=provedor)
+    from google.genai import types as genai_types
+
+    conversa = mensagens[0]["content"] if len(mensagens) == 1 else "\n\n".join(
+        ("Usuário: " if m["role"] == "user" else "Assistente: ") + m["content"] for m in mensagens)
+    r = cliente.models.generate_content(
+        model=nome_modelo, contents=conversa,
+        config=genai_types.GenerateContentConfig(system_instruction=system, max_output_tokens=max_tokens + FOLGA_RACIOCINIO),
+    )
+    uso = getattr(r, "usage_metadata", None)
+    return SimpleNamespace(texto=(getattr(r, "text", None) or "").strip(),
+                           modelo=getattr(r, "model_version", None) or nome_modelo,
+                           entrada=getattr(uso, "prompt_token_count", None), saida=getattr(uso, "candidates_token_count", None), provedor=provedor)
