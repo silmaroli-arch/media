@@ -76,8 +76,10 @@ def generalizar_com_ia(pergunta_paciente, resposta_medico, usuario_id=None):
     if not cliente:
         return None
     try:
-        resposta_ia = cliente.messages.create(
-            model=ia.MODELO_PADRAO, max_tokens=600, timeout=30,
+        from app.ia_modelos import criar_mensagem_claude, modelo_claude, texto_claude
+
+        resposta_ia = criar_mensagem_claude(
+            cliente, modelo_claude(), 600, esforco="low", timeout=60,
             system=PROMPT_GENERALIZACAO,
             messages=[{
                 "role": "user",
@@ -86,11 +88,11 @@ def generalizar_com_ia(pergunta_paciente, resposta_medico, usuario_id=None):
         )
         uso = getattr(resposta_ia, "usage", None)
         registrar_chamada_ia(
-            "base_conhecimento_aprendizado", "Claude", getattr(resposta_ia, "model", ia.MODELO_PADRAO),
+            "base_conhecimento_aprendizado", "Claude", getattr(resposta_ia, "model", modelo_claude()),
             getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
             sucesso=True, usuario_id=usuario_id,
         )
-        texto = "".join(getattr(bloco, "text", "") for bloco in resposta_ia.content).strip()
+        texto = texto_claude(resposta_ia)
         inicio, fim = texto.find("{"), texto.rfind("}")
         dados = json.loads(texto[inicio:fim + 1])
     except Exception:

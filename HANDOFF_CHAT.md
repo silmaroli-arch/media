@@ -2748,6 +2748,72 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - O aviso amarelo "conhecimento geral" continua na tela do médico (é para ele revisar), não vai ao paciente.
 - Ajuste (2026-10-24): "O exame dói." passou a receber "não sei" das 2 IAs - sem poder dizer "em geral", elas preferiram não responder. O prompt agora diz que o que é bem estabelecido para o tipo de exame (sedação, sem dor durante, gases depois) é conhecimento certo, a ser respondido em tom direto pela regra do conhecimento geral; nunca trocar uma resposta conhecida por NAO_SEI por causa do tom; o que varia de pessoa para pessoa é dito de forma direta ("alguns pacientes sentem..."). "Se o exame dói / se tem sedação" entrou nos exemplos do conhecimento geral.
 
+## Preparo original do médico (PDF) no link do WhatsApp (2026-10-24, pedido do Silvan)
+
+- Objetivo: o paciente acessar primeiro o preparo como o médico escreveu; a linha do tempo fica como segunda opção. Decisões do Silvan: "original" = PDF do médico; só na página do link do WhatsApp (por enquanto não na área do paciente logado).
+- Modelo novo `PreparoPdfOriginal` (tabela `preparo_pdfs_originais`, create_all): um PDF por modelo de preparo (`PreparoModelo.pdf_original`, apagado junto com o modelo), guardado no banco (o disco do Render não é permanente), máx. 10 MB, conteúdo `deferred`. `app/preparo_pdf_original.py`: validação, PDF pendente da importação, `aplicar_no_modelo`, `resposta_pdf_original`.
+- Formulário do modelo de preparo (novo e editar): bloco "Preparo original (PDF)" - anexar, trocar, abrir e remover. Ao IMPORTAR um PDF para criar o modelo, o mesmo arquivo fica guardado como pendente (id na sessão) e a revisão já vem com "Usar o PDF importado como preparo original" marcado; ao salvar, vira o PDF do modelo. Pendentes esquecidos são apagados depois de 1 dia. Equipe abre em `medico.preparo_modelos_pdf_original` / `medico.preparo_modelos_pdf_importado`.
+- Página do link (`paciente/preparo_publico.html`): com PDF, botões "Preparo do médico" | "Linha do tempo" e o cartão "Abrir o preparo (PDF)" / "Baixar" no topo; a linha do tempo vem embaixo, com "Baixar a linha do tempo (PDF)". Sem PDF, a página fica como antes. Rota pública `paciente.preparo_publico_original` (mesmo token do link; `?baixar=1` para baixar).
+- "Apagar todos os dados" e a exclusão de usuário tratam a tabela nova.
+- Teste novo: `test_preparo_pdf_original.py` (validado também no Postgres local).
+
+## "Exames & preparo" completo também no celular do médico (2026-10-24, pedido do Silvan)
+
+- Antes, no celular, o menu do médico levava à tela de aviso ("cadastrar/editar só pelo computador"), que só permitia importar um PDF. Agora o menu leva à lista completa em qualquer tela: cadastrar, editar (todas as abas), importar PDF e anexar o preparo original.
+- `base.html`: um item só de "Exames & preparo", sem a cópia `d-md-none`. `medico.preparo_modelos_aviso_mobile` ficou só para links antigos (GET redireciona para a lista; POST continua salvando uma importação aberta por lá); template `preparo_modelos_aviso_mobile.html` removido.
+- Lista de modelos no celular: só o nome (com o médico criador embaixo) e os botões Editar/Remover; as colunas de detalhe aparecem a partir de tablet/computador (antes a tabela estourava a largura da tela).
+- Teste ajustado: `test_preparo_importar_pdf_mobile.py`.
+
+## Versão em página (HTML) do PDF do preparo, aprovada pelo médico (2026-10-24, pedido do Silvan - "opção 3")
+
+- A IA transcreve o PDF original numa página para o celular (mesmo visual da linha do tempo); o médico revisa ao lado do PDF, corrige o texto e aprova; só então o paciente vê a página no link do WhatsApp (com "Ver o PDF original" / "Baixar o PDF" embaixo). Sem aprovação, o paciente continua vendo o cartão do PDF.
+- `app/ia_pdf_html.py`: cadeia Gemini (PDF nativo) -> Claude (PDF nativo) -> ChatGPT (texto extraído); prompt de TRANSCRIÇÃO (sem resumir, omitir, completar ou trocar termos/números); `sanitizar_html` (allowlist: h2/h3/p/ul/ol/li/strong/em/br/tabela, sem atributos fora colspan/rowspan) aplicado ao que a IA devolve e ao que o médico edita; `conferir_fidelidade` (sem IA) lista números/palavras do PDF que não aparecem na página, mostrados em vermelho na revisão. Custo registrado como `pagina_pdf_preparo` ("Página do PDF de preparo" no painel de custo do dono). Roda em segundo plano (thread; >120s do gunicorn); "gerando" há mais de 10 min conta como erro.
+- `PreparoPdfOriginal`: colunas `pagina_html`, `pagina_status` (None/gerando/revisar/aprovada/erro), `pagina_avisos`, `pagina_atualizada_em`, `pagina_aprovada_em`, `pagina_aprovada_por_id` (migrar_banco.py, ADD COLUMN IF NOT EXISTS - validado no Postgres local com a tabela já existente).
+- Anexar um PDF novo (ou salvar um modelo com o PDF importado) já começa a gerar a página e mostra "Revise e aprove aqui". Tela `medico.preparo_modelos_pdf_pagina` (`/equipe/preparo-modelos/<id>/pdf-original/pagina`): texto editável (toque para corrigir), PDF ao lado (no celular, botão para abrir), "Aprovar e publicar", "Salvar sem publicar", "Tirar do ar", "Gerar de novo". Só quem pode editar o modelo aprova. O formulário do modelo mostra a situação da página.
+- Ajuste (2026-10-24, pedido do Silvan): o botão "Baixar PDF" voltou ao topo da página do link, como era antes - com o PDF do médico anexado, baixa esse PDF; sem ele, o PDF da linha do tempo (que continua com o próprio botão na seção dela).
+- Abas (2026-10-24, pedido do Silvan): na página do link, "Preparo do médico" e "Linha do tempo" funcionam como abas - cada uma mostra só o seu conteúdo (abre no do médico; `#linha-do-tempo` no endereço abre a outra). O "Baixar PDF" do topo baixa o PDF da aba aberta (o do médico ou o da linha do tempo); o botão separado "Baixar a linha do tempo (PDF)" saiu. Sem JS ou na impressão, as duas aparecem.
+- PDF ao lado na revisão (2026-10-25, relatado pelo Silvan no tablet Android): o `<iframe>` não mostra PDF no Chrome do Android (aparecia só "pdf-original / Abrir"). Agora o PDF é desenhado na própria página com o pdf.js 3.11.174 (cdnjs), página por página, em qualquer tela; "Abrir o PDF em outra aba" fica como alternativa.
+- Teste novo: `test_preparo_pdf_pagina.py` (IA simulada - a qualidade da transcrição com um PDF real ainda precisa ser conferida no media-dev).
+
+## Ajuda do app vira a assistente "Malu", com botão destacado (2026-10-25, pedido do Silvan)
+
+- `base.html`: o botão flutuante "Ajuda" virou "Fale com a Malu" (avatar "M" com bolinha verde, degradê verde-azulado, subtítulo "Dúvidas sobre o MedIA"; no celular só o nome). Pulsa até a pessoa abrir a primeira vez (localStorage `media_malu_vista`). Cabeçalho do chat: "Malu - Assistente do MedIA"; saudação "Oi! Eu sou a Malu...".
+- `app/ajuda_app.py`: o prompt começa com "Você é a Malu"; o manual ganhou o PDF original do preparo, as abas do link do paciente, a versão em página e a revisão/aprovação, e que Exames & preparo funciona pelo celular.
+- Posição (2026-10-25, pedido do Silvan): a Malu saiu do canto inferior e foi para a barra do topo, ao lado do menu (☰) e do logo - "Fale com a Malu" no computador/tablet, "Malu" no celular; o chat abre logo abaixo dela (canto superior esquerdo).
+- Chat em modal (2026-10-25, pedido do Silvan - o painel solto ficou ruim no tablet): o chat da Malu abre num modal do Bootstrap como os outros do app (centralizado, fundo escurecido, fecha no X, no fundo ou com Esc); a conversa continua guardada na aba (sessionStorage).
+- Teste: `test_ajuda_app.py` ampliado.
+
+## Modelos de IA novos: Claude Sonnet 5.5 e Haiku 5.5, GPT-5 suportado (2026-10-25, decisão do Silvan)
+
+- Motivo: o Claude Sonnet 4.5 (padrão até aqui) foi descontinuado pela Anthropic; Sonnet 5.5 custa menos por token (US$ 2/10 por milhão vs 3/15) e é mais capaz. Silvan quer manter mais de uma IA (Claude + ChatGPT/Gemini).
+- `app/ia_modelos.py` (novo): padrões `MODELO_CLAUDE` = `claude-sonnet-5-5` (env `ANTHROPIC_MODEL`), `MODELO_CLAUDE_VALIDADOR` = `claude-haiku-5-5` (env nova `ANTHROPIC_MODEL_VALIDADOR`), `MODELO_OPENAI` (env `OPENAI_MODEL`, padrão ainda gpt-4o-mini). `criar_mensagem_claude`: nos modelos 5.x soma 4.000 tokens de folga ao max_tokens (o raciocínio, sempre ligado, usa a saída), manda `output_config.effort` (respostas ao paciente e síntese: medium; validador, divergência, ajuda, aprendizado, PDF: low) e, no Sonnet 5.5/Opus 5/Fable, o fallback do servidor (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`; se a conta não aceitar, segue sem). `texto_claude` ignora blocos de raciocínio/fallback e devolve vazio em recusa (`stop_reason: refusal`). `criar_chat_openai`: GPT-5/"o" usam `max_completion_tokens` (+ folga) e `reasoning_effort`.
+- Todas as chamadas Claude/OpenAI passam por lá: chat do paciente, divergência (agora no Haiku), síntese, validador (Claude = Haiku 5.5), ajuda (Malu), aprendizado do FAQ, importação de PDF e página do PDF.
+- `custo_ia.PRECOS_POR_MILHAO_TOKENS`: claude-sonnet-5-5 (2/10), claude-opus-5-5 (4/20), claude-haiku-5-5 (0,10/0,50) oficiais; gpt-5.4-mini (0,75/4,50) e gpt-5.4-nano (0,20/1,25) aproximados (conferir no painel da OpenAI).
+- Cache de prompt NÃO ligado: o cache dura 5 min e cada gravação custa 25% a mais - com o volume atual de perguntas sairia mais caro. Reavaliar se o volume crescer.
+- **No Render (media-dev e media-prod)**: trocar/remover `ANTHROPIC_MODEL=claude-sonnet-4-5` (se existir, ele manda) -> `claude-sonnet-5-5`; opcional `OPENAI_MODEL=gpt-5.4-mini` depois de conferir o nome exato no painel da OpenAI. Na área do dono, IA validadora = Claude (Haiku 5.5).
+- Teste novo: `test_ia_modelos.py` (confere o pedido HTTP montado pelo SDK, sem rede).
+
+## Busca na internet quando uma IA não reconhece um nome (2026-10-25, decisão do Silvan)
+
+- `app/busca_internet.py`: com a busca LIGADA pelo dono (`PlataformaConfig.busca_internet_ativa`, padrão desligada; limite `busca_internet_limite_dia`, padrão 20), quando alguma IA responde "não reconheci" (situação `respondeu_nao_reconhecido`), `responder_com_ia` -> `_pesquisar_nome_nao_reconhecido`: pega o nome entre aspas da resposta (ou a 1ª palavra fora do dicionário da pergunta), pesquisa UMA vez com o Claude Sonnet 5.5 + ferramenta de busca da Anthropic (`web_search_20260209`, máx. 2 buscas, só em `DOMINIOS_PERMITIDOS`: gov.br, consultaremedios.com.br, medlineplus.gov, drugs.com, msdmanuals.com; país BR), resposta "Nome = o que é" ou NAO_ENCONTRADO (nunca chute). Achando, as 2 IAs respondem de novo com a linha no contexto e a resposta SEMPRE vai para o médico.
+- Modelo novo `NomePesquisado` (tabela `nomes_pesquisados`, create_all): nome, resultado, fontes, status (pesquisado/confirmado/rejeitado); o mesmo nome nunca é pesquisado de novo. Rejeitado não entra mais no contexto.
+- `PerguntaPendente.pesquisa_internet` (o que foi achado + fontes) - aviso azul "Pesquisa na internet: ..." no portal de atendimento e em Perguntas.
+- Dono: card "Busca na internet quando a IA não reconhece um nome" (liga/desliga + máximo por dia) e menu "Nomes pesquisados" (confirmar, rejeitar, apagar = pesquisar de novo).
+- Custo: `registrar_chamada_ia(..., custo_extra_usd=)` soma US$ 0,01 por busca (US$ 10/1.000, oficial) aos tokens; tipo de uso `busca_internet`.
+- migrar_banco.py: `plataforma_config.busca_internet_ativa`, `busca_internet_limite_dia`, `perguntas_pendentes.pesquisa_internet` (validado no Postgres local).
+- Teste novo: `test_busca_internet.py` (API simulada no nível HTTP, sem rede).
+
+## Modelos das IAs escolhidos no painel do dono (2026-10-25, pedido do Silvan)
+
+- Painel do dono > Configurações > card "Modelos das IAs": um campo por papel (Claude respostas/síntese/ajuda/PDF, Claude validador/divergência, ChatGPT, Gemini), com sugestões; mostra o modelo em uso agora e o que vale em branco. O que o dono informa vale mais que a variável de ambiente do servidor (ANTHROPIC_MODEL etc.), que vale mais que o padrão. Botão "Testar": manda "Responda apenas: ok" a cada modelo em uso e mostra quem respondeu, quem deu erro (com a mensagem) e quem está sem chave; o custo entra como "Teste de modelo".
+- `app/ia_modelos.py`: `MODELOS` (campo, variável, padrão), `modelo(papel)`, `modelo_claude()`, `modelo_claude_validador()`, `modelo_openai()`, `modelo_gemini()`, `modelo_sem_painel()`; nome validado por `NOME_MODELO_VALIDO`. Todas as chamadas de IA usam as funções (as constantes MODELO_PADRAO etc. saíram).
+- `PlataformaConfig.modelo_claude`, `modelo_claude_validador`, `modelo_openai`, `modelo_gemini` (migrar_banco.py; validado no Postgres local).
+- Custo de IA (detalhe por usuário): rótulos por tipo de uso (validador, ajuda, aprendizado, busca na internet, teste de modelo, PDF...).
+- Ajuste (2026-10-25, pedido do Silvan): os campos viraram listas de seleção ("Padrão (modelo do servidor)", as sugestões com o preço por milhão de tokens tirado de `custo_ia`, e "Outro..." que abre um campo para digitar; um modelo digitado continua aparecendo na lista).
+- Perfis e junção (2026-10-25, pedido do Silvan, para vender um plano ~R$ 150/mês): novo papel `claude_sintese` (junção das respostas quando as 2 IAs divergem; coluna `modelo_claude_sintese`, env `ANTHROPIC_MODEL_SINTESE`, padrão Sonnet 5.5), separado das respostas para poder usar Haiku nas respostas e Sonnet só na junção. Botões "Perfis prontos" no card: **Essencial** (respostas e validador Haiku 5.5, junção Sonnet 5.5, ChatGPT gpt-5.4-nano; IA ~R$ 25 a 40 por médico/mês, 48 perguntas/dia) e **Completo** (respostas Sonnet 5.5, validador Haiku 5.5, junção Sonnet 5.5, gpt-5.4-mini; IA ~R$ 115 a 160). Qualidade do Haiku 5.5 nas respostas AINDA NÃO testada com as perguntas problemáticas (Poviztra, Wegovy, pepino, "o exame dói", nome inventado). Planos com preços diferentes por perfil no sistema (licença por plano) não foram feitos - hoje há um valor de licença só.
+- Ajuste: o resultado do "Testar" aparece dentro do card (a tela rola até ele), não mais como mensagem no topo da página, que ficava fora da tela. Validado pelo Silvan no media-dev (2026-10-25): claude-opus-5-5, claude-sonnet-5-5 (validador), gpt-5.4-mini e gemini-flash-latest responderam.
+- Com isso, não é mais preciso mexer no Render para trocar modelo (a variável antiga, se existir, só vale com o campo em branco).
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").
@@ -2870,6 +2936,31 @@ Itens já implementados e enviados que o Silvan ainda vai testar no ambiente rea
 - [ ] Chat: "Preciso parar o Wegovy?" -> responde direto que deve ser suspenso 14 dias antes (como o Ozempic do preparo), sem "não está cadastrado"
 - [ ] Chat: "Posso comer pepino?" -> as IAs reconhecem o pepino (sem "não reconheci"), respondem pela regra do preparo ou com orientação geral marcada, e o rascunho não manda confirmar com a secretaria
 - [ ] Chat: perguntar por um nome inventado (ex.: "Posso tomar Zorvantex?") -> resposta "Não reconheci..." pedindo o nome da embalagem/princípio ativo, e vai para o médico mesmo com a aprovação automática desligada
+
+**Preparo original (PDF)**
+- [ ] Modelos de preparo > editar: anexar o PDF do preparo em "Preparo original (PDF)"; abrir o link do WhatsApp do paciente e conferir "Preparo do médico" primeiro e a linha do tempo embaixo
+- [ ] Importar um PDF para criar um modelo novo: a revisão já vem com "Usar o PDF importado" marcado e, depois de salvar, o PDF aparece no modelo
+- [ ] No celular: "Abrir o preparo (PDF)" abre o arquivo e "Baixar" baixa
+
+**Versão em página do PDF**
+- [ ] Anexar o PDF de um preparo real: aparece "Revise e aprove aqui"; em 1-2 min a página fica pronta; conferir a transcrição ao lado do PDF (avisos em vermelho), corrigir algo e aprovar
+- [ ] Link do WhatsApp: tocar em "Linha do tempo" mostra só a linha do tempo e "Preparo do médico" só o preparo; o "Baixar PDF" do topo baixa o PDF da aba aberta
+- [ ] Link do WhatsApp do paciente: com a página aprovada, "Preparo do médico" mostra o texto direto, com "Ver o PDF original" embaixo; "Tirar do ar" volta para o PDF
+- [ ] Painel do dono > custo de IA: chamada "Página do PDF de preparo" registrada
+
+**Modelos de IA novos**
+- [ ] Perfis prontos (Essencial/Completo) no card Modelos das IAs: aplicar, Testar, e repetir as perguntas problemáticas com o Essencial (Haiku 5.5 nas respostas) comparando com o Completo
+- [ ] Painel do dono > Configurações > "Modelos das IAs": conferir "Em uso agora" (se aparecer claude-sonnet-4-5, digitar claude-sonnet-5-5), escolher o ChatGPT (ex.: gpt-5.4-mini), Salvar e Testar; IA validadora = Claude
+- [ ] Repetir no media-dev: Poviztra, Wegovy, pepino, "O exame dói", nome inventado; conferir no painel de custo os modelos novos e o custo por chamada
+
+**Busca na internet**
+- [ ] Painel do dono: ligar "Busca na internet quando a IA não reconhece um nome"; perguntar por um produto que as IAs não conhecem; a pergunta chega ao médico com o aviso azul "Pesquisa na internet" e as fontes; o nome aparece em "Nomes pesquisados" (confirmar/rejeitar); custo em Custo de IA
+
+**Malu (ajuda do app)**
+- [ ] Botão "Fale com a Malu" na barra do topo, ao lado do menu, destacado (pulsando até abrir a primeira vez); o chat abre num modal como os outros do app; perguntar "qual o seu nome?" e "como anexo o PDF do preparo?"
+
+**Exames & preparo no celular**
+- [ ] Logado como médico no celular: menu "Exames & preparo" abre a lista (sem a tela de aviso); "Novo modelo", "Importar de um PDF" e "Editar" funcionam; a lista cabe na tela
 
 **Banco (depois do deploy em produção)**
 - [ ] Conferir que foram apagados: endereço da equipe; e-mail, endereço e contato de emergência dos pacientes; acompanhante dos agendamentos

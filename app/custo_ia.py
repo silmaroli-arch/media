@@ -43,8 +43,15 @@ PRECOS_POR_MILHAO_TOKENS = {
     # OpenAI
     "gpt-4o-mini": (0.15, 0.60),
     # Anthropic (preço estável entre Sonnet 3.7 e 4.6, incluindo o 4.5
-    # usado hoje como padrão - ver app.ia_preparo.MODELO_PADRAO)
+    # usado hoje como padrão - ver app.ia_modelos)
     "claude-sonnet-4-5": (3.00, 15.00),
+    # Modelos novos (2026-10-25, preços oficiais da Anthropic; os da OpenAI
+    # são aproximados - conferir no painel da OpenAI).
+    "claude-sonnet-5-5": (2.00, 10.00),
+    "claude-opus-5-5": (4.00, 20.00),
+    "claude-haiku-5-5": (0.10, 0.50),
+    "gpt-5.4-mini": (0.75, 4.50),
+    "gpt-5.4-nano": (0.20, 1.25),
 }
 
 
@@ -83,7 +90,7 @@ def calcular_custo_usd(modelo, tokens_entrada, tokens_saida):
 
 def registrar_chamada_ia(
     tipo_uso, provedor, modelo, tokens_entrada, tokens_saida, sucesso,
-    usuario_id=None, paciente_id=None, resposta_final_usada=None,
+    usuario_id=None, paciente_id=None, resposta_final_usada=None, custo_extra_usd=0.0,
 ):
     """Persiste um `ChamadaIA` com o custo estimado já calculado - chamar
     logo depois de CADA tentativa a um provedor que chegou a receber uma
@@ -101,6 +108,10 @@ def registrar_chamada_ia(
     from app.models import ChamadaIA
 
     custo = calcular_custo_usd(modelo, tokens_entrada, tokens_saida)
+    # Cobranças fora dos tokens (ex.: buscas na internet, ver
+    # app.busca_internet).
+    if custo is not None and custo_extra_usd:
+        custo += custo_extra_usd
     chamada = ChamadaIA(
         usuario_id=usuario_id,
         paciente_id=paciente_id,

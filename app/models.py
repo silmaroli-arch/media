@@ -49,6 +49,18 @@ class PlataformaConfig(db.Model):
     # IA do chat de ajuda sobre o uso do app (botão "Ajuda" da equipe -
     # pedido do Silvan, 2026-10-23, ver app.ajuda_app).
     ia_ajuda_app = db.Column(db.String(20), nullable=False, default="Claude")
+    # Busca na internet quando uma IA não reconhece um nome (pedido do
+    # Silvan, 2026-10-25, ver app.busca_internet). Desligada por padrão;
+    # o limite diário segura o custo.
+    busca_internet_ativa = db.Column(db.Boolean, nullable=False, default=False)
+    busca_internet_limite_dia = db.Column(db.Integer, nullable=False, default=20)
+    # Modelos das IAs informados pelo dono (2026-10-25, ver
+    # app.ia_modelos.modelo): vazio = variável de ambiente ou padrão.
+    modelo_claude = db.Column(db.String(60), nullable=True)
+    modelo_claude_validador = db.Column(db.String(60), nullable=True)
+    modelo_claude_sintese = db.Column(db.String(60), nullable=True)
+    modelo_openai = db.Column(db.String(60), nullable=True)
+    modelo_gemini = db.Column(db.String(60), nullable=True)
 
     # "Terceira IA" - base de conhecimento compartilhada (pedido do Silvan,
     # 2026-09-29, ver BaseConhecimentoItem e app.base_conhecimento). Liga/
@@ -1426,6 +1438,9 @@ class PreparoModelo(db.Model):
         "PreparoMedicamentoMantido", back_populates="preparo_modelo", cascade="all, delete-orphan",
         order_by="PreparoMedicamentoMantido.nome",
     )
+    pdf_original = db.relationship(
+        "PreparoPdfOriginal", back_populates="preparo_modelo", uselist=False, cascade="all, delete-orphan",
+    )
 
 
 class PreparoCorte(db.Model):
@@ -1592,6 +1607,84 @@ class PreparoMedicamentoMantido(db.Model):
     observacao = db.Column(db.String(300))
 
     preparo_modelo = db.relationship("PreparoModelo", back_populates="medicamentos_mantidos")
+
+
+class NomePesquisado(db.Model):
+    """Nome (medicamento, produto...) que uma IA não reconheceu e o sistema
+    pesquisou na internet, em sites escolhidos (2026-10-25, ver
+    app.busca_internet). Fica guardado para nunca pesquisar o mesmo nome de
+    novo; o dono confirma ou rejeita em "Nomes pesquisados". Rejeitado não é
+    mais usado nas respostas."""
+    __tablename__ = "nomes_pesquisados"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(255), nullable=False)
+    nome_normalizado = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    # Uma linha "Nome = o que é", ou None quando as fontes não confirmaram.
+    resultado = db.Column(db.Text)
+    fontes = db.Column(db.Text)  # uma URL por linha
+    # "pesquisado" (aguarda o dono) | "confirmado" | "rejeitado"
+    status = db.Column(db.String(20), nullable=False, default="pesquisado")
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    revisado_em = db.Column(db.DateTime)
+    revisado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+
+    @property
+    def lista_fontes(self):
+        return [f for f in (self.fontes or "").split("\n") if f]
+
+
+class PreparoPdfOriginal(db.Model):
+    """O PDF original do preparo, como o médico escreveu (pedido do Silvan,
+    2026-10-24): o paciente abre ESTE arquivo primeiro pelo link do
+    WhatsApp, e a linha do tempo fica como segunda opção. Guardado no banco
+    (o disco do Render não é permanente). `preparo_modelo_id` vazio = PDF
+    recém-importado que ainda não foi salvo num modelo (ver
+    app.preparo_pdf_original)."""
+    __tablename__ = "preparo_pdfs_originais"
+
+    id = db.Column(db.Integer, primary_key=True)
+    preparo_modelo_id = db.Column(
+        db.Integer, db.ForeignKey("preparo_modelos.id", ondelete="CASCADE"), nullable=True, unique=True,
+    )
+    nome_arquivo = db.Column(db.String(255), nullable=False)
+    tamanho = db.Column(db.Integer, nullable=False)
+    conteudo = db.deferred(db.Column(db.LargeBinary, nullable=False))
+    enviado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    enviado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    # Versão em página (HTML) do PDF, feita pela IA e aprovada pelo médico
+    # (2026-10-24, ver app.ia_pdf_html). Status: None (não gerada),
+    # "gerando", "revisar" (pronta, falta aprovar), "aprovada" ou "erro".
+    # O paciente só vê a página com status "aprovada".
+    pagina_html = db.Column(db.Text)
+    pagina_status = db.Column(db.String(20))
+    # Números/palavras do PDF que não apareceram na página (um por linha).
+    pagina_avisos = db.Column(db.Text)
+    pagina_atualizada_em = db.Column(db.DateTime)
+    pagina_aprovada_em = db.Column(db.DateTime)
+    pagina_aprovada_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+
+    preparo_modelo = db.relationship("PreparoModelo", back_populates="pdf_original")
+
+    # Geração que não terminou nesse tempo (ex.: o servidor reiniciou no
+    # meio) é tratada como erro - dá para gerar de novo.
+    LIMITE_GERANDO_MINUTOS = 10
+
+    @property
+    def situacao_pagina(self):
+        if self.pagina_status == "gerando" and self.pagina_atualizada_em and (
+            datetime.utcnow() - self.pagina_atualizada_em
+        ).total_seconds() > self.LIMITE_GERANDO_MINUTOS * 60:
+            return "erro"
+        return self.pagina_status
+
+    @property
+    def pagina_para_paciente(self):
+        return self.pagina_html if self.pagina_status == "aprovada" and self.pagina_html else None
+
+    @property
+    def lista_avisos_pagina(self):
+        return [a for a in (self.pagina_avisos or "").split("\n") if a]
 
 
 class Agendamento(db.Model):
@@ -1955,6 +2048,10 @@ class PerguntaPendente(db.Model):
     # formatar_situacao_ias) - a tela de aprovação mostra sempre as IAs
     # escolhidas, mesmo a que não respondeu (pedido do Silvan, 2026-10-21).
     ias_situacao = db.Column(db.String(120), nullable=True)
+    # O que a busca na internet achou para esta pergunta, quando uma IA não
+    # reconheceu um nome (2026-10-25, ver app.busca_internet) - mostrado ao
+    # médico na aprovação.
+    pesquisa_internet = db.Column(db.Text, nullable=True)
 
     TEXTO_SITUACAO_IA = {
         "nao_sabe": "não soube responder com base no preparo cadastrado",

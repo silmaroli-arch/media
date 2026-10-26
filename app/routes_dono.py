@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from functools import wraps
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, abort, current_app
+from flask import Blueprint, render_template, redirect, url_for, request, flash, abort, current_app, session
 from sqlalchemy import func
 from flask_login import login_required, current_user
 
@@ -183,7 +183,48 @@ def dashboard():
         linhas_usuarios=linhas_usuarios, custo_total_usuarios=custo_total_usuarios,
         mensagens_suporte_novas=mensagens_suporte_novas,
         solicitacoes_exclusao=_solicitacoes_exclusao_pendentes(),
+        modelos_ia=_linhas_modelos_ia(config), teste_modelos_ia=session.pop("teste_modelos_ia", None),
     )
+
+
+# Sugestões no campo de modelo (o dono pode digitar outro nome).
+SUGESTOES_MODELO = {
+    "claude": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
+    "claude_validador": ["claude-haiku-5-5", "claude-sonnet-5-5"],
+    "claude_sintese": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
+    "openai": ["gpt-5.4-mini", "gpt-5.4-nano", "gpt-4o-mini"],
+    "gemini": ["gemini-flash-latest", "gemini-flash-lite-latest"],
+}
+
+
+def _rotulo_modelo(nome):
+    """"claude-sonnet-5-5 - US$ 2,00 / 10,00 por milhão" (preço da tabela de
+    custo, quando conhecido)."""
+    from app.custo_ia import PRECOS_POR_MILHAO_TOKENS
+
+    chave = next((k for k in PRECOS_POR_MILHAO_TOKENS if nome.startswith(k)), None)
+    if not chave:
+        return nome
+    entrada, saida = PRECOS_POR_MILHAO_TOKENS[chave]
+    preco = f"US$ {entrada:.2f} / {saida:.2f} por milhão".replace(".", ",")
+    return f"{nome} - {preco}"
+
+
+def _linhas_modelos_ia(config):
+    from app.ia_modelos import MODELOS, modelo, modelo_sem_painel
+
+    linhas = []
+    for papel, (campo, _, _) in MODELOS.items():
+        escolhido = getattr(config, campo)
+        nomes = list(SUGESTOES_MODELO[papel])
+        if escolhido and escolhido not in nomes:
+            nomes.append(escolhido)  # digitado em "Outro..." - continua na lista
+        linhas.append({
+            "papel": papel, "rotulo": PAPEIS_MODELO[papel], "campo": campo, "escolhido": escolhido,
+            "em_uso": modelo(papel), "padrao": modelo_sem_painel(papel),
+            "opcoes": [{"nome": n, "rotulo": _rotulo_modelo(n)} for n in nomes],
+        })
+    return linhas
 
 
 @dono_bp.route("/configuracoes", methods=["POST"])
@@ -318,6 +359,158 @@ def configuracoes_ia_ajuda():
     db.session.commit()
     flash(f"A ajuda do app agora usa {provedor}.", "success")
     return redirect(url_for("dono.dashboard"))
+
+
+PAPEIS_MODELO = {
+    "claude": "Claude - respostas ao paciente, ajuda, PDF",
+    "claude_validador": "Claude - validador e checagem de divergência",
+    "claude_sintese": "Claude - junção das respostas quando as IAs divergem",
+    "openai": "ChatGPT",
+    "gemini": "Gemini",
+}
+
+
+@dono_bp.route("/configuracoes/modelos-ia", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_modelos_ia():
+    """Modelo de cada IA, informado pelo dono (pedido do Silvan, 2026-10-25,
+    ver app.ia_modelos): vale mais que a variável de ambiente do servidor;
+    em branco volta para ela (ou para o padrão)."""
+    from app.ia_modelos import MODELOS, NOME_MODELO_VALIDO
+
+    config = PlataformaConfig.obter()
+    for papel, (campo, _, _) in MODELOS.items():
+        valor = (request.form.get(campo) or "").strip()
+        if valor == "__outro__":
+            valor = (request.form.get(f"{campo}_outro") or "").strip()
+        if valor and not NOME_MODELO_VALIDO.match(valor):
+            flash(f'Nome de modelo inválido: "{valor}" ({PAPEIS_MODELO[papel]}).', "danger")
+            return redirect(url_for("dono.dashboard") + "#painel-config")
+        setattr(config, campo, valor or None)
+    db.session.commit()
+    flash("Modelos das IAs salvos. Use \"Testar\" para conferir se cada um responde.", "success")
+    return redirect(url_for("dono.dashboard") + "#painel-config")
+
+
+# Perfis prontos de modelos (2026-10-25, pedido do Silvan): "Essencial" para
+# um plano de ~R$ 150/mês por médico (custo de IA ~R$ 25 a 40) e "Completo"
+# para ~R$ 497 (~R$ 115 a 160). Valores None = Padrão do servidor.
+PERFIS_MODELOS = {
+    "essencial": {
+        "modelo_claude": "claude-haiku-5-5", "modelo_claude_validador": "claude-haiku-5-5",
+        "modelo_claude_sintese": "claude-sonnet-5-5", "modelo_openai": "gpt-5.4-nano", "modelo_gemini": None,
+    },
+    "completo": {
+        "modelo_claude": "claude-sonnet-5-5", "modelo_claude_validador": "claude-haiku-5-5",
+        "modelo_claude_sintese": "claude-sonnet-5-5", "modelo_openai": "gpt-5.4-mini", "modelo_gemini": None,
+    },
+}
+
+
+@dono_bp.route("/configuracoes/modelos-ia/perfil", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_modelos_ia_perfil():
+    """Aplica um perfil pronto de modelos (Essencial ou Completo) de uma vez."""
+    nome = request.form.get("perfil")
+    perfil = PERFIS_MODELOS.get(nome)
+    if not perfil:
+        flash("Perfil inválido.", "danger")
+        return redirect(url_for("dono.dashboard") + "#painel-config")
+    config = PlataformaConfig.obter()
+    for campo, valor in perfil.items():
+        setattr(config, campo, valor)
+    db.session.commit()
+    flash(f'Perfil "{nome.capitalize()}" aplicado. Clique em "Testar" para conferir se cada modelo responde.', "success")
+    return redirect(url_for("dono.dashboard") + "#painel-config")
+
+
+@dono_bp.route("/configuracoes/modelos-ia/testar", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_modelos_ia_testar():
+    """Manda uma pergunta mínima a cada modelo em uso e mostra quem
+    respondeu - para conferir um nome de modelo novo antes de depender dele."""
+    from app.custo_ia import registrar_chamada_ia
+    from app.ia_modelos import criar_chat_openai, criar_mensagem_claude, modelo, texto_claude
+    from app.ia_preparo import _cliente_anthropic, _cliente_gemini, _cliente_openai
+
+    pergunta = [{"role": "user", "content": "Responda apenas: ok"}]
+    # O resultado aparece dentro do próprio card (2026-10-25: como mensagem
+    # no topo da página, ficava fora da tela).
+    resultados = []
+    for papel, rotulo in PAPEIS_MODELO.items():
+        nome = modelo(papel)
+        fabrica = {"openai": _cliente_openai, "gemini": _cliente_gemini}.get(papel, _cliente_anthropic)
+        cliente = fabrica()
+        if not cliente:
+            resultados.append({"rotulo": rotulo, "nome": nome, "tipo": "warning", "texto": "sem chave de API configurada no servidor"})
+            continue
+        try:
+            if papel == "openai":
+                r = criar_chat_openai(cliente, nome, 20, messages=pergunta)
+                texto, uso = r.choices[0].message.content, (getattr(r.usage, "prompt_tokens", None), getattr(r.usage, "completion_tokens", None))
+            elif papel == "gemini":
+                r = cliente.models.generate_content(model=nome, contents="Responda apenas: ok")
+                meta = getattr(r, "usage_metadata", None)
+                texto, uso = r.text, (getattr(meta, "prompt_token_count", None), getattr(meta, "candidates_token_count", None))
+            else:
+                r = criar_mensagem_claude(cliente, nome, 20, messages=pergunta)
+                texto, uso = texto_claude(r), (getattr(r.usage, "input_tokens", None), getattr(r.usage, "output_tokens", None))
+            registrar_chamada_ia("teste_modelo_ia", rotulo.split(" ")[0], nome, *uso, sucesso=True, usuario_id=current_user.id)
+            resultados.append({"rotulo": rotulo, "nome": nome, "tipo": "success",
+                               "texto": f"respondeu ({(texto or '').strip()[:30] or 'resposta vazia'})"})
+        except Exception as erro:
+            resultados.append({"rotulo": rotulo, "nome": nome, "tipo": "danger", "texto": f"NÃO funcionou - {str(erro)[:180]}"})
+    db.session.commit()
+    session["teste_modelos_ia"] = resultados
+    return redirect(url_for("dono.dashboard") + "#painel-config")
+
+
+@dono_bp.route("/configuracoes/busca-internet", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_busca_internet():
+    """Liga/desliga a busca na internet quando uma IA não reconhece um nome,
+    e o limite de buscas por dia (pedido do Silvan, 2026-10-25, ver
+    app.busca_internet)."""
+    config = PlataformaConfig.obter()
+    config.busca_internet_ativa = request.form.get("busca_internet_ativa") == "1"
+    limite = request.form.get("busca_internet_limite_dia", type=int)
+    if limite is None or limite < 0 or limite > 1000:
+        flash("Informe um limite de buscas por dia entre 0 e 1000.", "danger")
+        return redirect(url_for("dono.dashboard") + "#painel-config")
+    config.busca_internet_limite_dia = limite
+    db.session.commit()
+    flash("Busca na internet " + ("ligada" if config.busca_internet_ativa else "desligada") + f" (até {limite} por dia).", "success")
+    return redirect(url_for("dono.dashboard") + "#painel-config")
+
+
+@dono_bp.route("/nomes-pesquisados", methods=["GET", "POST"])
+@login_required
+@dono_required
+def nomes_pesquisados():
+    """O que a busca na internet achou (app.busca_internet): o dono confirma,
+    rejeita (não é mais usado nas respostas) ou apaga (pesquisa de novo na
+    próxima vez)."""
+    from app.models import NomePesquisado
+
+    if request.method == "POST":
+        registro = NomePesquisado.query.get_or_404(request.form.get("id", type=int))
+        acao = request.form.get("acao")
+        if acao == "apagar":
+            db.session.delete(registro)
+            flash(f'"{registro.nome}" apagado - será pesquisado de novo na próxima vez.', "success")
+        elif acao in ("confirmado", "rejeitado"):
+            registro.status = acao
+            registro.revisado_em = datetime.utcnow()
+            registro.revisado_por_id = current_user.id
+            flash(f'"{registro.nome}" {acao}.', "success")
+        db.session.commit()
+        return redirect(url_for("dono.nomes_pesquisados"))
+    registros = NomePesquisado.query.order_by(NomePesquisado.criado_em.desc()).limit(500).all()
+    return render_template("dono/nomes_pesquisados.html", registros=registros, config=PlataformaConfig.obter())
 
 
 @dono_bp.route("/ajuda-app")

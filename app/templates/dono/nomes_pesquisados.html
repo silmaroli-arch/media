@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block titulo %}Nomes pesquisados{% endblock %}
+{% block conteudo %}
+{# O que a busca na internet achou quando uma IA não reconheceu um nome
+   (pedido do Silvan, 2026-10-25, ver app/busca_internet.py). #}
+<h3 class="mb-1">Nomes pesquisados na internet</h3>
+<p class="text-muted small">
+  Quando uma IA não reconhece um nome (medicamento, produto...), o sistema pesquisa uma única vez em sites oficiais e de
+  referência e guarda o resultado aqui. <strong>Confirmar</strong> marca como conferido; <strong>Rejeitar</strong> faz o
+  resultado não ser mais usado nas respostas; <strong>Apagar</strong> faz pesquisar de novo na próxima vez.
+  Busca {{ "ligada" if config.busca_internet_ativa else "desligada" }} (até {{ config.busca_internet_limite_dia }} por dia) -
+  liga/desliga no Painel do dono, em Configurações.
+</p>
+<div class="card p-3">
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Quando</th><th>Nome</th><th>Resultado</th><th>Fontes</th><th>Situação</th><th></th></tr></thead>
+    <tbody>
+      {% for r in registros %}
+      <tr>
+        <td class="text-nowrap small">{{ r.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td><strong>{{ r.nome }}</strong></td>
+        <td>{{ r.resultado or "As fontes não confirmaram o que é." }}</td>
+        <td class="small">{% for f in r.lista_fontes %}<a href="{{ f }}" target="_blank" rel="noopener" class="d-block text-truncate" style="max-width: 260px">{{ f }}</a>{% else %}-{% endfor %}</td>
+        <td>
+          {% if r.status == "confirmado" %}<span class="badge bg-success">confirmado</span>
+          {% elif r.status == "rejeitado" %}<span class="badge bg-danger">rejeitado</span>
+          {% else %}<span class="badge bg-warning text-dark">a conferir</span>{% endif %}
+        </td>
+        <td class="text-nowrap">
+          <form method="post" class="d-inline">
+            <input type="hidden" name="id" value="{{ r.id }}">
+            {% if r.resultado and r.status != "confirmado" %}<button name="acao" value="confirmado" class="btn btn-sm btn-outline-success">Confirmar</button>{% endif %}
+            {% if r.resultado and r.status != "rejeitado" %}<button name="acao" value="rejeitado" class="btn btn-sm btn-outline-danger">Rejeitar</button>{% endif %}
+            <button name="acao" value="apagar" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Apagar? O nome será pesquisado de novo na próxima vez.');">Apagar</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-muted text-center">Nenhum nome pesquisado ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

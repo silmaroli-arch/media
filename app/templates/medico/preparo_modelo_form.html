@@ -57,7 +57,7 @@
 {% endif %}
 
 <div class="card p-4">
-  <form method="post" id="form-preparo">
+  <form method="post" id="form-preparo" enctype="multipart/form-data">
     {% if wizard %}<input type="hidden" name="wizard" value="1">{% endif %}
     {# Modelo de preparo é genérico - vale para qualquer local de atendimento
        da empresa, por isso não pede (nem mostra) filial aqui. #}
@@ -72,6 +72,47 @@
         Ex.: "Colonoscopia com Picoprep e Manitol (Manhã)", "Teste de Hidrogênio Expirado" — este nome
         é usado tanto para o modelo de preparo quanto para o exame criado/atualizado junto.
       </div>
+    </div>
+
+    {# PDF original do preparo (pedido do Silvan, 2026-10-24): o paciente
+       abre este arquivo primeiro pelo link do WhatsApp; a linha do tempo
+       fica como segunda opção. O PDF importado já vem marcado. #}
+    {% set pendente = pdf_original_pendente() if not modelo or not modelo.pdf_original else none %}
+    <div class="mb-3 border rounded p-3 bg-light">
+      <label class="form-label fw-semibold mb-1"><i class="bi bi-file-earmark-pdf"></i> Preparo original (PDF)</label>
+      <div class="form-text mt-0 mb-2">O paciente abre este PDF primeiro, pelo link do WhatsApp. A linha do tempo continua disponível como segunda opção.</div>
+      {% if modelo and modelo.pdf_original %}
+      <div class="mb-2">
+        <a href="{{ url_for('medico.preparo_modelos_pdf_original', modelo_id=modelo.id) }}" target="_blank">{{ modelo.pdf_original.nome_arquivo }}</a>
+        <span class="text-muted small">({{ (modelo.pdf_original.tamanho / 1024) | round | int }} KB)</span>
+        {# Versão em página (HTML) feita pela IA, que o médico aprova (2026-10-24). #}
+        {% set situacao_pagina = modelo.pdf_original.situacao_pagina %}
+        <div class="small mt-1">
+          <i class="bi bi-phone"></i> Versão em página para o celular:
+          {% if situacao_pagina == "aprovada" %}<span class="badge bg-success">publicada</span>
+          {% elif situacao_pagina == "revisar" %}<span class="badge bg-warning text-dark">aguardando sua aprovação</span>
+          {% elif situacao_pagina == "gerando" %}<span class="badge bg-info text-dark">gerando...</span>
+          {% elif situacao_pagina == "erro" %}<span class="badge bg-danger">não foi possível gerar</span>
+          {% else %}<span class="badge bg-secondary">não gerada</span>{% endif %}
+          <a href="{{ url_for('medico.preparo_modelos_pdf_pagina', modelo_id=modelo.id) }}" class="ms-1">{{ 'Revisar e aprovar' if situacao_pagina in ('revisar', 'aprovada') else 'Abrir' }}</a>
+        </div>
+        <div class="form-check mt-1">
+          <input class="form-check-input" type="checkbox" name="remover_pdf_original" value="1" id="remover-pdf-original">
+          <label class="form-check-label small" for="remover-pdf-original">Remover o PDF (o paciente vê só a linha do tempo)</label>
+        </div>
+      </div>
+      {% elif pendente %}
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="usar_pdf_importado" value="1" id="usar-pdf-importado" checked>
+        <label class="form-check-label" for="usar-pdf-importado">
+          Usar o PDF importado
+          (<a href="{{ url_for('medico.preparo_modelos_pdf_importado') }}" target="_blank">{{ pendente.nome_arquivo }}</a>)
+          como preparo original
+        </label>
+      </div>
+      {% endif %}
+      <input type="file" name="pdf_original" accept="application/pdf,.pdf" class="form-control form-control-sm">
+      <div class="form-text">{% if (modelo and modelo.pdf_original) or pendente %}Escolha outro arquivo só se quiser trocar.{% else %}Opcional. Máximo 10 MB.{% endif %}</div>
     </div>
 
     {# Pedido do Silvan (2026-09-29): tipo de exame (lista global mantida pelo

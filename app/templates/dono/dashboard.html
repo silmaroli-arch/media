@@ -439,6 +439,104 @@
       </form>
     </div>
 
+    <div class="card p-3 mb-4" id="modelos-ia">
+      <h5 class="mb-1">Modelos das IAs</h5>
+      <p class="text-muted small mb-3">
+        Qual modelo cada IA usa, com o preço por milhão de tokens (entrada / saída). O escolhido aqui vale mais que a
+        configuração do servidor; "Padrão" usa a do servidor. Depois de trocar, clique em <strong>Testar</strong> para
+        conferir se cada modelo responde (custa centavos).
+      </p>
+      <form method="post" action="{{ url_for('dono.configuracoes_modelos_ia') }}">
+        <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead><tr><th>IA</th><th>Em uso agora</th><th>Modelo</th></tr></thead>
+          <tbody>
+            {% for linha in modelos_ia %}
+            <tr>
+              <td class="small">{{ linha.rotulo }}</td>
+              <td><code>{{ linha.em_uso }}</code></td>
+              {# Lista de seleção com o preço de cada modelo (pedido do Silvan,
+                 2026-10-25); "Outro..." abre um campo para digitar. #}
+              <td>
+                <select name="{{ linha.campo }}" class="form-select form-select-sm seletor-modelo" style="min-width: 240px">
+                  <option value="" {% if not linha.escolhido %}selected{% endif %}>Padrão ({{ linha.padrao }})</option>
+                  {% for op in linha.opcoes %}
+                  <option value="{{ op.nome }}" {% if linha.escolhido == op.nome %}selected{% endif %}>{{ op.rotulo }}</option>
+                  {% endfor %}
+                  <option value="__outro__">Outro...</option>
+                </select>
+                <input type="text" name="{{ linha.campo }}_outro" class="form-control form-control-sm mt-1 d-none" placeholder="nome exato do modelo">
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        <script>
+          document.querySelectorAll('.seletor-modelo').forEach(function (sel) {
+            sel.addEventListener('change', function () {
+              var outro = sel.nextElementSibling;
+              outro.classList.toggle('d-none', sel.value !== '__outro__');
+              if (sel.value === '__outro__') outro.focus();
+            });
+          });
+        </script>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+        <button type="submit" formaction="{{ url_for('dono.configuracoes_modelos_ia_testar') }}" class="btn btn-outline-secondary"
+                onclick="this.innerText='Testando... (até 1 minuto)';">Testar</button>
+      </form>
+      <div class="mt-3 pt-3 border-top">
+        <strong class="small">Perfis prontos</strong>
+        <div class="small text-muted mb-2">Aplicam os quatro modelos de uma vez (depois dá para ajustar na lista acima).</div>
+        <form method="post" action="{{ url_for('dono.configuracoes_modelos_ia_perfil') }}" class="d-flex gap-2 flex-wrap">
+          <button name="perfil" value="essencial" class="btn btn-outline-primary btn-sm"
+                  onclick="return confirm('Aplicar o perfil Essencial (Haiku 5.5 + gpt-5.4-nano)?');">
+            Essencial <span class="text-muted">- IA ~R$ 25 a 40 por médico/mês</span>
+          </button>
+          <button name="perfil" value="completo" class="btn btn-outline-primary btn-sm"
+                  onclick="return confirm('Aplicar o perfil Completo (Sonnet 5.5 + gpt-5.4-mini)?');">
+            Completo <span class="text-muted">- IA ~R$ 115 a 160 por médico/mês</span>
+          </button>
+        </form>
+      </div>
+      {% if teste_modelos_ia %}
+      <div class="mt-3" id="resultado-teste-modelos">
+        <strong class="small">Resultado do teste:</strong>
+        {% for r in teste_modelos_ia %}
+        <div class="alert alert-{{ r.tipo }} py-1 px-2 small mb-1 mt-1">
+          <strong>{{ r.rotulo }}</strong> - <code>{{ r.nome }}</code>: {{ r.texto }}
+        </div>
+        {% endfor %}
+      </div>
+      <script>
+        // Leva a tela até o resultado depois que a aba Configurações abrir.
+        setTimeout(function () { document.getElementById('resultado-teste-modelos').scrollIntoView({block: 'center'}); }, 400);
+      </script>
+      {% endif %}
+    </div>
+
+    <div class="card p-3 mb-4">
+      <h5 class="mb-1">Busca na internet quando a IA não reconhece um nome</h5>
+      <p class="text-muted small mb-3">
+        Quando uma IA responde que não reconheceu um nome (medicamento, produto...), o sistema pesquisa esse nome
+        uma única vez em sites oficiais e de referência (gov.br/ANVISA, Consulta Remédios, MedlinePlus, Drugs.com,
+        Manual MSD) e as IAs respondem de novo com o resultado - sempre com revisão do médico. Custo: cerca de
+        R$ 0,05 por busca mais a leitura das páginas. O resultado fica em
+        <a href="{{ url_for('dono.nomes_pesquisados') }}">Nomes pesquisados</a> e o mesmo nome nunca é pesquisado duas vezes.
+      </p>
+      <form method="post" action="{{ url_for('dono.configuracoes_busca_internet') }}" class="d-flex align-items-end gap-3 flex-wrap">
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" role="switch" name="busca_internet_ativa" value="1" id="busca-internet-ativa" {% if config.busca_internet_ativa %}checked{% endif %}>
+          <label class="form-check-label" for="busca-internet-ativa">Ligada</label>
+        </div>
+        <div>
+          <label class="form-label small mb-0">Máximo de buscas por dia</label>
+          <input type="number" min="0" max="1000" name="busca_internet_limite_dia" class="form-control" style="max-width: 140px" value="{{ config.busca_internet_limite_dia }}">
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </form>
+    </div>
+
     <div class="card p-3 mb-4">
       <h5 class="mb-1">Limite diário de mensagens por exame (WhatsApp)</h5>
       <p class="text-muted small mb-3">

@@ -24,11 +24,13 @@
       <tr>
         <td>{{ c.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
         <td>
-          {% if c.tipo_uso == "importacao_pdf_preparo" %}
-            Importação de PDF
-          {% else %}
-            Chat de dúvidas
-          {% endif %}
+          {% set rotulos_uso = {
+            "importacao_pdf_preparo": "Importação de PDF", "pagina_pdf_preparo": "Página do PDF de preparo",
+            "validador_pergunta_paciente": "Validador de pergunta", "ajuda_app": "Ajuda do app (Malu)",
+            "base_conhecimento_aprendizado": "Aprendizado do FAQ", "busca_internet": "Busca na internet",
+            "teste_modelo_ia": "Teste de modelo",
+          } %}
+          {{ rotulos_uso.get(c.tipo_uso, "Chat de dúvidas") }}
         </td>
         <td>{{ c.provedor }}</td>
         <td class="small text-muted">{{ c.modelo or "-" }}</td>

@@ -107,6 +107,12 @@ import unicodedata
 
 from flask import current_app
 
+from app.ia_modelos import (
+    criar_chat_openai, criar_mensagem_claude, modelo_claude, modelo_claude_sintese, modelo_claude_validador,
+    modelo_gemini, modelo_openai,
+    texto_claude,
+)
+
 from app.custo_ia import registrar_chamada_ia
 
 MARCADOR_NAO_SEI = "NAO_SEI_ENCAMINHAR"
@@ -254,27 +260,11 @@ def _remover_recomendacao_de_consultar_medico(texto):
     resultado = " ".join(frases_mantidas).strip()
     return resultado if resultado else texto
 
-# Pode ser trocado por variável de ambiente sem precisar mexer no código —
-# útil pra ajustar custo/qualidade sem um novo deploy.
-#
-# Usamos o Sonnet (não o Haiku) como padrão porque essa tarefa depende de
-# reconhecimento de marcas comerciais de medicamento (ex.: "Ecasil" =
-# ácido acetilsalicílico/AAS) para conseguir casar a pergunta do paciente
-# com o que já está cadastrado no preparo (ver a regra de "IDENTIDADE" no
-# PROMPT_SISTEMA abaixo) — o Haiku errou esse tipo de reconhecimento em
-# testes reais. Custa mais por chamada, mas o volume de perguntas de
-# paciente é baixo o suficiente pra isso não pesar, e o ganho de acerto
-# nesse tipo de pergunta compensa.
-MODELO_PADRAO = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
-# Mantido no gpt-4o-mini (mais barato) do lado da OpenAI — como as duas IAs
-# são consultadas juntas e comparadas (reforço mútuo, ver
-# responder_com_ia), a Claude já mais forte reconhecendo a marca cobre boa
-# parte do ganho sem precisar subir o custo dos dois lados ao mesmo tempo.
-MODELO_OPENAI_PADRAO = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-# Mesma variável de ambiente já usada pelo import de PDF (ver
-# app.ia_pdf_preparo.MODELO_PADRAO) - um único lugar para trocar o modelo
-# do Gemini em toda a aplicação.
-MODELO_GEMINI_PADRAO = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+# Modelos (2026-10-25): escolhidos pelo dono no painel, com variável de
+# ambiente e padrão como reserva - ver app.ia_modelos (modelo_claude() etc.).
+# Sonnet e não Haiku nas respostas: a tarefa depende de reconhecer marcas
+# comerciais de medicamento (ex.: "Ecasil" = AAS), onde o Haiku errou em
+# testes reais; o Haiku fica com o validador e a checagem de divergência.
 
 PROMPT_SISTEMA = """Você é um assistente virtual de uma clínica, respondendo dúvidas de pacientes sobre o preparo para um exame médico. Responda SOMENTE com base nas informações do preparo fornecidas pelo usuário — nunca invente prazos, medicamentos, alimentos ou características de produtos (cor, sabor, composição, marca) que não estejam explicitamente listadas ali.
 
@@ -582,9 +572,10 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
     responder_com_ia que esta resposta específica precisa SEMPRE passar
     pelo médico, mesmo com a aprovação geral desativada."""
     try:
-        mensagem = cliente.messages.create(
-            model=MODELO_PADRAO,
-            max_tokens=300,
+        # Resposta ao paciente: raciocínio médio (regras de identidade de
+        # medicamento, nunca chutar...).
+        mensagem = criar_mensagem_claude(
+            cliente, modelo_claude(), 300, esforco="medium",
             system=PROMPT_SISTEMA,
             messages=[{
                 "role": "user",
@@ -608,11 +599,11 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
         return None, None, False, False
     uso = getattr(mensagem, "usage", None)
     chamada = registrar_chamada_ia(
-        "chat_duvida_paciente", "Claude", getattr(mensagem, "model", MODELO_PADRAO),
+        "chat_duvida_paciente", "Claude", getattr(mensagem, "model", modelo_claude()),
         getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
         sucesso=True, paciente_id=paciente_id,
     )
-    texto = "".join(getattr(bloco, "text", "") for bloco in mensagem.content).strip()
+    texto = texto_claude(mensagem)
     texto = _normalizar_marcadores(texto)
     if not texto or MARCADOR_NAO_SEI in texto or (
         _eh_recusa_generica_disfarcada(texto) and not any(m in texto for m in MARCADORES_REVISAO)
@@ -630,9 +621,8 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
     retorno `(texto_ou_None, chamada_ou_None, sem_sentido_bool,
     exige_revisao_medicamento_bool)`."""
     try:
-        resposta = cliente.chat.completions.create(
-            model=MODELO_OPENAI_PADRAO,
-            max_tokens=300,
+        resposta = criar_chat_openai(
+            cliente, modelo_openai(), 300, esforco="medium",
             messages=[
                 {"role": "system", "content": PROMPT_SISTEMA},
                 {
@@ -650,7 +640,7 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
         return None, None, False, False
     uso = getattr(resposta, "usage", None)
     chamada = registrar_chamada_ia(
-        "chat_duvida_paciente", "ChatGPT", getattr(resposta, "model", MODELO_OPENAI_PADRAO),
+        "chat_duvida_paciente", "ChatGPT", getattr(resposta, "model", modelo_openai()),
         getattr(uso, "prompt_tokens", None), getattr(uso, "completion_tokens", None),
         sucesso=True, paciente_id=paciente_id,
     )
@@ -679,7 +669,7 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
     try:
         from google.genai import types as genai_types
         resposta = cliente.models.generate_content(
-            model=MODELO_GEMINI_PADRAO,
+            model=modelo_gemini(),
             contents=(
                 f"Dados do preparo:\n{contexto}\n\n"
                 f"{_formatar_historico_conversa(historico)}"
@@ -695,7 +685,7 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
         return None, None, False, False
     uso = getattr(resposta, "usage_metadata", None)
     chamada = registrar_chamada_ia(
-        "chat_duvida_paciente", "Gemini", getattr(resposta, "model_version", None) or MODELO_GEMINI_PADRAO,
+        "chat_duvida_paciente", "Gemini", getattr(resposta, "model_version", None) or modelo_gemini(),
         getattr(uso, "prompt_token_count", None), getattr(uso, "candidates_token_count", None),
         sucesso=True, paciente_id=paciente_id,
     )
@@ -730,9 +720,9 @@ def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=N
         # concordância sem checar).
         return True
     try:
-        veredito = cliente_anthropic.messages.create(
-            model=MODELO_PADRAO,
-            max_tokens=5,
+        # Só classifica SIM/NAO - o modelo barato do validador basta.
+        veredito = criar_mensagem_claude(
+            cliente_anthropic, modelo_claude_validador(), 5, esforco="low",
             system=(
                 "Compare as duas respostas abaixo, dadas por assistentes diferentes à "
                 "mesma pergunta de um paciente sobre preparo de exame. Responda SOMENTE "
@@ -753,11 +743,11 @@ def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=N
         )
         uso = getattr(veredito, "usage", None)
         registrar_chamada_ia(
-            "chat_duvida_paciente", "Claude", getattr(veredito, "model", MODELO_PADRAO),
+            "chat_duvida_paciente", "Claude", getattr(veredito, "model", modelo_claude_validador()),
             getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
             sucesso=True, paciente_id=paciente_id,
         )
-        texto = "".join(getattr(bloco, "text", "") for bloco in veredito.content).strip().upper()
+        texto = texto_claude(veredito).upper()
         return texto.startswith("NAO")
     except Exception:
         return True
@@ -781,9 +771,8 @@ def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, respos
     if not cliente_anthropic:
         return None
     try:
-        sintese = cliente_anthropic.messages.create(
-            model=MODELO_PADRAO,
-            max_tokens=300,
+        sintese = criar_mensagem_claude(
+            cliente_anthropic, modelo_claude_sintese(), 300, esforco="medium",
             system=(
                 "Duas IAs diferentes responderam à mesma pergunta de um paciente "
                 "sobre preparo de exame, com respostas que divergem em algum ponto. "
@@ -820,13 +809,13 @@ def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, respos
             }],
         )
         uso = getattr(sintese, "usage", None)
-        texto = "".join(getattr(bloco, "text", "") for bloco in sintese.content).strip()
+        texto = texto_claude(sintese)
         # Quando dá certo, o texto desta chamada é literalmente o que vira
         # a resposta final (ver responder_com_ia) - diferente das duas
         # respostas "cruas" que ela concilia, que nesse caso NÃO são a
         # resposta final (ver marcação em responder_com_ia).
         registrar_chamada_ia(
-            "chat_duvida_paciente", "Claude", getattr(sintese, "model", MODELO_PADRAO),
+            "chat_duvida_paciente", "Claude", getattr(sintese, "model", modelo_claude_sintese()),
             getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
             sucesso=True, paciente_id=paciente_id, resposta_final_usada=bool(texto),
         )
@@ -868,7 +857,7 @@ def _tentar_provedor(nome_provedor, pergunta_usuario, contexto, paciente_id=None
     return texto, chamada, True, sem_sentido, exige_revisao
 
 
-def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico=None):
+def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico=None, contexto_extra=""):
     """Tenta responder a pergunta do paciente usando IA, com o preparo do
     exame como contexto. As duas IAs que respondem são escolhidas pelo
     dono da plataforma entre Gemini/ChatGPT/Claude (ver
@@ -1015,6 +1004,9 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
         bloco_anvisa = ""
     if bloco_anvisa:
         contexto = f"{contexto}\n\n{bloco_anvisa}"
+    # Resultado de uma busca na internet (ver _pesquisar_nome_nao_reconhecido).
+    if contexto_extra:
+        contexto = f"{contexto}\n\n{contexto_extra}"
 
     resposta_a, chamada_a, tentou_a, sem_sentido_a, exige_revisao_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id, historico)
     resposta_b, chamada_b, tentou_b, sem_sentido_b, exige_revisao_b = _tentar_provedor(provedor_b, pergunta_usuario, contexto, paciente_id, historico)
@@ -1272,6 +1264,13 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     derruba o chat: é registrada no log e o resultado das duas IAs segue
     intacto."""
     resultado = _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=paciente_id, historico=historico)
+    try:
+        resultado = _pesquisar_nome_nao_reconhecido(resultado, pergunta_usuario, exame, paciente_id, historico)
+    except Exception:
+        current_app.logger.exception("Falha na busca na internet - seguindo só com as IAs.")
+        from app.extensions import db
+
+        db.session.rollback()
     resultado.setdefault("base", None)
     resultado.setdefault("exige_revisao_base", False)
     resultado["por_provedor"].setdefault("Base", None)
@@ -1280,6 +1279,35 @@ def responder_com_ia(pergunta_usuario, exame, paciente_id=None, historico=None):
     except Exception:
         current_app.logger.exception("Falha ao consultar a base de conhecimento - seguindo só com as IAs.")
     return resultado
+
+
+def _pesquisar_nome_nao_reconhecido(resultado, pergunta_usuario, exame, paciente_id, historico):
+    """Busca na internet (2026-10-25, ver app.busca_internet): se alguma IA
+    disse que não reconheceu um nome e a busca está ligada, pesquisa o nome
+    uma vez e, achando, pergunta de novo às 2 IAs com o resultado no
+    contexto. A resposta sempre passa pelo médico, que vê o que foi achado
+    (resultado["pesquisa_internet"])."""
+    from app import busca_internet
+
+    resultado.setdefault("pesquisa_internet", None)
+    situacao = resultado.get("situacao") or {}
+    if "respondeu_nao_reconhecido" not in situacao.values() or not busca_internet.busca_ativa():
+        return resultado
+    textos = [t for t in (resultado.get("por_provedor") or {}).values() if t]
+    nome = busca_internet.nome_nao_reconhecido(textos, pergunta_usuario)
+    registro = busca_internet.pesquisar(nome, paciente_id=paciente_id) if nome else None
+    if not registro:
+        return resultado
+    resultado["pesquisa_internet"] = busca_internet.texto_para_medico(registro)
+    linha = busca_internet.linha_contexto(registro)
+    if not linha:
+        return resultado
+    novo = _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=paciente_id, historico=historico,
+                                   contexto_extra=linha)
+    novo["pesquisa_internet"] = resultado["pesquisa_internet"]
+    # Informação da internet: o médico sempre confere antes de ir ao paciente.
+    novo["exige_revisao_medicamento"] = True
+    return novo
 
 
 # Ver docstring do módulo ("Validador de pergunta dedicado", 2026-09-24).
@@ -1359,20 +1387,21 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
 
     try:
         if provedor == "Claude":
-            resposta = cliente.messages.create(
-                model=MODELO_PADRAO, max_tokens=120, system=PROMPT_SISTEMA_VALIDADOR,
+            # Validador: Claude Haiku 5.5 (rápido e barato), ver app.ia_modelos.
+            resposta = criar_mensagem_claude(
+                cliente, modelo_claude_validador(), 120, esforco="low", system=PROMPT_SISTEMA_VALIDADOR,
                 messages=[{"role": "user", "content": conteudo}],
             )
             uso = getattr(resposta, "usage", None)
             chamada = registrar_chamada_ia(
-                "validador_pergunta_paciente", "Claude", getattr(resposta, "model", MODELO_PADRAO),
+                "validador_pergunta_paciente", "Claude", getattr(resposta, "model", modelo_claude_validador()),
                 getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
                 sucesso=True, paciente_id=paciente_id,
             )
-            texto = "".join(getattr(bloco, "text", "") for bloco in resposta.content).strip()
+            texto = texto_claude(resposta)
         elif provedor == "ChatGPT":
-            resposta = cliente.chat.completions.create(
-                model=MODELO_OPENAI_PADRAO, max_tokens=120,
+            resposta = criar_chat_openai(
+                cliente, modelo_openai(), 120, esforco="low",
                 messages=[
                     {"role": "system", "content": PROMPT_SISTEMA_VALIDADOR},
                     {"role": "user", "content": conteudo},
@@ -1380,7 +1409,7 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
             )
             uso = getattr(resposta, "usage", None)
             chamada = registrar_chamada_ia(
-                "validador_pergunta_paciente", "ChatGPT", getattr(resposta, "model", MODELO_OPENAI_PADRAO),
+                "validador_pergunta_paciente", "ChatGPT", getattr(resposta, "model", modelo_openai()),
                 getattr(uso, "prompt_tokens", None), getattr(uso, "completion_tokens", None),
                 sucesso=True, paciente_id=paciente_id,
             )
@@ -1388,14 +1417,14 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
         else:  # Gemini
             from google.genai import types as genai_types
             resposta = cliente.models.generate_content(
-                model=MODELO_GEMINI_PADRAO, contents=conteudo,
+                model=modelo_gemini(), contents=conteudo,
                 config=genai_types.GenerateContentConfig(
                     system_instruction=PROMPT_SISTEMA_VALIDADOR, max_output_tokens=120,
                 ),
             )
             uso = getattr(resposta, "usage_metadata", None)
             chamada = registrar_chamada_ia(
-                "validador_pergunta_paciente", "Gemini", getattr(resposta, "model_version", None) or MODELO_GEMINI_PADRAO,
+                "validador_pergunta_paciente", "Gemini", getattr(resposta, "model_version", None) or modelo_gemini(),
                 getattr(uso, "prompt_token_count", None), getattr(uso, "candidates_token_count", None),
                 sucesso=True, paciente_id=paciente_id,
             )

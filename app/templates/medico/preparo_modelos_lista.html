@@ -14,12 +14,17 @@
 </p>
 <div class="card p-3">
   <table class="table table-hover align-middle">
-    <thead><tr><th>Nome</th><th>Médico Criador</th><th>Cortes de alimentação</th><th>Medicamentos a suspender</th><th>Outras orientações</th><th>Usado por</th><th></th></tr></thead>
+    {# No celular (2026-10-24, tela liberada para o médico) ficam só o nome e
+       os botões; o médico criador aparece embaixo do nome. #}
+    <thead><tr><th>Nome</th><th class="d-none d-md-table-cell">Médico Criador</th><th class="d-none d-md-table-cell">Cortes de alimentação</th><th class="d-none d-md-table-cell">Medicamentos a suspender</th><th class="d-none d-md-table-cell">Outras orientações</th><th class="d-none d-md-table-cell">Usado por</th><th></th></tr></thead>
     <tbody>
       {% for m in modelos %}
       <tr>
-        <td>{{ m.nome }}</td>
         <td>
+          {{ m.nome }}
+          {% if m.exames|length == 1 and m.exames[0].medico %}<div class="d-md-none small text-muted">{{ m.exames[0].medico.nome }}</div>{% endif %}
+        </td>
+        <td class="d-none d-md-table-cell">
           {% if m.exames|length == 1 %}
           {{ m.exames[0].medico.nome if m.exames[0].medico else "—" }}
           {% elif m.exames|length > 1 %}
@@ -28,28 +33,28 @@
           <span class="text-muted small">—</span>
           {% endif %}
         </td>
-        <td>
+        <td class="d-none d-md-table-cell">
           {% for c in m.cortes %}
           <span class="badge bg-light text-dark border me-1">{{ c.descricao }}: {{ c.horas_antes }}h antes</span>
           {% else %}
           <span class="text-muted small">Nenhum</span>
           {% endfor %}
         </td>
-        <td>
+        <td class="d-none d-md-table-cell">
           {% if m.medicamentos_suspensos %}
           <span class="badge bg-light text-dark border">{{ m.medicamentos_suspensos|length }} medicamento(s)</span>
           {% else %}
           <span class="text-muted small">Nenhum</span>
           {% endif %}
         </td>
-        <td>
+        <td class="d-none d-md-table-cell">
           {% if m.informacoes_gerais %}
           <span class="badge bg-light text-dark border">{{ m.informacoes_gerais|length }} item(ns)</span>
           {% else %}
           <span class="text-muted small">Nenhuma</span>
           {% endif %}
         </td>
-        <td>
+        <td class="d-none d-md-table-cell">
           {% if m.exames %}
           {{ m.exames|length }} exame(s)
           {% else %}
