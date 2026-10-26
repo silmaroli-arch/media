@@ -15,6 +15,12 @@
 </p>
 {% endif %}
 
+{# Em modelo NOVO, a tela começa só com o botão de importar o PDF; os campos
+   aparecem depois da importação (ou em "Prefiro preencher sem PDF") - pedido do
+   Silvan, 2026-10-26, a tela cheia logo de cara confundia. Só no GET: um POST
+   (importação ou erro ao salvar) já tem o que mostrar. #}
+{% set fase_inicial = (not modelo) and (not sugestao) and request.method == "GET" and request.args.get("manual") != "1" %}
+
 {% if varios_exames_vinculados %}
 <div class="alert alert-info">
   Este modelo é usado por {{ modelo.exames|length }} exames ao mesmo tempo (cadastro antigo, ex.:
@@ -24,11 +30,14 @@
 </div>
 {% endif %}
 
-{% if sugestao %}
-<div class="alert alert-warning">
-  Dados extraídos automaticamente do arquivo enviado.
-  <strong>Revise com cuidado</strong> — a extração é automática e pode ter interpretado algo errado ou
-  deixado de reconhecer alguma regra. Nada foi salvo ainda.
+{% if sugestao and not sugestao._do_formulario %}
+<div class="alert alert-warning d-flex flex-wrap align-items-center gap-2">
+  <div>
+    <strong>Passo 2 de 2 - revise e salve.</strong>
+    Os dados foram extraídos do PDF{% if provedor_usado %} (via {{ provedor_usado }}){% endif %}.
+    A extração é automática e pode errar: <strong>confira cada aba</strong>. Nada foi salvo ainda.
+  </div>
+  <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx">Importar outro PDF</button>
 </div>
 {% endif %}
 
@@ -38,17 +47,26 @@
   {% endfor %}
 </datalist>
 
-{% if not modelo %}
+{% if fase_inicial %}
+<div class="card p-4 text-center mx-auto" style="max-width: 640px;">
+  <div class="text-muted small mb-1">Passo 1 de 2</div>
+  <i class="bi bi-file-earmark-arrow-up display-4 text-primary"></i>
+  <h5 class="mt-2">Comece importando o PDF do preparo</h5>
+  <p class="text-muted">
+    A IA lê o PDF e preenche tudo para você revisar no passo seguinte. O mesmo PDF fica guardado como o
+    <strong>preparo original</strong> que o paciente abre pelo link do WhatsApp.
+  </p>
+  <div>
+    <button type="button" class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx">
+      <i class="bi bi-file-earmark-arrow-up"></i> Importar de um PDF
+    </button>
+  </div>
+  <div class="mt-3">
+    <a href="{{ url_for('medico.preparo_modelos_novo', manual=1, wizard=1 if wizard else None) }}" class="small">Prefiro preencher sem PDF</a>
+  </div>
+</div>
+{% elif not modelo and not sugestao %}
 <div class="mb-3">
-  {# Importar preenche este formulário - por isso o botão mora aqui, não
-     na lista. Abre um popup pra escolher o arquivo. PDF é lido
-     diretamente pela IA (ver app.ia_pdf_preparo), com fallback automático
-     pra extração por regex se a IA não estiver disponível - não existe
-     mais uma etapa intermediária de gerar Excel a partir do PDF.
-     Importação por planilha (.xlsx) continua existindo no backend (ver
-     medico.preparo_modelos_importar_xlsx), mas deixou de aparecer aqui
-     nesta tela (pedido do Silvan, 2026-09-11) - só a opção de PDF é
-     mostrada, pra não confundir quem está cadastrando. #}
   <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-importar-xlsx">
     <i class="bi bi-file-earmark-arrow-up"></i> Importar de um PDF
   </button>
@@ -56,6 +74,7 @@
 </div>
 {% endif %}
 
+{% if not fase_inicial %}
 <div class="card p-4">
   <form method="post" id="form-preparo" enctype="multipart/form-data">
     {% if wizard %}<input type="hidden" name="wizard" value="1">{% endif %}
@@ -67,7 +86,7 @@
     <div class="mb-3">
       <label class="form-label">Nome do modelo (também é o nome do exame)</label>
       <input type="text" name="nome" class="form-control" required
-             value="{{ modelo.nome if modelo else ((sugestao.nome_sugerido if sugestao else '') or '') }}">
+             value="{{ (sugestao.nome_sugerido if sugestao else (modelo.nome if modelo else '')) or '' }}">
       <div class="form-text">
         Ex.: "Colonoscopia com Picoprep e Manitol (Manhã)", "Teste de Hidrogênio Expirado" — este nome
         é usado tanto para o modelo de preparo quanto para o exame criado/atualizado junto.
@@ -85,34 +104,47 @@
       <div class="mb-2">
         <a href="{{ url_for('medico.preparo_modelos_pdf_original', modelo_id=modelo.id) }}" target="_blank">{{ modelo.pdf_original.nome_arquivo }}</a>
         <span class="text-muted small">({{ (modelo.pdf_original.tamanho / 1024) | round | int }} KB)</span>
-        {# Versão em página (HTML) feita pela IA, que o médico aprova (2026-10-24). #}
-        {% set situacao_pagina = modelo.pdf_original.situacao_pagina %}
-        <div class="small mt-1">
-          <i class="bi bi-phone"></i> Versão em página para o celular:
-          {% if situacao_pagina == "aprovada" %}<span class="badge bg-success">publicada</span>
-          {% elif situacao_pagina == "revisar" %}<span class="badge bg-warning text-dark">aguardando sua aprovação</span>
-          {% elif situacao_pagina == "gerando" %}<span class="badge bg-info text-dark">gerando...</span>
-          {% elif situacao_pagina == "erro" %}<span class="badge bg-danger">não foi possível gerar</span>
-          {% else %}<span class="badge bg-secondary">não gerada</span>{% endif %}
-          <a href="{{ url_for('medico.preparo_modelos_pdf_pagina', modelo_id=modelo.id) }}" class="ms-1">{{ 'Revisar e aprovar' if situacao_pagina in ('revisar', 'aprovada') else 'Abrir' }}</a>
-        </div>
-        <div class="form-check mt-1">
-          <input class="form-check-input" type="checkbox" name="remover_pdf_original" value="1" id="remover-pdf-original">
-          <label class="form-check-label small" for="remover-pdf-original">Remover o PDF (o paciente vê só a linha do tempo)</label>
+        {# O paciente vê as páginas do PDF como imagem, exatamente como o médico escreveu (2026-10-26). #}
+        {% set paginas_modelo = modelo.pdf_original.paginas %}
+        <div class="mt-2 small">
+          {% if paginas_modelo %}
+          <div class="text-success mb-1"><i class="bi bi-check-circle-fill"></i>
+            {{ paginas_modelo|length }} página(s) prontas: o paciente vê o seu PDF como está, no link do WhatsApp.</div>
+          <div class="d-flex flex-wrap gap-2">
+            {% for pg in paginas_modelo %}
+            <a href="{{ url_for('medico.preparo_modelos_pdf_pagina_imagem', modelo_id=modelo.id, numero=pg.numero) }}" target="_blank">
+              <img src="{{ url_for('medico.preparo_modelos_pdf_pagina_imagem', modelo_id=modelo.id, numero=pg.numero) }}" alt="Página {{ pg.numero }}"
+                   style="height: 110px; width: auto; border: 1px solid #cfd8e3; border-radius: 4px; background: #fff;" loading="lazy">
+            </a>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="text-muted">O paciente abre e baixa o PDF pelo link do WhatsApp.</div>
+          {% endif %}
         </div>
       </div>
       {% elif pendente %}
-      <div class="form-check mb-2">
-        <input class="form-check-input" type="checkbox" name="usar_pdf_importado" value="1" id="usar-pdf-importado" checked>
-        <label class="form-check-label" for="usar-pdf-importado">
-          Usar o PDF importado
-          (<a href="{{ url_for('medico.preparo_modelos_pdf_importado') }}" target="_blank">{{ pendente.nome_arquivo }}</a>)
-          como preparo original
-        </label>
+      {# PDF importado: já vem como preparo original, sem pedir para escolher arquivo de novo. #}
+      {# O PDF é o documento do médico: não se troca nem se remove por aqui
+         (2026-10-26). O importado é sempre guardado, sem escolha. #}
+      <input type="hidden" name="usar_pdf_importado" value="1">
+      <div class="mb-1">
+        <i class="bi bi-check-circle-fill text-success"></i>
+        <a href="{{ url_for('medico.preparo_modelos_pdf_importado') }}" target="_blank">{{ pendente.nome_arquivo }}</a>
+        será guardado como o preparo original.
+      </div>
+      <div class="form-text mb-1">Depois de salvar, o paciente vê as páginas do seu PDF, como estão, no link do WhatsApp.</div>
+      {% endif %}
+      {% if not pendente and not (modelo and modelo.pdf_original) %}
+      <input type="file" name="pdf_original" accept="application/pdf,.pdf" class="form-control form-control-sm">
+      <div class="form-text">Opcional. Máximo 10 MB.</div>
+      {% endif %}
+      {% if not pendente and not (modelo and modelo.pdf_original) %}
+      <div class="alert alert-info small mt-2 mb-0 py-2">
+        <strong>Depois de salvar:</strong> o paciente vê as páginas do seu PDF, exatamente como estão, no link do WhatsApp
+        (e pode baixá-lo).
       </div>
       {% endif %}
-      <input type="file" name="pdf_original" accept="application/pdf,.pdf" class="form-control form-control-sm">
-      <div class="form-text">{% if (modelo and modelo.pdf_original) or pendente %}Escolha outro arquivo só se quiser trocar.{% else %}Opcional. Máximo 10 MB.{% endif %}</div>
     </div>
 
     {# Pedido do Silvan (2026-09-29): tipo de exame (lista global mantida pelo
@@ -127,7 +159,7 @@
       <select name="especialidade" id="select-especialidade" class="form-select" required>
         <option value="">Selecione a especialidade...</option>
         {% for e in ESPECIALIDADES %}
-        <option value="{{ e }}" {% if current_user.especialidade == e %}selected{% endif %}>{{ e }}</option>
+        <option value="{{ e }}" {% if (request.form.get('especialidade') if sugestao and sugestao._do_formulario else current_user.especialidade) == e %}selected{% endif %}>{{ e }}</option>
         {% endfor %}
       </select>
       <div class="form-text">Mostramos abaixo só os exames da sua especialidade. Ao salvar, ela também é atualizada no seu cadastro.</div>
@@ -138,19 +170,13 @@
       <select name="tipo_exame_id" id="select-tipo-exame" class="form-select" {% if not modelo or modelo.tipo_exame_id %}required{% endif %}>
         <option value="">Selecione o tipo de exame...</option>
         {% for t in tipos_exame %}
-        <option value="{{ t.id }}" data-esp="{{ t.lista_especialidades|join('|')|lower }}" {% if modelo and modelo.tipo_exame_id == t.id %}selected{% endif %}>{{ t.nome }}</option>
+        <option value="{{ t.id }}" data-esp="{{ t.lista_especialidades|join('|')|lower }}" {% if (sugestao and sugestao._do_formulario and request.form.get('tipo_exame_id') == t.id|string) or (not (sugestao and sugestao._do_formulario) and modelo and modelo.tipo_exame_id == t.id) %}selected{% endif %}>{{ t.nome }}</option>
         {% endfor %}
         {% if modelo and modelo.tipo_exame and modelo.tipo_exame not in tipos_exame %}
         <option value="{{ modelo.tipo_exame.id }}" data-esp="" selected>{{ modelo.tipo_exame.nome }} (inativo)</option>
         {% endif %}
-        <option value="outro" data-esp="" {% if modelo and modelo.tipo_exame_sugestao_id %}selected{% endif %}>Não encontrei o meu exame na lista</option>
+        <option value="outro" data-esp="" {% if (sugestao and sugestao._do_formulario and request.form.get('tipo_exame_id') == 'outro') or (not (sugestao and sugestao._do_formulario) and modelo and modelo.tipo_exame_sugestao_id) %}selected{% endif %}>Não encontrei o meu exame na lista</option>
       </select>
-      {% if current_user.tipo == 'medico' %}
-      <div class="form-check mt-1">
-        <input class="form-check-input" type="checkbox" id="check-todos-tipos">
-        <label class="form-check-label small" for="check-todos-tipos">Mostrar exames de todas as especialidades</label>
-      </div>
-      {% endif %}
       <div id="campo-tipo-outro" class="mt-2 {% if not (modelo and modelo.tipo_exame_sugestao_id) %}d-none{% endif %}">
         <input type="text" name="tipo_exame_outro" id="input-tipo-outro" class="form-control" maxlength="150"
                placeholder="Qual é o exame? (ex.: Colonoscopia com biópsia)"
@@ -169,15 +195,13 @@
     (function () {
       var selEsp = document.getElementById('select-especialidade');
       var selTipo = document.getElementById('select-tipo-exame');
-      var chkTodos = document.getElementById('check-todos-tipos');
       var campoOutro = document.getElementById('campo-tipo-outro');
       var inputOutro = document.getElementById('input-tipo-outro');
       if (!selTipo) return;
       function normalizar(t) { return (t || '').toLowerCase(); }
       function filtrar() {
         var esp = selEsp ? normalizar(selEsp.value) : '';
-        var todos = chkTodos ? chkTodos.checked : true;
-        var semFiltro = todos || !esp;
+        var semFiltro = !esp;
         Array.prototype.forEach.call(selTipo.options, function (op) {
           if (!op.value || op.value === 'outro') { op.hidden = false; op.disabled = false; return; }
           var lista = (op.getAttribute('data-esp') || '').split('|').filter(Boolean);
@@ -198,10 +222,9 @@
       }
       if (selEsp) selEsp.addEventListener('change', function () {
         var op = selTipo.selectedOptions[0];
-        if (op && op.value && op.value !== 'outro' && !(chkTodos && chkTodos.checked) && !casa(op)) selTipo.value = '';
+        if (op && op.value && op.value !== 'outro' && !casa(op)) selTipo.value = '';
         filtrar(); alternarOutro();
       });
-      if (chkTodos) chkTodos.addEventListener('change', filtrar);
       selTipo.addEventListener('change', alternarOutro);
       filtrar(); alternarOutro();
     })();
@@ -217,7 +240,7 @@
       <div class="col-md-4">
         <label class="form-label">Duração do exame (minutos, opcional)</label>
         <input type="number" min="0" name="duracao_minutos" class="form-control"
-               value="{{ exame_vinculado.duracao_minutos if exame_vinculado and exame_vinculado.duracao_minutos is not none else '' }}">
+               value="{{ request.form.get('duracao_minutos', '') if sugestao and sugestao._do_formulario else (exame_vinculado.duracao_minutos if exame_vinculado and exame_vinculado.duracao_minutos is not none else '') }}">
       </div>
       {% if not eh_medico_logado %}
       <div class="col-md-4">
@@ -252,7 +275,7 @@
     <div class="tab-pane fade show active" id="aba-geral">
     <div class="mb-3">
       <label class="form-label">Instruções gerais (visíveis ao paciente)</label>
-      <textarea name="instrucoes" class="form-control" rows="10" required>{{ modelo.instrucoes if modelo else ((sugestao.instrucoes if sugestao else '') or '') }}</textarea>
+      <textarea name="instrucoes" class="form-control" rows="10" required>{{ (sugestao.instrucoes if sugestao else (modelo.instrucoes if modelo else '')) or '' }}</textarea>
       <div class="form-text">Dieta por fase, receituário, modo de preparo, observações finais etc. — tudo que não tem campo próprio nas outras abas.</div>
     </div>
     </div>
@@ -264,7 +287,7 @@
       horário exato calculado a partir do agendamento dele, não um horário fixo.
     </p>
     <div id="lista_cortes">
-      {% set cortes = modelo.cortes if modelo else (sugestao.cortes if sugestao else []) %}
+      {% set cortes = sugestao.cortes if sugestao else (modelo.cortes if modelo else []) %}
       {% for c in cortes %}
       <div class="row g-2 mb-2 linha-corte">
         <div class="col-md-6">
@@ -293,7 +316,7 @@
       reaproveitá-lo.
     </p>
     <div id="lista_medicamentos">
-      {% set medicamentos = modelo.medicamentos_suspensos if modelo else (sugestao.medicamentos if sugestao else []) %}
+      {% set medicamentos = sugestao.medicamentos if sugestao else (modelo.medicamentos_suspensos if modelo else []) %}
       {% for ms in medicamentos %}
       <div class="row g-2 mb-2 linha-medicamento">
         <div class="col-md-4">
@@ -331,7 +354,7 @@
       <label class="form-label">Observações sobre medicamentos (opcional, texto livre)</label>
       <input type="text" name="observacoes_medicamentos" class="form-control"
              placeholder="Ex.: Não é necessário suspender o AAS, Somalgin, Aspirina."
-             value="{{ (modelo.observacoes_medicamentos if modelo else (sugestao.observacoes_medicamentos if sugestao else '')) or '' }}">
+             value="{{ (sugestao.observacoes_medicamentos if sugestao else (modelo.observacoes_medicamentos if modelo else '')) or '' }}">
     </div>
 
     <h6>Medicamentos que podem ser mantidos (não precisam ser suspensos)</h6>
@@ -340,7 +363,7 @@
       paciente pergunta se pode continuar tomando um medicamento específico (ex.: "posso tomar AAS?").
     </p>
     <div id="lista_mantidos">
-      {% set mantidos = modelo.medicamentos_mantidos if modelo else (sugestao.medicamentos_mantidos if sugestao else []) %}
+      {% set mantidos = sugestao.medicamentos_mantidos if sugestao else (modelo.medicamentos_mantidos if modelo else []) %}
       {% for mm in mantidos %}
       <div class="row g-2 mb-2 linha-mantido">
         <div class="col-md-7">
@@ -368,7 +391,7 @@
       "dia relativo" + "hora exata" juntos (ex.: "pode comer até as 20:00 do dia anterior" = 1 dia antes, 20:00).
     </p>
     <div id="lista_infos_gerais">
-      {% set infos_gerais = modelo.informacoes_gerais if modelo else (sugestao.informacoes_gerais if sugestao else []) %}
+      {% set infos_gerais = sugestao.informacoes_gerais if sugestao else (modelo.informacoes_gerais if modelo else []) %}
       {% for info in infos_gerais %}
       <div class="row g-2 mb-2 linha-info-geral">
         <div class="col-md-5">
@@ -410,7 +433,7 @@
       exame. Preencha só um dos dois campos de prazo — "horas antes" OU "dias antes" — nunca os dois.
     </p>
     <div id="lista_alimentos">
-      {% set alimentos = modelo.alimentos if modelo else (sugestao.alimentos if sugestao else []) %}
+      {% set alimentos = sugestao.alimentos if sugestao else (modelo.alimentos if modelo else []) %}
       {% for a in alimentos %}
       <div class="row g-2 mb-2 linha-alimento">
         <div class="col-md-4">
@@ -452,7 +475,7 @@
       passado, não uma suspensão futura. O prazo em dias antes é opcional.
     </p>
     <div id="lista_exames_anteriores">
-      {% set exames_anteriores = modelo.exames_anteriores_proibidos if modelo else (sugestao.exames_anteriores if sugestao else []) %}
+      {% set exames_anteriores = sugestao.exames_anteriores if sugestao else (modelo.exames_anteriores_proibidos if modelo else []) %}
       {% for e in exames_anteriores %}
       <div class="row g-2 mb-2 linha-exame-anterior">
         <div class="col-md-7">
@@ -483,6 +506,7 @@
     {% endif %}
   </form>
 </div>
+{% endif %}
 
 {% if not modelo %}
 {# ---------- Popup de importação (fora do <form> principal - formulário
@@ -491,6 +515,8 @@
    medico/_importar_preparo_pdf.html) ---------- #}
 {% include "medico/_importar_preparo_pdf.html" %}
 {% endif %}
+
+{% if not fase_inicial %}
 
 <script>
   // Campo obrigatório inválido escondido numa aba não focada impede o
@@ -592,4 +618,5 @@
     document.getElementById('lista_exames_anteriores').appendChild(div);
   }
 </script>
+{% endif %}
 {% endblock %}

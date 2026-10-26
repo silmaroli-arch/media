@@ -81,6 +81,16 @@ with app.app_context():
     checar("Prompt: mesmo princípio ativo é o item do preparo, e nunca 'não está cadastrado'",
            "MESMO PRINCÍPIO ATIVO" in PROMPT_SISTEMA and "NUNCA escreva para o paciente que algo \"não está cadastrado\"" in PROMPT_SISTEMA
            and "diga claramente que esse medicamento específico não está cadastrado" not in PROMPT_SISTEMA)
+    checar("Prompt: pergunta de sim/não começa pela resposta direta, sem 'Sim, deve ser suspenso' nem condicional",
+           "PERGUNTA DE SIM OU NÃO" in PROMPT_SISTEMA and "nunca escreva \"Sim, deve ser suspenso\"" in PROMPT_SISTEMA
+           and "{14 dias antes}" in PROMPT_SISTEMA)
+    from app.ia_preparo import _respostas_divergem
+    divergencias = []
+    arbitro = SimpleNamespace(messages=SimpleNamespace(create=lambda **k: divergencias.append(k["system"]) or SimpleNamespace(
+        content=[SimpleNamespace(text="NAO")], usage=SimpleNamespace(input_tokens=1, output_tokens=1), model="claude")))
+    checar("Checagem de divergência: 'Sim' contra 'Não' sempre diverge",
+           _respostas_divergem(arbitro, "Não, suspenda.", "Sim, suspenda.") is True and "SEMPRE divergem" in divergencias[0])
+    checar("Síntese mantém os marcadores de data e evita condicional", "Mantenha, exatamente como estão, os marcadores" in sistemas[0] and "caso falte menos de" in sistemas[0])
     checar("Síntese também não diz 'não está cadastrado'", "não está cadastrado" in sistemas[0] and "Nunca escreva" in sistemas[0])
     from app.ia_preparo import _principios_anvisa
     importar_csv(CSV + "OZEMPIC;ANTIDIABETICOS;Ativo;SEMAGLUTIDA\nMOUNJARO;ANTIDIABETICOS;Ativo;TIRZEPATIDA\n".encode("latin-1"))

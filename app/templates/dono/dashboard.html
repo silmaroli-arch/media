@@ -234,7 +234,7 @@
                 <span class="badge bg-secondary">conta solo</span>
               {% endif %}
             </td>
-            <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
+            <td>{{ l.usuario.criado_em|hora_br('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
           </tr>
           {% else %}
           <tr><td colspan="7" class="text-muted text-center">Nenhum usuário cadastrado ainda.</td></tr>
@@ -273,7 +273,7 @@
                 -
               {% endif %}
             </td>
-            <td>{{ g.criado_em.strftime('%d/%m/%Y') }}</td>
+            <td>{{ g.criado_em|hora_br('%d/%m/%Y') }}</td>
             <td><a href="{{ url_for('dono.grupo_detalhe', grupo_id=g.id) }}" class="btn btn-sm btn-outline-secondary">Gerenciar</a></td>
           </tr>
           {% else %}
@@ -366,108 +366,38 @@
       </form>
     </div>
 
-    <div class="card p-3">
-      <h5 class="mb-1">IAs que respondem o chat de dúvidas do paciente</h5>
-      <p class="text-muted small mb-3">
-        Escolha quais 2 das 3 IAs disponíveis (Gemini, ChatGPT, Claude) respondem as dúvidas dos pacientes —
-        as duas são consultadas e comparadas antes de qualquer rascunho ir para a aprovação do médico. A
-        Claude continua sempre fazendo o papel de árbitro (decidindo se as duas respostas concordam e, se não,
-        propondo uma síntese), mesmo quando não é uma das duas escolhidas aqui. Veja o
-        <a href="{{ url_for('dono.custo_ia') }}">preço por token de cada uma</a> antes de decidir.
-      </p>
-      <form method="post" action="{{ url_for('dono.configuracoes_ia_chat') }}" class="d-flex align-items-end gap-2 flex-wrap">
-        <div>
-          <label class="form-label small mb-0">IA 1</label>
-          <select name="ia_chat_provedor_1" class="form-select" style="max-width: 160px">
-            {% for p in ["Gemini", "ChatGPT", "Claude"] %}
-            <option value="{{ p }}" {% if config.ia_chat_provedor_1 == p %}selected{% endif %}>{{ p }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label class="form-label small mb-0">IA 2</label>
-          <select name="ia_chat_provedor_2" class="form-select" style="max-width: 160px">
-            {% for p in ["Gemini", "ChatGPT", "Claude"] %}
-            <option value="{{ p }}" {% if config.ia_chat_provedor_2 == p %}selected{% endif %}>{{ p }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <button type="submit" class="btn btn-primary">Salvar</button>
-      </form>
-    </div>
-
-    <div class="card p-3 mb-4">
-      <h5 class="mb-1">Validador de pergunta (WhatsApp)</h5>
-      <p class="text-muted small mb-3">
-        Antes de qualquer pergunta do paciente chegar na FAQ/alimento/medicamento/IA de resposta, uma
-        checagem dedicada classifica a mensagem: sem sentido, sem relação com exame nenhum, ou válida
-        (ver <code>app.ia_preparo.validar_pergunta</code>). Escolha aqui qual das 3 IAs faz essa checagem -
-        independente das duas escolhidas acima para responder de verdade. Uma pergunta sem sentido ou sem
-        relação com exame recebe um aviso direto ao paciente, sem passar pela fila do médico.
-      </p>
-      <form method="post" action="{{ url_for('dono.configuracoes_ia_validador') }}" class="d-flex align-items-end gap-2 flex-wrap">
-        <div>
-          <label class="form-label small mb-0">IA validadora</label>
-          <select name="ia_validador_pergunta" class="form-select" style="max-width: 160px">
-            {% for p in ["Gemini", "ChatGPT", "Claude"] %}
-            <option value="{{ p }}" {% if config.ia_validador_pergunta == p %}selected{% endif %}>{{ p }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <button type="submit" class="btn btn-primary">Salvar</button>
-      </form>
-    </div>
-
-    {# IA do botão "Ajuda" da equipe (pedido do Silvan, 2026-10-23) #}
-    <div class="card p-3 mb-4">
-      <h5 class="mb-1">IA da ajuda do app</h5>
-      <p class="text-muted small mb-3">
-        Qual IA responde o botão "Ajuda" que médicos e secretárias veem em todas as telas - só dúvidas sobre o uso do
-        MedIA, com base no manual do app. As perguntas feitas ficam em <a href="{{ url_for('dono.ajuda_app_perguntas') }}">Ajuda do app</a>,
-        e o custo aparece em Custo de IA.
-      </p>
-      <form method="post" action="{{ url_for('dono.configuracoes_ia_ajuda') }}" class="d-flex align-items-end gap-2 flex-wrap">
-        <div>
-          <label class="form-label small mb-0">IA da ajuda</label>
-          <select name="ia_ajuda_app" class="form-select" style="max-width: 160px">
-            {% for p in ["Gemini", "ChatGPT", "Claude"] %}
-            <option value="{{ p }}" {% if config.ia_ajuda_app == p %}selected{% endif %}>{{ p }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <button type="submit" class="btn btn-primary">Salvar</button>
-      </form>
-    </div>
-
     <div class="card p-3 mb-4" id="modelos-ia">
-      <h5 class="mb-1">Modelos das IAs</h5>
+      <h5 class="mb-1">Modelo de IA de cada ponto do sistema</h5>
       <p class="text-muted small mb-3">
-        Qual modelo cada IA usa, com o preço por milhão de tokens (entrada / saída). O escolhido aqui vale mais que a
-        configuração do servidor; "Padrão" usa a do servidor. Depois de trocar, clique em <strong>Testar</strong> para
-        conferir se cada modelo responde (custa centavos).
+        Cada lugar do sistema que chama IA tem o seu modelo, com o preço por milhão de tokens (entrada / saída). Você
+        escolhe só o modelo - a empresa (Claude, ChatGPT ou Gemini) sai do nome dele. "Padrão" usa o que o servidor
+        já tinha configurado. As duas IAs que respondem o paciente precisam ser de empresas diferentes, e o reserva
+        da terceira. Depois de trocar, clique em <strong>Testar</strong> para conferir se cada modelo responde (custa
+        centavos). Veja também o <a href="{{ url_for('dono.custo_ia') }}">custo de IA</a>.
       </p>
       <form method="post" action="{{ url_for('dono.configuracoes_modelos_ia') }}">
         <div class="table-responsive">
         <table class="table table-sm align-middle">
-          <thead><tr><th>IA</th><th>Em uso agora</th><th>Modelo</th></tr></thead>
+          <thead><tr><th>Ponto de uso</th><th>Em uso agora</th><th>Modelo</th></tr></thead>
           <tbody>
-            {% for linha in modelos_ia %}
+            {% for titulo, linhas in modelos_ia %}
+            <tr class="table-light"><th colspan="3" class="small text-uppercase text-muted">{{ titulo }}</th></tr>
+            {% for linha in linhas %}
             <tr>
-              <td class="small">{{ linha.rotulo }}</td>
+              <td class="small"><strong>{{ linha.rotulo }}</strong><br><span class="text-muted">{{ linha.onde }}</span></td>
               <td><code>{{ linha.em_uso }}</code></td>
-              {# Lista de seleção com o preço de cada modelo (pedido do Silvan,
-                 2026-10-25); "Outro..." abre um campo para digitar. #}
               <td>
-                <select name="{{ linha.campo }}" class="form-select form-select-sm seletor-modelo" style="min-width: 240px">
+                <select name="ponto_{{ linha.ponto }}" class="form-select form-select-sm seletor-modelo" style="min-width: 260px">
                   <option value="" {% if not linha.escolhido %}selected{% endif %}>Padrão ({{ linha.padrao }})</option>
                   {% for op in linha.opcoes %}
                   <option value="{{ op.nome }}" {% if linha.escolhido == op.nome %}selected{% endif %}>{{ op.rotulo }}</option>
                   {% endfor %}
                   <option value="__outro__">Outro...</option>
                 </select>
-                <input type="text" name="{{ linha.campo }}_outro" class="form-control form-control-sm mt-1 d-none" placeholder="nome exato do modelo">
+                <input type="text" name="ponto_{{ linha.ponto }}_outro" class="form-control form-control-sm mt-1 d-none" placeholder="nome exato do modelo">
               </td>
             </tr>
+            {% endfor %}
             {% endfor %}
           </tbody>
         </table>
@@ -487,7 +417,7 @@
       </form>
       <div class="mt-3 pt-3 border-top">
         <strong class="small">Perfis prontos</strong>
-        <div class="small text-muted mb-2">Aplicam os quatro modelos de uma vez (depois dá para ajustar na lista acima).</div>
+        <div class="small text-muted mb-2">Aplicam os modelos de todos os pontos de uma vez (depois dá para ajustar na lista acima).</div>
         <form method="post" action="{{ url_for('dono.configuracoes_modelos_ia_perfil') }}" class="d-flex gap-2 flex-wrap">
           <button name="perfil" value="essencial" class="btn btn-outline-primary btn-sm"
                   onclick="return confirm('Aplicar o perfil Essencial (Haiku 5.5 + gpt-5.4-nano)?');">

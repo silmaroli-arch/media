@@ -22,7 +22,7 @@
     <tbody>
       {% for c in chamadas %}
       <tr>
-        <td>{{ c.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ c.criado_em|hora_br('%d/%m/%Y %H:%M') }}</td>
         <td>
           {% set rotulos_uso = {
             "importacao_pdf_preparo": "Importação de PDF", "pagina_pdf_preparo": "Página do PDF de preparo",

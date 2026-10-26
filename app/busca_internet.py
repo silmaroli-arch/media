@@ -93,14 +93,14 @@ def _fontes(resposta):
 def _perguntar_com_busca(cliente, nome):
     """(linha_ou_None, fontes, uso_total, buscas). Continua quando a API pausa
     a vez (pause_turn), no máximo 3 rodadas."""
-    from app.ia_modelos import criar_mensagem_claude, modelo_claude, texto_claude
+    from app.ia_modelos import criar_mensagem_claude, modelo_do_ponto, texto_claude
 
     mensagens = [{"role": "user", "content": f"Nome citado pelo paciente: {nome}"}]
     ferramenta = {"type": "web_search_20260209", "name": "web_search", "max_uses": MAXIMO_BUSCAS,
                   "allowed_domains": DOMINIOS_PERMITIDOS, "user_location": {"type": "approximate", "country": "BR"}}
     entrada = saida = buscas = 0
     fontes = []
-    modelo = modelo_claude()
+    modelo = modelo_do_ponto("busca")
     for _ in range(3):
         resposta = criar_mensagem_claude(cliente, modelo, 400, esforco="low", system=PROMPT_BUSCA,
                                          messages=mensagens, tools=[ferramenta])

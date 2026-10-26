@@ -16,6 +16,7 @@ from werkzeug.utils import secure_filename
 from flask_login import login_required, current_user, logout_user
 from sqlalchemy import or_, and_, func
 
+from app.fuso import agora_brasilia, utc_para_brasilia
 from app.extensions import db
 from app.models import (
     AjudaMensagem, Paciente, Usuario, Exame, Agendamento, FaqItem,
@@ -52,13 +53,10 @@ from app.whatsapp_envio import (
 )
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
-from app.ia_pdf_html import (
-    agendar_geracao as agendar_geracao_pagina, conferir_fidelidade as conferir_fidelidade_pagina,
-    sanitizar_html as sanitizar_html_pagina, texto_do_pdf,
-)
+from app.preparo_pdf_paginas import garantir_paginas, gerar_paginas
 from app.preparo_pdf_original import (
     aplicar_no_modelo as aplicar_pdf_original, guardar_pendente as guardar_pdf_pendente, pendente_da_sessao,
-    resposta_pdf_original,
+    resposta_imagem_pagina, resposta_pdf_original,
 )
 from cryptography.hazmat.primitives.serialization import pkcs12
 
@@ -969,7 +967,7 @@ def pacientes_agendamentos(paciente_id):
         consulta = consulta.filter(Agendamento.medico_id == current_user.id)
     agendamentos = consulta.order_by(Agendamento.data_hora.desc()).all()
     return render_template(
-        "medico/_paciente_agendamentos.html", agendamentos=agendamentos, agora=datetime.now(),
+        "medico/_paciente_agendamentos.html", agendamentos=agendamentos, agora=agora_brasilia(),
     )
 
 
@@ -1801,6 +1799,45 @@ def _salvar_cortes_e_medicamentos(modelo, form):
         ))
 
 
+def _inteiro_ou_none(valor):
+    try:
+        return int(str(valor).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _sugestao_do_formulario(form):
+    """O que foi preenchido no formulário de preparo, no mesmo formato da
+    sugestão de importação - para o formulário voltar COMPLETO quando o
+    salvar falha (ex.: nome repetido). Antes só o nome e o texto voltavam e
+    todo o resto (cortes, medicamentos, alimentos...) era perdido, inclusive
+    o que a importação do PDF tinha preenchido (2026-10-26)."""
+    def linhas(*campos):
+        listas = [form.getlist(c) for c in campos]
+        total = max((len(l) for l in listas), default=0)
+        return [tuple((l[k] if k < len(l) else "") for l in listas) for k in range(total)]
+
+    return {
+        "_do_formulario": True,
+        "nome_sugerido": form.get("nome", ""),
+        "instrucoes": form.get("instrucoes", ""),
+        "observacoes_medicamentos": form.get("observacoes_medicamentos", ""),
+        "cortes": [{"descricao": d, "horas_antes": _inteiro_ou_none(h)}
+                   for d, h in linhas("corte_descricao[]", "corte_horas[]") if d.strip()],
+        "medicamentos": [{"nome": n, "categoria": c, "dias_antes": _inteiro_ou_none(d), "observacao": o}
+                         for n, c, d, o in linhas("medicamento_nome[]", "medicamento_categoria[]", "medicamento_dias[]", "medicamento_obs[]")
+                         if n.strip()],
+        "medicamentos_mantidos": [{"nome": n, "observacao": o} for n, o in linhas("mantido_nome[]", "mantido_obs[]") if n.strip()],
+        "informacoes_gerais": [{"texto": t, "horas_antes": _inteiro_ou_none(h), "dias_antes": _inteiro_ou_none(d), "hora_exata": x}
+                               for t, h, d, x in linhas("info_geral[]", "info_geral_horas[]", "info_geral_dias[]", "info_geral_hora_exata[]")
+                               if t.strip()],
+        "alimentos": [{"nome": n, "permitido": t == "permitido", "horas_antes": _inteiro_ou_none(h), "dias_antes": _inteiro_ou_none(d)}
+                      for n, t, h, d in linhas("alimento_nome[]", "alimento_tipo[]", "alimento_horas[]", "alimento_dias[]") if n.strip()],
+        "exames_anteriores": [{"nome": n, "dias_antes": _inteiro_ou_none(d)}
+                              for n, d in linhas("exame_anterior_nome[]", "exame_anterior_dias[]") if n.strip()],
+    }
+
+
 def _tipos_exame_ativos():
     """Tipos de exame ativos (dropdown "Tipo de exame" do cadastro de
     preparo) na ordem definida pelo dono - ver app.models.TipoExame."""
@@ -1910,7 +1947,7 @@ def preparo_modelos_novo():
 
     def _rerender_novo():
         return render_template(
-            "medico/preparo_modelo_form.html", modelo=None, sugestao=None,
+            "medico/preparo_modelo_form.html", modelo=None, sugestao=_sugestao_do_formulario(request.form),
             medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
             wizard=wizard, medicos=medicos, eh_medico_logado=eh_medico(),
             tipos_exame=_tipos_exame_ativos(),
@@ -2048,7 +2085,7 @@ def preparo_modelos_novo():
         erro_pdf = aplicar_pdf_original(modelo, request.form, request.files)
         if erro_pdf:
             flash(f"{erro_pdf} O modelo foi salvo sem ele.", "warning")
-        _gerar_pagina_se_pdf_novo(modelo)
+        _gerar_paginas_se_pdf_novo(modelo)
         flash("Modelo de preparo cadastrado com sucesso — o exame correspondente também foi criado.", "success")
         if wizard:
             return redirect(url_for("medico.primeiros_passos"))
@@ -2094,7 +2131,8 @@ def preparo_modelos_editar(modelo_id):
 
     def _rerender_editar():
         return render_template(
-            "medico/preparo_modelo_form.html", modelo=modelo, sugestao=None,
+            "medico/preparo_modelo_form.html", modelo=modelo,
+            sugestao=_sugestao_do_formulario(request.form) if request.method == "POST" else None,
             medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
             medicos=medicos, exame_vinculado=exame_vinculado,
             varios_exames_vinculados=varios_exames_vinculados, eh_medico_logado=eh_medico(),
@@ -2194,7 +2232,7 @@ def preparo_modelos_editar(modelo_id):
         erro_pdf = aplicar_pdf_original(modelo, request.form, request.files)
         if erro_pdf:
             flash(f"{erro_pdf} O restante foi salvo.", "warning")
-        _gerar_pagina_se_pdf_novo(modelo)
+        _gerar_paginas_se_pdf_novo(modelo)
         flash("Modelo de preparo atualizado.", "success")
         return redirect(url_for("medico.preparo_modelos_lista"))
 
@@ -2215,13 +2253,17 @@ def preparo_modelos_remover(modelo_id):
             "danger",
         )
         return redirect(url_for("medico.preparo_modelos_lista"))
-    if modelo.exames:
+    # Só não remove com agendamento ligado a ele (2026-10-26); exames que
+    # só o usam ficam sem preparo.
+    if modelo.total_agendamentos:
         flash(
-            f"Esse modelo está em uso por {len(modelo.exames)} exame(s) — troque o modelo desses "
-            "exames antes de removê-lo.",
+            f"Esse preparo tem {modelo.total_agendamentos} agendamento(s) ligado(s) a ele - "
+            "só dá para removê-lo quando não houver agendamento.",
             "danger",
         )
         return redirect(url_for("medico.preparo_modelos_lista"))
+    for exame in list(modelo.exames):
+        exame.preparo_modelo_id = None
     db.session.delete(modelo)
     db.session.commit()
     flash("Modelo de preparo removido.", "success")
@@ -2240,77 +2282,37 @@ def preparo_modelos_pdf_original(modelo_id):
     return resposta_pdf_original(modelo.pdf_original)
 
 
-def _gerar_pagina_se_pdf_novo(modelo):
-    """PDF recém-anexado: já começa a gerar a versão em página (2026-10-24,
-    ver app.ia_pdf_html) - o médico revisa e aprova depois."""
+def _gerar_paginas_se_pdf_novo(modelo):
+    """PDF recém-anexado: transforma as páginas em imagem na hora (2026-10-26,
+    ver app.preparo_pdf_paginas) - é isso que o paciente vê no link do
+    WhatsApp, sem IA e sem etapa de aprovação."""
     pdf = modelo.pdf_original
-    if pdf is None or pdf.pagina_status is not None:
-        return
-    try:
-        agendar_geracao_pagina(pdf, current_user.id)
-    except Exception:
-        current_app.logger.exception("Não foi possível iniciar a página do PDF do preparo %s", modelo.id)
-        db.session.rollback()
-        return
-    flash(
-        Markup(
-            "A IA está montando a versão em página do PDF para o celular. "
-            f'<a href="{url_for("medico.preparo_modelos_pdf_pagina", modelo_id=modelo.id)}">Revise e aprove aqui</a> '
-            "- até lá o paciente vê o PDF."
-        ),
-        "info",
-    )
+    if pdf is None or pdf.paginas or pdf.pagina_status == "imagens_erro":
+        return False
+    quantidade = gerar_paginas(pdf)
+    if quantidade:
+        flash(
+            f"PDF anexado: as {quantidade} página(s) já aparecem para o paciente, exatamente como no seu PDF, "
+            "no link do WhatsApp.", "info",
+        )
+        return True
+    flash("O PDF foi anexado, mas não foi possível mostrar as páginas como imagem - o paciente poderá abri-lo e baixá-lo.", "warning")
+    return False
 
 
-@medico_bp.route("/preparo-modelos/<int:modelo_id>/pdf-original/pagina", methods=["GET", "POST"])
+@medico_bp.route("/preparo-modelos/<int:modelo_id>/pdf-original/pagina/<int:numero>.jpg")
 @login_required
 @staff_required
-def preparo_modelos_pdf_pagina(modelo_id):
-    """Revisão da versão em página do PDF original (2026-10-24): o médico
-    confere ao lado do PDF, corrige o texto e aprova - só então o paciente
-    vê a página no link do WhatsApp."""
+def preparo_modelos_pdf_pagina_imagem(modelo_id, numero):
+    """Miniatura/visualização de uma página do PDF no formulário do modelo."""
     modelo = PreparoModelo.query.filter(
         PreparoModelo.id == modelo_id, filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
     ).first_or_404()
-    pdf = modelo.pdf_original
-    if not pdf:
-        flash("Anexe primeiro o PDF do preparo.", "warning")
-        return redirect(url_for("medico.preparo_modelos_editar", modelo_id=modelo.id))
-    pode_editar = modelo.pode_ser_editado_por(current_user)
-
-    if request.method == "POST":
-        if not pode_editar:
-            abort(403)
-        acao = request.form.get("acao")
-        if acao == "gerar":
-            agendar_geracao_pagina(pdf, current_user.id)
-            flash("Gerando a versão em página. Isso pode levar até 1 ou 2 minutos.", "info")
-        elif acao in ("salvar", "aprovar") and pdf.pagina_html is not None:
-            texto = sanitizar_html_pagina(request.form.get("pagina_html", ""))
-            if not texto:
-                flash("A página ficou vazia - nada foi salvo.", "danger")
-                return redirect(url_for("medico.preparo_modelos_pdf_pagina", modelo_id=modelo.id))
-            pdf.pagina_html = texto
-            pdf.pagina_avisos = "\n".join(conferir_fidelidade_pagina(texto_do_pdf(pdf), texto))
-            pdf.pagina_atualizada_em = datetime.utcnow()
-            if acao == "aprovar":
-                pdf.pagina_status = "aprovada"
-                pdf.pagina_aprovada_em = datetime.utcnow()
-                pdf.pagina_aprovada_por_id = current_user.id
-                flash("Página aprovada: o paciente já vê esta versão no link do WhatsApp.", "success")
-            else:
-                pdf.pagina_status = "revisar"
-                pdf.pagina_aprovada_em = pdf.pagina_aprovada_por_id = None
-                flash("Correções salvas. O paciente continua vendo o PDF até você aprovar.", "success")
-            db.session.commit()
-        elif acao == "tirar" and pdf.pagina_status == "aprovada":
-            pdf.pagina_status = "revisar"
-            pdf.pagina_aprovada_em = pdf.pagina_aprovada_por_id = None
-            db.session.commit()
-            flash("Página tirada do ar: o paciente volta a ver só o PDF.", "success")
-        return redirect(url_for("medico.preparo_modelos_pdf_pagina", modelo_id=modelo.id))
-
-    return render_template("medico/preparo_pdf_pagina.html", modelo=modelo, pdf=pdf, pode_editar=pode_editar)
+    paginas = garantir_paginas(modelo.pdf_original)
+    pagina = next((p for p in paginas if p.numero == numero), None)
+    if pagina is None:
+        abort(404)
+    return resposta_imagem_pagina(pagina)
 
 
 @medico_bp.route("/preparo-modelos/pdf-importado")
@@ -2391,18 +2393,8 @@ def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None):
     aparece no aviso pra quem importou saber qual IA realmente
     respondeu, já que agora existem 3 provedores possíveis na cadeia
     (ver app.ia_pdf_preparo)."""
-    if provedor_usado:
-        flash(
-            f"Dados extraídos do PDF via {provedor_usado}. Revise com cuidado antes de salvar — "
-            "a extração é automática e pode ter interpretado algo errado.",
-            "warning",
-        )
-    else:
-        flash(
-            "Dados extraídos do PDF. Revise com cuidado antes de salvar — a extração é "
-            "automática e pode ter interpretado algo errado.",
-            "warning",
-        )
+    # (O aviso de "revise com cuidado" agora é desenhado na própria tela, com
+    # o nome da IA - 2026-10-26 - em vez de uma mensagem solta no topo.)
     # Renderiza a tela de revisão direto aqui (sem redirect) em vez de
     # guardar a sugestão na sessão - o texto extraído de um PDF de preparo
     # pode ser longo o bastante para estourar o limite de 4KB do cookie de
@@ -2412,7 +2404,7 @@ def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None):
     # /preparo-modelos/novo?de_importacao=1 usaria, só que sem depender do
     # cookie para carregar o payload.
     return render_template(
-        "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao,
+        "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao, provedor_usado=provedor_usado,
         medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
         medicos=medicos_das_filiais(_filiais_da_empresa()), eh_medico_logado=eh_medico(),
         tipos_exame=_tipos_exame_ativos(),

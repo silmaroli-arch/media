@@ -72,27 +72,22 @@ def generalizar_com_ia(pergunta_paciente, resposta_medico, usuario_id=None):
     import app.ia_preparo as ia
     from app.custo_ia import registrar_chamada_ia
 
-    cliente = ia._cliente_anthropic()
+    from app.ia_modelos import chamar_texto, modelo_do_ponto
+
+    cliente = ia._cliente_do_ponto("aprendizado")
     if not cliente:
         return None
     try:
-        from app.ia_modelos import criar_mensagem_claude, modelo_claude, texto_claude
-
-        resposta_ia = criar_mensagem_claude(
-            cliente, modelo_claude(), 600, esforco="low", timeout=60,
-            system=PROMPT_GENERALIZACAO,
-            messages=[{
-                "role": "user",
-                "content": f"Pergunta do paciente: {pergunta_paciente}\n\nResposta do médico: {resposta_medico}",
-            }],
+        resposta_ia = chamar_texto(
+            cliente, modelo_do_ponto("aprendizado"), PROMPT_GENERALIZACAO,
+            [{"role": "user", "content": f"Pergunta do paciente: {pergunta_paciente}\n\nResposta do médico: {resposta_medico}"}],
+            600, esforco="low", timeout=60,
         )
-        uso = getattr(resposta_ia, "usage", None)
         registrar_chamada_ia(
-            "base_conhecimento_aprendizado", "Claude", getattr(resposta_ia, "model", modelo_claude()),
-            getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
-            sucesso=True, usuario_id=usuario_id,
+            "base_conhecimento_aprendizado", resposta_ia.provedor, resposta_ia.modelo,
+            resposta_ia.entrada, resposta_ia.saida, sucesso=True, usuario_id=usuario_id,
         )
-        texto = texto_claude(resposta_ia)
+        texto = resposta_ia.texto
         inicio, fim = texto.find("{"), texto.rfind("}")
         dados = json.loads(texto[inicio:fim + 1])
     except Exception:

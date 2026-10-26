@@ -21,7 +21,7 @@
       <strong>{{ s.tipo_exame.nome }}</strong>
       <span class="badge {{ 'bg-info' if s.item else 'bg-success' }}">{{ 'Alteração de item' if s.item else 'Item novo' }}</span>
     </div>
-    <div class="small text-muted mb-2">Por {{ s.autor_nome or 'médico removido' }} em {{ s.criado_em.strftime('%d/%m/%Y') if s.criado_em }}</div>
+    <div class="small text-muted mb-2">Por {{ s.autor_nome or 'médico removido' }} em {{ s.criado_em|hora_br('%d/%m/%Y') if s.criado_em }}</div>
     {% if s.item %}
     <div class="border rounded p-2 mb-2 bg-body-tertiary small">
       <div class="text-muted">Texto atual</div>

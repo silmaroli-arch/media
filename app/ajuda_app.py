@@ -53,7 +53,7 @@ MENU (lado esquerdo; no celular, pelo botão ☰)
 - Painel: resumo do dia, próximos exames e a chave "Exigir minha aprovação antes de responder o paciente". Ligada: toda resposta das IAs espera o médico aprovar. Desligada: as respostas vão direto ao paciente - exceto as que usam conhecimento geral (fora do preparo) ou falam de medicamento não cadastrado, que sempre passam pelo médico.
 - Meus dados: nome, CPF, e-mail, telefone, data de nascimento e especialidade. Pede a senha (ou Google) antes de mostrar. Lá também: "Trocar senha"/"Criar senha", ligar/desligar a conta Google e "Solicitar exclusão da conta" (informa o motivo; quem exclui é o administrador da plataforma).
 - Primeiros passos: checklist para começar (instalar o atalho, cadastrar o primeiro modelo de preparo e exame, agendar um exame para o paciente de teste, que tem o nome do próprio médico).
-- Exames & preparo: lista dos modelos de preparo (coluna "Médico Criador" = médico principal). "+ Novo" cadastra o modelo de preparo e o exame juntos: nome, "Sua especialidade" (obrigatória), tipo de exame, duração (minutos), e as abas Instruções gerais, Cortes de alimentação (jejum em horas antes), Medicamentos (suspender X dias antes, ou pode manter), Informações gerais, Alimentos (proibidos com prazo ou permitidos) e Exames proibidos antes. Também dá para importar o preparo de um PDF ou de uma planilha Excel. "Editar" altera; ao editar, os exames que usam o modelo são atualizados. Funciona também pelo celular. No bloco "Preparo original (PDF)" (logo abaixo do nome) anexa-se o PDF do preparo como o médico escreveu (o PDF importado já vem marcado): o paciente abre o link do WhatsApp na aba "Preparo do médico" e tem a aba "Linha do tempo" como segunda opção; "Baixar PDF" baixa o PDF da aba aberta. Ao anexar, a IA monta a "Versão em página para o celular": em "Revisar e aprovar" o médico confere o texto ao lado do PDF (palavras/números do PDF que não aparecem ficam em vermelho), toca no texto para corrigir e clica "Aprovar e publicar para o paciente" (ou "Salvar sem publicar", "Tirar do ar", "Gerar de novo com a IA"). Sem aprovação, o paciente vê só o PDF. A caixa "Mostrar exames de todas as especialidades" lista tipos de exame de outras especialidades.
+- Exames & preparo: lista dos modelos de preparo (coluna "Médico Criador" = médico principal). "+ Novo" cadastra o modelo de preparo e o exame juntos: nome, "Sua especialidade" (obrigatória), tipo de exame, duração (minutos), e as abas Instruções gerais, Cortes de alimentação (jejum em horas antes), Medicamentos (suspender X dias antes, ou pode manter), Informações gerais, Alimentos (proibidos com prazo ou permitidos) e Exames proibidos antes. Também dá para importar o preparo de um PDF ou de uma planilha Excel. "Editar" altera; ao editar, os exames que usam o modelo são atualizados. Funciona também pelo celular. No bloco "Preparo original (PDF)" (logo abaixo do nome) anexa-se o PDF do preparo como o médico escreveu (o PDF importado já vem anexado): o paciente abre o link do WhatsApp na aba "Preparo do médico", onde vê as páginas do PDF como imagem, exatamente como estão (e pode ampliar com os dedos), e tem a aba "Linha do tempo" como segunda opção; "Baixar PDF" baixa o PDF da aba aberta. O PDF não é trocado nem removido pelo formulário - para usar outro, crie um novo modelo. A lista "Tipo de exame" mostra os exames da especialidade escolhida em "Sua especialidade"; para ver os de outra especialidade, troque a especialidade.
 - Médicos por preparo: quais médicos fazem cada exame/preparo. Botão "Médicos" abre uma janela para marcar os colegas; o associado passa a atender (agendar) o exame e também pode editar o preparo. O médico principal sempre fica. Precisa da permissão "Associar médicos aos exames".
 - Pacientes: lista com busca. "Novo paciente" abre uma janela: digite o CPF primeiro - se for novo, preenche nome, telefone e data de nascimento; se já existir no MedIA, oferece "Importar para este grupo"; se já for paciente do grupo, avisa. "Editar" (janela) altera nome, CPF, telefone e observações - não registre dados de saúde nas observações. "Todos os agendamentos" mostra os exames passados e futuros do paciente.
 - Agenda de Exames: calendário (Mês, Semana, Dia e Lista; no celular, Lista). O médico vê só os exames dele; a secretária vê os de todos os médicos do grupo e pode filtrar por médico. Cada médico tem uma cor. "Agendar exame" (ou clicar num dia vazio) abre a janela: paciente, exame, médico (só os que atendem o exame), data/hora e observações. O sistema recusa dois exames do mesmo médico no mesmo horário, considerando a duração do exame, e mostra a previsão de término. Clicar num exame abre os detalhes: Atendimento (anotações), Resultado (anexar PDF), Encerrar, "Remarcar para" (nova data e hora) e "Cancelar exame" (apaga o agendamento). Remarcar e cancelar somem em exame encerrado. O paciente NÃO recebe aviso automático de remarcação/cancelamento pelo WhatsApp - avise por fora.
@@ -110,13 +110,12 @@ def responder(pergunta, usuario, tela=None):
     IA escolhida não está disponível ou falhou)."""
     from app.custo_ia import registrar_chamada_ia
     from app.extensions import db
-    from app.ia_modelos import (
-        criar_chat_openai, criar_mensagem_claude, modelo_claude, modelo_gemini, modelo_openai, texto_claude,
-    )
+    from app.ia_modelos import chamar_texto, modelo_do_ponto, provedor_do_modelo
     from app.ia_preparo import _PROVEDORES_CHAT
-    from app.models import AjudaMensagem, PlataformaConfig
+    from app.models import AjudaMensagem
 
-    provedor = PlataformaConfig.obter().ia_ajuda_app or "Claude"
+    modelo = modelo_do_ponto("malu")
+    provedor = provedor_do_modelo(modelo) or "Claude"
     nome_tela = TELAS.get(tela or "", "")
     mensagens = []
     for anterior in _historico(usuario.id):
@@ -130,46 +129,12 @@ def responder(pergunta, usuario, tela=None):
     cliente = fabrica_cliente() if fabrica_cliente else None
     if cliente:
         try:
-            if provedor == "Claude":
-                resposta = criar_mensagem_claude(
-                    cliente, modelo_claude(), 600, esforco="low", system=PROMPT_SISTEMA, messages=mensagens,
-                )
-                uso = getattr(resposta, "usage", None)
-                registrar_chamada_ia(
-                    "ajuda_app", "Claude", getattr(resposta, "model", modelo_claude()),
-                    getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
-                    sucesso=True, usuario_id=usuario.id,
-                )
-                texto = texto_claude(resposta)
-            elif provedor == "ChatGPT":
-                resposta = criar_chat_openai(
-                    cliente, modelo_openai(), 600, esforco="low",
-                    messages=[{"role": "system", "content": PROMPT_SISTEMA}] + mensagens,
-                )
-                uso = getattr(resposta, "usage", None)
-                registrar_chamada_ia(
-                    "ajuda_app", "ChatGPT", getattr(resposta, "model", modelo_openai()),
-                    getattr(uso, "prompt_tokens", None), getattr(uso, "completion_tokens", None),
-                    sucesso=True, usuario_id=usuario.id,
-                )
-                texto = (resposta.choices[0].message.content or "").strip()
-            else:  # Gemini - a conversa vai como um texto só
-                from google.genai import types as genai_types
-
-                conversa = "\n\n".join(
-                    ("Usuário: " if m["role"] == "user" else "Assistente: ") + m["content"] for m in mensagens
-                )
-                resposta = cliente.models.generate_content(
-                    model=modelo_gemini(), contents=conversa,
-                    config=genai_types.GenerateContentConfig(system_instruction=PROMPT_SISTEMA, max_output_tokens=600),
-                )
-                uso = getattr(resposta, "usage_metadata", None)
-                registrar_chamada_ia(
-                    "ajuda_app", "Gemini", getattr(resposta, "model_version", None) or modelo_gemini(),
-                    getattr(uso, "prompt_token_count", None), getattr(uso, "candidates_token_count", None),
-                    sucesso=True, usuario_id=usuario.id,
-                )
-                texto = (getattr(resposta, "text", None) or "").strip()
+            resposta = chamar_texto(cliente, modelo, PROMPT_SISTEMA, mensagens, 600, esforco="low")
+            registrar_chamada_ia(
+                "ajuda_app", resposta.provedor, resposta.modelo, resposta.entrada, resposta.saida,
+                sucesso=True, usuario_id=usuario.id,
+            )
+            texto = resposta.texto
         except Exception:
             current_app.logger.exception("Falha ao consultar %s na ajuda do app", provedor)
             texto = None

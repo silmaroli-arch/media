@@ -115,3 +115,10 @@ def resposta_pdf_original(pdf, baixar=False):
         pdf.conteudo, mimetype="application/pdf",
         headers={"Content-Disposition": f'{disposicao}; filename="{pdf.nome_arquivo}"', "Cache-Control": "private, max-age=300"},
     )
+
+
+def resposta_imagem_pagina(pagina):
+    """Uma página do PDF como imagem JPEG (guardada por 1 dia no navegador)."""
+    from flask import Response
+
+    return Response(pagina.imagem, mimetype="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})

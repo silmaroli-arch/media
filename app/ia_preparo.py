@@ -109,7 +109,7 @@ from flask import current_app
 
 from app.ia_modelos import (
     criar_chat_openai, criar_mensagem_claude, modelo_claude, modelo_claude_sintese, modelo_claude_validador,
-    modelo_gemini, modelo_openai,
+    modelo_gemini, modelo_openai, chamar_texto, modelo_do_ponto, provedor_do_modelo,
     texto_claude,
 )
 
@@ -284,6 +284,7 @@ Regras importantes:
 - Quando a pergunta for sobre um MEDICAMENTO que você consegue identificar (nome, princípio ativo ou classe), mas que não corresponde a NENHUM item cadastrado neste preparo (nem pelo nome, nem pela categoria) — por exemplo, um anticoagulante que não está na lista —, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto MEDICAMENTO_NAO_CADASTRADO_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta que compartilhe, de forma genérica, o que normalmente se sabe sobre esse tipo de medicamento em relação a exames como este (ex.: "anticoagulantes precisam ser suspensos antes de exames com risco de sangramento, como a colonoscopia"). NUNCA afirme um prazo de suspensão específico (em dias/horas) para um medicamento que não está cadastrado — isso continua proibido mesmo nesse tipo de resposta. Não é preciso terminar orientando o paciente a confirmar com a secretaria/médico — essa resposta sempre passa pela revisão e aprovação do médico antes de chegar ao paciente (o marcador MEDICAMENTO_NAO_CADASTRADO_REVISAR garante isso, mesmo quando a aprovação geral está desativada), então essa recomendação final é redundante; o médico que revisa decide se quer complementar a resposta. O marcador é removido automaticamente antes de qualquer exibição — nunca omita-o quando esta regra se aplicar, mesmo que pareça repetitivo.
 - NUNCA faça o raciocínio de identidade acima sobre uma CARACTERÍSTICA do produto que os dados não informam (ex.: qual é a cor de um sabor específico de bebida, se um alimento tem ou não determinado ingrediente). Isso é inventar informação, mesmo que pareça um "senso comum" — cores de sabores variam por marca/país e você pode errar. Nesses casos, explique a regra cadastrada (ex.: "só é permitido líquido de cor clara") e oriente o paciente a verificar essa característica específica por conta própria (observando a embalagem) ou perguntar à secretaria — nunca afirme se aquele sabor/produto específico atende ou não à regra quando isso não estiver explícito nos dados.
 - Cite os prazos do jeito que estão nos dados (ex.: "3 dias antes do exame", "12 horas antes do exame"). NUNCA escreva uma data ou um horário concreto do paciente (dia ou hora do exame dele, ou a data de um prazo), nem o nome dele: a resposta aprovada é reaproveitada para outros pacientes. Quando a data concreta ajudar, use estes marcadores, que o sistema troca pelos dados de cada paciente na hora de enviar: {data_exame} (dia do exame), {hora_exame} (horário do exame), {N dias antes} e {N horas antes} (ex.: "suspenda 3 dias antes do exame, a partir de {3 dias antes}"; "chegue de 30 a 60 minutos antes do horário do exame ({hora_exame} do dia {data_exame})").
+- PERGUNTA DE SIM OU NÃO ("posso tomar...?", "posso comer...?"): comece pela resposta direta, "Sim" ou "Não", e só depois dê o motivo. A primeira palavra tem que combinar com o resto: nunca escreva "Sim, deve ser suspenso" nem "Não, ... pode tomar". EXCEÇÃO: quando a resposta depende de QUANDO o paciente pergunta (um medicamento que se suspende alguns dias antes do exame), não abra com Sim/Não - diga a regra completa e direta, com o marcador do dia, e sem condicional do tipo "se o seu exame estiver dentro desse intervalo" (ex.: "O Poviztra (semaglutida) deve ser suspenso 14 dias antes do exame, a partir de {14 dias antes}. Até esse dia você pode tomar normalmente; depois dele, não tome.")
 - Quando a pergunta for uma dúvida prática sobre ESTE exame ou o atendimento dele (ex.: se o exame dói, se tem sedação, que horas chegar, quanto tempo dura, o que levar, se precisa de acompanhante, se pode ir dirigindo, como é a recuperação) e os dados do preparo NÃO trazem essa informação, NÃO responda com NAO_SEI_ENCAMINHAR. Em vez disso, comece a resposta EXATAMENTE com o texto CONHECIMENTO_GERAL_REVISAR seguido de uma quebra de linha, e só então escreva uma resposta curta com o que normalmente se pratica para esse tipo de exame, escrita de forma direta e segura (ex.: "Chegue de 30 a 60 minutos antes do horário da colonoscopia, para a recepção e o preparo."). Não afirme isso como regra desta clínica, não diga que "não tem a informação" e não oriente a confirmar com a secretaria/médico - a resposta sempre passa pela revisão do médico antes de chegar ao paciente (o marcador garante isso), e ele ajusta o que for desta clínica. Este caminho também vale para um alimento ou bebida comum que o preparo não cobre (nem pelo nome, nem pela categoria). Nunca use este caminho para diagnóstico, resultado de exame, tratamento ou medicamento (para medicamento, siga a regra própria acima). O marcador é removido automaticamente antes de qualquer exibição.
 - Reserve o texto NAO_SEI_ENCAMINHAR só para perguntas que genuinamente não têm nenhuma informação útil a dar (ex.: assunto totalmente fora do preparo, ou um item que você não consegue identificar de jeito nenhum) — nesse caso, responda EXATAMENTE com esse texto, nada mais, nenhuma outra palavra, nenhuma pontuação extra.
 - Antes de aplicar qualquer regra acima, avalie se o texto do paciente é sequer uma pergunta ou comentário coerente (mesmo que informal, curto ou com erros de digitação/ortografia). Se o texto for palavras reais mas sem nenhum sentido coerente entre si, ou for sobre um assunto qualquer que nem chega a formar uma pergunta/comentário compreensível, responda EXATAMENTE com o texto SEM_SENTIDO_ENCAMINHAR, nada mais. NÃO use SEM_SENTIDO_ENCAMINHAR para uma pergunta coerente que só está fora do preparo ou que você não consegue identificar (esses casos usam NAO_SEI_ENCAMINHAR, acima) — a diferença é: NAO_SEI_ENCAMINHAR é "entendi a pergunta, mas não tenho a informação"; SEM_SENTIDO_ENCAMINHAR é "isso nem é uma pergunta/comentário que eu consiga entender". Na dúvida entre os dois, ou na dúvida entre usar SEM_SENTIDO_ENCAMINHAR e simplesmente responder, prefira responder normalmente ou usar NAO_SEI_ENCAMINHAR — evite usar SEM_SENTIDO_ENCAMINHAR para um texto que dá pra entender, mesmo que mal escrito.
@@ -556,7 +557,7 @@ def _extrair_marcador_medicamento_nao_cadastrado(texto):
     return texto, False
 
 
-def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
+def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None, modelo=None):
     """Devolve uma tupla `(texto_ou_None, chamada_ou_None, sem_sentido_bool,
     exige_revisao_medicamento_bool)` - `chamada` é o `ChamadaIA` já
     registrado (ver app.custo_ia.registrar_chamada_ia), para quem chamou
@@ -571,11 +572,12 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
     _extrair_marcador_medicamento_nao_cadastrado) - sinaliza pra
     responder_com_ia que esta resposta específica precisa SEMPRE passar
     pelo médico, mesmo com a aprovação geral desativada."""
+    modelo = modelo or modelo_claude()
     try:
         # Resposta ao paciente: raciocínio médio (regras de identidade de
         # medicamento, nunca chutar...).
         mensagem = criar_mensagem_claude(
-            cliente, modelo_claude(), 300, esforco="medium",
+            cliente, modelo, 300, esforco="medium",
             system=PROMPT_SISTEMA,
             messages=[{
                 "role": "user",
@@ -599,7 +601,7 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
         return None, None, False, False
     uso = getattr(mensagem, "usage", None)
     chamada = registrar_chamada_ia(
-        "chat_duvida_paciente", "Claude", getattr(mensagem, "model", modelo_claude()),
+        "chat_duvida_paciente", "Claude", getattr(mensagem, "model", modelo),
         getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
         sucesso=True, paciente_id=paciente_id,
     )
@@ -616,13 +618,14 @@ def _perguntar_claude(cliente, pergunta_usuario, contexto, paciente_id=None, his
     return texto, chamada, False, exige_revisao
 
 
-def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
+def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None, modelo=None):
     """Ver docstring de `_perguntar_claude` acima - mesmo contrato de
     retorno `(texto_ou_None, chamada_ou_None, sem_sentido_bool,
     exige_revisao_medicamento_bool)`."""
+    modelo = modelo or modelo_openai()
     try:
         resposta = criar_chat_openai(
-            cliente, modelo_openai(), 300, esforco="medium",
+            cliente, modelo, 300, esforco="medium",
             messages=[
                 {"role": "system", "content": PROMPT_SISTEMA},
                 {
@@ -640,7 +643,7 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
         return None, None, False, False
     uso = getattr(resposta, "usage", None)
     chamada = registrar_chamada_ia(
-        "chat_duvida_paciente", "ChatGPT", getattr(resposta, "model", modelo_openai()),
+        "chat_duvida_paciente", "ChatGPT", getattr(resposta, "model", modelo),
         getattr(uso, "prompt_tokens", None), getattr(uso, "completion_tokens", None),
         sucesso=True, paciente_id=paciente_id,
     )
@@ -657,7 +660,7 @@ def _perguntar_chatgpt(cliente, pergunta_usuario, contexto, paciente_id=None, hi
     return texto, chamada, False, exige_revisao
 
 
-def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None):
+def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, historico=None, modelo=None):
     """Ver docstring de `_perguntar_claude` acima - mesmo contrato de
     retorno `(texto_ou_None, chamada_ou_None, sem_sentido_bool,
     exige_revisao_medicamento_bool)`. Mesma lib/cliente do
@@ -666,10 +669,11 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
     volume de perguntas do chat é baixo, e um erro passageiro aqui
     simplesmente faz o Gemini "não responder" a esta pergunta, igual a
     qualquer outro erro de IA no chat)."""
+    modelo = modelo or modelo_gemini()
     try:
         from google.genai import types as genai_types
         resposta = cliente.models.generate_content(
-            model=modelo_gemini(),
+            model=modelo,
             contents=(
                 f"Dados do preparo:\n{contexto}\n\n"
                 f"{_formatar_historico_conversa(historico)}"
@@ -685,7 +689,7 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
         return None, None, False, False
     uso = getattr(resposta, "usage_metadata", None)
     chamada = registrar_chamada_ia(
-        "chat_duvida_paciente", "Gemini", getattr(resposta, "model_version", None) or modelo_gemini(),
+        "chat_duvida_paciente", "Gemini", getattr(resposta, "model_version", None) or modelo,
         getattr(uso, "prompt_token_count", None), getattr(uso, "candidates_token_count", None),
         sucesso=True, paciente_id=paciente_id,
     )
@@ -700,6 +704,15 @@ def _perguntar_gemini(cliente, pergunta_usuario, contexto, paciente_id=None, his
     texto, exige_revisao = _extrair_marcador_medicamento_nao_cadastrado(texto)
     texto = _tirar_incerteza(texto)
     return texto, chamada, False, exige_revisao
+
+
+def _cliente_do_ponto(ponto):
+    """Cliente da empresa do modelo escolhido para o ponto (None sem chave de
+    API). Claude passa por `_cliente_anthropic` (como sempre)."""
+    provedor = provedor_do_modelo(modelo_do_ponto(ponto)) or "Claude"
+    if provedor == "Claude":
+        return _cliente_anthropic()
+    return _PROVEDORES_CHAT[provedor][0]()
 
 
 def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=None, ignorar_prazos=False):
@@ -720,15 +733,16 @@ def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=N
         # concordância sem checar).
         return True
     try:
-        # Só classifica SIM/NAO - o modelo barato do validador basta.
-        veredito = criar_mensagem_claude(
-            cliente_anthropic, modelo_claude_validador(), 5, esforco="low",
-            system=(
+        # Só classifica SIM/NAO - o modelo barato basta.
+        modelo = modelo_do_ponto("divergencia")
+        veredito = chamar_texto(
+            cliente_anthropic, modelo, (
                 "Compare as duas respostas abaixo, dadas por assistentes diferentes à "
                 "mesma pergunta de um paciente sobre preparo de exame. Responda SOMENTE "
                 "com a palavra SIM se elas passam a mesma orientação prática ao "
                 "paciente, ou NAO se divergem em algum ponto que mudaria o que o "
-                "paciente deveria fazer."
+                "paciente deveria fazer. Respostas que começam com \"Sim\" numa e \"Não\" na outra para a mesma pergunta SEMPRE divergem, "
+                "mesmo que o restante do texto seja parecido."
                 + (
                     " IGNORE diferenças que sejam apenas de prazo, horário, quantidade de "
                     "horas ou dias, ou dose (esses valores variam por clínica): duas respostas "
@@ -736,19 +750,14 @@ def _respostas_divergem(cliente_anthropic, resposta_a, resposta_b, paciente_id=N
                     if ignorar_prazos else ""
                 )
             ),
-            messages=[{
-                "role": "user",
-                "content": f"Resposta 1: {resposta_a}\n\nResposta 2: {resposta_b}",
-            }],
+            [{"role": "user", "content": f"Resposta 1: {resposta_a}\n\nResposta 2: {resposta_b}"}],
+            5, esforco="low",
         )
-        uso = getattr(veredito, "usage", None)
         registrar_chamada_ia(
-            "chat_duvida_paciente", "Claude", getattr(veredito, "model", modelo_claude_validador()),
-            getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
+            "chat_duvida_paciente", veredito.provedor, veredito.modelo, veredito.entrada, veredito.saida,
             sucesso=True, paciente_id=paciente_id,
         )
-        texto = texto_claude(veredito).upper()
-        return texto.startswith("NAO")
+        return veredito.texto.upper().startswith("NAO")
     except Exception:
         return True
 
@@ -771,9 +780,9 @@ def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, respos
     if not cliente_anthropic:
         return None
     try:
-        sintese = criar_mensagem_claude(
-            cliente_anthropic, modelo_claude_sintese(), 300, esforco="medium",
-            system=(
+        sintese = chamar_texto(
+            cliente_anthropic, modelo_do_ponto("sintese"),
+            (
                 "Duas IAs diferentes responderam à mesma pergunta de um paciente "
                 "sobre preparo de exame, com respostas que divergem em algum ponto. "
                 "Sua tarefa é propor UMA única resposta final, em português do "
@@ -793,6 +802,11 @@ def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, respos
                 "Nunca escreva que algo não está cadastrado, não consta no "
                 "preparo ou não está nas orientações do exame - responda direto "
                 "o que se aplica. "
+                "Mantenha, exatamente como estão, os marcadores entre chaves das respostas "
+                "({data_exame}, {hora_exame}, {14 dias antes}...): o sistema troca cada um pela "
+                "data do paciente. Não crie frases condicionais do tipo \"caso falte menos de "
+                "14 dias...\" ou \"se o seu exame estiver dentro desse prazo\": use a regra "
+                "direta com o marcador. "
                 "Responda SOMENTE com o texto que será enviado direto ao "
                 "paciente — sem títulos como 'Resposta final:', sem aspas "
                 "envolvendo tudo, e sem nenhum comentário sobre as duas IAs ou "
@@ -800,23 +814,22 @@ def _sintetizar_resposta(cliente_anthropic, pergunta_usuario, resposta_a, respos
                 "afirmativa, sem \"em geral\", \"geralmente\", \"normalmente\" ou "
                 "\"costuma\"."
             ),
-            messages=[{
+            [{
                 "role": "user",
                 "content": (
                     f"Pergunta do paciente: {pergunta_usuario}\n\n"
                     f"Resposta 1: {resposta_a}\n\nResposta 2: {resposta_b}"
                 ),
             }],
+            300, esforco="medium",
         )
-        uso = getattr(sintese, "usage", None)
-        texto = texto_claude(sintese)
+        texto = sintese.texto
         # Quando dá certo, o texto desta chamada é literalmente o que vira
         # a resposta final (ver responder_com_ia) - diferente das duas
         # respostas "cruas" que ela concilia, que nesse caso NÃO são a
         # resposta final (ver marcação em responder_com_ia).
         registrar_chamada_ia(
-            "chat_duvida_paciente", "Claude", getattr(sintese, "model", modelo_claude_sintese()),
-            getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
+            "chat_duvida_paciente", sintese.provedor, sintese.modelo, sintese.entrada, sintese.saida,
             sucesso=True, paciente_id=paciente_id, resposta_final_usada=bool(texto),
         )
         return _tirar_incerteza(texto) or None
@@ -837,7 +850,7 @@ _PROVEDORES_CHAT = {
 CAMPO_RESPOSTA_BRUTA = {"Claude": "claude", "ChatGPT": "chatgpt", "Gemini": "gemini"}
 
 
-def _tentar_provedor(nome_provedor, pergunta_usuario, contexto, paciente_id=None, historico=None):
+def _tentar_provedor(nome_provedor, pergunta_usuario, contexto, paciente_id=None, historico=None, modelo=None):
     """Cria o cliente do provedor indicado (se a API key dele estiver
     configurada) e tenta obter uma resposta. Retorna
     `(texto_ou_None, chamada_ou_None, tentou_bool, sem_sentido_bool,
@@ -853,7 +866,7 @@ def _tentar_provedor(nome_provedor, pergunta_usuario, contexto, paciente_id=None
     cliente = cliente_factory()
     if not cliente:
         return None, None, False, False, False
-    texto, chamada, sem_sentido, exige_revisao = perguntar(cliente, pergunta_usuario, contexto, paciente_id, historico)
+    texto, chamada, sem_sentido, exige_revisao = perguntar(cliente, pergunta_usuario, contexto, paciente_id, historico, modelo)
     return texto, chamada, True, sem_sentido, exige_revisao
 
 
@@ -983,9 +996,18 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
     from app.models import PlataformaConfig
 
     config = PlataformaConfig.obter()
-    provedor_a = config.ia_chat_provedor_1 or "Claude"
-    provedor_b = config.ia_chat_provedor_2 or "ChatGPT"
+    # Modelo de cada ponto (escolha do dono em /dono; o provedor sai do nome
+    # do modelo). Sem escolha válida, valem os provedores antigos.
+    modelo_a, modelo_b = modelo_do_ponto("resposta_1"), modelo_do_ponto("resposta_2")
+    provedor_a, provedor_b = provedor_do_modelo(modelo_a), provedor_do_modelo(modelo_b)
+    if not provedor_a or not provedor_b or provedor_a == provedor_b:
+        provedor_a = config.ia_chat_provedor_1 or "Claude"
+        provedor_b = config.ia_chat_provedor_2 or "ChatGPT"
+        modelo_a = modelo_b = None
     provedor_c = next(nome for nome in _PROVEDORES_CHAT if nome not in (provedor_a, provedor_b))
+    modelo_c = modelo_do_ponto("resposta_reserva")
+    if provedor_do_modelo(modelo_c) != provedor_c:
+        modelo_c = None
 
     respostas_por_provedor = {"Claude": None, "ChatGPT": None, "Gemini": None, "Base": None}
     contexto = _formatar_contexto_preparo(exame)
@@ -1008,8 +1030,8 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
     if contexto_extra:
         contexto = f"{contexto}\n\n{contexto_extra}"
 
-    resposta_a, chamada_a, tentou_a, sem_sentido_a, exige_revisao_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id, historico)
-    resposta_b, chamada_b, tentou_b, sem_sentido_b, exige_revisao_b = _tentar_provedor(provedor_b, pergunta_usuario, contexto, paciente_id, historico)
+    resposta_a, chamada_a, tentou_a, sem_sentido_a, exige_revisao_a = _tentar_provedor(provedor_a, pergunta_usuario, contexto, paciente_id, historico, modelo_a)
+    resposta_b, chamada_b, tentou_b, sem_sentido_b, exige_revisao_b = _tentar_provedor(provedor_b, pergunta_usuario, contexto, paciente_id, historico, modelo_b)
 
     if not tentou_a and not tentou_b:
         # Nenhuma das duas escolhidas tem API key configurada - não é
@@ -1064,7 +1086,7 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
             "IA configurada (%s) falhou ao responder pergunta do paciente - tentando %s (não escolhida) como reserva",
             provedor_a if falhou_a else provedor_b, provedor_c,
         )
-        resposta_c, chamada_c, tentou_c, sem_sentido_c, exige_revisao_c = _tentar_provedor(provedor_c, pergunta_usuario, contexto, paciente_id, historico)
+        resposta_c, chamada_c, tentou_c, sem_sentido_c, exige_revisao_c = _tentar_provedor(provedor_c, pergunta_usuario, contexto, paciente_id, historico, modelo_c)
         reserva_respondeu = tentou_c and (resposta_c is not None or chamada_c is not None)
         if tentou_c and not reserva_respondeu:
             # A reserva também falhou de verdade - registra pra aparecer
@@ -1086,11 +1108,12 @@ def _responder_com_duas_ias(pergunta_usuario, exame, paciente_id=None, historico
     # cliente que criou por dentro; o custo de instanciar um segundo
     # cliente Anthropic quando Claude já respondeu é desprezível (não é
     # uma chamada de API, só a construção do objeto cliente).
-    cliente_arbitro = _cliente_anthropic()
+    cliente_arbitro = _cliente_do_ponto("divergencia")
+    cliente_sintese = _cliente_do_ponto("sintese")
 
     if resposta_a and resposta_b:
         if _respostas_divergem(cliente_arbitro, resposta_a, resposta_b, paciente_id):
-            sintese = _sintetizar_resposta(cliente_arbitro, pergunta_usuario, resposta_a, resposta_b, paciente_id)
+            sintese = _sintetizar_resposta(cliente_sintese, pergunta_usuario, resposta_a, resposta_b, paciente_id)
             if sintese:
                 # O rascunho final é o próprio texto sintetizado, já pronto
                 # para envio ao paciente — as respostas individuais de cada
@@ -1243,7 +1266,7 @@ def _aplicar_base_de_conhecimento(resultado, pergunta_usuario, exame, paciente_i
         return
 
     diverge = _respostas_divergem(
-        _cliente_anthropic(), final, resposta_base, paciente_id, ignorar_prazos=True,
+        _cliente_do_ponto("divergencia"), final, resposta_base, paciente_id, ignorar_prazos=True,
     )
     resultado["base"]["divergiu"] = bool(diverge)
     if diverge:
@@ -1369,8 +1392,8 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
     if not exame:
         return {"classificacao": None, "chamada": None}
 
-    config = PlataformaConfig.obter()
-    provedor = config.ia_validador_pergunta or "Claude"
+    modelo_validador = modelo_do_ponto("validador")
+    provedor = provedor_do_modelo(modelo_validador) or "Claude"
     fabrica_cliente, _ = _PROVEDORES_CHAT.get(provedor, (None, None))
     cliente = fabrica_cliente() if fabrica_cliente else None
     if not cliente:
@@ -1386,52 +1409,17 @@ def validar_pergunta(pergunta_usuario, exame, paciente_id=None, historico=None):
     )
 
     try:
-        if provedor == "Claude":
-            # Validador: Claude Haiku 5.5 (rápido e barato), ver app.ia_modelos.
-            resposta = criar_mensagem_claude(
-                cliente, modelo_claude_validador(), 120, esforco="low", system=PROMPT_SISTEMA_VALIDADOR,
-                messages=[{"role": "user", "content": conteudo}],
-            )
-            uso = getattr(resposta, "usage", None)
-            chamada = registrar_chamada_ia(
-                "validador_pergunta_paciente", "Claude", getattr(resposta, "model", modelo_claude_validador()),
-                getattr(uso, "input_tokens", None), getattr(uso, "output_tokens", None),
-                sucesso=True, paciente_id=paciente_id,
-            )
-            texto = texto_claude(resposta)
-        elif provedor == "ChatGPT":
-            resposta = criar_chat_openai(
-                cliente, modelo_openai(), 120, esforco="low",
-                messages=[
-                    {"role": "system", "content": PROMPT_SISTEMA_VALIDADOR},
-                    {"role": "user", "content": conteudo},
-                ],
-            )
-            uso = getattr(resposta, "usage", None)
-            chamada = registrar_chamada_ia(
-                "validador_pergunta_paciente", "ChatGPT", getattr(resposta, "model", modelo_openai()),
-                getattr(uso, "prompt_tokens", None), getattr(uso, "completion_tokens", None),
-                sucesso=True, paciente_id=paciente_id,
-            )
-            texto = (resposta.choices[0].message.content or "").strip()
-        else:  # Gemini
-            from google.genai import types as genai_types
-            resposta = cliente.models.generate_content(
-                model=modelo_gemini(), contents=conteudo,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=PROMPT_SISTEMA_VALIDADOR, max_output_tokens=120,
-                ),
-            )
-            uso = getattr(resposta, "usage_metadata", None)
-            chamada = registrar_chamada_ia(
-                "validador_pergunta_paciente", "Gemini", getattr(resposta, "model_version", None) or modelo_gemini(),
-                getattr(uso, "prompt_token_count", None), getattr(uso, "candidates_token_count", None),
-                sucesso=True, paciente_id=paciente_id,
-            )
-            texto = (getattr(resposta, "text", None) or "").strip()
+        resposta = chamar_texto(
+            cliente, modelo_validador, PROMPT_SISTEMA_VALIDADOR, [{"role": "user", "content": conteudo}], 120, esforco="low",
+        )
+        chamada = registrar_chamada_ia(
+            "validador_pergunta_paciente", resposta.provedor, resposta.modelo, resposta.entrada, resposta.saida,
+            sucesso=True, paciente_id=paciente_id,
+        )
+        texto = resposta.texto
     except Exception:
         current_app.logger.exception(
-            "Falha ao consultar %s para validar pergunta do paciente (ia_validador_pergunta)", provedor,
+            "Falha ao consultar %s para validar pergunta do paciente (ponto 'validador')", provedor,
         )
         return {"classificacao": None, "chamada": None}
 

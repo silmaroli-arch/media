@@ -2772,6 +2772,10 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Anexar um PDF novo (ou salvar um modelo com o PDF importado) já começa a gerar a página e mostra "Revise e aprove aqui". Tela `medico.preparo_modelos_pdf_pagina` (`/equipe/preparo-modelos/<id>/pdf-original/pagina`): texto editável (toque para corrigir), PDF ao lado (no celular, botão para abrir), "Aprovar e publicar", "Salvar sem publicar", "Tirar do ar", "Gerar de novo". Só quem pode editar o modelo aprova. O formulário do modelo mostra a situação da página.
 - Ajuste (2026-10-24, pedido do Silvan): o botão "Baixar PDF" voltou ao topo da página do link, como era antes - com o PDF do médico anexado, baixa esse PDF; sem ele, o PDF da linha do tempo (que continua com o próprio botão na seção dela).
 - Abas (2026-10-24, pedido do Silvan): na página do link, "Preparo do médico" e "Linha do tempo" funcionam como abas - cada uma mostra só o seu conteúdo (abre no do médico; `#linha-do-tempo` no endereço abre a outra). O "Baixar PDF" do topo baixa o PDF da aba aberta (o do médico ou o da linha do tempo); o botão separado "Baixar a linha do tempo (PDF)" saiu. Sem JS ou na impressão, as duas aparecem.
+- Passo a passo (2026-10-26, pedido do Silvan - ficar claro que a página está sendo criada e que o médico precisa aprovar): componente `medico/_passos_pagina_pdf.html` com 3 passos (1 PDF anexado - 2 a IA monta a página, com spinner/erro - 3 você revisa e aprova, "Obrigatório"), usado na tela de revisão e no bloco "Preparo original (PDF)" do formulário (com o botão "Revisar e aprovar agora"). Ao salvar um modelo com PDF novo, o médico é levado direto à tela de revisão (flash "Passo 2 de 3...") em vez da lista; lá há faixa amarela "Falta a sua aprovação" com atalho para o botão de aprovar e "Concluir depois". Antes de salvar, o formulário explica o que acontece depois (3 passos). Na lista de modelos, selo "Página do celular: falta aprovar" / "gerando..." / "tentar de novo".
+- Novo modelo em duas etapas (2026-10-26, pedido do Silvan - a tela cheia logo de cara confundia): `GET /equipe/preparo-modelos/novo` mostra só o cartão "Passo 1 de 2 - Comece importando o PDF do preparo" com o botão grande "Importar de um PDF" e o link "Prefiro preencher sem PDF" (`?manual=1`, formulário completo). Depois da importação (resposta de POST), aparece o formulário com UM aviso "Passo 2 de 2 - revise e salve" (nome da IA que leu o PDF, "confira cada aba", botão pequeno "Importar outro PDF"); o flash duplicado e o botão de importar solto saíram. O PDF não pode ser trocado nem removido pelo formulário: o importado é sempre guardado como preparo original (campo oculto `usar_pdf_importado`; sem checkbox nem "escolher arquivo") e o de um modelo existente também não tem remover/trocar (o seletor de arquivo só aparece quando o modelo ainda não tem PDF). O backend continua aceitando `remover_pdf_original`/`pdf_original` (usados em testes), só não há mais botão.
+- Erro ao salvar não perde mais o formulário (2026-10-26, relatado pelo Silvan: nome de modelo repetido após importar o PDF devolvia o formulário vazio): `_sugestao_do_formulario(request.form)` reconstrói, a partir do que foi enviado, cortes, medicamentos (e mantidos), informações gerais (com horário), alimentos, exames proibidos, observações, nome, instruções, duração, tipo de exame e especialidade; usado quando o salvar de modelo NOVO ou EDITADO falha (só em POST). O PDF importado continua pendente e marcado. Teste de regressão em `test_preparo_pdf_original.py`.
+- Tipo de exame: saiu a caixa "Mostrar exames de todas as especialidades" (pedido do Silvan, 2026-10-26); a lista continua filtrada pela especialidade escolhida em "Sua especialidade", que o médico pode trocar. Manual da Malu ajustado.
 - PDF ao lado na revisão (2026-10-25, relatado pelo Silvan no tablet Android): o `<iframe>` não mostra PDF no Chrome do Android (aparecia só "pdf-original / Abrir"). Agora o PDF é desenhado na própria página com o pdf.js 3.11.174 (cdnjs), página por página, em qualquer tela; "Abrir o PDF em outra aba" fica como alternativa.
 - Teste novo: `test_preparo_pdf_pagina.py` (IA simulada - a qualidade da transcrição com um PDF real ainda precisa ser conferida no media-dev).
 
@@ -2813,6 +2817,46 @@ Levantamento: dados pedidos que o sistema não usava para nada. Removidos das te
 - Perfis e junção (2026-10-25, pedido do Silvan, para vender um plano ~R$ 150/mês): novo papel `claude_sintese` (junção das respostas quando as 2 IAs divergem; coluna `modelo_claude_sintese`, env `ANTHROPIC_MODEL_SINTESE`, padrão Sonnet 5.5), separado das respostas para poder usar Haiku nas respostas e Sonnet só na junção. Botões "Perfis prontos" no card: **Essencial** (respostas e validador Haiku 5.5, junção Sonnet 5.5, ChatGPT gpt-5.4-nano; IA ~R$ 25 a 40 por médico/mês, 48 perguntas/dia) e **Completo** (respostas Sonnet 5.5, validador Haiku 5.5, junção Sonnet 5.5, gpt-5.4-mini; IA ~R$ 115 a 160). Qualidade do Haiku 5.5 nas respostas AINDA NÃO testada com as perguntas problemáticas (Poviztra, Wegovy, pepino, "o exame dói", nome inventado). Planos com preços diferentes por perfil no sistema (licença por plano) não foram feitos - hoje há um valor de licença só.
 - Ajuste: o resultado do "Testar" aparece dentro do card (a tela rola até ele), não mais como mensagem no topo da página, que ficava fora da tela. Validado pelo Silvan no media-dev (2026-10-25): claude-opus-5-5, claude-sonnet-5-5 (validador), gpt-5.4-mini e gemini-flash-latest responderam.
 - Com isso, não é mais preciso mexer no Render para trocar modelo (a variável antiga, se existir, só vale com o campo em branco).
+
+## PDF do preparo como imagens na página do link (2026-10-26) - substitui a "versão em página" feita pela IA
+
+Pedido do Silvan: em vez de a IA transcrever o PDF para texto (e o médico aprovar), cada página do PDF vira imagem e é publicada no link do WhatsApp. Sem IA, sem custo, sem aprovação, funciona com PDF escaneado.
+
+- `app/preparo_pdf_paginas.py`: `gerar_paginas` (pypdfium2, até 30 páginas, JPEG qualidade 82) e `garantir_paginas` (gera na hora para PDFs anexados antes; PDF ilegível fica `imagens_erro` e cai no cartão Abrir/Baixar).
+- Tabela nova `preparo_pdf_paginas` (criada pelo `db.create_all`); imagens ficam no banco. `PreparoPdfOriginal.pagina_status` passa a valer "imagens"/"imagens_erro"; as demais colunas `pagina_*` ficam sem uso.
+- Rotas: `/paciente/preparo/<token>/pagina/<n>.jpg` e miniaturas no formulário do modelo.
+- Página do paciente: aba "Preparo do médico" mostra as imagens (ampliar com os dedos) e a aba "Linha do tempo" continua; "Baixar PDF" baixa o original.
+- Removidos: `ia_pdf_html.py`, tela de aprovação, passo-a-passo da página e o selo "Página do celular: falta aprovar". Dependências: pypdfium2, Pillow. Teste: `test_preparo_pdf_paginas.py`; Malu atualizada.
+- Dúvida do Silvan (Remover desabilitado): é proposital, o modelo está em uso por exame(s).
+
+PENDENTE DE TESTE (Silvan): importar PDF real, salvar, abrir o link no celular (imagens legíveis, aba Linha do tempo, Baixar PDF); modelo antigo com PDF gera as imagens na 1ª visita.
+
+## Modelo de IA por ponto de uso + remover preparo sem agendamento (2026-10-26)
+
+Pedido do Silvan: todo ponto do sistema que chama IA deve ser configurável no painel do dono, escolhendo o MODELO (não o nome da IA).
+
+- `app/ia_modelos.py`: `PONTOS` (12 pontos: resposta_1, resposta_2, resposta_reserva, validador, divergencia, sintese, pdf_1/2/3, malu, aprendizado, busca), `provedor_do_modelo` (claude*/gpt*/o1,o3,o4*/gemini* -> empresa), `modelo_do_ponto` (painel > padrão), `modelo_padrao_do_ponto` (o que valia antes: provedores antigos + modelos por papel/env), `chamar_texto` (uma chamada para qualquer empresa, devolve texto/modelo/tokens/provedor).
+- Coluna nova `plataforma_config.modelos_pontos` (JSON; migração em `migrar_banco.py`). As colunas antigas (`modelo_*`, `ia_chat_provedor_*`, `ia_validador_pergunta`, `ia_ajuda_app`) viram só o PADRÃO; sem escolha no painel nada muda.
+- (agrupado por tema: respostas, PDF, ajuda/aprendizado, pesquisa) Painel do dono: os 4 cards antigos (IAs do chat, validador, ajuda, modelos) viraram um só, "Modelo de IA de cada ponto do sistema", com lista por ponto (preço + "Outro..."), Salvar, Testar (um teste por modelo distinto) e Perfis prontos (Essencial/Completo agora preenchem todos os pontos). Regras: 1ª e 2ª IA de empresas diferentes; reserva da terceira; busca só Claude (usa a ferramenta de busca da Anthropic). Rotas antigas `/configuracoes/ia-chat|ia-validador|ia-ajuda` removidas.
+- Chamadas ligadas aos pontos: `ia_preparo.py` (respostas, reserva, validador, divergência, junção), `ia_pdf_preparo.py` (cadeia pdf_1..3; só o Gemini lê o PDF inteiro), `ajuda_app.py`, `base_aprendizado.py`, `busca_internet.py`.
+- Remover modelo de preparo: agora só é bloqueado se houver AGENDAMENTO ligado a ele (`PreparoModelo.total_agendamentos`); exames que só o usam ficam sem preparo (confirmação avisa). A lista mostra "N agendamento(s) ligado(s)" ao lado do botão desabilitado.
+- Testes: `test_ia_modelos.py` (reescrito para os pontos), `test_ajuda_app.py`, `test_preparo_remover.py` (novo).
+
+PENDENTE DE TESTE (Silvan): painel do dono > Configurações: escolher modelos por ponto, Salvar, Testar; trocar a 1ª/2ª IA e conferir uma pergunta no WhatsApp; importar PDF; remover um preparo sem agendamento e um com agendamento.
+
+## Respostas de sim/não e divergência (2026-10-26)
+
+Caso "posso tomar Poviztra?": Claude respondeu "Não" e ChatGPT "Sim, deve ser suspenso", e o rascunho ficou condicional ("se o seu exame estiver dentro desse intervalo").
+- PROMPT_SISTEMA: pergunta de sim/não começa por "Sim"/"Não" coerente com o resto; quando a resposta depende de QUANDO o paciente pergunta (suspensão de medicamento), não abre com Sim/Não e dá a regra direta com o marcador (`{14 dias antes}`), sem condicional. Mantém a resposta reaproveitável no FAQ (nada de data concreta do paciente).
+- Checagem de divergência: "Sim" contra "Não" sempre conta como divergência.
+- Testes em `test_ia_nunca_chuta.py`. PENDENTE DE TESTE (Silvan): repetir "posso tomar Poviztra?" e ver se o rascunho sai direto, com {data} trocada.
+
+## Horário de Brasília nas telas (2026-10-26)
+
+Pergunta recebida às 18:43 aparecia como 21:43: o servidor grava em UTC e as telas mostravam o valor cru.
+- `app/fuso.py` (`utc_para_brasilia`, `agora_brasilia`) e filtro Jinja `hora_br`; todos os `*_em.strftime(...)` dos templates (criado_em, pago_em, pix_expira_em...) passaram a `|hora_br(...)`. Relatórios CSV/PDF, "Gerado em" e o selo "Próximo" da lista de agendamentos usam o horário de Brasília. `Agendamento.data_hora` NÃO é convertido (já é o horário marcado).
+- Síntese das respostas: mantém os marcadores ({14 dias antes}...) e não cria condicional ("caso falte menos de 14 dias") - visto no teste do Poviztra.
+- Teste: `test_fuso_brasilia.py`. PENDENTE DE TESTE (Silvan): hora de "Recebida em" bate com o relógio; repetir o Poviztra.
 
 ## BACKLOG (Silvan) - combinado para fazer depois
 

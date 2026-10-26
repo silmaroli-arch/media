@@ -10,7 +10,7 @@
     <tbody>
       {% for s in solicitacoes_exclusao %}
       <tr>
-        <td class="text-nowrap">{{ s.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td class="text-nowrap">{{ s.criado_em|hora_br('%d/%m/%Y %H:%M') }}</td>
         <td>{{ s.nome }}<div class="small text-muted">{{ s.email or '' }}{% if s.usuario %} · {{ s.usuario.tipo }}{% endif %}</div></td>
         <td style="white-space: pre-wrap;">{{ s.motivo }}</td>
         <td class="text-nowrap">

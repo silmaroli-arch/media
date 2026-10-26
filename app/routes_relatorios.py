@@ -12,6 +12,7 @@ from collections import OrderedDict
 from flask import Blueprint, render_template, request
 from flask_login import login_required, current_user
 
+from app.fuso import agora_brasilia, utc_para_brasilia
 from app.models import Agendamento, Paciente
 from app.clinica_utils import filtro_escopo_atual, empresa_atual
 from app.routes_medico import (
@@ -150,7 +151,7 @@ def pacientes():
     por_dia = OrderedDict()
     por_origem = OrderedDict([("Cadastrado pela equipe", 0), ("Auto-cadastro pelo app", 0)])
     for p in novos:
-        chave_dia = p.criado_em.strftime("%d/%m")
+        chave_dia = utc_para_brasilia(p.criado_em).strftime("%d/%m")
         por_dia[chave_dia] = por_dia.get(chave_dia, 0) + 1
         # Quando o cadastro nasce pendente é porque veio do auto-cadastro
         # (ver auth.cadastro_paciente) - cadastro feito pela equipe já
@@ -162,7 +163,7 @@ def pacientes():
 
     linhas = [
         [
-            p.criado_em.strftime("%d/%m/%Y %H:%M"),
+            utc_para_brasilia(p.criado_em).strftime("%d/%m/%Y %H:%M"),
             p.nome, p.cpf or "-", p.telefone or "-",
             "Auto-cadastro pelo app" if p.usuario_id else "Cadastrado pela equipe",
             {"aprovado": "Aprovado", "pendente": "Pendente", "rejeitado": "Rejeitado"}.get(p.status_cadastro, p.status_cadastro),

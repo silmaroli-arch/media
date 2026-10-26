@@ -54,7 +54,7 @@
                 <i class="bi bi-exclamation-triangle"></i> {{ p.ias_com_erro.replace(',', ', ') }} falhou
               </span>
               {% endif %}
-              <span class="text-muted small ms-2">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+              <span class="text-muted small ms-2">{{ p.criado_em|hora_br('%d/%m/%Y %H:%M') }}</span>
             </button>
           </h2>
           <div id="aguardando-{{ p.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionAguardando">
@@ -176,7 +176,7 @@
             <i class="bi bi-exclamation-triangle"></i> {{ p.ias_com_erro.replace(',', ', ') }} falhou
           </span>
           {% endif %}
-          <span class="text-muted small ms-2">{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+          <span class="text-muted small ms-2">{{ p.criado_em|hora_br('%d/%m/%Y %H:%M') }}</span>
         </button>
       </h2>
       <div id="pendente-{{ p.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionPendentes">

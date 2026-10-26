@@ -79,7 +79,7 @@
       <tbody>
         {% for p in novos %}
         <tr>
-          <td>{{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+          <td>{{ p.criado_em|hora_br('%d/%m/%Y %H:%M') }}</td>
           <td>{{ p.nome }}</td>
           <td>{{ p.cpf or '-' }}</td>
           <td>{{ p.telefone|telefone or '-' }}</td>

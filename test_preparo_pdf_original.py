@@ -82,6 +82,12 @@ r = medico.post("/equipe/preparo-modelos/importar-xlsx", content_type="multipart
     "arquivo_xlsx": (io.BytesIO(PDF), "importado.pdf"), "texto_extraido_cliente": "Jejum de 8 horas antes do exame."})
 html = r.get_data(as_text=True)
 checar("Revisão da importação já marca 'Usar o PDF importado'", 'name="usar_pdf_importado"' in html and "importado.pdf" in html)
+checar("Revisão da importação não pede escolher outro arquivo nem tem botão de importar solto",
+       'name="pdf_original"' not in html and "Passo 2 de 2" in html)
+html_inicio = medico.get("/equipe/preparo-modelos/novo").get_data(as_text=True)
+checar("Modelo novo começa só com o botão de importar (sem campos), e 'sem PDF' leva ao formulário",
+       "Comece importando o PDF do preparo" in html_inicio and 'id="form-preparo"' not in html_inicio
+       and 'id="form-preparo"' in medico.get("/equipe/preparo-modelos/novo?manual=1").get_data(as_text=True))
 checar("... e a equipe consegue abrir o PDF importado", medico.get("/equipe/preparo-modelos/pdf-importado").data == PDF)
 medico.post("/equipe/preparo-modelos/novo", data={
     "nome": "Preparo com PDF importado", "instrucoes": "Jejum.", "tipo_exame_id": "outro",
@@ -94,12 +100,38 @@ with app.app_context():
     checar("... sem sobrar PDF pendente", PreparoPdfOriginal.query.filter_by(preparo_modelo_id=None).count() == 0)
     novo_id = novo.id
 
+# Importa de novo (PDF pendente) e tenta salvar com um nome que já existe: o
+# formulário tem que voltar COMPLETO, sem perder o que foi preenchido/importado.
+medico.post("/equipe/preparo-modelos/importar-xlsx", content_type="multipart/form-data", data={
+    "arquivo_xlsx": (io.BytesIO(PDF), "outro.pdf"), "texto_extraido_cliente": "Jejum de 8 horas."})
+with app.app_context():
+    nome_existente = PreparoModelo.query.filter_by(nome="Preparo com PDF importado").first().nome
+r = medico.post("/equipe/preparo-modelos/novo", data={
+    "nome": nome_existente, "instrucoes": "Jejum de 8 horas.", "tipo_exame_id": "outro", "tipo_exame_outro": "Exame X",
+    "especialidade": "Gastroenterologia", "duracao_minutos": "45", "usar_pdf_importado": "1",
+    "corte_descricao[]": ["Alimentos sólidos", "Líquidos claros"], "corte_horas[]": ["12", "4"],
+    "medicamento_nome[]": ["Clopidogrel"], "medicamento_dias[]": ["7"], "medicamento_categoria[]": ["antiagregante"], "medicamento_obs[]": [""],
+    "alimento_nome[]": ["Leite", "Gelatina"], "alimento_tipo[]": ["proibido", "permitido"], "alimento_horas[]": ["24", ""], "alimento_dias[]": ["", ""],
+    "info_geral[]": ["Venha acompanhado"], "info_geral_horas[]": [""], "info_geral_dias[]": ["1"], "info_geral_hora_exata[]": ["08:00"],
+    "exame_anterior_nome[]": ["Colonoscopia"], "exame_anterior_dias[]": ["28"],
+}, follow_redirects=True)
+html = r.get_data(as_text=True)
+checar("Nome repetido: avisa", "Já existe um modelo de preparo com esse nome" in html)
+checar("... e o formulário volta com cortes, medicamentos, alimentos, informações e exames proibidos preenchidos",
+       'value="Alimentos sólidos"' in html and 'value="Líquidos claros"' in html and 'value="Clopidogrel"' in html
+       and 'value="Leite"' in html and 'value="Gelatina"' in html and 'value="Venha acompanhado"' in html
+       and 'value="08:00"' in html and 'value="Colonoscopia"' in html and 'value="28"' in html)
+checar("... com duração, instruções e o PDF importado ainda marcado", 'value="45"' in html and "Jejum de 8 horas." in html
+       and 'name="usar_pdf_importado"' in html and "outro.pdf" in html)
+checar("... sem o aviso de 'passo 2' de importação (foi só um erro ao salvar)", "Passo 2 de 2 - revise e salve" not in html)
+
 with app.app_context():
     novo = PreparoModelo.query.get(novo_id)
     for exame in list(novo.exames):
         db.session.delete(exame)
     db.session.delete(novo)
     db.session.commit()
-    checar("Remover o modelo apaga o PDF dele", PreparoPdfOriginal.query.count() == 0)
+    checar("Remover o modelo apaga o PDF dele (só sobra o pendente de uma importação)",
+           PreparoPdfOriginal.query.filter(PreparoPdfOriginal.preparo_modelo_id.isnot(None)).count() == 0)
 
 print("\nTodos os testes do PDF original do preparo passaram.")

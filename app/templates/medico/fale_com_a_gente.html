@@ -36,7 +36,7 @@
           </span>
           <span class="badge bg-light text-dark border me-2">{{ categorias.get(m.categoria, m.categoria) }}</span>
           <span class="text-truncate" style="max-width: 380px;">{{ m.mensagem }}</span>
-          <span class="text-muted small ms-2">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+          <span class="text-muted small ms-2">{{ m.criado_em|hora_br('%d/%m/%Y %H:%M') }}</span>
         </button>
       </h2>
       <div id="mensagem-{{ m.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionMinhasMensagens">
@@ -44,7 +44,7 @@
           <p style="white-space: pre-line">{{ m.mensagem }}</p>
           {% if m.resposta %}
           <div class="border-start border-success border-3 ps-3 mt-3">
-            <div class="text-muted small mb-1">Resposta{% if m.respondida_em %} em {{ m.respondida_em.strftime('%d/%m/%Y %H:%M') }}{% endif %}:</div>
+            <div class="text-muted small mb-1">Resposta{% if m.respondida_em %} em {{ m.respondida_em|hora_br('%d/%m/%Y %H:%M') }}{% endif %}:</div>
             <p style="white-space: pre-line" class="mb-0">{{ m.resposta }}</p>
           </div>
           {% else %}

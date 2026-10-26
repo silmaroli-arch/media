@@ -24,6 +24,7 @@ proibido sem prazo específico, informação geral solta) aparece em seções
 import os
 from datetime import datetime
 from xml.sax.saxutils import escape as _escapar_xml
+from app.fuso import agora_brasilia
 
 
 def _url_publica_base():
@@ -249,7 +250,7 @@ def gerar_pdf_preparo(documento):
         Paragraph(_texto_seguro(exame.nome if exame else "Preparo de exame"), estilos["Title"]),
         Paragraph(cabecalho_info, estilos["Normal"]),
         Paragraph(
-            f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')} - documento informativo, não substitui "
+            f"Gerado em {agora_brasilia().strftime('%d/%m/%Y %H:%M')} - documento informativo, não substitui "
             "orientação médica em caso de dúvida.",
             estilos["Italic"],
         ),

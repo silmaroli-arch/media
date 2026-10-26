@@ -17,7 +17,8 @@ from app.ia_preparo import responder_com_ia, formatar_situacao_ias
 from app.clinica_utils import verificar_vencimento_grupo
 from app.push_notificacoes import notificar_equipe_nova_pergunta
 from app.preparo_publico import montar_documento_preparo, gerar_pdf_preparo
-from app.preparo_pdf_original import resposta_pdf_original
+from app.preparo_pdf_original import resposta_imagem_pagina, resposta_pdf_original
+from app.preparo_pdf_paginas import garantir_paginas
 
 paciente_bp = Blueprint("paciente", __name__, url_prefix="/paciente")
 
@@ -300,8 +301,13 @@ def preparo_exame(agendamento_id):
 def preparo_publico(token):
     agendamento = Agendamento.query.filter_by(token_preparo_publico=token).first_or_404()
     documento = montar_documento_preparo(agendamento)
+    pdf_original = _pdf_original(agendamento)
+    # Páginas do PDF do médico como imagem (2026-10-26); gera na hora se o
+    # PDF foi anexado antes dessa função.
+    paginas_pdf = garantir_paginas(pdf_original) if pdf_original else []
     return render_template(
-        "paciente/preparo_publico.html", agora=datetime.utcnow(), pdf_original=_pdf_original(agendamento), **documento,
+        "paciente/preparo_publico.html", agora=datetime.utcnow(), pdf_original=pdf_original, paginas_pdf=paginas_pdf,
+        **documento,
     )
 
 
@@ -310,6 +316,16 @@ def _pdf_original(agendamento):
     (2026-10-24, ver app.preparo_pdf_original)."""
     modelo = agendamento.exame.preparo_modelo if agendamento.exame else None
     return modelo.pdf_original if modelo else None
+
+
+@paciente_bp.route("/preparo/<token>/pagina/<int:numero>.jpg")
+def preparo_publico_pagina(token, numero):
+    """Uma página do PDF do médico como imagem, para o link do WhatsApp."""
+    agendamento = Agendamento.query.filter_by(token_preparo_publico=token).first_or_404()
+    pagina = next((p for p in garantir_paginas(_pdf_original(agendamento)) if p.numero == numero), None)
+    if pagina is None:
+        abort(404)
+    return resposta_imagem_pagina(pagina)
 
 
 @paciente_bp.route("/preparo/<token>/original")

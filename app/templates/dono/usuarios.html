@@ -168,7 +168,7 @@
             <span class="text-muted small">—</span>
           {% endif %}
         </td>
-        <td>{{ l.usuario.criado_em.strftime('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
+        <td>{{ l.usuario.criado_em|hora_br('%d/%m/%Y') if l.usuario.criado_em else "-" }}</td>
         <td>
           {# Exclusão permanente (substitui a antiga "Limpar dados de teste"
              do login, que apagava o banco inteiro sem senha nenhuma -

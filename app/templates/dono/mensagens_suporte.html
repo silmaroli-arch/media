@@ -18,7 +18,7 @@
           <strong class="me-2">{{ m.usuario.nome }}</strong>
           <span class="text-muted small">({{ "Médico" if m.usuario.tipo == "medico" else "Secretaria" if m.usuario.tipo == "secretaria" else m.usuario.tipo }})</span>
           <span class="text-truncate ms-2" style="max-width: 320px;">— {{ m.mensagem }}</span>
-          <span class="text-muted small ms-2">{{ m.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+          <span class="text-muted small ms-2">{{ m.criado_em|hora_br('%d/%m/%Y %H:%M') }}</span>
         </button>
       </h2>
       <div id="suporte-{{ m.id }}" class="accordion-collapse collapse" data-bs-parent="#accordionMensagensSuporte">
@@ -27,7 +27,7 @@
 
           {% if m.resposta %}
           <div class="border-start border-success border-3 ps-3 mb-3">
-            <div class="text-muted small mb-1">Sua resposta{% if m.respondida_em %} em {{ m.respondida_em.strftime('%d/%m/%Y %H:%M') }}{% endif %}:</div>
+            <div class="text-muted small mb-1">Sua resposta{% if m.respondida_em %} em {{ m.respondida_em|hora_br('%d/%m/%Y %H:%M') }}{% endif %}:</div>
             <p style="white-space: pre-line" class="mb-0">{{ m.resposta }}</p>
           </div>
           {% endif %}

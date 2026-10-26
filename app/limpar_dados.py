@@ -63,6 +63,7 @@ from app.models import (
     PreparoMedicamentoSuspenso,
     PreparoModelo,
     PreparoPdfOriginal,
+    PreparoPdfPagina,
     PushSubscription,
     ResultadoExame,
     Usuario,
@@ -135,6 +136,7 @@ def apagar_todos_os_dados(dono_atual):
     PreparoExameAnterior.query.delete(synchronize_session=False)
     PreparoMedicamentoSuspenso.query.delete(synchronize_session=False)
     PreparoMedicamentoMantido.query.delete(synchronize_session=False)
+    PreparoPdfPagina.query.delete(synchronize_session=False)
     PreparoPdfOriginal.query.delete(synchronize_session=False)
     PreparoModelo.query.delete(synchronize_session=False)
 
