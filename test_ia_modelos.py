@@ -120,6 +120,7 @@ html = d.get("/dono/").get_data(as_text=True)
 checar("Painel do dono: uma linha por ponto de uso, com o modelo em uso",
        "Modelo de IA de cada ponto do sistema" in html and all(f'name="ponto_{k}"' in html for k in PONTOS)
        and "Malu (ajuda do app)" in html and "Busca na internet" in html)
+checar("Pontos agrupados por tema, na ordem", html.index("Respostas ao paciente (WhatsApp e link)") < html.index("Importação do PDF do preparo") < html.index("Ajuda e aprendizado") < html.index("Pesquisa na internet"))
 checar("Modelos numa lista de seleção, com o preço e a opção 'Outro...'",
        "claude-opus-5-5 - US$ 4,00 / 20,00 por milhão" in html and 'value="__outro__"' in html)
 checar("A busca só oferece modelos Claude", "gpt-5.4-mini" not in html.split('name="ponto_busca"')[1].split("</select>")[0])

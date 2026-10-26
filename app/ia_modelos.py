@@ -165,6 +165,15 @@ PONTOS = {
 }
 
 
+# Agrupamento por tema na tela do dono (2026-10-26).
+GRUPOS_PONTOS = [
+    ("Respostas ao paciente (WhatsApp e link)", ["resposta_1", "resposta_2", "resposta_reserva", "validador", "divergencia", "sintese"]),
+    ("Importação do PDF do preparo", ["pdf_1", "pdf_2", "pdf_3"]),
+    ("Ajuda e aprendizado", ["malu", "aprendizado"]),
+    ("Pesquisa na internet", ["busca"]),
+]
+
+
 def provedor_do_modelo(nome):
     """Claude / ChatGPT / Gemini conforme o nome do modelo, ou None."""
     nome = (nome or "").strip().lower()

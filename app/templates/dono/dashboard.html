@@ -380,7 +380,9 @@
         <table class="table table-sm align-middle">
           <thead><tr><th>Ponto de uso</th><th>Em uso agora</th><th>Modelo</th></tr></thead>
           <tbody>
-            {% for linha in modelos_ia %}
+            {% for titulo, linhas in modelos_ia %}
+            <tr class="table-light"><th colspan="3" class="small text-uppercase text-muted">{{ titulo }}</th></tr>
+            {% for linha in linhas %}
             <tr>
               <td class="small"><strong>{{ linha.rotulo }}</strong><br><span class="text-muted">{{ linha.onde }}</span></td>
               <td><code>{{ linha.em_uso }}</code></td>
@@ -395,6 +397,7 @@
                 <input type="text" name="ponto_{{ linha.ponto }}_outro" class="form-control form-control-sm mt-1 d-none" placeholder="nome exato do modelo">
               </td>
             </tr>
+            {% endfor %}
             {% endfor %}
           </tbody>
         </table>

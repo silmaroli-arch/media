@@ -211,23 +211,26 @@ def _rotulo_modelo(nome):
 
 
 def _linhas_modelos_ia(config):
-    """Uma linha por ponto de uso de IA (ver app.ia_modelos.PONTOS)."""
-    from app.ia_modelos import PONTOS, _escolhas_do_painel, modelo_do_ponto, modelo_padrao_do_ponto, provedor_do_modelo
+    """Os pontos de uso de IA (ver app.ia_modelos.PONTOS) agrupados por tema:
+    [(título, [linhas])]."""
+    from app.ia_modelos import (
+        GRUPOS_PONTOS, PONTOS, _escolhas_do_painel, modelo_do_ponto, modelo_padrao_do_ponto, provedor_do_modelo,
+    )
 
     escolhas = _escolhas_do_painel(config)
-    linhas = []
+    linhas = {}
     for ponto, (rotulo, onde, so_claude) in PONTOS.items():
         escolhido = escolhas.get(ponto)
         nomes = [n for n in MODELOS_SUGERIDOS if not so_claude or provedor_do_modelo(n) == "Claude"]
         if escolhido and escolhido not in nomes:
             nomes.append(escolhido)  # digitado em "Outro..." - continua na lista
         padrao = modelo_padrao_do_ponto(ponto, config)
-        linhas.append({
-            "ponto": ponto, "rotulo": rotulo, "onde": onde, "escolhido": escolhido,
+        linhas[ponto] = {
+            "ponto": ponto, "rotulo": rotulo.split(" - ", 1)[-1], "onde": onde, "escolhido": escolhido,
             "em_uso": modelo_do_ponto(ponto), "padrao": padrao,
             "opcoes": [{"nome": n, "rotulo": _rotulo_modelo(n)} for n in nomes],
-        })
-    return linhas
+        }
+    return [(titulo, [linhas[p] for p in pontos]) for titulo, pontos in GRUPOS_PONTOS]
 
 
 @dono_bp.route("/configuracoes", methods=["POST"])
