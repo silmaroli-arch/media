@@ -1,0 +1,62 @@
+{# Dados fiscais do médico para a nota fiscal da licença (pedido do Silvan,
+   2026-10-27, ver app/nfse.py). `u` = o usuário (Meus dados) ou None (cadastro). #}
+<div class="col-12">
+  <hr class="my-2">
+  <h6 class="mb-1"><i class="bi bi-receipt"></i> Dados para a nota fiscal da licença</h6>
+  <div class="form-text mb-2">Usados só para emitir a nota fiscal do MedIA em seu nome. A nota sai no seu CPF; se preferir em nome de uma empresa, informe o CNPJ e a razão social. Você pode completar depois em "Meus dados".</div>
+</div>
+<div class="col-md-4">
+  <label class="form-label">CNPJ (opcional)</label>
+  <input type="text" inputmode="numeric" name="fiscal_cnpj" id="fiscal_cnpj" class="form-control" placeholder="só se a nota for para uma empresa" value="{{ u.fiscal_cnpj or '' if u else '' }}">
+</div>
+<div class="col-md-8">
+  <label class="form-label">Razão social (se informou o CNPJ)</label>
+  <input type="text" name="fiscal_razao_social" class="form-control" maxlength="200" value="{{ u.fiscal_razao_social or '' if u else '' }}">
+</div>
+<div class="col-md-3">
+  <label class="form-label">CEP</label>
+  <input type="text" inputmode="numeric" name="fiscal_cep" id="fiscal_cep" class="form-control" placeholder="00000-000" maxlength="9" value="{{ u.fiscal_cep or '' if u else '' }}" autocomplete="postal-code">
+</div>
+<div class="col-md-6">
+  <label class="form-label">Rua</label>
+  <input type="text" name="fiscal_logradouro" id="fiscal_logradouro" class="form-control" maxlength="200" value="{{ u.fiscal_logradouro or '' if u else '' }}">
+</div>
+<div class="col-md-3">
+  <label class="form-label">Número</label>
+  <input type="text" name="fiscal_numero" class="form-control" maxlength="20" value="{{ u.fiscal_numero or '' if u else '' }}">
+</div>
+<div class="col-md-4">
+  <label class="form-label">Complemento</label>
+  <input type="text" name="fiscal_complemento" class="form-control" maxlength="100" value="{{ u.fiscal_complemento or '' if u else '' }}">
+</div>
+<div class="col-md-3">
+  <label class="form-label">Bairro</label>
+  <input type="text" name="fiscal_bairro" id="fiscal_bairro" class="form-control" maxlength="100" value="{{ u.fiscal_bairro or '' if u else '' }}">
+</div>
+<div class="col-md-3">
+  <label class="form-label">Cidade</label>
+  <input type="text" name="fiscal_cidade" id="fiscal_cidade" class="form-control" maxlength="100" value="{{ u.fiscal_cidade or '' if u else '' }}">
+</div>
+<div class="col-md-2">
+  <label class="form-label">UF</label>
+  <input type="text" name="fiscal_uf" id="fiscal_uf" class="form-control" maxlength="2" style="text-transform: uppercase" value="{{ u.fiscal_uf or '' if u else '' }}">
+</div>
+<script>
+// Preenche rua, bairro, cidade e UF ao digitar o CEP (ViaCEP); se falhar, o
+// servidor tenta de novo ao salvar.
+(function () {
+  var cep = document.getElementById('fiscal_cep');
+  if (!cep) return;
+  cep.addEventListener('blur', function () {
+    var d = cep.value.replace(/\D/g, '');
+    if (d.length !== 8) return;
+    fetch('https://viacep.com.br/ws/' + d + '/json/').then(function (r) { return r.json(); }).then(function (a) {
+      if (a.erro) return;
+      [['fiscal_logradouro', a.logradouro], ['fiscal_bairro', a.bairro], ['fiscal_cidade', a.localidade], ['fiscal_uf', a.uf]].forEach(function (p) {
+        var el = document.getElementById(p[0]);
+        if (el && !el.value) el.value = p[1] || '';
+      });
+    }).catch(function () {});
+  });
+})();
+</script>

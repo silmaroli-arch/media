@@ -6,6 +6,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 
 from app.extensions import db
 from app.especialidades import ESPECIALIDADES, especialidade_valida
+from app.nfse import aplicar_dados_fiscais
 from app.models import Usuario, Paciente, PlataformaConfig, normalizar_telefone, encontrar_conta_paciente, validar_cpf, formatar_nome_proprio, telefone_incompleto
 from app.whatsapp_envio import enviar_boas_vindas_whatsapp
 # `proximo_seguro` mora em clinica_utils.py (compartilhado com
@@ -391,6 +392,11 @@ def meus_dados():
         current_user.data_nascimento = data_nascimento
         if current_user.tipo == "medico":
             current_user.especialidade = especialidade_valida(request.form.get("especialidade"))
+            erro_fiscal = aplicar_dados_fiscais(current_user, request.form)
+            if erro_fiscal:
+                db.session.rollback()
+                flash(erro_fiscal, "danger")
+                return render_template("auth/meus_dados.html", confirmado=True)
         current_user.telefone = normalizar_telefone(request.form.get("telefone", ""))
         db.session.commit()
         flash("Dados atualizados com sucesso.", "success")
@@ -545,6 +551,12 @@ def cadastro():
         # informa no 1º "Novo modelo de preparo" ou em Meus dados.
         usuario.especialidade = None
         usuario.data_nascimento = data_nascimento
+        # Dados fiscais (nota fiscal da licença) - opcionais no cadastro do médico.
+        if papel == "medico":
+            erro_fiscal = aplicar_dados_fiscais(usuario, request.form)
+            if erro_fiscal:
+                flash(erro_fiscal, "danger")
+                return render_template("auth/cadastro.html")
         # Checkbox "Exigir minha aprovação antes de responder o paciente"
         # (ver auth/cadastro.html) - checkbox desmarcado não manda a
         # chave no POST, então ausência = False (não exigir aprovação).

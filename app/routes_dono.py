@@ -17,7 +17,7 @@ from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 from app.mercadopago_integration import (
     criar_preferencia_pagamento, criar_preferencia_pagamento_anual,
-    MercadoPagoNaoConfigurado,
+    MercadoPagoNaoConfigurado, descrever_erro,
 )
 from app.exclusao_usuario import verificar_bloqueios_exclusao, excluir_usuario_e_dados
 from app.limpar_dados import apagar_todos_os_dados
@@ -541,6 +541,144 @@ def monitor_perguntas():
     )
 
 
+@dono_bp.route("/nota-fiscal", methods=["GET", "POST"])
+@login_required
+@dono_required
+def nota_fiscal():
+    """Configuração do EMITENTE da nota fiscal (NFS-e) da licença (pedido do
+    Silvan, 2026-10-27, ver app.nfse): dados da empresa, serviço, alíquota e a
+    conexão com o Focus NFe. O token nunca volta para a tela."""
+    from app.cripto_fiscal import criptografar_texto
+    from app.nfse import dados_faltando_emitente, so_digitos
+
+    config = PlataformaConfig.obter()
+    if request.method == "POST":
+        provedor = request.form.get("nfse_provedor")
+        ambiente = request.form.get("nfse_ambiente")
+        if provedor not in ("nenhum", "focusnfe", "simulacao") or ambiente not in ("homologacao", "producao"):
+            flash("Escolha um emissor e um ambiente válidos.", "danger")
+            return redirect(url_for("dono.nota_fiscal"))
+        aliquota = (request.form.get("nfse_aliquota_iss") or "").strip().replace(",", ".")
+        try:
+            config.nfse_aliquota_iss = round(float(aliquota), 2) if aliquota else None
+        except ValueError:
+            flash("Alíquota do ISS inválida.", "danger")
+            return redirect(url_for("dono.nota_fiscal"))
+        config.nfse_provedor, config.nfse_ambiente = provedor, ambiente
+        config.nfse_cnpj = so_digitos(request.form.get("nfse_cnpj")) or None
+        config.nfse_razao_social = (request.form.get("nfse_razao_social") or "").strip() or None
+        config.nfse_inscricao_municipal = (request.form.get("nfse_inscricao_municipal") or "").strip() or None
+        config.nfse_ibge_municipio = so_digitos(request.form.get("nfse_ibge_municipio")) or None
+        config.nfse_item_lista_servico = (request.form.get("nfse_item_lista_servico") or "").strip() or None
+        config.nfse_codigo_tributario_municipio = (request.form.get("nfse_codigo_tributario_municipio") or "").strip() or None
+        config.nfse_cnae = so_digitos(request.form.get("nfse_cnae")) or None
+        config.nfse_optante_simples = request.form.get("nfse_optante_simples") == "on"
+        config.nfse_discriminacao = (request.form.get("nfse_discriminacao") or "").strip() or None
+        token = (request.form.get("nfse_token") or "").strip()
+        if token:
+            config.nfse_token_cripto = criptografar_texto(token)
+        db.session.commit()
+        faltando = dados_faltando_emitente(config)
+        if provedor != "nenhum" and faltando:
+            flash("Salvo, mas ainda faltam: " + ", ".join(faltando) + ".", "warning")
+        else:
+            flash("Configuração da nota fiscal salva.", "success")
+        return redirect(url_for("dono.nota_fiscal"))
+    from app.nfse import certificado_situacao
+
+    return render_template("dono/nota_fiscal.html", config=config, faltando=dados_faltando_emitente(config),
+                           cert_situacao=certificado_situacao(config))
+
+
+@dono_bp.route("/nota-fiscal/certificado", methods=["POST"])
+@login_required
+@dono_required
+def nota_fiscal_certificado():
+    """Importa (ou remove) o certificado digital A1 da empresa emitente (pedido
+    do Silvan, 2026-10-27): valida que abre com a senha e guarda o arquivo e a
+    senha criptografados."""
+    from app import nfse
+    from app.cripto_fiscal import criptografar_bytes, criptografar_texto
+
+    config = PlataformaConfig.obter()
+    if request.form.get("acao") == "remover":
+        config.nfse_cert_pfx = config.nfse_cert_senha_cripto = None
+        config.nfse_cert_cnpj = config.nfse_cert_titular = config.nfse_cert_validade = None
+        db.session.commit()
+        flash("Certificado removido.", "success")
+        return redirect(url_for("dono.nota_fiscal"))
+    arquivo = request.files.get("certificado_arquivo")
+    senha = request.form.get("certificado_senha", "")
+    if not arquivo or not arquivo.filename or not senha:
+        flash("Selecione o arquivo do certificado (.pfx) e informe a senha.", "danger")
+        return redirect(url_for("dono.nota_fiscal"))
+    conteudo = arquivo.read()
+    if len(conteudo) > 200_000:
+        flash("O arquivo é grande demais para ser um certificado.", "danger")
+        return redirect(url_for("dono.nota_fiscal"))
+    try:
+        dados = nfse.ler_certificado(conteudo, senha)
+    except nfse.NfseErro as erro:
+        flash(str(erro), "danger")
+        return redirect(url_for("dono.nota_fiscal"))
+    config.nfse_cert_pfx = criptografar_bytes(conteudo)
+    config.nfse_cert_senha_cripto = criptografar_texto(senha)
+    config.nfse_cert_cnpj, config.nfse_cert_titular, config.nfse_cert_validade = dados["cnpj"], dados["titular"], dados["validade"]
+    db.session.commit()
+    aviso = ""
+    if config.nfse_cnpj and dados["cnpj"] and config.nfse_cnpj != dados["cnpj"]:
+        aviso = " Atenção: o CNPJ do certificado é diferente do CNPJ do emitente cadastrado."
+    flash(f"Certificado validado e salvo (válido até {dados['validade'].strftime('%d/%m/%Y')}).{aviso}", "warning" if aviso else "success")
+    return redirect(url_for("dono.nota_fiscal"))
+
+
+def _pagamento_do_usuario(usuario_id, pagamento_id):
+    usuario = Usuario.query.get_or_404(usuario_id)
+    pagamento = LicencaPagamento.query.get_or_404(pagamento_id)
+    if pagamento.usuario_id != usuario.id:
+        abort(404)
+    return usuario, pagamento
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos/<int:pagamento_id>/nota", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_pagamento_nota(usuario_id, pagamento_id):
+    """"Emitir nota" (NFS-e) de um mês pago - ver app.nfse."""
+    from app import nfse
+
+    usuario, pagamento = _pagamento_do_usuario(usuario_id, pagamento_id)
+    try:
+        nfse.emitir(pagamento, PlataformaConfig.obter())
+        db.session.commit()
+    except nfse.NfseErro as erro:
+        db.session.commit()  # guarda o motivo (nf_erro) quando o provedor recusou
+        flash(str(erro), "danger")
+    else:
+        flash("Nota enviada: " + ("autorizada (simulação)." if pagamento.nf_status == "autorizada"
+                                  else "em processamento - clique em \"Atualizar\" em alguns instantes."), "success")
+    return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos/<int:pagamento_id>/nota/atualizar", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_pagamento_nota_atualizar(usuario_id, pagamento_id):
+    """Consulta no provedor se a nota em processamento já foi autorizada."""
+    from app import nfse
+
+    usuario, pagamento = _pagamento_do_usuario(usuario_id, pagamento_id)
+    try:
+        nfse.atualizar_status(pagamento, PlataformaConfig.obter())
+        db.session.commit()
+    except nfse.NfseErro as erro:
+        flash(str(erro), "danger")
+    else:
+        flash({"autorizada": "Nota autorizada.", "erro": "A prefeitura recusou a nota - veja o motivo na linha do mês.",
+               "cancelada": "Nota cancelada."}.get(pagamento.nf_status, "Ainda em processamento na prefeitura."), "info")
+    return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+
+
 @dono_bp.route("/ajuda-app")
 @login_required
 @dono_required
@@ -815,7 +953,13 @@ def usuario_licenca_pagamentos(usuario_id):
         .order_by(LicencaPagamento.mes.desc())
         .all()
     )
-    return render_template("dono/usuario_licenca_pagamentos.html", usuario=usuario, pagamentos=pagamentos)
+    from app.nfse import dados_faltando_tomador
+
+    return render_template(
+        "dono/usuario_licenca_pagamentos.html", usuario=usuario, pagamentos=pagamentos,
+        config_nfse_ligada=PlataformaConfig.obter().nfse_provedor in ("focusnfe", "simulacao"),
+        faltando_fiscal=dados_faltando_tomador(usuario),
+    )
 
 
 @dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos/<int:pagamento_id>/marcar", methods=["POST"])
@@ -900,11 +1044,11 @@ def usuario_licenca_pagamento_cobrar(usuario_id, pagamento_id):
     except ValueError as erro:
         flash(str(erro), "danger")
         return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
-    except Exception:
+    except Exception as erro:
         current_app.logger.exception(
             "Falha ao criar cobrança no Mercado Pago para o pagamento %s.", pagamento.id
         )
-        flash("Não foi possível gerar a cobrança agora - tente novamente em instantes.", "danger")
+        flash(f"Não foi possível gerar a cobrança agora - tente novamente em instantes.{descrever_erro(erro)}", "danger")
         return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
 
     db.session.commit()
@@ -950,11 +1094,11 @@ def usuario_licenca_pagamento_cobrar_anual(usuario_id, pagamento_id):
     except ValueError as erro:
         flash(str(erro), "danger")
         return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
-    except Exception:
+    except Exception as erro:
         current_app.logger.exception(
             "Falha ao criar cobrança anual no Mercado Pago para o pagamento %s.", pagamento.id
         )
-        flash("Não foi possível gerar a cobrança agora - tente novamente em instantes.", "danger")
+        flash(f"Não foi possível gerar a cobrança agora - tente novamente em instantes.{descrever_erro(erro)}", "danger")
         return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
 
     db.session.commit()

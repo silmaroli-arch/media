@@ -33,12 +33,29 @@ import hashlib
 import hmac
 import os
 import uuid
+import logging
 from datetime import datetime, timedelta
 
 import requests
 from flask import request, url_for
 
 MP_API_BASE = "https://api.mercadopago.com"
+
+logger = logging.getLogger(__name__)
+
+
+def _conferir(resposta):
+    """`raise_for_status` que, antes de levantar, registra no log o que o
+    Mercado Pago respondeu (status e corpo): sem isso o log só trazia
+    "400 Client Error" e a causa real (credencial de teste, e-mail do
+    comprador, Pix não habilitado na conta...) ficava invisível
+    (pedido do Silvan, 2026-10-27, ao testar o Pix em produção)."""
+    try:
+        resposta.raise_for_status()
+    except Exception:
+        logger.error("Mercado Pago recusou a chamada: status=%s corpo=%s",
+                     getattr(resposta, "status_code", "?"), str(getattr(resposta, "text", ""))[:800])
+        raise
 
 
 class MercadoPagoNaoConfigurado(Exception):
@@ -47,8 +64,26 @@ class MercadoPagoNaoConfigurado(Exception):
     cadastrar as credenciais em produção)."""
 
 
+def descrever_erro(erro):
+    """Resumo curto do que o Mercado Pago respondeu, para a mensagem de erro
+    da tela - ex.: " (Mercado Pago: código 403 - Unauthorized use of live
+    credentials)". Vazio quando o erro não veio do Mercado Pago (rede, etc.)."""
+    resposta = getattr(erro, "response", None)
+    if resposta is None:
+        return ""
+    try:
+        dados = resposta.json()
+        texto = dados.get("message") or dados.get("error") or ""
+    except Exception:
+        texto = ""
+    texto = str(texto).strip()[:120]
+    return f" (Mercado Pago: código {getattr(resposta, 'status_code', '?')}{' - ' + texto if texto else ''})"
+
+
 def _access_token():
-    token = os.environ.get("MERCADOPAGO_ACCESS_TOKEN")
+    # Tira espaços, quebra de linha e aspas coladas junto com o valor no painel
+    # (um token com isso sobrando volta 401 do Mercado Pago).
+    token = (os.environ.get("MERCADOPAGO_ACCESS_TOKEN") or "").strip().strip("\"'").strip()
     if not token:
         raise MercadoPagoNaoConfigurado(
             "MERCADOPAGO_ACCESS_TOKEN não configurado - defina no .env pra poder "
@@ -94,7 +129,7 @@ def criar_preferencia_pagamento(pagamento):
         headers={"Authorization": f"Bearer {_access_token()}"},
         timeout=15,
     )
-    resposta.raise_for_status()
+    _conferir(resposta)
     dados = resposta.json()
 
     # Trava o valor cobrado NESTA preferência - se o dono mudar
@@ -151,7 +186,7 @@ def criar_preferencia_pagamento_anual(pagamento, valor_anual):
         headers={"Authorization": f"Bearer {_access_token()}"},
         timeout=15,
     )
-    resposta.raise_for_status()
+    _conferir(resposta)
     dados = resposta.json()
 
     pagamento.mp_preference_id = dados.get("id")
@@ -213,7 +248,7 @@ def criar_cobranca_pix(pagamento):
         },
         timeout=15,
     )
-    resposta.raise_for_status()
+    _conferir(resposta)
     dados = resposta.json()
 
     transacao = dados.get("point_of_interaction", {}).get("transaction_data", {}) or {}
@@ -282,5 +317,5 @@ def consultar_pagamento(payment_id):
         headers={"Authorization": f"Bearer {_access_token()}"},
         timeout=15,
     )
-    resposta.raise_for_status()
+    _conferir(resposta)
     return resposta.json()

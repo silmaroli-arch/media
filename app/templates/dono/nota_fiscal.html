@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block titulo %}Nota fiscal{% endblock %}
+{% block conteudo %}
+{# Emitente da NFS-e da licença (pedido do Silvan, 2026-10-27, ver app/nfse.py). #}
+<h3 class="mb-1">Nota fiscal (NFS-e) da licença</h3>
+<p class="text-muted small">
+  Dados da <strong>sua empresa</strong> como emitente. A nota de cada mês pago é emitida pelo botão <strong>Emitir nota</strong> no
+  calendário de pagamento do médico (Usuários → licença → Pagamentos), em nome do médico, com os dados fiscais que ele preencheu
+  no cadastro / Meus dados. O emissor é o <strong>Focus NFe</strong> (você precisa de conta e do certificado digital da empresa lá;
+  comece em <em>homologação</em>, que não tem valor fiscal).
+</p>
+{% if faltando and config.nfse_provedor != "nenhum" %}
+<div class="alert alert-warning small">Ainda faltam: {{ faltando|join(", ") }}.</div>
+{% endif %}
+<div class="card p-3 mb-3">
+  <h6 class="mb-1"><i class="bi bi-shield-lock"></i> Certificado digital (A1 / e-CNPJ)</h6>
+  <div class="small text-muted mb-2">O arquivo <code>.pfx</code> da empresa emitente é importado aqui; ele e a senha ficam <strong>criptografados</strong> no banco e nunca voltam para a tela.</div>
+  {% if cert_situacao != "sem" %}
+  <div class="alert alert-{{ {'ok': 'success', 'vencendo': 'warning', 'vencido': 'danger'}[cert_situacao] }} py-2 small mb-2">
+    <strong>{{ config.nfse_cert_titular or "Certificado importado" }}</strong>
+    {% if config.nfse_cert_cnpj %} · CNPJ {{ config.nfse_cert_cnpj }}{% endif %}
+    · válido até {{ config.nfse_cert_validade.strftime("%d/%m/%Y") }}
+    {% if cert_situacao == "vencendo" %} - <strong>vence em menos de 30 dias</strong>{% elif cert_situacao == "vencido" %} - <strong>VENCIDO</strong>{% endif %}
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('dono.nota_fiscal_certificado') }}" enctype="multipart/form-data" class="row g-2 align-items-end">
+    <div class="col-md-5"><label class="form-label small mb-0">Arquivo do certificado (.pfx ou .p12)</label>
+      <input type="file" name="certificado_arquivo" accept=".pfx,.p12" class="form-control form-control-sm"></div>
+    <div class="col-md-4"><label class="form-label small mb-0">Senha do certificado</label>
+      <input type="password" name="certificado_senha" class="form-control form-control-sm" autocomplete="new-password"></div>
+    <div class="col-md-3 d-flex gap-2">
+      <button class="btn btn-primary btn-sm">{{ "Trocar certificado" if cert_situacao != "sem" else "Importar certificado" }}</button>
+      {% if cert_situacao != "sem" %}<button class="btn btn-outline-danger btn-sm" name="acao" value="remover" onclick="return confirm('Remover o certificado?');">Remover</button>{% endif %}
+    </div>
+  </form>
+</div>
+<form method="post" class="card p-3">
+  <div class="row g-3">
+    <div class="col-md-4"><label class="form-label">Emissor</label>
+      <select name="nfse_provedor" class="form-select">
+        <option value="nenhum" {% if config.nfse_provedor == "nenhum" %}selected{% endif %}>Desligado</option>
+        <option value="focusnfe" {% if config.nfse_provedor == "focusnfe" %}selected{% endif %}>Focus NFe</option>
+        <option value="simulacao" {% if config.nfse_provedor == "simulacao" %}selected{% endif %}>Simulação (nota de mentira, para testar)</option>
+      </select></div>
+    <div class="col-md-4"><label class="form-label">Ambiente</label>
+      <select name="nfse_ambiente" class="form-select">
+        <option value="homologacao" {% if config.nfse_ambiente == "homologacao" %}selected{% endif %}>Homologação (teste, sem valor fiscal)</option>
+        <option value="producao" {% if config.nfse_ambiente == "producao" %}selected{% endif %}>Produção (nota valendo)</option>
+      </select></div>
+    <div class="col-md-4"><label class="form-label">Token do Focus NFe</label>
+      <input type="password" name="nfse_token" class="form-control" autocomplete="new-password"
+             placeholder="{{ '•••••••• (salvo - deixe em branco para manter)' if config.nfse_token_cripto else 'cole o token da sua conta' }}">
+      <div class="form-text">O token de homologação e o de produção são diferentes.</div></div>
+
+    <div class="col-12"><hr class="my-1"><strong class="small">Emitente (sua empresa)</strong></div>
+    <div class="col-md-4"><label class="form-label">CNPJ</label>
+      <input type="text" inputmode="numeric" name="nfse_cnpj" class="form-control" value="{{ config.nfse_cnpj or '' }}"></div>
+    <div class="col-md-8"><label class="form-label">Razão social</label>
+      <input type="text" name="nfse_razao_social" class="form-control" value="{{ config.nfse_razao_social or '' }}"></div>
+    <div class="col-md-4"><label class="form-label">Inscrição municipal</label>
+      <input type="text" name="nfse_inscricao_municipal" class="form-control" value="{{ config.nfse_inscricao_municipal or '' }}"></div>
+    <div class="col-md-4"><label class="form-label">Código IBGE do município</label>
+      <input type="text" inputmode="numeric" name="nfse_ibge_municipio" class="form-control" placeholder="7 dígitos" value="{{ config.nfse_ibge_municipio or '' }}"></div>
+    <div class="col-md-4 d-flex align-items-end"><div class="form-check form-switch">
+      <input class="form-check-input" type="checkbox" role="switch" id="simples" name="nfse_optante_simples" {% if config.nfse_optante_simples %}checked{% endif %}>
+      <label class="form-check-label" for="simples">Optante pelo Simples Nacional</label></div></div>
+
+    <div class="col-12"><hr class="my-1"><strong class="small">Serviço</strong></div>
+    <div class="col-md-3"><label class="form-label">Item da lista de serviços (LC 116)</label>
+      <input type="text" name="nfse_item_lista_servico" class="form-control" placeholder="ex.: 0107" value="{{ config.nfse_item_lista_servico or '' }}"></div>
+    <div class="col-md-3"><label class="form-label">Código tributário do município</label>
+      <input type="text" name="nfse_codigo_tributario_municipio" class="form-control" value="{{ config.nfse_codigo_tributario_municipio or '' }}"></div>
+    <div class="col-md-3"><label class="form-label">CNAE</label>
+      <input type="text" inputmode="numeric" name="nfse_cnae" class="form-control" value="{{ config.nfse_cnae or '' }}"></div>
+    <div class="col-md-3"><label class="form-label">Alíquota do ISS (%)</label>
+      <input type="text" inputmode="decimal" name="nfse_aliquota_iss" class="form-control" placeholder="ex.: 2" value="{{ config.nfse_aliquota_iss if config.nfse_aliquota_iss is not none else '' }}"></div>
+    <div class="col-12"><label class="form-label">Descrição do serviço na nota</label>
+      <textarea name="nfse_discriminacao" rows="2" class="form-control" placeholder="Licença de uso da plataforma MedIA (software) - competência {mes}">{{ config.nfse_discriminacao or '' }}</textarea>
+      <div class="form-text"><code>{mes}</code> vira o mês pago (MM/AAAA). Em branco usa o texto acima.</div></div>
+  </div>
+  <div class="mt-3"><button class="btn btn-primary">Salvar</button></div>
+</form>
+<div class="text-muted small mt-3">
+  Código de serviço, alíquota e regras de cada prefeitura variam: confirme com o seu contador e teste em <strong>homologação</strong> antes de ligar a produção.
+</div>
+{% endblock %}

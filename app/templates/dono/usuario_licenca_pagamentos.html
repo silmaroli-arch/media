@@ -23,11 +23,14 @@
 
 {% set nomes_mes = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'] %}
 {% set mp_cores = {'pendente': 'secondary', 'approved': 'success', 'rejected': 'danger', 'in_process': 'info', 'cancelled': 'dark'} %}
-<div class="card p-3" style="max-width: 720px;">
+{% if faltando_fiscal %}
+<div class="alert alert-warning small" style="max-width: 1000px;">Dados fiscais de {{ usuario.nome }} ainda incompletos (faltam: {{ faltando_fiscal|join(", ") }}). O médico preenche em "Meus dados" - a nota só pode ser emitida com eles.</div>
+{% endif %}
+<div class="card p-3" style="max-width: 1000px;">
   <div class="table-responsive">
     <table class="table table-hover mb-0">
       <thead>
-        <tr><th>Mês</th><th>Valor</th><th>Situação</th><th>Mercado Pago</th><th></th></tr>
+        <tr><th>Mês</th><th>Valor</th><th>Situação</th><th>Mercado Pago</th><th>Nota fiscal</th><th></th></tr>
       </thead>
       <tbody>
         {% for p in pagamentos %}
@@ -66,6 +69,23 @@
               <span class="text-muted small">sem cobrança gerada</span>
             {% endif %}
           </td>
+          <td class="small">
+            {# Nota fiscal (NFS-e) do mês pago - ver app/nfse.py #}
+            {% if p.nf_status == "autorizada" %}
+              <span class="badge bg-success">Nota {{ p.nf_numero or "" }}</span>
+              {% if p.nf_url %}<a href="{{ p.nf_url }}" target="_blank" rel="noopener" class="d-block">ver nota</a>{% else %}<span class="text-muted d-block">(simulada)</span>{% endif %}
+            {% elif p.nf_status == "processando" %}
+              <span class="badge bg-info text-dark">processando</span>
+              <form method="post" action="{{ url_for('dono.usuario_licenca_pagamento_nota_atualizar', usuario_id=usuario.id, pagamento_id=p.id) }}" class="d-inline"><button class="btn btn-sm btn-link p-0">Atualizar</button></form>
+            {% elif p.pago %}
+              {% if p.nf_status == "erro" %}<span class="badge bg-danger">erro</span><div class="text-danger">{{ p.nf_erro }}</div>{% endif %}
+              {% if config_nfse_ligada %}
+              <form method="post" action="{{ url_for('dono.usuario_licenca_pagamento_nota', usuario_id=usuario.id, pagamento_id=p.id) }}" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-outline-primary" onclick="return confirm('Emitir a nota fiscal deste mês?');">{{ 'Tentar de novo' if p.nf_status == 'erro' else 'Emitir nota' }}</button>
+              </form>
+              {% else %}<span class="text-muted">emissão desligada</span>{% endif %}
+            {% else %}<span class="text-muted">-</span>{% endif %}
+          </td>
           <td class="text-nowrap">
             <form method="post" action="{{ url_for('dono.usuario_licenca_pagamento_marcar', usuario_id=usuario.id, pagamento_id=p.id) }}" class="d-inline">
               <button type="submit" class="btn btn-sm {{ 'btn-outline-warning' if p.pago else 'btn-outline-success' }}">
@@ -90,7 +110,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="text-muted text-center">Sem meses registrados ainda.</td></tr>
+        <tr><td colspan="6" class="text-muted text-center">Sem meses registrados ainda.</td></tr>
         {% endfor %}
       </tbody>
     </table>
