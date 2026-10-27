@@ -42,6 +42,34 @@ with app.app_context():
     checar("Boas-vindas por cima e cita o sininho", "sininho" in ns[0].mensagem and ns[0].titulo.startswith("Bem-vindo"))
     checar("Passo a passo aponta para Primeiros passos", ns[1].link_endpoint == "medico.primeiros_passos")
 checar("Notificacao aparece no sininho", "Primeiros passos no MedIA" in r2.get_data(as_text=True))
+checar("Primeiros passos abre como popup na tela seguinte (até o 'Entendi')",
+       'id="modalAnuncios"' in r2.get_data(as_text=True) and ns[1].popup and not ns[0].popup)
+r_ok = client.post("/equipe/notificacoes/popup/entendi", data={"notificacao_id": str(ns[1].id)}, follow_redirects=True)
+checar("Depois do 'Entendi' o popup não volta", 'id="modalAnuncios"' not in client.get("/equipe/", follow_redirects=True).get_data(as_text=True))
+
+# Depois de cadastrar o preparo, o aviso do próximo passo também abre em popup.
+client.post("/equipe/preparo-modelos/novo", data={"nome": "Preparo do popup", "instrucoes": "Jejum de 8 horas."}, follow_redirects=True)
+with app.app_context():
+    u = Usuario.query.filter_by(email="boasvindas@example.com").first()
+    n = Notificacao.query.filter_by(usuario_id=u.id, tipo="preparo_cadastrado").first()
+    checar("Aviso 'Modelo de preparo cadastrado' nasce como popup", n is not None and n.popup and not n.lida)
+html_seguinte = client.get("/equipe/", follow_redirects=True).get_data(as_text=True)
+checar("... e abre na tela seguinte", "Modelo de preparo cadastrado" in html_seguinte and 'id="modalAnuncios"' in html_seguinte)
+
+# Clicar na notificação do sininho abre a mensagem num popup, com o botão "Clique aqui...".
+html_sino = client.get("/equipe/", follow_redirects=True).get_data(as_text=True)
+checar("Sininho abre a mensagem num popup (modal e itens com os dados da mensagem)",
+       'id="modalNotificacao"' in html_sino and 'class="dropdown-item py-2 border-bottom item-notificacao' in html_sino
+       and 'data-acao="Clique aqui para cadastrar o agendamento do paciente de teste"' in html_sino)
+with app.app_context():
+    u = Usuario.query.filter_by(email="boasvindas@example.com").first()
+    n = Notificacao.query.filter_by(usuario_id=u.id, tipo="boas_vindas", lida=False).first() or Notificacao.query.filter_by(usuario_id=u.id).first()
+    n.lida = False
+    db.session.commit()
+    nid = n.id
+checar("Marcar como lida pelo popup", client.post(f"/equipe/notificacoes/{nid}/lida").get_json() == {"ok": True})
+with app.app_context():
+    checar("... e ficou lida", Notificacao.query.get(nid).lida is True)
 
 # Secretaria nao recebe o popup
 client.get("/logout")

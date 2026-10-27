@@ -528,6 +528,8 @@ ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_gemini VARCHAR(60)
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelos_pontos TEXT;
 ALTER TABLE faq_itens ADD COLUMN IF NOT EXISTS respondido_por_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
 ALTER TABLE faq_itens ADD COLUMN IF NOT EXISTS respondido_em TIMESTAMP;
+UPDATE notificacoes SET popup = TRUE WHERE tipo = 'boas_vindas' AND titulo = 'Primeiros passos no MedIA' AND lida = FALSE AND popup = FALSE;
+UPDATE notificacoes SET popup = TRUE WHERE tipo = 'preparo_cadastrado' AND lida = FALSE AND popup = FALSE;
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_claude_sintese VARCHAR(60);
 
 -- Versao em pagina (HTML) do PDF original do preparo, aprovada pelo medico (2026-10-24).
