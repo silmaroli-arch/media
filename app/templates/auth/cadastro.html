@@ -72,6 +72,9 @@
                    class="form-control" placeholder="DD/MM/AAAA" autocomplete="bday">
             <div class="invalid-feedback" id="data_nascimento_status"></div>
           </div>
+          <div class="col-12" id="campos-fiscais" style="display:none;"><div class="row g-3">
+            {% with u = None %}{% include "auth/_dados_fiscais.html" %}{% endwith %}
+          </div></div>
           <div class="col-md-3" id="campo-crm-uf" style="display:none;">
             <label class="form-label">CRM (UF de emissão)</label>
             <select name="crm_uf" id="crm_uf" class="form-select">
@@ -199,6 +202,7 @@ function atualizarCampoCrm() {
   document.getElementById('campo-data-nascimento').style.display = ehMedico ? 'block' : 'none';
   document.getElementById('data_nascimento').required = ehMedico;
   document.getElementById('campo-aprovacao').style.display = ehMedico ? 'block' : 'none';
+  document.getElementById('campos-fiscais').style.display = ehMedico ? 'block' : 'none';
 }
 atualizarCampoCrm();
 

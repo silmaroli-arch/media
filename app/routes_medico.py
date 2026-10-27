@@ -53,6 +53,7 @@ from app.whatsapp_envio import (
 )
 from app.xlsx_preparo import extrair_sugestoes_de_xlsx
 from app.cripto_fiscal import criptografar_bytes, criptografar_texto
+from app.nfse import dados_faltando_tomador
 from app.preparo_pdf_paginas import garantir_paginas, gerar_paginas
 from app.preparo_pdf_original import (
     aplicar_no_modelo as aplicar_pdf_original, guardar_pendente as guardar_pdf_pendente, pendente_da_sessao,
@@ -3603,6 +3604,7 @@ def minha_licenca():
         valor_anual_disponivel=valor_anual_disponivel,
         pagamento_mes_atual=pagamento_mes_atual,
         agora=datetime.utcnow(),
+        faltando_fiscal=dados_faltando_tomador(current_user),
     )
 
 

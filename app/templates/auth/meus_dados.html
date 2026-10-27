@@ -69,6 +69,7 @@
             </select>
             <div class="form-text">Define que parte da base de conhecimento compartilhada você pode consultar e sugerir melhorias.</div>
           </div>
+          {% with u = current_user %}{% include "auth/_dados_fiscais.html" %}{% endwith %}
           {% endif %}
         </div>
 

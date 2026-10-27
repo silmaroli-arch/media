@@ -64,6 +64,22 @@ class PlataformaConfig(db.Model):
     # Modelo escolhido pelo dono para cada ponto de uso de IA (JSON
     # {"resposta_1": "claude-sonnet-5-5", ...}, ver app.ia_modelos.PONTOS).
     modelos_pontos = db.Column(db.Text, nullable=True)
+    # Emissão de NFS-e da licença pelo MedIA (pedido do Silvan, 2026-10-27, ver
+    # app.nfse): o EMITENTE é a empresa dona da plataforma. nfse_provedor:
+    # nenhum | focusnfe | simulacao (gera nota de mentira, para testar).
+    nfse_provedor = db.Column(db.String(20), nullable=False, default="nenhum")
+    nfse_ambiente = db.Column(db.String(20), nullable=False, default="homologacao")
+    nfse_token_cripto = db.Column(db.LargeBinary, nullable=True)
+    nfse_cnpj = db.Column(db.String(20))
+    nfse_razao_social = db.Column(db.String(200))
+    nfse_inscricao_municipal = db.Column(db.String(30))
+    nfse_ibge_municipio = db.Column(db.String(10))
+    nfse_item_lista_servico = db.Column(db.String(10))  # LC 116, ex.: 0107
+    nfse_codigo_tributario_municipio = db.Column(db.String(30))
+    nfse_cnae = db.Column(db.String(15))
+    nfse_aliquota_iss = db.Column(db.Numeric(5, 2))
+    nfse_optante_simples = db.Column(db.Boolean, nullable=False, default=True)
+    nfse_discriminacao = db.Column(db.Text)  # texto do serviço na nota; {mes} vira MM/AAAA
 
     # "Terceira IA" - base de conhecimento compartilhada (pedido do Silvan,
     # 2026-09-29, ver BaseConhecimentoItem e app.base_conhecimento). Liga/
@@ -279,6 +295,22 @@ class Usuario(db.Model, UserMixin):
     # ciclo_licenca == "anual"; None enquanto o médico nunca optou por
     # anual ou enquanto o dono não configurou um valor anual padrão.
     valor_licenca_anual = db.Column(db.Numeric(10, 2))
+
+    # Dados fiscais do MÉDICO como tomador da nota fiscal da licença (pedido do
+    # Silvan, 2026-10-27, ver app.nfse): CPF (campo `cpf`) ou, se preferir a
+    # nota em nome de empresa, CNPJ + razão social; mais o endereço. Colunas
+    # `fiscal_*` de propósito, separadas das antigas cep/rua/... que a limpeza
+    # de LGPD apaga a cada deploy (ver migrar_banco.py).
+    fiscal_cnpj = db.Column(db.String(20))
+    fiscal_razao_social = db.Column(db.String(200))
+    fiscal_cep = db.Column(db.String(10))
+    fiscal_logradouro = db.Column(db.String(200))
+    fiscal_numero = db.Column(db.String(20))
+    fiscal_complemento = db.Column(db.String(100))
+    fiscal_bairro = db.Column(db.String(100))
+    fiscal_cidade = db.Column(db.String(100))
+    fiscal_uf = db.Column(db.String(2))
+    fiscal_ibge = db.Column(db.String(10))  # código IBGE do município (vem do CEP)
 
     # CONTA ÚNICA do paciente: uma pessoa (um Usuario) pode ter VÁRIOS
     # cadastros de paciente - um por empresa que frequenta (ver
@@ -604,6 +636,16 @@ class LicencaPagamento(db.Model):
     mp_payment_id = db.Column(db.String(80))
     mp_status = db.Column(db.String(30))
     mp_init_point = db.Column(db.Text)
+
+    # Nota fiscal (NFS-e) deste mês (ver app.nfse): None (não emitida) |
+    # processando | autorizada | erro | cancelada.
+    nf_status = db.Column(db.String(20))
+    nf_ref = db.Column(db.String(60))
+    nf_numero = db.Column(db.String(30))
+    nf_url = db.Column(db.Text)       # página/PDF da nota
+    nf_xml_url = db.Column(db.Text)
+    nf_erro = db.Column(db.Text)
+    nf_emitida_em = db.Column(db.DateTime)
 
     # Pix nativo (Payments API, decisão do Silvan de 2026-09-25): opção
     # ADICIONAL ao link do Checkout Pro acima, não substitui - o médico
