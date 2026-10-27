@@ -47,6 +47,15 @@ checar("Primeiros passos abre como popup na tela seguinte (até o 'Entendi')",
 r_ok = client.post("/equipe/notificacoes/popup/entendi", data={"notificacao_id": str(ns[1].id)}, follow_redirects=True)
 checar("Depois do 'Entendi' o popup não volta", 'id="modalAnuncios"' not in client.get("/equipe/", follow_redirects=True).get_data(as_text=True))
 
+# Depois de cadastrar o preparo, o aviso do próximo passo também abre em popup.
+client.post("/equipe/preparo-modelos/novo", data={"nome": "Preparo do popup", "instrucoes": "Jejum de 8 horas."}, follow_redirects=True)
+with app.app_context():
+    u = Usuario.query.filter_by(email="boasvindas@example.com").first()
+    n = Notificacao.query.filter_by(usuario_id=u.id, tipo="preparo_cadastrado").first()
+    checar("Aviso 'Modelo de preparo cadastrado' nasce como popup", n is not None and n.popup and not n.lida)
+html_seguinte = client.get("/equipe/", follow_redirects=True).get_data(as_text=True)
+checar("... e abre na tela seguinte", "Modelo de preparo cadastrado" in html_seguinte and 'id="modalAnuncios"' in html_seguinte)
+
 # Secretaria nao recebe o popup
 client.get("/logout")
 d2 = dict(dados, nome="Sec Teste", papel="secretaria", cpf="529.982.247-25", email="sec@example.com")

@@ -2077,6 +2077,8 @@ def preparo_modelos_novo():
                         "para o seu paciente de teste (criado com o seu nome) e continue os testes."
                     ),
                     link_endpoint="medico.agenda_novo",
+                    # Abre como popup até o "Entendi" (pedido do Silvan, 2026-10-27).
+                    popup=True,
                 ))
                 db.session.commit()
             except Exception:
