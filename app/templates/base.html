@@ -326,6 +326,11 @@
          conhecimento" continuam só em tablet/desktop (levam a classe),
          mesma visibilidade que já tinham antes dentro do submenu. #}
       <li class="nav-item mb-1">
+        <a class="nav-link {% if request.endpoint == 'medico.aprovacao_rapida' %}active{% endif %}" href="{{ url_for('medico.aprovacao_rapida') }}">
+          <i class="bi bi-grid-3x3-gap me-2"></i>Aprovação rápida
+        </a>
+      </li>
+      <li class="nav-item mb-1">
         <a class="nav-link {% if request.endpoint == 'medico.portal_atendimento' %}active{% endif %}" href="{{ url_for('medico.portal_atendimento') }}">
           <i class="bi bi-box-arrow-up-right me-2"></i>Portal de atendimento rápido
         </a>

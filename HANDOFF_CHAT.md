@@ -2881,6 +2881,29 @@ Pedido do Silvan: ver todas as perguntas dos pacientes, respostas sugeridas pela
 - `migrar_banco.py` marca como popup quem ainda não leu essa notificação (médicos já cadastrados que não abriram o sininho).
 - Teste em `test_boas_vindas_medico.py`. PENDENTE DE TESTE (Silvan): cadastrar um médico novo e conferir os dois popups em sequência.
 
+## Parâmetro "Confiar na IA fora do preparo/FAQ" (2026-10-27)
+
+Antes: com a aprovação do médico DESATIVADA, respostas que a IA tirou de fora do preparo e do FAQ (conhecimento geral, medicamento/nome não cadastrado, divergência com a base: `exige_revisao_medicamento`/`exige_revisao_base`) continuavam indo SEMPRE para a fila do médico.
+- Novo parâmetro `confiar_ia_fora_do_preparo` (padrão desligado) em `Grupo` e em `Usuario` (conta solo); migração em `migrar_banco.py`. Função `confia_na_ia_fora_do_preparo` em `routes_paciente.py`, usada no chat web e no WhatsApp: com a aprovação desativada E o parâmetro ligado, essas respostas vão direto ao paciente (e entram no FAQ como qualquer aprovação automática).
+- Painel do médico: segundo interruptor abaixo de "Exigir minha aprovação..." (travado enquanto a aprovação estiver ativada); rota `medico.perguntas_configuracao_confiar_ia`.
+- Exceção: "Não reconheci ..." (`respondeu_nao_reconhecido`) e "a IA não soube" nunca vão direto, mesmo confiando.
+- Atenção: ligado, a IA responde direto o que NÃO está no preparo (ex.: "posso tomar nimesulida?") - é a escolha do médico.
+- Teste: `test_confiar_ia.py` (web). O caminho do WhatsApp usa a mesma regra. PENDENTE DE TESTE (Silvan): ligar e perguntar algo fora do preparo.
+
+## Tela "Aprovação rápida" do médico (2026-10-27)
+
+- `/equipe/aprovacao-rapida` (`medico.aprovacao_rapida`, menu lateral "Aprovação rápida", antes do Portal de atendimento rápido): tudo que espera o médico em GRADE de cartões (CSS grid, `medico/aprovacao_rapida.html`). Mesmas perguntas/permissões de `perguntas_pendentes`.
+- Ordem: por data de recebimento, da mais antiga para a mais nova (com e sem rascunho misturados).
+- Cartão: paciente, exame, hora, pergunta (e a frase corrigida), selos (conhecimento geral, não reconheceu, internet, base diverge, erro de IA), rascunho da IA editável (com as datas do paciente), "Ver o que cada IA respondeu", "Salvar no Meu FAQ" e "Aprovar e enviar". Perguntas sem rascunho (IA não soube) aparecem em vermelho para digitar.
+- Aprovar por fetch na MESMA rota `perguntas_responder` (`X-Requested-With: fetch` devolve JSON, descarta os flashes e recusa pergunta já respondida), sem sair da tela; o cartão some e o contador baixa. Em lote: marcar cartões com rascunho + "Aprovar marcadas" (sequencial, com confirmação).
+- Malu conhece a tela. Teste: `test_aprovacao_rapida.py`. PENDENTE DE TESTE (Silvan): aprovar um cartão e um lote no celular e no computador.
+
+## IA responde sobre a condição de saúde do paciente (2026-10-27)
+
+Caso "estou com um machucado na perna, posso ir assim?": as duas IAs responderam "não sei" porque o prompt proibia diagnóstico/tratamento e fora do preparo. Pedido do Silvan: sem esse bloqueio, e valendo a qualquer momento (não só no dia do exame).
+- Nova regra CONDIÇÃO DO PACIENTE no `PROMPT_SISTEMA`: sintoma, ferida, gripe, febre, menstruação, gravidez, alergia... + "posso fazer/ir assim?" -> rascunho direto com `CONHECIMENTO_GERAL_REVISAR` (sem diagnóstico, tratamento ou medicamento); só doença sem relação com o exame continua NAO_SEI. As outras regras apontam para ela.
+- Revisão do médico: o marcador exige revisão, EXCETO se o médico ligou "Confiar na IA fora do preparo/FAQ" (escolha dele). Teste de prompt em `test_ia_nunca_chuta.py`. PENDENTE DE TESTE (Silvan): repetir a pergunta do machucado e ver se vem rascunho.
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").

@@ -516,6 +516,10 @@ def dashboard():
         grupo_atual_aprovacao.aprovacao_perguntas_paciente if grupo_atual_aprovacao
         else current_user.aprovacao_perguntas_paciente
     )
+    confiar_ia = bool(
+        grupo_atual_aprovacao.confiar_ia_fora_do_preparo if grupo_atual_aprovacao
+        else current_user.confiar_ia_fora_do_preparo
+    )
 
     # Restruturação de 2026-09-02 (pedido do Silvan): o painel do médico
     # passa a mostrar o status da própria licença (trial/Ativo/Bloqueado) -
@@ -542,7 +546,7 @@ def dashboard():
         proximos=proximos,
         pendentes=pendentes,
         convites_pendentes=convites_pendentes,
-        aprovacao_ativa=aprovacao_ativa,
+        aprovacao_ativa=aprovacao_ativa, confiar_ia=confiar_ia,
         licenca_label=licenca_label,
         licenca_cor=licenca_cor,
         licenca_vencimento=licenca_vencimento,
@@ -3178,6 +3182,24 @@ def perguntas_pendentes():
     )
 
 
+@medico_bp.route("/aprovacao-rapida")
+@login_required
+@staff_required
+def aprovacao_rapida():
+    """Aprovação rápida (pedido do Silvan, 2026-10-27): tudo o que espera o
+    médico, em grade de cartões - rascunho da IA editável e "Aprovar" em
+    cada um (ou várias de uma vez). Mesmas perguntas e permissões de
+    medico.perguntas_pendentes; a aprovação usa medico.perguntas_responder."""
+    escopo = filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id)
+    consulta = PerguntaPendente.query.filter(escopo, PerguntaPendente.status.in_(("aguardando_aprovacao", "pendente")))
+    if eh_medico():
+        consulta = _restringir_perguntas_para_medico(consulta)
+    # Por data de recebimento, da mais antiga (esperando há mais tempo) para a
+    # mais nova - com ou sem rascunho (pedido do Silvan, 2026-10-27).
+    itens = consulta.order_by(PerguntaPendente.criado_em.asc(), PerguntaPendente.id.asc()).all()
+    return render_template("medico/aprovacao_rapida.html", itens=itens)
+
+
 @medico_bp.route("/perguntas/configuracao", methods=["POST"])
 @login_required
 @staff_required
@@ -3224,6 +3246,34 @@ def perguntas_configuracao():
         "success",
     )
     return redirect(url_for(destino))
+
+
+@medico_bp.route("/perguntas/configuracao/confiar-ia", methods=["POST"])
+@login_required
+@staff_required
+def perguntas_configuracao_confiar_ia():
+    """Pedido do Silvan (2026-10-27): com a aprovação desativada, escolhe
+    confiar na IA também quando a resposta vem de FORA do preparo e do FAQ
+    (conhecimento geral, medicamento/nome não cadastrado, divergência com a
+    base) - ver Grupo.confiar_ia_fora_do_preparo e
+    app.routes_paciente.confia_na_ia_fora_do_preparo. Vale para o Grupo
+    (equipe) ou, numa conta solo, para a própria conta."""
+    confiar = request.form.get("confiar_ia") == "1"
+    grupo_atual = empresa_atual()
+    if grupo_atual:
+        grupo_atual.confiar_ia_fora_do_preparo = confiar
+        aprovacao_ativa = grupo_atual.aprovacao_perguntas_paciente
+    else:
+        current_user.confiar_ia_fora_do_preparo = confiar
+        aprovacao_ativa = current_user.aprovacao_perguntas_paciente
+    db.session.commit()
+    if confiar and aprovacao_ativa:
+        flash("Confiança na IA ligada, mas ela só vale com a aprovação desativada - hoje todas as respostas ainda esperam a sua revisão.", "warning")
+    elif confiar:
+        flash("Você confia na IA: respostas fora do preparo e do FAQ (conhecimento geral, nome não cadastrado) também vão direto ao paciente.", "success")
+    else:
+        flash("Respostas fora do preparo e do FAQ voltam a esperar a sua revisão.", "success")
+    return redirect(url_for("medico.dashboard"))
 
 
 @medico_bp.route("/perguntas/respondidas")
@@ -4200,7 +4250,19 @@ def perguntas_responder(pergunta_id):
     # do portal de atendimento rápido (portal/atendimento.html, ver
     # medico.portal_atendimento) - o campo oculto "origem" no form decide
     # para onde voltar depois, sem duplicar esta rota.
-    destino = "medico.portal_atendimento" if request.form.get("origem") == "portal" else "medico.perguntas_pendentes"
+    origem = request.form.get("origem")
+    destino = {"portal": "medico.portal_atendimento", "rapida": "medico.aprovacao_rapida"}.get(origem, "medico.perguntas_pendentes")
+    # A "Aprovação rápida" envia por fetch (sem sair da tela): responde JSON e
+    # descarta os avisos (flash) para não aparecerem depois, em outra tela.
+    por_fetch = request.headers.get("X-Requested-With") == "fetch"
+
+    def _terminar(ok=True, erro=None):
+        if por_fetch:
+            from flask import get_flashed_messages
+
+            get_flashed_messages()
+            return jsonify({"ok": ok, "erro": erro}), (200 if ok else 400)
+        return redirect(url_for(destino))
 
     pergunta = PerguntaPendente.query.filter(
         PerguntaPendente.id == pergunta_id,
@@ -4216,13 +4278,16 @@ def perguntas_responder(pergunta_id):
         geral_administravel = pergunta.exame is None and current_user.perm_pacientes
         if not exame_proprio and not geral_administravel:
             flash("Você só pode responder perguntas sobre os seus próprios exames.", "danger")
-            return redirect(url_for(destino))
+            return _terminar(False, "Você só pode responder perguntas sobre os seus próprios exames.")
 
     resposta = request.form.get("resposta", "").strip()
 
     if not resposta:
         flash("Digite uma resposta antes de salvar.", "danger")
-        return redirect(url_for(destino))
+        return _terminar(False, "Digite uma resposta antes de aprovar.")
+
+    if por_fetch and pergunta.status == "respondida":
+        return _terminar(False, "Esta pergunta já foi respondida.")
 
     # Aprendizado da base de conhecimento compartilhada (fatia 4, ver
     # app.base_aprendizado): decidido ANTES de sobrescrever o status. Só
@@ -4313,7 +4378,7 @@ def perguntas_responder(pergunta_id):
         flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
     else:
         flash("Resposta enviada ao paciente (não foi salva no Meu FAQ).", "success")
-    return redirect(url_for(destino))
+    return _terminar()
 
 
 # ---------- Base de FAQ (consulta/gestão manual) ----------

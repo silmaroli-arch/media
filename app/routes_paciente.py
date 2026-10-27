@@ -87,6 +87,24 @@ def exige_aprovacao_pergunta(grupo_id, criado_por_id):
     return True
 
 
+def confia_na_ia_fora_do_preparo(grupo_id, criado_por_id, resultado_ia=None):
+    """Pedido do Silvan (2026-10-27): True quando o Grupo (ou o médico, numa
+    conta solo) escolheu confiar na IA mesmo quando a resposta não veio do
+    preparo nem do FAQ - ver Grupo.confiar_ia_fora_do_preparo. Só tem efeito
+    com a aprovação desativada (ver exige_aprovacao_pergunta). Exceção: uma
+    resposta "Não reconheci ..." (a IA não sabe o que é o nome) nunca vai
+    direto, mesmo confiando - é um "não sei" e fica com o médico."""
+    if resultado_ia and "respondeu_nao_reconhecido" in (resultado_ia.get("situacao") or {}).values():
+        return False
+    if grupo_id:
+        grupo = Grupo.query.get(grupo_id)
+        return bool(grupo and grupo.confiar_ia_fora_do_preparo)
+    if criado_por_id:
+        usuario = Usuario.query.get(criado_por_id)
+        return bool(usuario and usuario.confiar_ia_fora_do_preparo)
+    return False
+
+
 def aprovar_pergunta_automaticamente(pergunta_pendente, resposta):
     """Equivalente automático do que app.routes_medico.perguntas_responder
     faz quando o médico aprova manualmente uma sugestão - usado só quando
@@ -491,8 +509,10 @@ def chat():
                     # app.ia_preparo.responder_com_ia ("exige_revisao_base").
                     if (
                         exige_aprovacao
-                        or resultado_ia.get("exige_revisao_medicamento")
-                        or resultado_ia.get("exige_revisao_base")
+                        or (
+                            (resultado_ia.get("exige_revisao_medicamento") or resultado_ia.get("exige_revisao_base"))
+                            and not confia_na_ia_fora_do_preparo(grupo_id_ancora, criado_por_id_ancora, resultado_ia)
+                        )
                     ):
                         db.session.commit()
                         notificar_equipe_nova_pergunta(pendente)

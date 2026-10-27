@@ -91,6 +91,9 @@ with app.app_context():
     checar("Checagem de divergência: 'Sim' contra 'Não' sempre diverge",
            _respostas_divergem(arbitro, "Não, suspenda.", "Sim, suspenda.") is True and "SEMPRE divergem" in divergencias[0])
     checar("Síntese mantém os marcadores de data e evita condicional", "Mantenha, exatamente como estão, os marcadores" in sistemas[0] and "caso falte menos de" in sistemas[0])
+    checar("Prompt: condição de saúde do paciente (a qualquer momento) vira rascunho, não 'não sei'",
+           "CONDIÇÃO DO PACIENTE (a qualquer momento" in PROMPT_SISTEMA and "machucado" in PROMPT_SISTEMA
+           and "NÃO responda NAO_SEI_ENCAMINHAR. Comece a resposta EXATAMENTE com o texto CONHECIMENTO_GERAL_REVISAR" in PROMPT_SISTEMA)
     checar("Síntese também não diz 'não está cadastrado'", "não está cadastrado" in sistemas[0] and "Nunca escreva" in sistemas[0])
     from app.ia_preparo import _principios_anvisa
     importar_csv(CSV + "OZEMPIC;ANTIDIABETICOS;Ativo;SEMAGLUTIDA\nMOUNJARO;ANTIDIABETICOS;Ativo;TIRZEPATIDA\n".encode("latin-1"))
