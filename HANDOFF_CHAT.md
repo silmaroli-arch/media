@@ -2877,6 +2877,7 @@ Pedido do Silvan: ver todas as perguntas dos pacientes, respostas sugeridas pela
 
 - A notificação "Primeiros passos no MedIA" (`app/boas_vindas.py`) agora nasce com `popup=True`: depois do popup de boas-vindas, abre como janela na tela seguinte e só fecha no "Entendi" (que marca como lida). Passo a passo com uma etapa por linha.
 - Também em popup: o aviso "Modelo de preparo cadastrado" (próximo passo: agendar o paciente de teste), criado em `routes_medico.preparo_modelos_novo` com `popup=True`; a migração marca as não lidas.
+- Clicar numa notificação no sininho agora abre a MENSAGEM INTEIRA num popup (`#modalNotificacao` em `base.html`), com o botão "Clique aqui para ..." (texto por destino em `Notificacao.ACOES`; só leitura quando o destino é o painel). Abrir o popup marca como lida (`POST /equipe/notificacoes/<id>/lida`); o botão vai por `notificacao_abrir`.
 - `migrar_banco.py` marca como popup quem ainda não leu essa notificação (médicos já cadastrados que não abriram o sininho).
 - Teste em `test_boas_vindas_medico.py`. PENDENTE DE TESTE (Silvan): cadastrar um médico novo e conferir os dois popups em sequência.
 

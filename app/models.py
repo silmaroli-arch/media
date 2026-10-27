@@ -2381,6 +2381,22 @@ class Notificacao(db.Model):
 
     usuario = db.relationship("Usuario", foreign_keys=[usuario_id])
 
+    # Texto do botão do popup aberto ao clicar na notificação no sininho
+    # (pedido do Silvan, 2026-10-27), conforme o destino dela.
+    ACOES = {
+        "medico.primeiros_passos": "Clique aqui para abrir os Primeiros passos e cadastrar o seu preparo",
+        "medico.agenda_novo": "Clique aqui para cadastrar o agendamento do paciente de teste",
+        "medico.fale_com_a_gente": "Clique aqui para ver a conversa com o suporte",
+        "medico.base_compartilhada": "Clique aqui para ver a base de conhecimento",
+    }
+
+    @property
+    def acao_texto(self):
+        """None quando não há destino além do painel (só leitura)."""
+        if not self.link_endpoint or self.link_endpoint == "medico.dashboard":
+            return None
+        return self.ACOES.get(self.link_endpoint, "Clique aqui para abrir")
+
 
 class MonitorPergunta(db.Model):
     """Um registro por pergunta de paciente tratada pelo sistema, com o

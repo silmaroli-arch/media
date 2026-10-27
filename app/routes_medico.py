@@ -4919,6 +4919,19 @@ def notificacao_abrir(notificacao_id):
         return redirect(url_for("medico.dashboard"))
 
 
+@medico_bp.route("/notificacoes/<int:notificacao_id>/lida", methods=["POST"])
+@login_required
+@staff_required
+def notificacao_marcar_lida(notificacao_id):
+    """Marca uma notificação como lida sem sair da tela (o sininho abre a
+    mensagem num popup - ver base.html)."""
+    notificacao = Notificacao.query.filter_by(id=notificacao_id, usuario_id=current_user.id).first_or_404()
+    if not notificacao.lida:
+        notificacao.lida = True
+        db.session.commit()
+    return jsonify({"ok": True})
+
+
 @medico_bp.route("/notificacoes/popup/entendi", methods=["POST"])
 @login_required
 def notificacoes_popup_entendi():

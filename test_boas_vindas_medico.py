@@ -56,6 +56,21 @@ with app.app_context():
 html_seguinte = client.get("/equipe/", follow_redirects=True).get_data(as_text=True)
 checar("... e abre na tela seguinte", "Modelo de preparo cadastrado" in html_seguinte and 'id="modalAnuncios"' in html_seguinte)
 
+# Clicar na notificação do sininho abre a mensagem num popup, com o botão "Clique aqui...".
+html_sino = client.get("/equipe/", follow_redirects=True).get_data(as_text=True)
+checar("Sininho abre a mensagem num popup (modal e itens com os dados da mensagem)",
+       'id="modalNotificacao"' in html_sino and 'class="dropdown-item py-2 border-bottom item-notificacao' in html_sino
+       and 'data-acao="Clique aqui para cadastrar o agendamento do paciente de teste"' in html_sino)
+with app.app_context():
+    u = Usuario.query.filter_by(email="boasvindas@example.com").first()
+    n = Notificacao.query.filter_by(usuario_id=u.id, tipo="boas_vindas", lida=False).first() or Notificacao.query.filter_by(usuario_id=u.id).first()
+    n.lida = False
+    db.session.commit()
+    nid = n.id
+checar("Marcar como lida pelo popup", client.post(f"/equipe/notificacoes/{nid}/lida").get_json() == {"ok": True})
+with app.app_context():
+    checar("... e ficou lida", Notificacao.query.get(nid).lida is True)
+
 # Secretaria nao recebe o popup
 client.get("/logout")
 d2 = dict(dados, nome="Sec Teste", papel="secretaria", cpf="529.982.247-25", email="sec@example.com")
