@@ -2881,6 +2881,14 @@ Pedido do Silvan: ver todas as perguntas dos pacientes, respostas sugeridas pela
 - `migrar_banco.py` marca como popup quem ainda não leu essa notificação (médicos já cadastrados que não abriram o sininho).
 - Teste em `test_boas_vindas_medico.py`. PENDENTE DE TESTE (Silvan): cadastrar um médico novo e conferir os dois popups em sequência.
 
+## Parâmetro "Confiar na IA fora do preparo/FAQ" (2026-10-27)
+
+Antes: com a aprovação do médico DESATIVADA, respostas que a IA tirou de fora do preparo e do FAQ (conhecimento geral, medicamento/nome não cadastrado, divergência com a base: `exige_revisao_medicamento`/`exige_revisao_base`) continuavam indo SEMPRE para a fila do médico.
+- Novo parâmetro `confiar_ia_fora_do_preparo` (padrão desligado) em `Grupo` e em `Usuario` (conta solo); migração em `migrar_banco.py`. Função `confia_na_ia_fora_do_preparo` em `routes_paciente.py`, usada no chat web e no WhatsApp: com a aprovação desativada E o parâmetro ligado, essas respostas vão direto ao paciente (e entram no FAQ como qualquer aprovação automática).
+- Painel do médico: segundo interruptor abaixo de "Exigir minha aprovação..." (travado enquanto a aprovação estiver ativada); rota `medico.perguntas_configuracao_confiar_ia`.
+- Atenção: ligado, a IA responde direto o que NÃO está no preparo (ex.: "posso tomar nimesulida?") - é a escolha do médico.
+- Teste: `test_confiar_ia.py` (web). O caminho do WhatsApp usa a mesma regra. PENDENTE DE TESTE (Silvan): ligar e perguntar algo fora do preparo.
+
 ## BACKLOG (Silvan) - combinado para fazer depois
 
 - [x] **REGRA DO SILVAN (2026-10-23): a IA NUNCA pode chutar - medicamento, exame, alimento ou qualquer outra coisa. Só responde o que tem certeza; quando não tiver, diz que não sabe/não reconheceu e a pergunta vai para o médico.** Aplicar no PROMPT_SISTEMA (e conferir o validador e a regra de "conhecimento geral": conhecimento geral só vale para orientação amplamente estabelecida, nunca para identificar um nome que a IA não reconhece). Caso que originou: **IAs: medicamento que não reconhecem não pode ser "chutado"** (2026-10-23). Caso: "Preciso parar o Poviztra?" (semaglutida, mesma classe do Ozempic, cadastrado no preparo) - Claude e ChatGPT responderam que era varfarina/anticoagulante. Causas prováveis: nome comercial recente que as IAs não conhecem + instrução de identificar medicamento pela marca; e/ou o histórico da conversa (pergunta anterior sobre varfarina). Ajuste combinado no `PROMPT_SISTEMA` (`app/ia_preparo.py`): (1) nome de medicamento não reconhecido com certeza -> não afirmar o que é nem associar a outro; dizer que não identificou e pedir o nome/princípio ativo, com revisão obrigatória do médico (mesmo caminho de MEDICAMENTO_NAO_CADASTRADO_REVISAR); (2) o histórico serve só para entender perguntas curtas de continuação ("e frita?"), nunca para deduzir o que é um produto com nome diferente. - FEITO 2026-10-23 (ver seção "A IA nunca chuta + lista da ANVISA nas respostas").

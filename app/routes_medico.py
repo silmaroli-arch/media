@@ -516,6 +516,10 @@ def dashboard():
         grupo_atual_aprovacao.aprovacao_perguntas_paciente if grupo_atual_aprovacao
         else current_user.aprovacao_perguntas_paciente
     )
+    confiar_ia = bool(
+        grupo_atual_aprovacao.confiar_ia_fora_do_preparo if grupo_atual_aprovacao
+        else current_user.confiar_ia_fora_do_preparo
+    )
 
     # Restruturação de 2026-09-02 (pedido do Silvan): o painel do médico
     # passa a mostrar o status da própria licença (trial/Ativo/Bloqueado) -
@@ -542,7 +546,7 @@ def dashboard():
         proximos=proximos,
         pendentes=pendentes,
         convites_pendentes=convites_pendentes,
-        aprovacao_ativa=aprovacao_ativa,
+        aprovacao_ativa=aprovacao_ativa, confiar_ia=confiar_ia,
         licenca_label=licenca_label,
         licenca_cor=licenca_cor,
         licenca_vencimento=licenca_vencimento,
@@ -3224,6 +3228,34 @@ def perguntas_configuracao():
         "success",
     )
     return redirect(url_for(destino))
+
+
+@medico_bp.route("/perguntas/configuracao/confiar-ia", methods=["POST"])
+@login_required
+@staff_required
+def perguntas_configuracao_confiar_ia():
+    """Pedido do Silvan (2026-10-27): com a aprovação desativada, escolhe
+    confiar na IA também quando a resposta vem de FORA do preparo e do FAQ
+    (conhecimento geral, medicamento/nome não cadastrado, divergência com a
+    base) - ver Grupo.confiar_ia_fora_do_preparo e
+    app.routes_paciente.confia_na_ia_fora_do_preparo. Vale para o Grupo
+    (equipe) ou, numa conta solo, para a própria conta."""
+    confiar = request.form.get("confiar_ia") == "1"
+    grupo_atual = empresa_atual()
+    if grupo_atual:
+        grupo_atual.confiar_ia_fora_do_preparo = confiar
+        aprovacao_ativa = grupo_atual.aprovacao_perguntas_paciente
+    else:
+        current_user.confiar_ia_fora_do_preparo = confiar
+        aprovacao_ativa = current_user.aprovacao_perguntas_paciente
+    db.session.commit()
+    if confiar and aprovacao_ativa:
+        flash("Confiança na IA ligada, mas ela só vale com a aprovação desativada - hoje todas as respostas ainda esperam a sua revisão.", "warning")
+    elif confiar:
+        flash("Você confia na IA: respostas fora do preparo e do FAQ (conhecimento geral, nome não cadastrado) também vão direto ao paciente.", "success")
+    else:
+        flash("Respostas fora do preparo e do FAQ voltam a esperar a sua revisão.", "success")
+    return redirect(url_for("medico.dashboard"))
 
 
 @medico_bp.route("/perguntas/respondidas")

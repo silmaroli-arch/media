@@ -63,6 +63,21 @@
       <label class="form-check-label fs-6" for="aprovacao-ativa">{{ "Ativada" if aprovacao_ativa else "Desativada" }}</label>
     </form>
   </div>
+  {# Pedido do Silvan (2026-10-27): confiar na IA mesmo fora do preparo/FAQ. Só vale com a aprovação desativada. #}
+  <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-2 py-2 border-top">
+    <div class="small">
+      <strong>Confiar na IA mesmo quando a resposta não está no preparo nem no FAQ</strong>
+      <div class="text-muted">
+        {% if aprovacao_ativa %}Só vale com a aprovação desativada acima.{% else %}
+        Ligado, respostas que a IA tira do conhecimento geral (ou de um nome que não está cadastrado) também vão direto ao paciente, sem passar por você.
+        Desligado (padrão), essas continuam esperando a sua revisão mesmo com a aprovação desativada.{% endif %}
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('medico.perguntas_configuracao_confiar_ia') }}" class="form-check form-switch fs-4 mb-0">
+      <input class="form-check-input" type="checkbox" role="switch" id="confiar-ia" name="confiar_ia" value="1" {% if confiar_ia %}checked{% endif %} {% if aprovacao_ativa %}disabled{% endif %} onchange="this.form.submit()">
+      <label class="form-check-label fs-6" for="confiar-ia">{{ "Ligado" if confiar_ia else "Desligado" }}</label>
+    </form>
+  </div>
 </div>
 
 {% if convites_pendentes %}

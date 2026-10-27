@@ -206,6 +206,8 @@ class Usuario(db.Model, UserMixin):
     # (False). Ignorado quando a conta pertence a um Grupo - nesse caso o
     # campo do Grupo é que vale para todo mundo da equipe.
     aprovacao_perguntas_paciente = db.Column(db.Boolean, nullable=False, default=True)
+    # Equivalente pessoal de Grupo.confiar_ia_fora_do_preparo (conta solo).
+    confiar_ia_fora_do_preparo = db.Column(db.Boolean, nullable=False, default=False)
 
     # CPF de quem trabalha na plataforma (dono/médico/secretária): é
     # credencial de login (auth.login) e é por ele que o administrador de um
@@ -817,6 +819,12 @@ class Grupo(db.Model):
     # controle vive em Usuario.aprovacao_perguntas_paciente. Ver
     # medico.perguntas_configuracao (tela "Perguntas pendentes").
     aprovacao_perguntas_paciente = db.Column(db.Boolean, nullable=False, default=True)
+    # Pedido do Silvan (2026-10-27): com a aprovação desativada, respostas que a
+    # IA tirou de FORA do preparo e do FAQ (conhecimento geral, medicamento ou
+    # nome não cadastrado, divergência com a base) continuam indo para o médico.
+    # Ligado, o médico confia na IA e elas também vão direto ao paciente.
+    # Só vale com a aprovação desativada.
+    confiar_ia_fora_do_preparo = db.Column(db.Boolean, nullable=False, default=False)
 
     inscricao_estadual = db.Column(db.String(30))
     regime_tributario = db.Column(db.String(50))
