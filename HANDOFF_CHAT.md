@@ -2893,6 +2893,7 @@ Antes: com a aprovação do médico DESATIVADA, respostas que a IA tirou de fora
 ## Tela "Aprovação rápida" do médico (2026-10-27)
 
 - `/equipe/aprovacao-rapida` (`medico.aprovacao_rapida`, menu lateral "Aprovação rápida", antes do Portal de atendimento rápido): tudo que espera o médico em GRADE de cartões (CSS grid, `medico/aprovacao_rapida.html`). Mesmas perguntas/permissões de `perguntas_pendentes`.
+- Ordem: por data de recebimento, da mais antiga para a mais nova (com e sem rascunho misturados).
 - Cartão: paciente, exame, hora, pergunta (e a frase corrigida), selos (conhecimento geral, não reconheceu, internet, base diverge, erro de IA), rascunho da IA editável (com as datas do paciente), "Ver o que cada IA respondeu", "Salvar no Meu FAQ" e "Aprovar e enviar". Perguntas sem rascunho (IA não soube) aparecem em vermelho para digitar.
 - Aprovar por fetch na MESMA rota `perguntas_responder` (`X-Requested-With: fetch` devolve JSON, descarta os flashes e recusa pergunta já respondida), sem sair da tela; o cartão some e o contador baixa. Em lote: marcar cartões com rascunho + "Aprovar marcadas" (sequencial, com confirmação).
 - Malu conhece a tela. Teste: `test_aprovacao_rapida.py`. PENDENTE DE TESTE (Silvan): aprovar um cartão e um lote no celular e no computador.

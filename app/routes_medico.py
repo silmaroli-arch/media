@@ -3194,9 +3194,9 @@ def aprovacao_rapida():
     consulta = PerguntaPendente.query.filter(escopo, PerguntaPendente.status.in_(("aguardando_aprovacao", "pendente")))
     if eh_medico():
         consulta = _restringir_perguntas_para_medico(consulta)
-    itens = consulta.order_by(PerguntaPendente.criado_em.asc()).all()
-    # Com rascunho primeiro (aprova em um clique); sem rascunho (digitar) depois.
-    itens.sort(key=lambda p: 0 if p.status == "aguardando_aprovacao" else 1)
+    # Por data de recebimento, da mais antiga (esperando há mais tempo) para a
+    # mais nova - com ou sem rascunho (pedido do Silvan, 2026-10-27).
+    itens = consulta.order_by(PerguntaPendente.criado_em.asc(), PerguntaPendente.id.asc()).all()
     return render_template("medico/aprovacao_rapida.html", itens=itens)
 
 
