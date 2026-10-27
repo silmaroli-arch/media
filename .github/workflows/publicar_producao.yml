@@ -1,0 +1,104 @@
+name: Publicar em produção (testar e promover dev -> main)
+
+# Workflow manual (pedido do Silvan, 2026-10-27): um clique em Actions roda a
+# suíte de testes na branch dev e, se tudo passar, promove a dev para a main.
+# O Render observa a main e publica o media-prod sozinho assim que o push cai.
+#
+# - O render.yaml NUNCA é promovido: cada branch tem o seu (ver o comentário no
+#   topo do render.yaml da main). A promoção sempre mantém o da main.
+# - Se algum teste falhar, ou se houver conflito fora do render.yaml, nada é
+#   publicado e o workflow termina com erro.
+# - Se não houver nenhuma mudança a promover, não faz nada.
+#
+# Como usar: aba "Actions" > "Publicar em produção (testar e promover dev ->
+# main)" > "Run workflow" > deixar "Use workflow from: dev" > (opcional)
+# desmarcar "publicar" para só testar > "Run workflow".
+#
+# Requer que a main aceite push do GitHub Actions (sem proteção de branch que
+# exija pull request). Com proteção, use um token com permissão no lugar do
+# GITHUB_TOKEN (segredo PROMOCAO_TOKEN).
+
+on:
+  workflow_dispatch:
+    inputs:
+      publicar:
+        description: "Promover para a main (produção) se os testes passarem. Desmarque para só testar."
+        type: boolean
+        default: true
+
+concurrency:
+  group: publicar-producao
+  cancel-in-progress: false
+
+jobs:
+  testar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Conferir que está rodando a partir da dev
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/dev" ]; then
+            echo "Rode este workflow com 'Use workflow from: dev' (está em ${{ github.ref }})."
+            exit 1
+          fi
+
+      - name: Baixar o código da dev
+        uses: actions/checkout@v4
+
+      - name: Instalar o Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar as dependências
+        run: pip install -r requirements.txt
+
+      - name: Rodar a suíte de testes
+        run: scripts/rodar_testes.sh python
+
+  promover:
+    needs: testar
+    if: ${{ inputs.publicar }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Baixar o código (main e dev)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PROMOCAO_TOKEN || github.token }}
+
+      - name: Promover a dev testada para a main
+        env:
+          COMMIT_TESTADO: ${{ github.sha }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+
+          if git diff --quiet origin/main "$COMMIT_TESTADO" -- . ':!render.yaml'; then
+            echo "Não há mudanças da dev para promover (fora do render.yaml) - nada a fazer."
+            exit 0
+          fi
+
+          # Mescla exatamente o commit que passou nos testes (não a dev "de agora").
+          git merge --no-ff --no-commit "$COMMIT_TESTADO" || true
+          # render.yaml nunca é promovido: volta sempre para o da main.
+          git checkout origin/main -- render.yaml
+
+          CONFLITOS=$(git diff --name-only --diff-filter=U)
+          if [ -n "$CONFLITOS" ]; then
+            echo "Conflitos fora do render.yaml - resolva manualmente (abra o PR de promoção):"
+            echo "$CONFLITOS"
+            git merge --abort
+            exit 1
+          fi
+
+          git commit -m "Promoção dev -> main (automática, testes passaram)" \
+                     -m "Commit da dev promovido: $COMMIT_TESTADO"
+          git push origin main
+          echo "Publicado na main: o Render publica o media-prod sozinho."
