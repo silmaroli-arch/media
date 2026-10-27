@@ -840,6 +840,39 @@ def usuario_licenca_pagamento_marcar(usuario_id, pagamento_id):
     return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
 
 
+@dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos/<int:pagamento_id>/valor", methods=["POST"])
+@login_required
+@dono_required
+def usuario_licenca_pagamento_valor(usuario_id, pagamento_id):
+    """Altera o valor de UM mês ainda não pago (pedido do Silvan, 2026-10-27:
+    o valor do mês é uma fotografia do valor mensal do médico no momento em
+    que o mês nasceu - trocar o valor do médico não muda meses já criados, e
+    não havia como corrigir um mês). A cobrança já gerada (link/Pix) foi feita
+    com o valor antigo: é apagada, e "Gerar cobrança" cria outra com o novo."""
+    usuario = Usuario.query.get_or_404(usuario_id)
+    pagamento = LicencaPagamento.query.get_or_404(pagamento_id)
+    if pagamento.usuario_id != usuario.id:
+        abort(404)
+    destino = redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
+    if pagamento.pago:
+        flash("Este mês já está pago - o valor não pode mais ser alterado.", "danger")
+        return destino
+    try:
+        valor = round(float(request.form.get("valor", "").strip().replace(",", ".")), 2)
+    except ValueError:
+        valor = 0
+    if valor <= 0 or valor > 100000:
+        flash("Informe um valor válido (maior que zero).", "danger")
+        return destino
+    pagamento.valor = valor
+    for campo in ("mp_preference_id", "mp_payment_id", "mp_status", "mp_init_point",
+                  "pix_qr_code", "pix_qr_code_base64", "pix_payment_id", "pix_expira_em"):
+        setattr(pagamento, campo, None)
+    db.session.commit()
+    flash(f"Valor de {pagamento.mes.strftime('%m/%Y')} alterado para R$ {valor:.2f}. Gere uma nova cobrança para o novo valor.", "success")
+    return destino
+
+
 @dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos/<int:pagamento_id>/cobrar", methods=["POST"])
 @login_required
 @dono_required

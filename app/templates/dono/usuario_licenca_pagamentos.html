@@ -39,6 +39,13 @@
             {% else %}
               <span class="text-muted small">não definido</span>
             {% endif %}
+            {% if not p.pago %}
+            {# Corrigir o valor de um mês ainda não pago (a cobrança antiga é apagada). #}
+            <form method="post" action="{{ url_for('dono.usuario_licenca_pagamento_valor', usuario_id=usuario.id, pagamento_id=p.id) }}" class="d-flex gap-1 mt-1">
+              <input type="number" step="0.01" min="0.01" name="valor" value="{{ '%.2f'|format(p.valor) if p.valor is not none else '' }}" class="form-control form-control-sm" style="width: 100px" aria-label="Novo valor do mês" required>
+              <button type="submit" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Alterar o valor deste mês? A cobrança já gerada será apagada e você gera outra com o novo valor.');">Alterar</button>
+            </form>
+            {% endif %}
           </td>
           <td>
             {% if p.pago %}
