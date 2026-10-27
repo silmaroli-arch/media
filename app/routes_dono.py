@@ -17,7 +17,7 @@ from app.clinica_utils import verificar_vencimento_grupo
 from app.custo_ia import PRECOS_POR_MILHAO_TOKENS, COTACAO_USD_PARA_BRL
 from app.mercadopago_integration import (
     criar_preferencia_pagamento, criar_preferencia_pagamento_anual,
-    MercadoPagoNaoConfigurado,
+    MercadoPagoNaoConfigurado, descrever_erro,
 )
 from app.exclusao_usuario import verificar_bloqueios_exclusao, excluir_usuario_e_dados
 from app.limpar_dados import apagar_todos_os_dados
@@ -900,11 +900,11 @@ def usuario_licenca_pagamento_cobrar(usuario_id, pagamento_id):
     except ValueError as erro:
         flash(str(erro), "danger")
         return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
-    except Exception:
+    except Exception as erro:
         current_app.logger.exception(
             "Falha ao criar cobrança no Mercado Pago para o pagamento %s.", pagamento.id
         )
-        flash("Não foi possível gerar a cobrança agora - tente novamente em instantes.", "danger")
+        flash(f"Não foi possível gerar a cobrança agora - tente novamente em instantes.{descrever_erro(erro)}", "danger")
         return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
 
     db.session.commit()
@@ -950,11 +950,11 @@ def usuario_licenca_pagamento_cobrar_anual(usuario_id, pagamento_id):
     except ValueError as erro:
         flash(str(erro), "danger")
         return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
-    except Exception:
+    except Exception as erro:
         current_app.logger.exception(
             "Falha ao criar cobrança anual no Mercado Pago para o pagamento %s.", pagamento.id
         )
-        flash("Não foi possível gerar a cobrança agora - tente novamente em instantes.", "danger")
+        flash(f"Não foi possível gerar a cobrança agora - tente novamente em instantes.{descrever_erro(erro)}", "danger")
         return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
 
     db.session.commit()

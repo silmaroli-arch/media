@@ -64,6 +64,22 @@ class MercadoPagoNaoConfigurado(Exception):
     cadastrar as credenciais em produção)."""
 
 
+def descrever_erro(erro):
+    """Resumo curto do que o Mercado Pago respondeu, para a mensagem de erro
+    da tela - ex.: " (Mercado Pago: código 403 - Unauthorized use of live
+    credentials)". Vazio quando o erro não veio do Mercado Pago (rede, etc.)."""
+    resposta = getattr(erro, "response", None)
+    if resposta is None:
+        return ""
+    try:
+        dados = resposta.json()
+        texto = dados.get("message") or dados.get("error") or ""
+    except Exception:
+        texto = ""
+    texto = str(texto).strip()[:120]
+    return f" (Mercado Pago: código {getattr(resposta, 'status_code', '?')}{' - ' + texto if texto else ''})"
+
+
 def _access_token():
     token = os.environ.get("MERCADOPAGO_ACCESS_TOKEN")
     if not token:

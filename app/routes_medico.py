@@ -33,7 +33,7 @@ from app.models import (
 from app.especialidades import ESPECIALIDADES, especialidade_valida
 from app.mercadopago_integration import (
     criar_preferencia_pagamento, criar_preferencia_pagamento_anual, criar_cobranca_pix,
-    MercadoPagoNaoConfigurado,
+    MercadoPagoNaoConfigurado, descrever_erro,
 )
 from app.clinica_utils import (
     clinica_atual, clinicas_do_usuario, selecionar_clinica,
@@ -3753,11 +3753,11 @@ def minha_licenca_gerar_pix(pagamento_id):
     except ValueError as erro:
         flash(str(erro), "danger")
         return redirect(url_for("medico.minha_licenca"))
-    except Exception:
+    except Exception as erro:
         current_app.logger.exception(
             "Falha ao gerar Pix no Mercado Pago para o pagamento %s.", pagamento.id
         )
-        flash("Não foi possível gerar o Pix agora - tente novamente em instantes.", "danger")
+        flash(f"Não foi possível gerar o Pix agora - tente novamente em instantes.{descrever_erro(erro)}", "danger")
         return redirect(url_for("medico.minha_licenca"))
 
     db.session.commit()
@@ -3829,11 +3829,11 @@ def minha_licenca_gerar_link(pagamento_id):
             "danger",
         )
         return redirect(url_for("medico.minha_licenca"))
-    except Exception:
+    except Exception as erro:
         current_app.logger.exception(
             "Falha ao gerar link de pagamento no Mercado Pago para o pagamento %s.", pagamento.id
         )
-        flash("Não foi possível gerar o link de pagamento agora - tente novamente em instantes.", "danger")
+        flash(f"Não foi possível gerar o link de pagamento agora - tente novamente em instantes.{descrever_erro(erro)}", "danger")
         return redirect(url_for("medico.minha_licenca"))
 
     db.session.commit()

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import requests
 
-from app.mercadopago_integration import _conferir
+from app.mercadopago_integration import _conferir, descrever_erro
 
 
 def checar(nome, condicao):
@@ -39,4 +39,14 @@ checar("O log traz o status e o corpo da resposta do Mercado Pago",
 ok = SimpleNamespace(status_code=200, text="{}", raise_for_status=lambda: None)
 _conferir(ok)
 checar("Resposta boa não gera log nem erro", len(captura.mensagens) == 1)
+class _Erro(Exception):
+    pass
+
+
+e = _Erro()
+e.response = SimpleNamespace(status_code=403, json=lambda: {"message": "Unauthorized use of live credentials"})
+checar("Mensagem da tela traz o código e o motivo do Mercado Pago", descrever_erro(e) == " (Mercado Pago: código 403 - Unauthorized use of live credentials)")
+checar("Erro que não veio do Mercado Pago (rede) não acrescenta nada", descrever_erro(ValueError("x")) == "")
+e.response = SimpleNamespace(status_code=500, json=lambda: (_ for _ in ()).throw(ValueError()))
+checar("Corpo ilegível: só o código", descrever_erro(e) == " (Mercado Pago: código 500)")
 print("TUDO OK")

@@ -2910,6 +2910,7 @@ Caso "estou com um machucado na perna, posso ir assim?": as duas IAs responderam
 Problema: o valor de cada mês (`LicencaPagamento.valor`) é uma FOTOGRAFIA do valor mensal do médico quando o mês nasceu; mudar o valor do médico não altera meses já criados e o calendário não tinha como corrigir um mês (gerou R$ 150 e o Silvan queria R$ 1 para testar o Mercado Pago).
 - Calendário do dono (`/dono/usuarios/<id>/licenca/pagamentos`): meses NÃO pagos ganharam campo + botão "Alterar" (`dono.usuario_licenca_pagamento_valor`). Apaga a cobrança antiga (link Checkout e Pix) porque foi gerada com o valor velho; depois "Gerar cobrança" cria outra com o novo valor. Mês pago não muda. Teste: `test_licenca_valor_mes.py`.
 - Log do Mercado Pago: `_conferir` em `mercadopago_integration.py` registra status e corpo quando o MP recusa uma chamada (preferência, Pix, consulta) - antes só aparecia "400 Client Error". Para diagnosticar "Não foi possível gerar o Pix agora", ver o log do Render: "Mercado Pago recusou a chamada: status=... corpo=...". Teste: `test_mp_erro_detalhado.py`.
+- As mensagens de falha ("Não foi possível gerar o Pix/link/cobrança...") agora acrescentam " (Mercado Pago: código 403 - motivo)" via `descrever_erro`, para diagnosticar sem abrir o log.
 - Lembrete: o teste do Mercado Pago em PRODUÇÃO é em media.med.br (o print do Silvan estava em dev.media.med.br).
 
 ## BACKLOG (Silvan) - combinado para fazer depois
