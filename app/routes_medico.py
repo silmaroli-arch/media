@@ -3182,6 +3182,24 @@ def perguntas_pendentes():
     )
 
 
+@medico_bp.route("/aprovacao-rapida")
+@login_required
+@staff_required
+def aprovacao_rapida():
+    """Aprovação rápida (pedido do Silvan, 2026-10-27): tudo o que espera o
+    médico, em grade de cartões - rascunho da IA editável e "Aprovar" em
+    cada um (ou várias de uma vez). Mesmas perguntas e permissões de
+    medico.perguntas_pendentes; a aprovação usa medico.perguntas_responder."""
+    escopo = filtro_escopo_atual(PerguntaPendente.grupo_id, PerguntaPendente.criado_por_id)
+    consulta = PerguntaPendente.query.filter(escopo, PerguntaPendente.status.in_(("aguardando_aprovacao", "pendente")))
+    if eh_medico():
+        consulta = _restringir_perguntas_para_medico(consulta)
+    itens = consulta.order_by(PerguntaPendente.criado_em.asc()).all()
+    # Com rascunho primeiro (aprova em um clique); sem rascunho (digitar) depois.
+    itens.sort(key=lambda p: 0 if p.status == "aguardando_aprovacao" else 1)
+    return render_template("medico/aprovacao_rapida.html", itens=itens)
+
+
 @medico_bp.route("/perguntas/configuracao", methods=["POST"])
 @login_required
 @staff_required
@@ -4232,7 +4250,19 @@ def perguntas_responder(pergunta_id):
     # do portal de atendimento rápido (portal/atendimento.html, ver
     # medico.portal_atendimento) - o campo oculto "origem" no form decide
     # para onde voltar depois, sem duplicar esta rota.
-    destino = "medico.portal_atendimento" if request.form.get("origem") == "portal" else "medico.perguntas_pendentes"
+    origem = request.form.get("origem")
+    destino = {"portal": "medico.portal_atendimento", "rapida": "medico.aprovacao_rapida"}.get(origem, "medico.perguntas_pendentes")
+    # A "Aprovação rápida" envia por fetch (sem sair da tela): responde JSON e
+    # descarta os avisos (flash) para não aparecerem depois, em outra tela.
+    por_fetch = request.headers.get("X-Requested-With") == "fetch"
+
+    def _terminar(ok=True, erro=None):
+        if por_fetch:
+            from flask import get_flashed_messages
+
+            get_flashed_messages()
+            return jsonify({"ok": ok, "erro": erro}), (200 if ok else 400)
+        return redirect(url_for(destino))
 
     pergunta = PerguntaPendente.query.filter(
         PerguntaPendente.id == pergunta_id,
@@ -4248,13 +4278,16 @@ def perguntas_responder(pergunta_id):
         geral_administravel = pergunta.exame is None and current_user.perm_pacientes
         if not exame_proprio and not geral_administravel:
             flash("Você só pode responder perguntas sobre os seus próprios exames.", "danger")
-            return redirect(url_for(destino))
+            return _terminar(False, "Você só pode responder perguntas sobre os seus próprios exames.")
 
     resposta = request.form.get("resposta", "").strip()
 
     if not resposta:
         flash("Digite uma resposta antes de salvar.", "danger")
-        return redirect(url_for(destino))
+        return _terminar(False, "Digite uma resposta antes de aprovar.")
+
+    if por_fetch and pergunta.status == "respondida":
+        return _terminar(False, "Esta pergunta já foi respondida.")
 
     # Aprendizado da base de conhecimento compartilhada (fatia 4, ver
     # app.base_aprendizado): decidido ANTES de sobrescrever o status. Só
@@ -4345,7 +4378,7 @@ def perguntas_responder(pergunta_id):
         flash("Resposta salva e adicionada à base de conhecimento da IA.", "success")
     else:
         flash("Resposta enviada ao paciente (não foi salva no Meu FAQ).", "success")
-    return redirect(url_for(destino))
+    return _terminar()
 
 
 # ---------- Base de FAQ (consulta/gestão manual) ----------

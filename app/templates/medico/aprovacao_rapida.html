@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block titulo %}Aprovação rápida{% endblock %}
+{% block conteudo %}
+{# Aprovação rápida (pedido do Silvan, 2026-10-27): perguntas que esperam o
+   médico em grade de cartões. Aprova pela mesma rota da tela de perguntas
+   (medico.perguntas_responder), por fetch, sem sair da tela. #}
+<style>
+  .grade-aprovacao { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 1rem; align-items: start; }
+  .cartao-aprovacao { background: #fff; border: 1px solid #dee2e6; border-left: 5px solid #ffc107; border-radius: .6rem; padding: .9rem 1rem; transition: opacity .3s; }
+  .cartao-aprovacao.sem-rascunho { border-left-color: #dc3545; }
+  .cartao-aprovacao.aprovado { opacity: .35; pointer-events: none; }
+  .cartao-aprovacao .pergunta { font-weight: 600; }
+  .cartao-aprovacao textarea { font-size: .92rem; }
+  .cartao-aprovacao details summary { cursor: pointer; font-size: .8rem; color: #6c757d; }
+</style>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+  <div>
+    <h3 class="mb-0">Aprovação rápida</h3>
+    <div class="text-muted small"><span id="contador">{{ itens|length }}</span> aguardando você · revise o texto, ajuste se precisar e aprove. Cada resposta vai ao paciente na hora.</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('medico.aprovacao_rapida') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i> Atualizar</a>
+    {% if itens|selectattr('status', 'equalto', 'aguardando_aprovacao')|list %}
+    <button type="button" class="btn btn-outline-primary btn-sm" id="marcar-todas">Marcar as com rascunho</button>
+    <button type="button" class="btn btn-primary btn-sm" id="aprovar-marcadas" disabled>Aprovar marcadas (<span id="qtd-marcadas">0</span>)</button>
+    {% endif %}
+  </div>
+</div>
+
+{% if itens %}
+<div class="grade-aprovacao" id="grade">
+  {% for p in itens %}
+  {% set tem_rascunho = p.status == "aguardando_aprovacao" %}
+  <div class="cartao-aprovacao {% if not tem_rascunho %}sem-rascunho{% endif %}" data-id="{{ p.id }}" data-url="{{ url_for('medico.perguntas_responder', pergunta_id=p.id) }}">
+    <div class="d-flex justify-content-between align-items-start gap-2">
+      <div class="small"><strong>{{ p.paciente.nome }}</strong><div class="text-muted">{{ p.exame.nome if p.exame else "Geral (sem exame)" }} · {{ p.criado_em|hora_br('%d/%m %H:%M') }}</div></div>
+      {% if tem_rascunho %}<input type="checkbox" class="form-check-input marcar" title="Marcar para aprovar em lote">{% endif %}
+    </div>
+    <div class="pergunta mt-2">{{ p.pergunta }}</div>
+    {% if p.pergunta_faq and p.pergunta_faq.strip() != p.pergunta.strip() %}<div class="small text-muted">Corrigida: <em>{{ p.pergunta_faq }}</em></div>{% endif %}
+    <div class="d-flex flex-wrap gap-1 my-2">
+      {% if not tem_rascunho %}<span class="badge bg-danger">a IA não soube responder</span>{% endif %}
+      {% if p.usou_conhecimento_geral %}<span class="badge bg-warning text-dark">conhecimento geral da IA</span>{% endif %}
+      {% if p.ia_nao_reconheceu %}<span class="badge bg-danger">IA não reconheceu um nome</span>{% endif %}
+      {% if p.pesquisa_internet %}<span class="badge bg-info text-dark">pesquisado na internet</span>{% endif %}
+      {% if p.base_divergiu %}<span class="badge bg-warning text-dark">base diverge das IAs</span>{% endif %}
+      {% if p.ias_com_erro %}<span class="badge bg-secondary">erro em {{ p.ias_com_erro }}</span>{% endif %}
+    </div>
+    <textarea class="form-control resposta" rows="5" placeholder="{{ 'Digite a resposta ao paciente' if not tem_rascunho else '' }}">{{ p.para_paciente(p.resposta_sugerida_ia) if tem_rascunho else "" }}</textarea>
+    {% if p.situacao_ias or p.resposta_bruta_base %}
+    <details class="mt-2">
+      <summary>Ver o que cada IA respondeu</summary>
+      {% for nome, estado, texto in p.situacao_ias %}<div class="small mt-1"><strong>{{ nome }}:</strong> {{ texto }}</div>{% endfor %}
+      {% if p.base_visivel %}<div class="small mt-1"><strong>FAQ do MedIA:</strong> {{ p.para_paciente(p.resposta_bruta_base) }}</div>{% endif %}
+      {% if p.pesquisa_internet %}<div class="small mt-1"><strong>Internet:</strong> {{ p.pesquisa_internet }}</div>{% endif %}
+    </details>
+    {% endif %}
+    <div class="d-flex justify-content-between align-items-center mt-2 gap-2">
+      <label class="small mb-0"><input type="checkbox" class="form-check-input me-1 salvar-faq" checked>Salvar no Meu FAQ</label>
+      <button type="button" class="btn btn-success btn-sm aprovar">Aprovar e enviar</button>
+    </div>
+    <div class="small text-danger mt-1 erro" hidden></div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card p-4 text-center text-muted"><i class="bi bi-check2-circle fs-1 text-success"></i>Nada para aprovar agora.</div>
+{% endif %}
+
+<script>
+(function () {
+  var grade = document.getElementById('grade');
+  if (!grade) return;
+  var contador = document.getElementById('contador');
+  var botaoLote = document.getElementById('aprovar-marcadas');
+
+  function atualizarMarcadas() {
+    var n = grade.querySelectorAll('.marcar:checked').length;
+    if (botaoLote) { botaoLote.disabled = n === 0; document.getElementById('qtd-marcadas').textContent = n; }
+  }
+  function aprovar(cartao) {
+    var texto = cartao.querySelector('.resposta').value.trim();
+    var erro = cartao.querySelector('.erro');
+    erro.hidden = true;
+    if (!texto) { erro.textContent = 'Digite uma resposta antes de aprovar.'; erro.hidden = false; return Promise.resolve(false); }
+    var dados = new URLSearchParams({resposta: texto, origem: 'rapida', opcao_faq: '1'});
+    if (cartao.querySelector('.salvar-faq').checked) dados.append('salvar_faq', 'on');
+    cartao.querySelector('.aprovar').disabled = true;
+    return fetch(cartao.dataset.url, {method: 'POST', body: dados, credentials: 'same-origin', headers: {'X-Requested-With': 'fetch'}})
+      .then(function (r) { return r.json().catch(function () { return {ok: false, erro: 'Não foi possível aprovar.'}; }); })
+      .then(function (r) {
+        if (r.ok) {
+          cartao.classList.add('aprovado');
+          contador.textContent = Math.max(parseInt(contador.textContent, 10) - 1, 0);
+          setTimeout(function () { cartao.remove(); atualizarMarcadas(); }, 600);
+          return true;
+        }
+        erro.textContent = r.erro || 'Não foi possível aprovar.'; erro.hidden = false;
+        cartao.querySelector('.aprovar').disabled = false;
+        return false;
+      })
+      .catch(function () { erro.textContent = 'Falha de conexão. Tente de novo.'; erro.hidden = false; cartao.querySelector('.aprovar').disabled = false; return false; });
+  }
+  grade.addEventListener('click', function (ev) {
+    var b = ev.target.closest('.aprovar');
+    if (b) aprovar(b.closest('.cartao-aprovacao'));
+  });
+  grade.addEventListener('change', function (ev) { if (ev.target.classList.contains('marcar')) atualizarMarcadas(); });
+  var marcarTodas = document.getElementById('marcar-todas');
+  if (marcarTodas) marcarTodas.addEventListener('click', function () {
+    grade.querySelectorAll('.marcar').forEach(function (c) { c.checked = true; }); atualizarMarcadas();
+  });
+  if (botaoLote) botaoLote.addEventListener('click', function () {
+    var cartoes = Array.prototype.map.call(grade.querySelectorAll('.marcar:checked'), function (c) { return c.closest('.cartao-aprovacao'); });
+    if (!cartoes.length || !confirm('Aprovar e enviar ' + cartoes.length + ' resposta(s) ao paciente do jeito que estão?')) return;
+    botaoLote.disabled = true;
+    cartoes.reduce(function (cadeia, c) { return cadeia.then(function () { return aprovar(c); }); }, Promise.resolve()).then(atualizarMarcadas);
+  });
+})();
+</script>
+{% endblock %}
