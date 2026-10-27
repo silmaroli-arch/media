@@ -22,13 +22,14 @@ def texto_boas_vindas(nome):
     )
 
 
+# Uma etapa por linha: o passo a passo abre num popup (white-space: pre-line).
 PASSOS_INICIAIS = (
-    "Passo a passo para começar: "
+    "Passo a passo para começar:\n"
     "1) Em Exames & preparo, cadastre um modelo de preparo (você pode importar um PDF) e escolha o Tipo de exame, "
-    "que liga o seu preparo à base de conhecimento da plataforma. "
-    "2) Em Meus dados, confira o telefone e escolha a sua especialidade. "
-    "3) Em Agendar exame, crie um agendamento para o seu paciente de teste. "
-    "4) Em Testar IA, converse como se fosse um paciente para ver as respostas. "
+    "que liga o seu preparo à base de conhecimento da plataforma.\n"
+    "2) Em Meus dados, confira o telefone e escolha a sua especialidade.\n"
+    "3) Em Agendar exame, crie um agendamento para o seu paciente de teste.\n"
+    "4) Em Testar IA, converse como se fosse um paciente para ver as respostas.\n"
     "Você pode rever o checklist a qualquer momento em Primeiros passos, no menu lateral."
 )
 
@@ -42,7 +43,9 @@ def criar_notificacoes_boas_vindas(usuario):
     db.session.add(Notificacao(
         usuario_id=usuario.id, tipo="boas_vindas", titulo="Primeiros passos no MedIA",
         mensagem=PASSOS_INICIAIS, link_endpoint="medico.primeiros_passos",
-        criado_em=agora - timedelta(seconds=1),
+        # Abre como popup até o médico clicar em "Entendi" (pedido do Silvan,
+        # 2026-10-27) - aparece na tela seguinte ao popup de boas-vindas.
+        popup=True, criado_em=agora - timedelta(seconds=1),
     ))
     db.session.add(Notificacao(
         usuario_id=usuario.id, tipo="boas_vindas", titulo=titulo_boas_vindas(),

@@ -42,6 +42,10 @@ with app.app_context():
     checar("Boas-vindas por cima e cita o sininho", "sininho" in ns[0].mensagem and ns[0].titulo.startswith("Bem-vindo"))
     checar("Passo a passo aponta para Primeiros passos", ns[1].link_endpoint == "medico.primeiros_passos")
 checar("Notificacao aparece no sininho", "Primeiros passos no MedIA" in r2.get_data(as_text=True))
+checar("Primeiros passos abre como popup na tela seguinte (até o 'Entendi')",
+       'id="modalAnuncios"' in r2.get_data(as_text=True) and ns[1].popup and not ns[0].popup)
+r_ok = client.post("/equipe/notificacoes/popup/entendi", data={"notificacao_id": str(ns[1].id)}, follow_redirects=True)
+checar("Depois do 'Entendi' o popup não volta", 'id="modalAnuncios"' not in client.get("/equipe/", follow_redirects=True).get_data(as_text=True))
 
 # Secretaria nao recebe o popup
 client.get("/logout")
