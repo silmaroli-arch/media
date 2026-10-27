@@ -179,7 +179,7 @@ def notificar_equipe_nova_pergunta(pergunta):
             payload = {
                 "title": "Nova pergunta de paciente",
                 "body": f'{pergunta.paciente.nome}: "{pergunta.pergunta}"',
-                "url": "/equipe/perguntas",
+                "url": "/equipe/aprovacao-rapida",
             }
             for subscription in subscriptions:
                 _enviar_para_subscription(subscription, payload)
@@ -188,7 +188,7 @@ def notificar_equipe_nova_pergunta(pergunta):
 
 
 def _link_perguntas():
-    """Monta o link para a tela /equipe/portal usando a URL pública do
+    """Monta o link para a tela /equipe/aprovacao-rapida (antes /equipe/portal) usando a URL pública do
     site (env var opcional APP_URL_PUBLICA, ex.: "https://dev.media.med.br")
     - com ela configurada, retorna um link completo e clicável (ex.:
     "https://dev.media.med.br/equipe/portal"); sem ela, usa como padrão o
@@ -199,7 +199,8 @@ def _link_perguntas():
     configurado, o esquema gerado poderia sair como "http://" mesmo em
     produção (atrás do proxy do Render)."""
     base = os.environ.get("APP_URL_PUBLICA", "https://media-dev.onrender.com")
-    return f"{base.rstrip('/')}/equipe/portal"
+    # Pedido do Silvan (2026-10-27): o aviso leva direto à "Aprovação rápida".
+    return f"{base.rstrip('/')}/equipe/aprovacao-rapida"
 
 
 def _notificar_whatsapp_medicos(pergunta, usuarios_ids):

@@ -62,4 +62,18 @@ with patch("app.whatsapp_envio.enviar_mensagem_whatsapp"):
 checar("Pergunta sem rascunho: o médico digita e aprova", r.status_code == 200)
 html = medico.get("/equipe/aprovacao-rapida").get_data(as_text=True)
 checar("Fila vazia mostra 'Nada para aprovar'", "Nada para aprovar agora" in html)
+# O aviso por WhatsApp (e o push) leva direto à Aprovação rápida.
+from app.models import Usuario
+from app.push_notificacoes import _notificar_whatsapp_medicos
+with app.app_context():
+    medica = Usuario.query.filter_by(email="medica2@clinicavitoria.com").first()
+    medica.telefone = "27999990000"
+    db.session.commit()
+    nova = PerguntaPendente(grupo_id=grupo_id, paciente_id=paciente_id, exame_id=exame_id, pergunta="Posso fumar?", status="pendente")
+    db.session.add(nova)
+    db.session.commit()
+    with patch("app.push_notificacoes.enviar_mensagem_whatsapp") as envio:
+        _notificar_whatsapp_medicos(nova, [medica.id])
+    texto = envio.call_args.kwargs["texto"]
+    checar("Aviso por WhatsApp ao médico aponta para a Aprovação rápida", "Posso fumar?" in texto and texto.rstrip(".").endswith("/equipe/aprovacao-rapida"))
 print("TUDO OK")
