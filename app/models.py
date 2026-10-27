@@ -80,6 +80,14 @@ class PlataformaConfig(db.Model):
     nfse_aliquota_iss = db.Column(db.Numeric(5, 2))
     nfse_optante_simples = db.Column(db.Boolean, nullable=False, default=True)
     nfse_discriminacao = db.Column(db.Text)  # texto do serviço na nota; {mes} vira MM/AAAA
+    # Certificado digital A1 (e-CNPJ, .pfx) da empresa emitente, importado
+    # pelo dono (2026-10-27): arquivo e senha ficam criptografados
+    # (ver app.cripto_fiscal), nunca em texto puro.
+    nfse_cert_pfx = db.Column(db.LargeBinary, nullable=True)
+    nfse_cert_senha_cripto = db.Column(db.LargeBinary, nullable=True)
+    nfse_cert_cnpj = db.Column(db.String(20))
+    nfse_cert_titular = db.Column(db.String(200))
+    nfse_cert_validade = db.Column(db.Date)
 
     # "Terceira IA" - base de conhecimento compartilhada (pedido do Silvan,
     # 2026-09-29, ver BaseConhecimentoItem e app.base_conhecimento). Liga/

@@ -12,6 +12,28 @@
 {% if faltando and config.nfse_provedor != "nenhum" %}
 <div class="alert alert-warning small">Ainda faltam: {{ faltando|join(", ") }}.</div>
 {% endif %}
+<div class="card p-3 mb-3">
+  <h6 class="mb-1"><i class="bi bi-shield-lock"></i> Certificado digital (A1 / e-CNPJ)</h6>
+  <div class="small text-muted mb-2">O arquivo <code>.pfx</code> da empresa emitente é importado aqui; ele e a senha ficam <strong>criptografados</strong> no banco e nunca voltam para a tela.</div>
+  {% if cert_situacao != "sem" %}
+  <div class="alert alert-{{ {'ok': 'success', 'vencendo': 'warning', 'vencido': 'danger'}[cert_situacao] }} py-2 small mb-2">
+    <strong>{{ config.nfse_cert_titular or "Certificado importado" }}</strong>
+    {% if config.nfse_cert_cnpj %} · CNPJ {{ config.nfse_cert_cnpj }}{% endif %}
+    · válido até {{ config.nfse_cert_validade.strftime("%d/%m/%Y") }}
+    {% if cert_situacao == "vencendo" %} - <strong>vence em menos de 30 dias</strong>{% elif cert_situacao == "vencido" %} - <strong>VENCIDO</strong>{% endif %}
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('dono.nota_fiscal_certificado') }}" enctype="multipart/form-data" class="row g-2 align-items-end">
+    <div class="col-md-5"><label class="form-label small mb-0">Arquivo do certificado (.pfx ou .p12)</label>
+      <input type="file" name="certificado_arquivo" accept=".pfx,.p12" class="form-control form-control-sm"></div>
+    <div class="col-md-4"><label class="form-label small mb-0">Senha do certificado</label>
+      <input type="password" name="certificado_senha" class="form-control form-control-sm" autocomplete="new-password"></div>
+    <div class="col-md-3 d-flex gap-2">
+      <button class="btn btn-primary btn-sm">{{ "Trocar certificado" if cert_situacao != "sem" else "Importar certificado" }}</button>
+      {% if cert_situacao != "sem" %}<button class="btn btn-outline-danger btn-sm" name="acao" value="remover" onclick="return confirm('Remover o certificado?');">Remover</button>{% endif %}
+    </div>
+  </form>
+</div>
 <form method="post" class="card p-3">
   <div class="row g-3">
     <div class="col-md-4"><label class="form-label">Emissor</label>

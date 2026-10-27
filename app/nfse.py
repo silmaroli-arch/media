@@ -268,3 +268,32 @@ def aplicar_dados_fiscais(usuario, form):
     for nome, valor in novo.items():
         setattr(usuario, nome, valor)
     return None
+
+
+def ler_certificado(conteudo, senha):
+    """Abre um .pfx/.p12 e devolve {"cnpj", "titular", "validade"}, ou levanta
+    NfseErro (arquivo inválido / senha errada / sem certificado). O CNPJ vem do
+    nome do titular (e-CNPJ ICP-Brasil: "RAZAO SOCIAL:CNPJ")."""
+    from cryptography.hazmat.primitives.serialization import pkcs12
+
+    try:
+        chave, certificado, _cadeia = pkcs12.load_key_and_certificates(conteudo, (senha or "").encode("utf-8"))
+    except Exception:
+        raise NfseErro("Não foi possível abrir o certificado - confira se é um arquivo .pfx/.p12 e se a senha está correta.")
+    if certificado is None or chave is None:
+        raise NfseErro("O arquivo não contém um certificado com chave privada.")
+    titular = certificado.subject.rfc4514_string()
+    achados = re.findall(r"\d{14}", titular)
+    fim = certificado.not_valid_after_utc if hasattr(certificado, "not_valid_after_utc") else certificado.not_valid_after
+    cn = next((p.value for p in certificado.subject if p.oid.dotted_string == "2.5.4.3"), titular)
+    return {"cnpj": achados[0] if achados else None, "titular": str(cn)[:200], "validade": fim.date()}
+
+
+def certificado_situacao(config, hoje=None):
+    """("sem", "vencido", "vencendo" (menos de 30 dias) ou "ok")."""
+    from datetime import date
+
+    if not config.nfse_cert_pfx or not config.nfse_cert_validade:
+        return "sem"
+    dias = (config.nfse_cert_validade - (hoje or date.today())).days
+    return "vencido" if dias < 0 else ("vencendo" if dias < 30 else "ok")

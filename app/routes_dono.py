@@ -584,7 +584,52 @@ def nota_fiscal():
         else:
             flash("Configuração da nota fiscal salva.", "success")
         return redirect(url_for("dono.nota_fiscal"))
-    return render_template("dono/nota_fiscal.html", config=config, faltando=dados_faltando_emitente(config))
+    from app.nfse import certificado_situacao
+
+    return render_template("dono/nota_fiscal.html", config=config, faltando=dados_faltando_emitente(config),
+                           cert_situacao=certificado_situacao(config))
+
+
+@dono_bp.route("/nota-fiscal/certificado", methods=["POST"])
+@login_required
+@dono_required
+def nota_fiscal_certificado():
+    """Importa (ou remove) o certificado digital A1 da empresa emitente (pedido
+    do Silvan, 2026-10-27): valida que abre com a senha e guarda o arquivo e a
+    senha criptografados."""
+    from app import nfse
+    from app.cripto_fiscal import criptografar_bytes, criptografar_texto
+
+    config = PlataformaConfig.obter()
+    if request.form.get("acao") == "remover":
+        config.nfse_cert_pfx = config.nfse_cert_senha_cripto = None
+        config.nfse_cert_cnpj = config.nfse_cert_titular = config.nfse_cert_validade = None
+        db.session.commit()
+        flash("Certificado removido.", "success")
+        return redirect(url_for("dono.nota_fiscal"))
+    arquivo = request.files.get("certificado_arquivo")
+    senha = request.form.get("certificado_senha", "")
+    if not arquivo or not arquivo.filename or not senha:
+        flash("Selecione o arquivo do certificado (.pfx) e informe a senha.", "danger")
+        return redirect(url_for("dono.nota_fiscal"))
+    conteudo = arquivo.read()
+    if len(conteudo) > 200_000:
+        flash("O arquivo é grande demais para ser um certificado.", "danger")
+        return redirect(url_for("dono.nota_fiscal"))
+    try:
+        dados = nfse.ler_certificado(conteudo, senha)
+    except nfse.NfseErro as erro:
+        flash(str(erro), "danger")
+        return redirect(url_for("dono.nota_fiscal"))
+    config.nfse_cert_pfx = criptografar_bytes(conteudo)
+    config.nfse_cert_senha_cripto = criptografar_texto(senha)
+    config.nfse_cert_cnpj, config.nfse_cert_titular, config.nfse_cert_validade = dados["cnpj"], dados["titular"], dados["validade"]
+    db.session.commit()
+    aviso = ""
+    if config.nfse_cnpj and dados["cnpj"] and config.nfse_cnpj != dados["cnpj"]:
+        aviso = " Atenção: o CNPJ do certificado é diferente do CNPJ do emitente cadastrado."
+    flash(f"Certificado validado e salvo (válido até {dados['validade'].strftime('%d/%m/%Y')}).{aviso}", "warning" if aviso else "success")
+    return redirect(url_for("dono.nota_fiscal"))
 
 
 def _pagamento_do_usuario(usuario_id, pagamento_id):

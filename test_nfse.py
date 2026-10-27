@@ -143,3 +143,50 @@ with app.app_context():
     p = db.session.get(LicencaPagamento, outro)
     checar("Simulação: nota 'autorizada' de mentira, sem chamar a rede", p.nf_status == "autorizada" and p.nf_numero.startswith("SIM-"))
 print("TUDO OK")
+
+# ---------- certificado digital importado pelo dono ----------
+import io
+from datetime import timedelta
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.serialization import pkcs12
+from cryptography.x509.oid import NameOID
+
+
+def gerar_pfx(senha, dias=365):
+    chave = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    nome = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "MEDIA LTDA:11222333000181")])
+    agora = datetime.utcnow()
+    cert = (x509.CertificateBuilder().subject_name(nome).issuer_name(nome).public_key(chave.public_key())
+            .serial_number(x509.random_serial_number()).not_valid_before(agora - timedelta(days=1))
+            .not_valid_after(agora + timedelta(days=dias)).sign(chave, hashes.SHA256()))
+    return pkcs12.serialize_key_and_certificates(b"cert", chave, cert, None, serialization.BestAvailableEncryption(senha.encode()))
+
+
+pfx = gerar_pfx("segredo123")
+html = dono.get("/dono/nota-fiscal").get_data(as_text=True)
+checar("Tela mostra a área do certificado digital", "Certificado digital (A1 / e-CNPJ)" in html and "Importar certificado" in html)
+r = dono.post("/dono/nota-fiscal/certificado", data={"certificado_arquivo": (io.BytesIO(pfx), "empresa.pfx"), "certificado_senha": "errada"}, follow_redirects=True)
+checar("Senha errada: recusa e não guarda", "senha está correta" in r.get_data(as_text=True))
+with app.app_context():
+    checar("... nada gravado", PlataformaConfig.obter().nfse_cert_pfx is None)
+r = dono.post("/dono/nota-fiscal/certificado", data={"certificado_arquivo": (io.BytesIO(b"lixo"), "x.pfx"), "certificado_senha": "x"}, follow_redirects=True)
+checar("Arquivo que não é certificado é recusado", "Não foi possível abrir o certificado" in r.get_data(as_text=True))
+r = dono.post("/dono/nota-fiscal/certificado", data={"certificado_arquivo": (io.BytesIO(pfx), "empresa.pfx"), "certificado_senha": "segredo123"}, follow_redirects=True)
+with app.app_context():
+    c = PlataformaConfig.obter()
+    checar("Certificado válido: CNPJ, titular e validade lidos; arquivo e senha criptografados",
+           c.nfse_cert_cnpj == "11222333000181" and "MEDIA LTDA" in c.nfse_cert_titular and c.nfse_cert_validade > date.today()
+           and c.nfse_cert_pfx != pfx and b"segredo123" not in c.nfse_cert_senha_cripto and "validado e salvo" in r.get_data(as_text=True))
+    from app.cripto_fiscal import descriptografar_bytes, descriptografar_texto
+    checar("... e dá para recuperar o arquivo e a senha para usar na emissão",
+           descriptografar_bytes(c.nfse_cert_pfx) == pfx and descriptografar_texto(c.nfse_cert_senha_cripto) == "segredo123")
+    checar("Situação 'ok'", nfse.certificado_situacao(c) == "ok" and nfse.certificado_situacao(c, hoje=c.nfse_cert_validade - timedelta(days=5)) == "vencendo"
+           and nfse.certificado_situacao(c, hoje=c.nfse_cert_validade + timedelta(days=1)) == "vencido")
+html = dono.get("/dono/nota-fiscal").get_data(as_text=True)
+checar("Tela mostra titular, CNPJ e validade (sem expor senha)", "MEDIA LTDA" in html and "11222333000181" in html and "segredo123" not in html)
+dono.post("/dono/nota-fiscal/certificado", data={"acao": "remover"})
+with app.app_context():
+    checar("Remover apaga o certificado", PlataformaConfig.obter().nfse_cert_pfx is None and PlataformaConfig.obter().nfse_cert_validade is None)
+print("CERTIFICADO OK")
