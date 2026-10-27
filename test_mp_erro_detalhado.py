@@ -49,4 +49,9 @@ checar("Mensagem da tela traz o código e o motivo do Mercado Pago", descrever_e
 checar("Erro que não veio do Mercado Pago (rede) não acrescenta nada", descrever_erro(ValueError("x")) == "")
 e.response = SimpleNamespace(status_code=500, json=lambda: (_ for _ in ()).throw(ValueError()))
 checar("Corpo ilegível: só o código", descrever_erro(e) == " (Mercado Pago: código 500)")
+import os
+from unittest.mock import patch
+from app.mercadopago_integration import _access_token
+with patch.dict(os.environ, {"MERCADOPAGO_ACCESS_TOKEN": ' "APP_USR-123-abc"\n'}):
+    checar("Token com espaços, quebra de linha ou aspas é limpo", _access_token() == "APP_USR-123-abc")
 print("TUDO OK")

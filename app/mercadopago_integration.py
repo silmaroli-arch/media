@@ -81,7 +81,9 @@ def descrever_erro(erro):
 
 
 def _access_token():
-    token = os.environ.get("MERCADOPAGO_ACCESS_TOKEN")
+    # Tira espaços, quebra de linha e aspas coladas junto com o valor no painel
+    # (um token com isso sobrando volta 401 do Mercado Pago).
+    token = (os.environ.get("MERCADOPAGO_ACCESS_TOKEN") or "").strip().strip("\"'").strip()
     if not token:
         raise MercadoPagoNaoConfigurado(
             "MERCADOPAGO_ACCESS_TOKEN não configurado - defina no .env pra poder "
