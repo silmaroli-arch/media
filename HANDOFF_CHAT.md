@@ -2886,6 +2886,7 @@ Pedido do Silvan: ver todas as perguntas dos pacientes, respostas sugeridas pela
 Antes: com a aprovação do médico DESATIVADA, respostas que a IA tirou de fora do preparo e do FAQ (conhecimento geral, medicamento/nome não cadastrado, divergência com a base: `exige_revisao_medicamento`/`exige_revisao_base`) continuavam indo SEMPRE para a fila do médico.
 - Novo parâmetro `confiar_ia_fora_do_preparo` (padrão desligado) em `Grupo` e em `Usuario` (conta solo); migração em `migrar_banco.py`. Função `confia_na_ia_fora_do_preparo` em `routes_paciente.py`, usada no chat web e no WhatsApp: com a aprovação desativada E o parâmetro ligado, essas respostas vão direto ao paciente (e entram no FAQ como qualquer aprovação automática).
 - Painel do médico: segundo interruptor abaixo de "Exigir minha aprovação..." (travado enquanto a aprovação estiver ativada); rota `medico.perguntas_configuracao_confiar_ia`.
+- Exceção: "Não reconheci ..." (`respondeu_nao_reconhecido`) e "a IA não soube" nunca vão direto, mesmo confiando.
 - Atenção: ligado, a IA responde direto o que NÃO está no preparo (ex.: "posso tomar nimesulida?") - é a escolha do médico.
 - Teste: `test_confiar_ia.py` (web). O caminho do WhatsApp usa a mesma regra. PENDENTE DE TESTE (Silvan): ligar e perguntar algo fora do preparo.
 

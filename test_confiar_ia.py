@@ -62,6 +62,26 @@ with app.app_context():
     p = PerguntaPendente.query.filter_by(paciente_id=joao_id, pergunta=pergunta).first()
     checar("... e foi registrada como respondida (sem fila do médico)", p is not None and p.status == "respondida")
 
+# ---------- "Não reconheci": nunca vai direto, mesmo confiando ----------
+pergunta3 = "[teste-confiar] Posso tomar o Xyzvital antes do exame?"
+with patch("app.routes_paciente.responder_com_ia", return_value=resultado(
+        'Não reconheci o "Xyzvital".', situacao={"Claude": "respondeu_nao_reconhecido", "ChatGPT": "nao_sabe"})):
+    html = client.post("/paciente/chat", data={"pergunta": pergunta3, "exame_id": str(exame_id)}, follow_redirects=True).get_data(as_text=True)
+with app.app_context():
+    p = PerguntaPendente.query.filter_by(paciente_id=joao_id, pergunta=pergunta3).first()
+    checar("'Não reconheci' fica com o médico mesmo confiando na IA", p is not None and p.status == "aguardando_aprovacao"
+           and "Não reconheci" not in html.replace(pergunta3, ""))
+# ---------- IA não sabe (NAO_SEI): vai para o médico, sem rascunho ----------
+pergunta4 = "[teste-confiar] Qual a cor do carro do médico?"
+with patch("app.routes_paciente.responder_com_ia", return_value={"final": None, "por_provedor": {"Claude": None, "ChatGPT": None, "Gemini": None},
+                                                                  "falhas": [], "sem_sentido": False, "exige_revisao_medicamento": False,
+                                                                  "situacao": {"Claude": "nao_sabe", "ChatGPT": "nao_sabe"}}):
+    client.post("/paciente/chat", data={"pergunta": pergunta4, "exame_id": str(exame_id)}, follow_redirects=True)
+with app.app_context():
+    p = PerguntaPendente.query.filter_by(paciente_id=joao_id, pergunta=pergunta4).first()
+    checar("Se a IA não sabe, a pergunta vai para a fila do médico sem resposta (mesmo confiando)",
+           p is not None and p.status == "pendente" and not p.resposta_sugerida_ia)
+
 # ---------- desligado: volta a esperar o médico ----------
 medico.post("/equipe/perguntas/configuracao/confiar-ia", data={})
 with app.app_context():

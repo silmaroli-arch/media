@@ -686,7 +686,7 @@ def _responder_pergunta(paciente, agendamento, pergunta_texto, telefone):
             # diverge das IAs (ou preenche uma lacuna) sempre passa pelo
             # médico (ver app.ia_preparo.responder_com_ia).
             if not exige_aprovacao and (
-                confia_na_ia_fora_do_preparo(grupo_id_ancora, criado_por_id_ancora)
+                confia_na_ia_fora_do_preparo(grupo_id_ancora, criado_por_id_ancora, resultado_ia)
                 or not (resultado_ia.get("exige_revisao_medicamento") or resultado_ia.get("exige_revisao_base"))
             ):
                 # Pedido do Silvan (2026-09-13): aprovação desativada para
