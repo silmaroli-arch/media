@@ -66,10 +66,9 @@ class PlataformaConfig(db.Model):
     modelos_pontos = db.Column(db.Text, nullable=True)
     # Emissão de NFS-e da licença pelo MedIA (pedido do Silvan, 2026-10-27, ver
     # app.nfse): o EMITENTE é a empresa dona da plataforma. nfse_provedor:
-    # nenhum | focusnfe | simulacao (gera nota de mentira, para testar).
+    # nenhum | certificado (emissão direta, em standby) | simulacao.
     nfse_provedor = db.Column(db.String(20), nullable=False, default="nenhum")
     nfse_ambiente = db.Column(db.String(20), nullable=False, default="homologacao")
-    nfse_token_cripto = db.Column(db.LargeBinary, nullable=True)
     nfse_cnpj = db.Column(db.String(20))
     nfse_razao_social = db.Column(db.String(200))
     nfse_inscricao_municipal = db.Column(db.String(30))

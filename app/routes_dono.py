@@ -548,14 +548,13 @@ def nota_fiscal():
     """Configuração do EMITENTE da nota fiscal (NFS-e) da licença (pedido do
     Silvan, 2026-10-27, ver app.nfse): dados da empresa, serviço, alíquota e a
     conexão com o Focus NFe. O token nunca volta para a tela."""
-    from app.cripto_fiscal import criptografar_texto
     from app.nfse import dados_faltando_emitente, so_digitos
 
     config = PlataformaConfig.obter()
     if request.method == "POST":
         provedor = request.form.get("nfse_provedor")
         ambiente = request.form.get("nfse_ambiente")
-        if provedor not in ("nenhum", "focusnfe", "simulacao") or ambiente not in ("homologacao", "producao"):
+        if provedor not in ("nenhum", "simulacao") or ambiente not in ("homologacao", "producao"):
             flash("Escolha um emissor e um ambiente válidos.", "danger")
             return redirect(url_for("dono.nota_fiscal"))
         aliquota = (request.form.get("nfse_aliquota_iss") or "").strip().replace(",", ".")
@@ -574,9 +573,6 @@ def nota_fiscal():
         config.nfse_cnae = so_digitos(request.form.get("nfse_cnae")) or None
         config.nfse_optante_simples = request.form.get("nfse_optante_simples") == "on"
         config.nfse_discriminacao = (request.form.get("nfse_discriminacao") or "").strip() or None
-        token = (request.form.get("nfse_token") or "").strip()
-        if token:
-            config.nfse_token_cripto = criptografar_texto(token)
         db.session.commit()
         faltando = dados_faltando_emitente(config)
         if provedor != "nenhum" and faltando:
@@ -655,27 +651,7 @@ def usuario_licenca_pagamento_nota(usuario_id, pagamento_id):
         db.session.commit()  # guarda o motivo (nf_erro) quando o provedor recusou
         flash(str(erro), "danger")
     else:
-        flash("Nota enviada: " + ("autorizada (simulação)." if pagamento.nf_status == "autorizada"
-                                  else "em processamento - clique em \"Atualizar\" em alguns instantes."), "success")
-    return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
-
-
-@dono_bp.route("/usuarios/<int:usuario_id>/licenca/pagamentos/<int:pagamento_id>/nota/atualizar", methods=["POST"])
-@login_required
-@dono_required
-def usuario_licenca_pagamento_nota_atualizar(usuario_id, pagamento_id):
-    """Consulta no provedor se a nota em processamento já foi autorizada."""
-    from app import nfse
-
-    usuario, pagamento = _pagamento_do_usuario(usuario_id, pagamento_id)
-    try:
-        nfse.atualizar_status(pagamento, PlataformaConfig.obter())
-        db.session.commit()
-    except nfse.NfseErro as erro:
-        flash(str(erro), "danger")
-    else:
-        flash({"autorizada": "Nota autorizada.", "erro": "A prefeitura recusou a nota - veja o motivo na linha do mês.",
-               "cancelada": "Nota cancelada."}.get(pagamento.nf_status, "Ainda em processamento na prefeitura."), "info")
+        flash("Nota emitida (simulação).", "success")
     return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
 
 
@@ -957,7 +933,7 @@ def usuario_licenca_pagamentos(usuario_id):
 
     return render_template(
         "dono/usuario_licenca_pagamentos.html", usuario=usuario, pagamentos=pagamentos,
-        config_nfse_ligada=PlataformaConfig.obter().nfse_provedor in ("focusnfe", "simulacao"),
+        config_nfse_ligada=PlataformaConfig.obter().nfse_provedor in ("certificado", "simulacao"),
         faltando_fiscal=dados_faltando_tomador(usuario),
     )
 

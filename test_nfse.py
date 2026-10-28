@@ -1,10 +1,8 @@
 """Emissão de NFS-e da licença pelo MedIA (pedido do Silvan, 2026-10-27)."""
 from datetime import date, datetime
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from app import create_app, db
-from app.cripto_fiscal import criptografar_texto
 from app.models import LicencaPagamento, PlataformaConfig, Usuario
 from app import nfse
 
@@ -57,92 +55,49 @@ dono.post("/login", data={"identificador": dono_email, "senha": "123456"})
 html = dono.get("/dono/nota-fiscal").get_data(as_text=True)
 checar("Tela 'Nota fiscal' do dono abre e está no menu", "Nota fiscal (NFS-e) da licença" in html and "nfse_cnpj" in html
        and "Nota fiscal" in dono.get("/dono/").get_data(as_text=True))
+checar("Sem Focus NFe na tela (nem campo de token, nem opção)", "Focus" not in html and "nfse_token" not in html)
 url = f"/dono/usuarios/{medico_id}/licenca/pagamentos/{pag_id}/nota"
 r = dono.post(url, follow_redirects=True)
 checar("Desligada: não emite", "não está ligada" in r.get_data(as_text=True))
 dono.post("/dono/nota-fiscal", data={"nfse_provedor": "simulacao", "nfse_ambiente": "homologacao"})
 r = dono.post(url, follow_redirects=True)
 checar("Sem dados do emitente: avisa o que falta", "Faltam dados do emitente" in r.get_data(as_text=True))
-emitente = {"nfse_provedor": "focusnfe", "nfse_ambiente": "homologacao", "nfse_token": "tok-secreto", "nfse_cnpj": "11.222.333/0001-81",
+emitente = {"nfse_provedor": "simulacao", "nfse_ambiente": "homologacao", "nfse_cnpj": "11.222.333/0001-81",
             "nfse_razao_social": "MedIA Ltda", "nfse_inscricao_municipal": "12345", "nfse_ibge_municipio": "3205309",
             "nfse_item_lista_servico": "0107", "nfse_aliquota_iss": "2,5", "nfse_optante_simples": "on",
             "nfse_codigo_tributario_municipio": "010701", "nfse_cnae": "6201-5/01"}
+r = dono.post("/dono/nota-fiscal", data={**emitente, "nfse_provedor": "focusnfe"}, follow_redirects=True)
+checar("Emissor 'focusnfe' não existe mais", "emissor e um ambiente válidos" in r.get_data(as_text=True))
 dono.post("/dono/nota-fiscal", data=emitente)
 with app.app_context():
     c = PlataformaConfig.obter()
-    checar("Emitente salvo; token criptografado e nunca volta na tela",
-           c.nfse_cnpj == "11222333000181" and float(c.nfse_aliquota_iss) == 2.5 and c.nfse_token_cripto and b"tok-secreto" not in c.nfse_token_cripto)
-checar("O token não aparece no HTML", "tok-secreto" not in dono.get("/dono/nota-fiscal").get_data(as_text=True))
+    checar("Emitente salvo", c.nfse_cnpj == "11222333000181" and float(c.nfse_aliquota_iss) == 2.5 and c.nfse_provedor == "simulacao")
+dono.post("/dono/nota-fiscal", data={**emitente, "nfse_provedor": "nenhum"})
+dono.post("/dono/nota-fiscal", data=emitente)
 
-# ---------- payload ----------
-with app.app_context():
-    c = PlataformaConfig.obter()
-    p = db.session.get(LicencaPagamento, pag_id)
-    corpo = nfse.montar_payload(p, c, datetime(2027, 4, 20, 10, 0, 0))
-    checar("Payload: prestador, tomador (CPF + endereço) e serviço",
-           corpo["prestador"] == {"cnpj": "11222333000181", "inscricao_municipal": "12345", "codigo_municipio": "3205309"}
-           and corpo["tomador"]["cpf"] and corpo["tomador"]["endereco"]["codigo_municipio"] == "3205309"
-           and corpo["servico"]["valor_servicos"] == 150.0 and corpo["servico"]["aliquota"] == 2.5
-           and corpo["servico"]["item_lista_servico"] == "0107" and "04/2027" in corpo["servico"]["discriminacao"]
-           and corpo["data_emissao"].endswith("-03:00") and corpo["optante_simples_nacional"] is True)
-
-# ---------- emitir (Focus NFe simulado) ----------
-chamadas = []
-def post_ok(url, params=None, json=None, auth=None, timeout=None):
-    chamadas.append(("POST", url, params, auth))
-    return SimpleNamespace(status_code=202, json=lambda: {"status": "processando_autorizacao"})
-def post_erro(url, params=None, json=None, auth=None, timeout=None):
-    return SimpleNamespace(status_code=422, json=lambda: {"codigo": "x", "mensagem": "Código de serviço inválido"})
-with patch("app.nfse.requests.post", post_erro):
-    r = dono.post(url, follow_redirects=True)
+# ---------- simulação ----------
+r = dono.post(url, follow_redirects=True)
 with app.app_context():
     p = db.session.get(LicencaPagamento, pag_id)
-    checar("Provedor recusa: erro guardado e mostrado", p.nf_status == "erro" and "Código de serviço inválido" in p.nf_erro
-           and "recusou a nota" in r.get_data(as_text=True))
-with patch("app.nfse.requests.post", post_ok):
-    r = dono.post(url, follow_redirects=True)
-with app.app_context():
-    p = db.session.get(LicencaPagamento, pag_id)
-    checar("Envio ok: fica 'processando', usando o ambiente de homologação e o token como usuário",
-           p.nf_status == "processando" and p.nf_ref.startswith(f"licenca-{pag_id}-")
-           and chamadas[-1][1] == "https://homologacao.focusnfe.com.br/v2/nfse" and chamadas[-1][3] == ("tok-secreto", ""))
+    checar("Simulação: nota 'autorizada' de mentira, sem rede", p.nf_status == "autorizada" and p.nf_numero == f"SIM-{pag_id}")
 r = dono.post(url, follow_redirects=True)
 checar("Não emite duas vezes o mesmo mês", "já tem nota" in r.get_data(as_text=True))
-
-def get_autorizado(url, auth=None, timeout=None):
-    return SimpleNamespace(status_code=200, json=lambda: {"status": "autorizado", "numero": "77", "url": "https://prefeitura/nota/77",
-                                                          "caminho_xml_nota_fiscal": "/arquivos/77.xml"})
-with patch("app.nfse.requests.get", get_autorizado):
-    dono.post(url + "/atualizar", follow_redirects=True)
-with app.app_context():
-    p = db.session.get(LicencaPagamento, pag_id)
-    checar("Atualizar: nota autorizada com número e link", p.nf_status == "autorizada" and p.nf_numero == "77"
-           and p.nf_url == "https://prefeitura/nota/77" and p.nf_xml_url.endswith("/arquivos/77.xml"))
 html = dono.get(f"/dono/usuarios/{medico_id}/licenca/pagamentos").get_data(as_text=True)
-checar("Calendário do dono mostra a nota", "Nota 77" in html and "ver nota" in html)
+checar("Calendário do dono mostra a nota (simulada)", f"Nota SIM-{pag_id}" in html and "(simulada)" in html)
 from app.models import Grupo
 with app.app_context():
     vitoria = Grupo.query.filter_by(nome="Clínica Vitória").first().id
 medico_c.post("/equipe/clinica", data={"clinica_id": str(vitoria)}, follow_redirects=True)
 html = medico_c.get("/equipe/minha-licenca").get_data(as_text=True)
-checar("O médico vê e baixa a nota em Minha licença", "Nota fiscal 77" in html and "https://prefeitura/nota/77" in html)
+checar("O médico vê a nota em Minha licença", f"Nota fiscal SIM-{pag_id}" in html)
 
-# mês não pago não emite; simulação gera nota sem rede
+# mês não pago não emite
 with app.app_context():
     db.session.add(LicencaPagamento(usuario_id=medico_id, mes=date(2027, 5, 1), pago=False, valor=150))
     db.session.commit()
     outro = LicencaPagamento.query.filter_by(usuario_id=medico_id, mes=date(2027, 5, 1)).first().id
 r = dono.post(f"/dono/usuarios/{medico_id}/licenca/pagamentos/{outro}/nota", follow_redirects=True)
 checar("Mês não pago não emite nota", "já pago" in r.get_data(as_text=True))
-dono.post("/dono/nota-fiscal", data={**emitente, "nfse_provedor": "simulacao", "nfse_token": ""})
-with app.app_context():
-    db.session.get(LicencaPagamento, outro).pago = True
-    db.session.commit()
-dono.post(f"/dono/usuarios/{medico_id}/licenca/pagamentos/{outro}/nota", follow_redirects=True)
-with app.app_context():
-    p = db.session.get(LicencaPagamento, outro)
-    checar("Simulação: nota 'autorizada' de mentira, sem chamar a rede", p.nf_status == "autorizada" and p.nf_numero.startswith("SIM-"))
-print("TUDO OK")
 
 # ---------- certificado digital importado pelo dono ----------
 import io

@@ -5,25 +5,22 @@ tela do dono "Nota fiscal"); o TOMADOR é o médico (dados fiscais em
 Usuario.fiscal_*, ou o CPF dele). A nota é de um mês JÁ PAGO
 (LicencaPagamento.pago) e é emitida quando o dono clica em "Emitir nota".
 
-Provedor: Focus NFe (API REST, https://focusnfe.com.br/doc/#nfse). A nota
-sai de forma assíncrona: o POST devolve "processando_autorizacao" e a
-prefeitura autoriza em seguida - `atualizar_status` consulta de novo. O
-provedor "simulacao" gera uma nota de mentira para testar sem conta nem
-valor fiscal. A montagem do JSON segue a documentação da Focus NFe e precisa
-ser conferida em HOMOLOGAÇÃO com a conta real (cada prefeitura tem
-particularidades de código de serviço e alíquota)."""
+Emissão: SEM intermediário (decisão do Silvan: nada de Focus NFe) - o XML da
+nota será assinado e enviado direto à NFS-e nacional com o certificado A1 da
+empresa, importado em "Nota fiscal" (ver ler_certificado). Essa transmissão
+está em STANDBY (a empresa emitente ainda não existe oficialmente): o código
+antigo de emissão direta está no histórico do git
+(`git show 75b405f6^:app/nfse_nacional.py`) e será reaproveitado. Enquanto
+isso só existe o provedor "simulacao" (nota de mentira, para testar a tela)."""
 import logging
 import re
 from datetime import datetime
 
 import requests
 
-from app.cripto_fiscal import descriptografar_texto
 
 logger = logging.getLogger(__name__)
 
-URLS = {"homologacao": "https://homologacao.focusnfe.com.br", "producao": "https://api.focusnfe.com.br"}
-FUSO_NF = "-03:00"
 DISCRIMINACAO_PADRAO = "Licença de uso da plataforma MedIA (software) - competência {mes}"
 
 
@@ -77,81 +74,16 @@ def dados_faltando_emitente(config):
             faltando.append(rotulo)
     if config.nfse_aliquota_iss is None:
         faltando.append("alíquota do ISS")
-    if config.nfse_provedor == "focusnfe" and not config.nfse_token_cripto:
-        faltando.append("token do Focus NFe")
     return faltando
-
-
-def montar_payload(pagamento, config, agora=None):
-    """JSON da NFS-e (formato Focus NFe) do mês `pagamento`."""
-    usuario = pagamento.usuario
-    agora = agora or datetime.utcnow()
-    cnpj_tomador = so_digitos(usuario.fiscal_cnpj)
-    tomador = {
-        "razao_social": (usuario.fiscal_razao_social if cnpj_tomador else usuario.nome) or usuario.nome,
-        "email": usuario.email,
-        "endereco": {
-            "logradouro": usuario.fiscal_logradouro, "numero": usuario.fiscal_numero,
-            "complemento": usuario.fiscal_complemento or "", "bairro": usuario.fiscal_bairro,
-            "codigo_municipio": usuario.fiscal_ibge, "uf": usuario.fiscal_uf, "cep": so_digitos(usuario.fiscal_cep),
-        },
-    }
-    if cnpj_tomador:
-        tomador["cnpj"] = cnpj_tomador
-    else:
-        tomador["cpf"] = so_digitos(usuario.cpf)
-    mes = pagamento.mes.strftime("%m/%Y")
-    servico = {
-        "aliquota": float(config.nfse_aliquota_iss),
-        "discriminacao": (config.nfse_discriminacao or DISCRIMINACAO_PADRAO).replace("{mes}", mes),
-        "iss_retido": False,
-        "item_lista_servico": config.nfse_item_lista_servico,
-        "valor_servicos": float(pagamento.valor or 0),
-    }
-    if config.nfse_codigo_tributario_municipio:
-        servico["codigo_tributario_municipio"] = config.nfse_codigo_tributario_municipio
-    if config.nfse_cnae:
-        servico["codigo_cnae"] = so_digitos(config.nfse_cnae)
-    return {
-        "data_emissao": agora.strftime("%Y-%m-%dT%H:%M:%S") + FUSO_NF,
-        "natureza_operacao": "1",
-        "optante_simples_nacional": bool(config.nfse_optante_simples),
-        "prestador": {"cnpj": so_digitos(config.nfse_cnpj), "inscricao_municipal": config.nfse_inscricao_municipal,
-                      "codigo_municipio": config.nfse_ibge_municipio},
-        "tomador": tomador,
-        "servico": servico,
-    }
-
-
-def _base_e_auth(config):
-    token = descriptografar_texto(config.nfse_token_cripto) if config.nfse_token_cripto else None
-    if not token:
-        raise NfseErro("Token do Focus NFe não configurado (Painel do dono > Nota fiscal).")
-    return URLS.get(config.nfse_ambiente, URLS["homologacao"]), (token, "")
-
-
-def _erro_do_provedor(resposta):
-    """Texto legível dos erros que o provedor devolveu."""
-    try:
-        dados = resposta.json()
-    except Exception:
-        return f"resposta inesperada do provedor (HTTP {resposta.status_code})"
-    partes = []
-    if dados.get("mensagem"):
-        partes.append(str(dados["mensagem"]))
-    for erro in dados.get("erros") or []:
-        texto = erro.get("mensagem") or ""
-        if erro.get("correcao"):
-            texto += f" ({erro['correcao']})"
-        partes.append(texto)
-    return "; ".join(p for p in partes if p) or f"HTTP {resposta.status_code}"
 
 
 def emitir(pagamento, config, agora=None):
     """Envia a nota deste mês pago. Atualiza `pagamento.nf_*` (sem commit).
     Levanta NfseErro se não puder emitir."""
     agora = agora or datetime.utcnow()
-    if config.nfse_provedor not in ("focusnfe", "simulacao"):
+    if config.nfse_provedor == "certificado":
+        raise NfseErro("A emissão direta com o certificado digital ainda está em desenvolvimento (standby).")
+    if config.nfse_provedor != "simulacao":
         raise NfseErro("A emissão de nota fiscal não está ligada (Painel do dono > Nota fiscal).")
     if not pagamento.pago:
         raise NfseErro("Só é possível emitir nota de um mês já pago.")
@@ -169,50 +101,9 @@ def emitir(pagamento, config, agora=None):
     pagamento.nf_ref = f"licenca-{pagamento.id}-{agora.strftime('%Y%m%d%H%M%S')}"
     pagamento.nf_erro = None
     pagamento.nf_emitida_em = agora
-    if config.nfse_provedor == "simulacao":
-        pagamento.nf_status = "autorizada"
-        pagamento.nf_numero = f"SIM-{pagamento.id}"
-        pagamento.nf_url = None
-        return
-
-    base, auth = _base_e_auth(config)
-    payload = montar_payload(pagamento, config, agora)
-    try:
-        resposta = requests.post(f"{base}/v2/nfse", params={"ref": pagamento.nf_ref}, json=payload, auth=auth, timeout=30)
-    except requests.RequestException as erro:
-        raise NfseErro(f"Não foi possível falar com o Focus NFe: {erro}")
-    if resposta.status_code not in (200, 201, 202):
-        pagamento.nf_status = "erro"
-        pagamento.nf_erro = _erro_do_provedor(resposta)
-        raise NfseErro("O Focus NFe recusou a nota: " + pagamento.nf_erro)
-    pagamento.nf_status = "processando"
-
-
-def atualizar_status(pagamento, config):
-    """Consulta a nota em processamento (ou com erro) no provedor e grava o
-    resultado. Sem commit."""
-    if config.nfse_provedor != "focusnfe" or not pagamento.nf_ref:
-        return
-    base, auth = _base_e_auth(config)
-    try:
-        resposta = requests.get(f"{base}/v2/nfse/{pagamento.nf_ref}", auth=auth, timeout=30)
-        dados = resposta.json()
-    except Exception as erro:
-        raise NfseErro(f"Não foi possível consultar o Focus NFe: {erro}")
-    situacao = dados.get("status")
-    if situacao == "autorizado":
-        pagamento.nf_status = "autorizada"
-        pagamento.nf_numero = str(dados.get("numero") or "") or None
-        pagamento.nf_url = dados.get("url_danfse") or dados.get("url") or None
-        caminho_xml = dados.get("caminho_xml_nota_fiscal")
-        pagamento.nf_xml_url = f"{base}{caminho_xml}" if caminho_xml else None
-        pagamento.nf_erro = None
-    elif situacao in ("erro_autorizacao", "nao_autorizado"):
-        pagamento.nf_status = "erro"
-        pagamento.nf_erro = _erro_do_provedor(resposta)
-    elif situacao == "cancelado":
-        pagamento.nf_status = "cancelada"
-    # processando_autorizacao: continua "processando"
+    pagamento.nf_status = "autorizada"
+    pagamento.nf_numero = f"SIM-{pagamento.id}"
+    pagamento.nf_url = None
 
 
 def validar_cnpj(cnpj):

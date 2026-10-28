@@ -74,9 +74,6 @@
             {% if p.nf_status == "autorizada" %}
               <span class="badge bg-success">Nota {{ p.nf_numero or "" }}</span>
               {% if p.nf_url %}<a href="{{ p.nf_url }}" target="_blank" rel="noopener" class="d-block">ver nota</a>{% else %}<span class="text-muted d-block">(simulada)</span>{% endif %}
-            {% elif p.nf_status == "processando" %}
-              <span class="badge bg-info text-dark">processando</span>
-              <form method="post" action="{{ url_for('dono.usuario_licenca_pagamento_nota_atualizar', usuario_id=usuario.id, pagamento_id=p.id) }}" class="d-inline"><button class="btn btn-sm btn-link p-0">Atualizar</button></form>
             {% elif p.pago %}
               {% if p.nf_status == "erro" %}<span class="badge bg-danger">erro</span><div class="text-danger">{{ p.nf_erro }}</div>{% endif %}
               {% if config_nfse_ligada %}
