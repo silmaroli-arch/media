@@ -6,8 +6,9 @@
 <p class="text-muted small">
   Dados da <strong>sua empresa</strong> como emitente. A nota de cada mês pago é emitida pelo botão <strong>Emitir nota</strong> no
   calendário de pagamento do médico (Usuários → licença → Pagamentos), em nome do médico, com os dados fiscais que ele preencheu
-  no cadastro / Meus dados. O emissor é o <strong>Focus NFe</strong> (você precisa de conta e do certificado digital da empresa lá;
-  comece em <em>homologação</em>, que não tem valor fiscal).
+  no cadastro / Meus dados. A emissão será feita <strong>direto, com o certificado digital da empresa</strong> (importado abaixo), sem serviço intermediário.
+  Essa transmissão ainda está em desenvolvimento (aguardando a empresa emitente): por enquanto dá para guardar os dados e o
+  certificado e testar a tela com o emissor "Simulação".
 </p>
 {% if faltando and config.nfse_provedor != "nenhum" %}
 <div class="alert alert-warning small">Ainda faltam: {{ faltando|join(", ") }}.</div>
@@ -39,7 +40,7 @@
     <div class="col-md-4"><label class="form-label">Emissor</label>
       <select name="nfse_provedor" class="form-select">
         <option value="nenhum" {% if config.nfse_provedor == "nenhum" %}selected{% endif %}>Desligado</option>
-        <option value="focusnfe" {% if config.nfse_provedor == "focusnfe" %}selected{% endif %}>Focus NFe</option>
+        <option value="certificado" disabled>Certificado digital (em desenvolvimento)</option>
         <option value="simulacao" {% if config.nfse_provedor == "simulacao" %}selected{% endif %}>Simulação (nota de mentira, para testar)</option>
       </select></div>
     <div class="col-md-4"><label class="form-label">Ambiente</label>
@@ -47,11 +48,6 @@
         <option value="homologacao" {% if config.nfse_ambiente == "homologacao" %}selected{% endif %}>Homologação (teste, sem valor fiscal)</option>
         <option value="producao" {% if config.nfse_ambiente == "producao" %}selected{% endif %}>Produção (nota valendo)</option>
       </select></div>
-    <div class="col-md-4"><label class="form-label">Token do Focus NFe</label>
-      <input type="password" name="nfse_token" class="form-control" autocomplete="new-password"
-             placeholder="{{ '•••••••• (salvo - deixe em branco para manter)' if config.nfse_token_cripto else 'cole o token da sua conta' }}">
-      <div class="form-text">O token de homologação e o de produção são diferentes.</div></div>
-
     <div class="col-12"><hr class="my-1"><strong class="small">Emitente (sua empresa)</strong></div>
     <div class="col-md-4"><label class="form-label">CNPJ</label>
       <input type="text" inputmode="numeric" name="nfse_cnpj" class="form-control" value="{{ config.nfse_cnpj or '' }}"></div>

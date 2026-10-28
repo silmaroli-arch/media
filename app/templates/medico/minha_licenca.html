@@ -189,8 +189,6 @@
               {% if p.pago_em %}<span class="text-muted small ms-1">em {{ p.pago_em|hora_br('%d/%m/%Y') }}</span>{% endif %}
               {% if p.nf_status == "autorizada" %}
                 <div class="small mt-1"><i class="bi bi-receipt"></i> Nota fiscal {{ p.nf_numero or "" }}{% if p.nf_url %} - <a href="{{ p.nf_url }}" target="_blank" rel="noopener">ver / baixar</a>{% endif %}</div>
-              {% elif p.nf_status == "processando" %}
-                <div class="small text-muted mt-1">Nota fiscal em emissão...</div>
               {% endif %}
             {% else %}
               <span class="badge bg-warning text-dark">Não pago</span>
