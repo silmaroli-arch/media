@@ -54,6 +54,7 @@ from app.models import (
     LicencaPagamento,
     Medicamento,
     Paciente,
+    AcessoDetalheDia,
     AcessoDia,
     AcessoVisitanteDia,
     MonitorPergunta,
@@ -90,6 +91,7 @@ def apagar_todos_os_dados(dono_atual):
     ChatMensagem.query.delete(synchronize_session=False)
     MonitorPergunta.query.delete(synchronize_session=False)
     AcessoVisitanteDia.query.delete(synchronize_session=False)
+    AcessoDetalheDia.query.delete(synchronize_session=False)
     AcessoDia.query.delete(synchronize_session=False)
     ConversaWhatsapp.query.delete(synchronize_session=False)
     PerguntaPendente.query.delete(synchronize_session=False)
