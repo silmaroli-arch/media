@@ -1508,6 +1508,12 @@ class PreparoModelo(db.Model):
     pdf_original = db.relationship(
         "PreparoPdfOriginal", back_populates="preparo_modelo", uselist=False, cascade="all, delete-orphan",
     )
+    # PDFs que o médico já teve neste preparo antes de importar um atualizado
+    # (2026-11-06) - ficam guardados, com a data, para consulta.
+    pdfs_anteriores = db.relationship(
+        "PreparoPdfAnterior", back_populates="preparo_modelo", cascade="all, delete-orphan",
+        order_by="PreparoPdfAnterior.substituido_em.desc()",
+    )
 
 
 class PreparoCorte(db.Model):
@@ -1714,6 +1720,26 @@ class PreparoPdfPagina(db.Model):
     imagem = db.deferred(db.Column(db.LargeBinary, nullable=False))
 
     pdf = db.relationship("PreparoPdfOriginal", back_populates="paginas")
+
+
+class PreparoPdfAnterior(db.Model):
+    """Versão anterior do PDF de um preparo, guardada quando o médico importa
+    um preparo atualizado (pedido do Silvan, 2026-11-06)."""
+    __tablename__ = "preparo_pdfs_anteriores"
+
+    id = db.Column(db.Integer, primary_key=True)
+    preparo_modelo_id = db.Column(db.Integer, db.ForeignKey("preparo_modelos.id", ondelete="CASCADE"), nullable=False, index=True)
+    nome_arquivo = db.Column(db.String(255), nullable=False)
+    tamanho = db.Column(db.Integer, nullable=False)
+    conteudo = db.deferred(db.Column(db.LargeBinary, nullable=False))
+    enviado_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+    enviado_em = db.Column(db.DateTime)  # quando essa versão entrou
+    substituido_em = db.Column(db.DateTime, default=datetime.utcnow)
+    substituido_por_id = db.Column(db.Integer, db.ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True)
+
+    preparo_modelo = db.relationship("PreparoModelo", back_populates="pdfs_anteriores")
+    enviado_por = db.relationship("Usuario", foreign_keys=[enviado_por_id])
+    substituido_por = db.relationship("Usuario", foreign_keys=[substituido_por_id])
 
 
 class PreparoPdfOriginal(db.Model):

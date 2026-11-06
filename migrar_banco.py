@@ -528,6 +528,7 @@ ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_gemini VARCHAR(60)
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelos_pontos TEXT;
 ALTER TABLE faq_itens ADD COLUMN IF NOT EXISTS respondido_por_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
 ALTER TABLE faq_itens ADD COLUMN IF NOT EXISTS respondido_em TIMESTAMP;
+-- (preparo_pdfs_anteriores e criada pelo create_all)
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS fiscal_cnpj VARCHAR(20);
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS fiscal_razao_social VARCHAR(200);
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS fiscal_cep VARCHAR(10);
