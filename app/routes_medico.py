@@ -2140,6 +2140,7 @@ def preparo_modelos_editar(modelo_id):
         return render_template(
             "medico/preparo_modelo_form.html", modelo=modelo,
             sugestao=_sugestao_do_formulario(request.form) if request.method == "POST" else None,
+            atualizacao_pdf=request.method == "POST" and request.form.get("atualizar_pdf") == "1",
             medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
             medicos=medicos, exame_vinculado=exame_vinculado,
             varios_exames_vinculados=varios_exames_vinculados, eh_medico_logado=eh_medico(),
@@ -2244,6 +2245,21 @@ def preparo_modelos_editar(modelo_id):
         return redirect(url_for("medico.preparo_modelos_lista"))
 
     return _rerender_editar()
+
+
+@medico_bp.route("/preparo-modelos/<int:modelo_id>/pdf-anterior/<int:anterior_id>")
+@login_required
+@staff_required
+def preparo_modelos_pdf_anterior(modelo_id, anterior_id):
+    """Baixa uma versão anterior do PDF do preparo (2026-11-06)."""
+    from app.models import PreparoPdfAnterior
+    from app.preparo_pdf_original import resposta_pdf_original
+
+    modelo = PreparoModelo.query.filter(
+        PreparoModelo.id == modelo_id, filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id)
+    ).first_or_404()
+    anterior = PreparoPdfAnterior.query.filter_by(id=anterior_id, preparo_modelo_id=modelo.id).first_or_404()
+    return resposta_pdf_original(anterior, baixar=True)
 
 
 @medico_bp.route("/preparo-modelos/<int:modelo_id>/remover", methods=["POST"])
@@ -2393,7 +2409,7 @@ def _extrair_via_cadeia_de_ia(pdf_bytes):
     return sugestao, provedor_usado
 
 
-def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None):
+def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None, modelo=None):
     """Mensagem + tela de revisão comuns aos três caminhos de importação
     de PDF (com IA via streaming de progresso, com IA sem streaming, e
     sem IA/extração local no navegador). `provedor_usado` (ex.: "Gemini")
@@ -2410,6 +2426,21 @@ def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None):
     # PDF real. Mesma tela e mesmo contexto que o GET de
     # /preparo-modelos/novo?de_importacao=1 usaria, só que sem depender do
     # cookie para carregar o payload.
+    if modelo is not None:
+        # Atualização de um preparo que já existe (2026-11-06, ver
+        # app.preparo_atualizacao): a revisão é a própria tela de EDITAR, com o
+        # conteúdo do PDF novo no lugar do atual e o resumo do que muda.
+        from app.preparo_atualizacao import resumo_mudancas
+
+        return render_template(
+            "medico/preparo_modelo_form.html", modelo=modelo, sugestao=sugestao, provedor_usado=provedor_usado,
+            atualizacao_pdf=True, mudancas=resumo_mudancas(modelo, sugestao),
+            medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
+            medicos=medicos_das_filiais(_filiais_da_empresa()),
+            exame_vinculado=modelo.exames[0] if len(modelo.exames) == 1 else None,
+            varios_exames_vinculados=len(modelo.exames) > 1, eh_medico_logado=eh_medico(),
+            tipos_exame=_tipos_exame_ativos(),
+        )
     return render_template(
         "medico/preparo_modelo_form.html", modelo=None, sugestao=sugestao, provedor_usado=provedor_usado,
         medicamentos_catalogo=Medicamento.query.order_by(Medicamento.nome).all(),
@@ -2418,7 +2449,7 @@ def _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado=None):
     )
 
 
-def _importar_pdf_com_progresso(pdf_bytes):
+def _importar_pdf_com_progresso(pdf_bytes, modelo=None):
     """Generator usado como corpo de uma resposta em streaming (ver a
     rota `preparo_modelos_importar_xlsx`, campo `mostrar_progresso_ia`) -
     emite um evento de progresso (formato "Server-Sent Events"
@@ -2458,7 +2489,7 @@ def _importar_pdf_com_progresso(pdf_bytes):
             yield f"event: final\ndata: {json.dumps({'html': html})}\n\n"
             return
 
-    html = _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado)
+    html = _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado, modelo)
     yield f"event: final\ndata: {json.dumps({'html': html})}\n\n"
 
 
@@ -2483,6 +2514,16 @@ def preparo_modelos_importar_xlsx():
     si nesse caminho, só aplica a mesma extração heurística de
     app.pdf_preparo no texto recebido."""
     if request.method == "POST":
+        # Importar um preparo ATUALIZADO para um modelo que já existe (vem da
+        # tela de editar, campo oculto modelo_id) - mesmas regras de acesso da edição.
+        modelo_atualizado = None
+        if request.form.get("modelo_id", type=int):
+            modelo_atualizado = PreparoModelo.query.filter(
+                PreparoModelo.id == request.form.get("modelo_id", type=int),
+                filtro_escopo_atual(PreparoModelo.grupo_id, PreparoModelo.criado_por_id),
+            ).first_or_404()
+            if not modelo_atualizado.pode_ser_editado_por(current_user):
+                abort(403)
         arquivo = request.files.get("arquivo_xlsx")
         if not arquivo or not arquivo.filename:
             flash("Selecione um arquivo Excel (.xlsx) ou PDF.", "danger")
@@ -2503,7 +2544,7 @@ def preparo_modelos_importar_xlsx():
                 # (pdfjs) - nunca chama o Gemini nem sequer olha os bytes do
                 # PDF, só aplica a extração heurística por regex.
                 sugestao = extrair_sugestao_de_texto(texto_extraido_cliente)
-                return _renderizar_revisao_de_preparo_importado(sugestao)
+                return _renderizar_revisao_de_preparo_importado(sugestao, modelo=modelo_atualizado)
 
             pdf_bytes = arquivo.stream.read()
 
@@ -2518,7 +2559,7 @@ def preparo_modelos_importar_xlsx():
             # sem streaming.
             if request.form.get("mostrar_progresso_ia") == "1":
                 return Response(
-                    stream_with_context(_importar_pdf_com_progresso(pdf_bytes)),
+                    stream_with_context(_importar_pdf_com_progresso(pdf_bytes, modelo_atualizado)),
                     mimetype="text/event-stream",
                 )
 
@@ -2533,7 +2574,7 @@ def preparo_modelos_importar_xlsx():
                         "danger",
                     )
                     return render_template("medico/preparo_modelo_importar_xlsx.html")
-            return _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado)
+            return _renderizar_revisao_de_preparo_importado(sugestao, provedor_usado, modelo_atualizado)
 
         try:
             sugestoes = extrair_sugestoes_de_xlsx(arquivo.stream)

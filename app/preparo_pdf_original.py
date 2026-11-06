@@ -97,6 +97,8 @@ def aplicar_no_modelo(modelo, form, arquivos):
 
     if novo is not None or form.get("remover_pdf_original"):
         if modelo.pdf_original is not None:
+            # O PDF que está saindo fica guardado como versão anterior (2026-11-06).
+            arquivar_versao_anterior(modelo.pdf_original)
             db.session.delete(modelo.pdf_original)
             db.session.flush()
         if novo is not None:
@@ -104,6 +106,17 @@ def aplicar_no_modelo(modelo, form, arquivos):
             db.session.add(novo)
     db.session.commit()
     return erro
+
+
+def arquivar_versao_anterior(pdf):
+    """Guarda uma cópia do PDF que está sendo substituído (ou removido)."""
+    from app.models import PreparoPdfAnterior
+
+    db.session.add(PreparoPdfAnterior(
+        preparo_modelo_id=pdf.preparo_modelo_id, nome_arquivo=pdf.nome_arquivo, tamanho=pdf.tamanho,
+        conteudo=bytes(pdf.conteudo), enviado_por_id=pdf.enviado_por_id, enviado_em=pdf.enviado_em,
+        substituido_por_id=getattr(current_user, "id", None),
+    ))
 
 
 def resposta_pdf_original(pdf, baixar=False):

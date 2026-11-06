@@ -214,6 +214,8 @@ def create_app():
     app.register_blueprint(grupo_bp)
     app.register_blueprint(whatsapp_bp)
     app.register_blueprint(pagamentos_webhook_bp)
+    from app import acessos
+    acessos.init_app(app)
 
     # Login com Google (só equipe) - sem GOOGLE_CLIENT_ID/SECRET fica desligado.
     from app import login_google

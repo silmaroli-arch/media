@@ -29,6 +29,8 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <form method="post" action="{{ url_for('medico.preparo_modelos_importar_xlsx') }}" enctype="multipart/form-data" id="form-importar-xlsx">
+        {# Na tela de editar um preparo, importa o PDF para ATUALIZAR esse preparo. #}
+        {% if modelo %}<input type="hidden" name="modelo_id" value="{{ modelo.id }}">{% endif %}
         <div class="modal-header">
           <h6 class="modal-title"><i class="bi bi-file-earmark-arrow-up"></i> Importar de um PDF</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

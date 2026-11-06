@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block titulo %}Acessos{% endblock %}
+{% block conteudo %}
+{# Contador de acessos (pedido do Silvan, 2026-11-06, ver app/acessos.py). #}
+<h3 class="mb-1">Acessos ao site e ao sistema</h3>
+<p class="text-muted small">
+  <strong>Visitas</strong> = páginas abertas; <strong>visitantes</strong> = pessoas diferentes no dia (a soma de vários dias conta a mesma
+  pessoa uma vez por dia). Horário de Brasília. Não guarda IP nem dado pessoal; robôs (como o Google e a pré-visualização do
+  WhatsApp) e o seu próprio acesso de dono não entram. A contagem começou quando esta tela entrou no ar.
+</p>
+<div class="row g-3 mb-3">
+  {% for chave, nome in areas.items() %}
+  <div class="col-md-6 col-xl-3">
+    <div class="card p-3 h-100">
+      <div class="small text-muted">{{ nome }}</div>
+      <div class="d-flex align-items-baseline gap-2 mt-1">
+        <span class="fs-3 fw-semibold">{{ resumo[chave].hoje[0] }}</span><span class="small text-muted">visitas hoje · {{ resumo[chave].hoje[1] }} visitante(s)</span>
+      </div>
+      <div class="small mt-2">7 dias: <strong>{{ resumo[chave].sete[0] }}</strong> visitas · {{ resumo[chave].sete[1] }} visitantes</div>
+      <div class="small">30 dias: <strong>{{ resumo[chave].trinta[0] }}</strong> visitas · {{ resumo[chave].trinta[1] }} visitantes</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<div class="card p-3">
+  <h6 class="mb-2">Dia a dia (últimos 30 dias) - visitas / visitantes</h6>
+  <div class="table-responsive">
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Dia</th>{% for chave, nome in areas.items() %}<th>{{ nome }}</th>{% endfor %}<th style="min-width: 160px">Total de visitas</th></tr></thead>
+    <tbody>
+      {% for t in tabela %}
+      <tr>
+        <td class="text-nowrap">{{ t.dia.strftime("%d/%m (%a)")|replace("Mon","seg")|replace("Tue","ter")|replace("Wed","qua")|replace("Thu","qui")|replace("Fri","sex")|replace("Sat","sáb")|replace("Sun","dom") }}</td>
+        {% for chave in areas %}<td>{{ t.areas[chave][0] }} / {{ t.areas[chave][1] }}</td>{% endfor %}
+        <td><div class="d-flex align-items-center gap-2"><div style="height: 10px; width: {{ (t.total * 100 / maximo)|round|int }}px; max-width: 100px; background: #1660B0; border-radius: 3px;"></div><span class="small">{{ t.total }}</span></div></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

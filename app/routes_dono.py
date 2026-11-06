@@ -655,6 +655,40 @@ def usuario_licenca_pagamento_nota(usuario_id, pagamento_id):
     return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
 
 
+@dono_bp.route("/acessos")
+@login_required
+@dono_required
+def acessos():
+    """Contador de acessos ao site e ao sistema (pedido do Silvan, 2026-11-06,
+    ver app.acessos): hoje, últimos 7 dias, e dia a dia nos últimos 30."""
+    from datetime import timedelta
+
+    from app.acessos import AREAS
+    from app.fuso import agora_brasilia
+    from app.models import AcessoDia
+
+    hoje = agora_brasilia().date()
+    linhas = AcessoDia.query.filter(AcessoDia.dia >= hoje - timedelta(days=29)).all()
+    por_dia = {}
+    for l in linhas:
+        por_dia.setdefault(l.dia, {})[l.area] = (l.visitas, l.visitantes)
+
+    def soma(dias, area):
+        v = u = 0
+        for d in dias:
+            visitas, visitantes = por_dia.get(d, {}).get(area, (0, 0))
+            v, u = v + visitas, u + visitantes
+        return v, u
+
+    ultimos7 = [hoje - timedelta(days=i) for i in range(7)]
+    dias30 = [hoje - timedelta(days=i) for i in range(30)]
+    resumo = {a: {"hoje": soma([hoje], a), "sete": soma(ultimos7, a), "trinta": soma(dias30, a)} for a in AREAS}
+    tabela = [{"dia": d, "areas": {a: por_dia.get(d, {}).get(a, (0, 0)) for a in AREAS},
+               "total": sum(por_dia.get(d, {}).get(a, (0, 0))[0] for a in AREAS)} for d in dias30]
+    maximo = max((t["total"] for t in tabela), default=0) or 1
+    return render_template("dono/acessos.html", areas=AREAS, resumo=resumo, tabela=tabela, maximo=maximo)
+
+
 @dono_bp.route("/ajuda-app")
 @login_required
 @dono_required
