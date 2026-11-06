@@ -2481,6 +2481,33 @@ class Notificacao(db.Model):
         return self.ACOES.get(self.link_endpoint, "Clique aqui para abrir")
 
 
+class AcessoDia(db.Model):
+    """Contador de acessos por dia e área (pedido do Silvan, 2026-11-06, ver
+    app.acessos): só números - nenhum IP nem dado pessoal."""
+    __tablename__ = "acessos_dia"
+    __table_args__ = (db.UniqueConstraint("dia", "area", name="uq_acesso_dia_area"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    dia = db.Column(db.Date, nullable=False, index=True)
+    # site | equipe | paciente | link_preparo
+    area = db.Column(db.String(20), nullable=False)
+    visitas = db.Column(db.Integer, nullable=False, default=0)       # páginas abertas
+    visitantes = db.Column(db.Integer, nullable=False, default=0)    # pessoas diferentes no dia
+
+
+class AcessoVisitanteDia(db.Model):
+    """Impressão digital ANÔNIMA do visitante, só para contar quem é diferente
+    no mesmo dia: hash com sal que muda todo dia (não dá para desfazer) e é
+    apagado depois de 2 dias."""
+    __tablename__ = "acessos_visitantes_dia"
+    __table_args__ = (db.UniqueConstraint("dia", "area", "chave", name="uq_acesso_visitante"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    dia = db.Column(db.Date, nullable=False, index=True)
+    area = db.Column(db.String(20), nullable=False)
+    chave = db.Column(db.String(32), nullable=False)
+
+
 class MonitorPergunta(db.Model):
     """Um registro por pergunta de paciente tratada pelo sistema, com o
     caminho que ela fez (pedido do Silvan, 2026-10-26: "monitor" na área do
