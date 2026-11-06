@@ -703,12 +703,23 @@ def acessos():
         paginas[(d.area, d.pagina)] = paginas.get((d.area, d.pagina), 0) + d.visitas
         navegadores[d.navegador] = navegadores.get(d.navegador, 0) + d.visitas
     total_detalhe = sum(navegadores.values())
+    from app.models import AcessoDispositivoDia
+
+    aparelhos = AcessoDispositivoDia.query.filter_by(dia=dia_detalhe).order_by(AcessoDispositivoDia.visitas.desc()).all()
+    por_tipo = {}
+    for a in aparelhos:
+        por_tipo[a.tipo] = por_tipo.get(a.tipo, 0) + 1
+    aparelhos_resumo = {
+        "total": len(aparelhos), "novos": sum(1 for a in aparelhos if a.novo), "por_tipo": sorted(por_tipo.items(), key=lambda x: -x[1]),
+        "uma_visita": sum(1 for a in aparelhos if a.visitas == 1),
+    }
     paginas_top = sorted(((a, p, v) for (a, p), v in paginas.items()), key=lambda x: -x[2])[:15]
     navegadores_lista = sorted(navegadores.items(), key=lambda x: -x[1])
     return render_template(
         "dono/acessos.html", areas=AREAS, resumo=resumo, tabela=tabela, maximo=maximo, dia_detalhe=dia_detalhe,
         dias_detalhe=[hoje - timedelta(days=i) for i in range(7)], paginas_top=paginas_top,
         navegadores=navegadores_lista, total_detalhe=total_detalhe,
+        aparelhos=aparelhos[:60], aparelhos_resumo=aparelhos_resumo,
     )
 
 

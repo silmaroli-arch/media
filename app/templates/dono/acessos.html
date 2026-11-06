@@ -5,7 +5,7 @@
 <h3 class="mb-1">Acessos ao site e ao sistema</h3>
 <p class="text-muted small">
   <strong>Visitas</strong> = páginas abertas; <strong>visitantes</strong> = pessoas diferentes no dia (a soma de vários dias conta a mesma
-  pessoa uma vez por dia). Horário de Brasília. Não guarda IP nem dado pessoal; robôs (como o Google e a pré-visualização do
+  pessoa uma vez por dia). Horário de Brasília. Não guarda IP nem dado pessoal (os aparelhos são códigos aleatórios genéricos); robôs (como o Google e a pré-visualização do
   WhatsApp) e o seu próprio acesso de dono não entram. A contagem começou quando esta tela entrou no ar.
 </p>
 <div class="row g-3 mb-3">
@@ -59,6 +59,37 @@
       </table>
     </div>
   </div>
+  <hr class="my-3">
+  <div class="fw-semibold small mb-1">Aparelhos diferentes neste dia</div>
+  <div class="small text-muted mb-2">
+    Cada computador ou celular recebe um <strong>código aleatório</strong> (guardado num cookie do navegador, sem IP e sem nome).
+    Robôs normalmente não guardam o cookie: aparecem como muitos aparelhos <strong>novos com 1 visita só</strong>.
+  </div>
+  {% if aparelhos_resumo.total %}
+  <div class="mb-2">
+    <span class="fs-5 fw-semibold">{{ aparelhos_resumo.total }}</span> aparelho(s) diferente(s)
+    {% for tipo, qtd in aparelhos_resumo.por_tipo %}<span class="badge bg-light text-dark border ms-1">{{ qtd }} {{ tipo|lower }}</span>{% endfor %}
+    <span class="small text-muted ms-2">· {{ aparelhos_resumo.novos }} novo(s) · {{ aparelhos_resumo.uma_visita }} com 1 visita só</span>
+  </div>
+  <div class="table-responsive" style="max-height: 360px; overflow-y: auto;">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Aparelho</th><th>Tipo</th><th class="text-end">Visitas</th><th>Primeiro acesso</th><th>Último acesso</th><th>Situação</th></tr></thead>
+      <tbody>
+        {% for a in aparelhos %}
+        <tr>
+          <td><code>Dispositivo {{ a.codigo }}</code></td><td>{{ a.tipo }}</td><td class="text-end">{{ a.visitas }}</td>
+          <td class="small">{{ a.primeiro_em.strftime("%H:%M") if a.primeiro_em else "-" }}</td>
+          <td class="small">{{ a.ultimo_em.strftime("%H:%M") if a.ultimo_em else "-" }}</td>
+          <td class="small">{{ "novo neste dia" if a.novo else "já conhecido" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if aparelhos_resumo.total > aparelhos|length %}<div class="small text-muted mt-1">Mostrando os {{ aparelhos|length }} com mais visitas.</div>{% endif %}
+  {% else %}
+  <div class="text-muted small">Nenhum aparelho registrado neste dia.</div>
+  {% endif %}
   {% else %}
   <div class="text-muted small">Sem acessos registrados neste dia (o detalhe começa quando esta versão entrou no ar).</div>
   {% endif %}
