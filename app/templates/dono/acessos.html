@@ -22,6 +22,47 @@
   </div>
   {% endfor %}
 </div>
+{# Detalhe para investigar picos (2026-11-06): páginas e tipo de navegador, sem IP. #}
+<div class="card p-3 mb-3">
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <h6 class="mb-0 me-2">Detalhe de {{ dia_detalhe.strftime("%d/%m/%Y") }}</h6>
+    {% for d in dias_detalhe %}
+    <a href="{{ url_for('dono.acessos', dia=d.isoformat()) }}" class="btn btn-sm {{ 'btn-primary' if d == dia_detalhe else 'btn-outline-secondary' }}">{{ d.strftime("%d/%m") }}</a>
+    {% endfor %}
+  </div>
+  <div class="small text-muted mb-2">
+    Ajuda a separar gente de robô: <strong>muitas visitas numa página só</strong> ou muitos acessos de <strong>"Programa/script"</strong> ou
+    <strong>"Sem identificação"</strong> costumam ser robôs. Mostra só contagens (nenhum IP).
+  </div>
+  {% if total_detalhe %}
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="fw-semibold small mb-1">Páginas mais abertas</div>
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Área</th><th>Página</th><th class="text-end">Visitas</th></tr></thead>
+        <tbody>
+          {% for area, pagina, visitas in paginas_top %}
+          <tr><td class="small">{{ areas[area] }}</td><td><code>{{ pagina }}</code></td><td class="text-end">{{ visitas }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="col-lg-5">
+      <div class="fw-semibold small mb-1">Tipo de navegador</div>
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Tipo</th><th class="text-end">Visitas</th><th class="text-end">%</th></tr></thead>
+        <tbody>
+          {% for tipo, visitas in navegadores %}
+          <tr><td>{{ tipo }}</td><td class="text-end">{{ visitas }}</td><td class="text-end">{{ (visitas * 100 / total_detalhe)|round|int }}%</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="text-muted small">Sem acessos registrados neste dia (o detalhe começa quando esta versão entrou no ar).</div>
+  {% endif %}
+</div>
 <div class="card p-3">
   <h6 class="mb-2">Dia a dia (últimos 30 dias) - visitas / visitantes</h6>
   <div class="table-responsive">

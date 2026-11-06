@@ -71,4 +71,30 @@ checar("Tela do dono mostra as áreas e o menu 'Acessos'", "Acessos ao site e ao
        and "Link de preparo (WhatsApp)" in html and "Acessos" in dono.get("/dono/").get_data(as_text=True))
 checar("O dono e a própria tela de acessos não entram na conta", contagem("site") == (3, 2) and "/dono" not in str(contagem("equipe")))
 checar("A tela mostra os números de hoje", "visitas hoje" in html)
+# ---------- detalhe por página e tipo de navegador (sem IP) ----------
+from app.acessos import normalizar_pagina, tipo_navegador
+from app.models import AcessoDetalheDia
+
+checar("Tipo de navegador: celular, computador, programa e vazio",
+       tipo_navegador("Mozilla/5.0 (iPhone; CPU iPhone OS 17) Safari") == "Celular"
+       and tipo_navegador("Mozilla/5.0 (Windows NT 10.0) Chrome/120") == "Computador"
+       and tipo_navegador("Go-http-client/1.1") == "Programa/script" and tipo_navegador("") == "Sem identificação")
+checar("O token do link de preparo não vai para o detalhe", normalizar_pagina("/paciente/preparo/abc123XYZ") == "/paciente/preparo/...")
+c2 = app.test_client()
+for _ in range(3):
+    c2.get("/login", headers={"User-Agent": "Go-http-client/1.1"})
+c2.get("/cadastro", headers={"User-Agent": "Mozilla/5.0 (Android 14; Mobile) Chrome/120"})
+with app.app_context():
+    d = {(x.pagina, x.navegador): x.visitas for x in AcessoDetalheDia.query.filter_by(dia=hoje, area="site").all()}
+    checar("Detalhe conta por página e navegador", d.get(("/login", "Programa/script")) == 3 and d.get(("/cadastro", "Celular")) == 1)
+    checar("Link de preparo no detalhe sem o token", ("/paciente/preparo/...", "Computador") in
+           {(x.pagina, x.navegador) for x in AcessoDetalheDia.query.filter_by(dia=hoje, area="link_preparo").all()}
+           or ("/paciente/preparo/...", "Programa/script") in {(x.pagina, x.navegador) for x in AcessoDetalheDia.query.filter_by(dia=hoje, area="link_preparo").all()}
+           or AcessoDetalheDia.query.filter_by(dia=hoje, area="link_preparo").count() >= 1)
+html = dono.get("/dono/acessos").get_data(as_text=True)
+checar("Tela mostra páginas mais abertas e tipo de navegador, sem IP",
+       "Páginas mais abertas" in html and "Tipo de navegador" in html and "<code>/login</code>" in html and "Programa/script" in html
+       and "127.0.0.1" not in html)
+checar("Dá para escolher outro dia (dia inválido cai em hoje)", "Sem acessos registrados neste dia" in dono.get(f"/dono/acessos?dia={(hoje - timedelta(days=3)).isoformat()}").get_data(as_text=True)
+       and "Páginas mais abertas" in dono.get("/dono/acessos?dia=lixo").get_data(as_text=True))
 print("TUDO OK")

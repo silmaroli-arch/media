@@ -2495,6 +2495,21 @@ class AcessoDia(db.Model):
     visitantes = db.Column(db.Integer, nullable=False, default=0)    # pessoas diferentes no dia
 
 
+class AcessoDetalheDia(db.Model):
+    """Visitas por dia, página e tipo de navegador (2026-11-06): ajuda a
+    distinguir gente de robô quando o número de acessos dispara. Só contagens,
+    sem IP (ver app.acessos)."""
+    __tablename__ = "acessos_detalhe_dia"
+    __table_args__ = (db.UniqueConstraint("dia", "area", "pagina", "navegador", name="uq_acesso_detalhe"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    dia = db.Column(db.Date, nullable=False, index=True)
+    area = db.Column(db.String(20), nullable=False)
+    pagina = db.Column(db.String(120), nullable=False)
+    navegador = db.Column(db.String(30), nullable=False)
+    visitas = db.Column(db.Integer, nullable=False, default=0)
+
+
 class AcessoVisitanteDia(db.Model):
     """Impressão digital ANÔNIMA do visitante, só para contar quem é diferente
     no mesmo dia: hash com sal que muda todo dia (não dá para desfazer) e é

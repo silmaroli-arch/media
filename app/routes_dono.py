@@ -686,7 +686,30 @@ def acessos():
     tabela = [{"dia": d, "areas": {a: por_dia.get(d, {}).get(a, (0, 0)) for a in AREAS},
                "total": sum(por_dia.get(d, {}).get(a, (0, 0))[0] for a in AREAS)} for d in dias30]
     maximo = max((t["total"] for t in tabela), default=0) or 1
-    return render_template("dono/acessos.html", areas=AREAS, resumo=resumo, tabela=tabela, maximo=maximo)
+
+    # Detalhe de um dia (padrão: hoje): páginas mais abertas e tipo de navegador.
+    from datetime import date as _date
+
+    from app.models import AcessoDetalheDia
+
+    try:
+        dia_detalhe = _date.fromisoformat(request.args.get("dia", ""))
+    except ValueError:
+        dia_detalhe = hoje
+    detalhes = AcessoDetalheDia.query.filter_by(dia=dia_detalhe).all()
+    paginas = {}
+    navegadores = {}
+    for d in detalhes:
+        paginas[(d.area, d.pagina)] = paginas.get((d.area, d.pagina), 0) + d.visitas
+        navegadores[d.navegador] = navegadores.get(d.navegador, 0) + d.visitas
+    total_detalhe = sum(navegadores.values())
+    paginas_top = sorted(((a, p, v) for (a, p), v in paginas.items()), key=lambda x: -x[2])[:15]
+    navegadores_lista = sorted(navegadores.items(), key=lambda x: -x[1])
+    return render_template(
+        "dono/acessos.html", areas=AREAS, resumo=resumo, tabela=tabela, maximo=maximo, dia_detalhe=dia_detalhe,
+        dias_detalhe=[hoje - timedelta(days=i) for i in range(7)], paginas_top=paginas_top,
+        navegadores=navegadores_lista, total_detalhe=total_detalhe,
+    )
 
 
 @dono_bp.route("/ajuda-app")

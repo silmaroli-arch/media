@@ -5,6 +5,9 @@ a equipe (médicos e secretárias logados), o portal do paciente e o link de
 preparo do WhatsApp. Duas medidas: visitas (páginas abertas) e visitantes
 (pessoas diferentes no dia).
 
+Para investigar picos há também o detalhe por página e por tipo de navegador
+(AcessoDetalheDia) - só contagens, sem IP.
+
 Privacidade (LGPD): nada de IP nem de dado pessoal no banco. Quem é diferente
 é contado por um hash com sal diário (não reversível) guardado só por 2 dias;
 o que fica para sempre são apenas os totais por dia. Robôs (buscadores,
@@ -47,6 +50,27 @@ def area_do_caminho(caminho):
     return "site"
 
 
+RE_CELULAR = re.compile(r"mobile|android|iphone|ipad", re.IGNORECASE)
+RE_NAVEGADOR = re.compile(r"mozilla|chrome|safari|firefox|edg|opera|samsungbrowser", re.IGNORECASE)
+
+
+def tipo_navegador(user_agent):
+    """Celular, Computador, Programa/script (não parece navegador) ou
+    Sem identificação (cabeçalho vazio)."""
+    ua = (user_agent or "").strip()
+    if not ua:
+        return "Sem identificação"
+    if not RE_NAVEGADOR.search(ua):
+        return "Programa/script"
+    return "Celular" if RE_CELULAR.search(ua) else "Computador"
+
+
+def normalizar_pagina(caminho):
+    """O caminho sem códigos que mudam a cada pessoa (token do link de preparo)."""
+    caminho = re.sub(r"^(/paciente/preparo/)[^/]+", r"\1...", caminho)
+    return caminho[:120] or "/"
+
+
 def _chave_visitante(dia, area, secret):
     if current_user.is_authenticated:
         base = f"u{current_user.id}"
@@ -58,7 +82,7 @@ def _chave_visitante(dia, area, secret):
 
 def registrar(resposta, secret):
     """Conta a página que acabou de ser aberta (chamado depois de cada resposta)."""
-    from app.models import AcessoDia, AcessoVisitanteDia
+    from app.models import AcessoDetalheDia, AcessoDia, AcessoVisitanteDia
 
     if request.method != "GET" or resposta.status_code != 200 or resposta.mimetype != "text/html":
         return
@@ -75,6 +99,13 @@ def registrar(resposta, secret):
         registro = AcessoDia(dia=dia, area=area, visitas=0, visitantes=0)
         db.session.add(registro)
         AcessoVisitanteDia.query.filter(AcessoVisitanteDia.dia < dia - timedelta(days=1)).delete(synchronize_session=False)
+        AcessoDetalheDia.query.filter(AcessoDetalheDia.dia < dia - timedelta(days=35)).delete(synchronize_session=False)
+    pagina, navegador = normalizar_pagina(request.path), tipo_navegador(request.headers.get("User-Agent"))
+    detalhe = AcessoDetalheDia.query.filter_by(dia=dia, area=area, pagina=pagina, navegador=navegador).first()
+    if detalhe is None:
+        detalhe = AcessoDetalheDia(dia=dia, area=area, pagina=pagina, navegador=navegador, visitas=0)
+        db.session.add(detalhe)
+    detalhe.visitas = (detalhe.visitas or 0) + 1
     registro.visitas = (registro.visitas or 0) + 1
     chave = _chave_visitante(dia, area, secret)
     if not AcessoVisitanteDia.query.filter_by(dia=dia, area=area, chave=chave).first():
