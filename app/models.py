@@ -2510,6 +2510,23 @@ class AcessoDetalheDia(db.Model):
     visitas = db.Column(db.Integer, nullable=False, default=0)
 
 
+class AcessoDispositivoDia(db.Model):
+    """Um registro por aparelho e por dia (2026-11-06): o aparelho é um código
+    aleatório genérico guardado num cookie do navegador, sem IP e sem ligação
+    com a pessoa. Mostra quantos computadores/celulares diferentes acessaram."""
+    __tablename__ = "acessos_dispositivos_dia"
+    __table_args__ = (db.UniqueConstraint("dia", "codigo", name="uq_acesso_dispositivo_dia"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    dia = db.Column(db.Date, nullable=False, index=True)
+    codigo = db.Column(db.String(8), nullable=False)
+    tipo = db.Column(db.String(30), nullable=False)  # Celular | Computador | Programa/script | Sem identificação
+    visitas = db.Column(db.Integer, nullable=False, default=0)
+    primeiro_em = db.Column(db.DateTime)   # horário de Brasília
+    ultimo_em = db.Column(db.DateTime)
+    novo = db.Column(db.Boolean, nullable=False, default=False)  # aparelho que apareceu pela 1ª vez neste dia
+
+
 class AcessoVisitanteDia(db.Model):
     """Impressão digital ANÔNIMA do visitante, só para contar quem é diferente
     no mesmo dia: hash com sal que muda todo dia (não dá para desfazer) e é

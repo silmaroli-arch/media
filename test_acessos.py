@@ -97,4 +97,34 @@ checar("Tela mostra páginas mais abertas e tipo de navegador, sem IP",
        and "127.0.0.1" not in html)
 checar("Dá para escolher outro dia (dia inválido cai em hoje)", "Sem acessos registrados neste dia" in dono.get(f"/dono/acessos?dia={(hoje - timedelta(days=3)).isoformat()}").get_data(as_text=True)
        and "Páginas mais abertas" in dono.get("/dono/acessos?dia=lixo").get_data(as_text=True))
+# ---------- aparelhos (código aleatório em cookie) ----------
+from app.models import AcessoDispositivoDia
+
+celular = app.test_client()  # guarda cookies, como um navegador de verdade
+UA_CEL = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17) Safari/604"}
+r = celular.get("/", headers=UA_CEL)
+cookie = r.headers.get("Set-Cookie", "")
+checar("Navegador novo recebe o cookie com código aleatório de 8 caracteres (sem IP no código)",
+       cookie.startswith("mid=") and len(cookie.split("=")[1].split(";")[0]) == 8 and "HttpOnly" in cookie and "SameSite=Lax" in cookie)
+celular.get("/termos", headers=UA_CEL)
+r2 = celular.get("/privacidade", headers=UA_CEL)
+checar("O mesmo navegador não recebe outro código", "mid=" not in r2.headers.get("Set-Cookie", ""))
+with app.app_context():
+    meu = AcessoDispositivoDia.query.filter_by(dia=hoje, tipo="Celular").first()
+    checar("O aparelho é contado uma vez, com 3 visitas, como novo e do tipo Celular",
+           meu is not None and meu.visitas == 3 and meu.novo and meu.primeiro_em and meu.ultimo_em)
+# robô sem cookie: cada visita vira um aparelho novo com 1 visita só
+for _ in range(4):
+    app.test_client().get("/cadastro", headers={"User-Agent": "Go-http-client/1.1"})
+with app.app_context():
+    robos = AcessoDispositivoDia.query.filter_by(dia=hoje, tipo="Programa/script").all()
+    checar("Quem não guarda cookie aparece como vários aparelhos novos com 1 visita",
+           len([r for r in robos if r.visitas == 1 and r.novo]) >= 4)
+c_falso = app.test_client()
+c_falso.set_cookie("mid", "../etc/passwd")
+checar("Cookie com valor estranho vira um código novo válido", "mid=" in c_falso.get("/", headers=UA_CEL).headers.get("Set-Cookie", ""))
+html = dono.get("/dono/acessos").get_data(as_text=True)
+checar("Tela do dono lista os aparelhos diferentes por código, tipo e visitas, sem IP",
+       "Aparelhos diferentes neste dia" in html and "Dispositivo " in html and "novo neste dia" in html and "127.0.0.1" not in html
+       and "aparelho(s) diferente(s)" in html)
 print("TUDO OK")
