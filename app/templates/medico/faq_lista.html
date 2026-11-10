@@ -6,6 +6,7 @@
   <h3>Meu FAQ</h3>
   {# Abre numa janela, sem sair da lista (pedido do Silvan, 2026-10-21) #}
   <div class="d-flex gap-2">
+    <a href="{{ url_for('medico.faq_importar_modelo') }}" class="btn btn-outline-secondary"><i class="bi bi-download"></i> Baixar planilha padrão</a>
     <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalImportarFaq"><i class="bi bi-upload"></i> Importar meu FAQ</button>
     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovoFaq"><i class="bi bi-plus-lg"></i> Adicionar manualmente</button>
   </div>
@@ -108,7 +109,8 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
-        <p class="small text-muted">Envie uma planilha Excel (.xlsx) ou CSV com as colunas <strong>Exame</strong> (opcional), <strong>Pergunta</strong> e <strong>Resposta</strong>. Você confere tudo antes de gravar. <a href="{{ url_for('medico.faq_importar_modelo') }}">Baixar planilha modelo</a></p>
+        <p class="small text-muted">Envie uma planilha Excel (.xlsx) ou CSV com as colunas <strong>Exame</strong> (opcional), <strong>Pergunta</strong> e <strong>Resposta</strong>. Você confere tudo antes de gravar.</p>
+        <a href="{{ url_for('medico.faq_importar_modelo') }}" class="btn btn-sm btn-outline-secondary mb-3"><i class="bi bi-download"></i> Baixar planilha padrão para preencher</a>
         {% if current_user.tipo == "secretaria" %}
         {{ select_filial(ajuda="Usada nas linhas sem exame (gerais).") }}
         {% endif %}

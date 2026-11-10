@@ -26,6 +26,7 @@ med.post("/equipe/clinica", data={"clinica_id": str(vitoria_id)}, follow_redirec
 
 html = med.get("/equipe/faq").get_data(as_text=True)
 checar("Botão Importar meu FAQ na lista", "Importar meu FAQ" in html and 'id="modalImportarFaq"' in html)
+checar("Botão Baixar planilha padrão na lista", "Baixar planilha padrão" in html)
 checar("Modelo para baixar", med.get("/equipe/faq/importar/modelo").status_code == 200)
 
 csv = (f"Exame;Pergunta;Resposta\n"
