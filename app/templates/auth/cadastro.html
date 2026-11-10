@@ -24,7 +24,13 @@
       </div>
       {% endif %}
 
-      <form method="post">
+      {% if tester_estado().ativo %}
+<div class="alert alert-success small text-center">
+  <i class="bi bi-stars"></i> <strong>Programa de testadores</strong>: só {{ tester_estado().vagas }} vagas, <strong>{{ tester_estado().dias }} dias grátis</strong>.
+  Restam <strong>{{ tester_estado().restantes }}</strong> de {{ tester_estado().vagas }}.
+</div>
+{% endif %}
+<form method="post">
         <h5 class="mb-3">Seus dados</h5>
         <div class="row g-3">
           <div class="col-md-6">

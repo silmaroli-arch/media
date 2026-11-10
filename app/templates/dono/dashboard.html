@@ -332,6 +332,37 @@
     </div>
 
     <div class="card p-3 mb-4">
+      <h5 class="mb-1">Programa de testadores</h5>
+      <p class="text-muted small mb-3">
+        Ligado, o cadastro público (<code>/cadastro</code>) aceita só o número de vagas abaixo e quem entra
+        ganha os dias grátis indicados (depois segue a licença normal). Com as vagas preenchidas, o
+        cadastro fecha. Vagas usadas: <strong>{{ tester_estado().usadas }} de {{ tester_estado().vagas }}</strong>
+        ({{ 'ligado' if tester_estado().ativo else 'desligado' }}).
+      </p>
+      <form method="post" action="{{ url_for('dono.configuracoes_tester') }}" class="d-flex align-items-end gap-3 flex-wrap">
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" role="switch" name="tester_ativo" id="tester_ativo" {% if config.tester_ativo %}checked{% endif %}>
+          <label class="form-check-label" for="tester_ativo">Ligado</label>
+        </div>
+        <div>
+          <label class="form-label small mb-0">Vagas</label>
+          <input type="number" name="tester_vagas" min="1" class="form-control" style="max-width: 110px" value="{{ config.tester_vagas }}" required>
+        </div>
+        <div>
+          <label class="form-label small mb-0">Dias grátis</label>
+          <input type="number" name="tester_dias" min="1" class="form-control" style="max-width: 110px" value="{{ config.tester_dias }}" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </form>
+      {% if testers %}
+      <table class="table table-sm mt-3 mb-0">
+        <thead><tr><th>Testador</th><th>E-mail</th><th>Perfil</th><th>Grátis até</th></tr></thead>
+        <tbody>{% for t in testers %}<tr><td>{{ t.nome }}</td><td>{{ t.email }}</td><td>{{ t.tipo }}</td><td>{{ t.licenca_vencimento.strftime('%d/%m/%Y') if t.licenca_vencimento else '-' }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% endif %}
+    </div>
+
+    <div class="card p-3 mb-4">
       <h5 class="mb-1">Licença de médico</h5>
       <p class="text-muted small mb-3">
         Todo médico nasce em <strong>trial</strong> e passa para <strong>ativo</strong> automaticamente ao

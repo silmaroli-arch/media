@@ -221,6 +221,12 @@ def create_app():
     from app import login_google
     login_google.init_app(app)
 
+    @app.context_processor
+    def _tester_no_template():
+        from app.tester import estado as tester_estado
+
+        return {"tester_estado": tester_estado}
+
     @app.template_filter("hora_br")
     def hora_br(valor, formato="%d/%m/%Y %H:%M"):
         """Data/hora gravada em UTC no banco (criado_em, *_em) como texto no

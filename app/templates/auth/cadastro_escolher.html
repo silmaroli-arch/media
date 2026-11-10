@@ -16,7 +16,13 @@
       <h4 class="mb-1 text-center"><i class="bi bi-hospital"></i> Criar conta</h4>
       <p class="text-muted text-center mb-4">Como você quer entrar no MedIA?</p>
 
-      <div class="d-grid gap-3">
+      {% if tester_estado().ativo %}
+<div class="alert alert-success small text-center">
+  <i class="bi bi-stars"></i> <strong>Programa de testadores</strong>: só {{ tester_estado().vagas }} vagas, <strong>{{ tester_estado().dias }} dias grátis</strong>.
+  Restam <strong>{{ tester_estado().restantes }}</strong> de {{ tester_estado().vagas }}.
+</div>
+{% endif %}
+<div class="d-grid gap-3">
         {% if google_login_ativo %}
         <a href="{{ url_for('google_login.iniciar') }}" class="btn btn-outline-secondary opcao-entrada d-flex align-items-center">
           <i class="bi bi-google"></i>
