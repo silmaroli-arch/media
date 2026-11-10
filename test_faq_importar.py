@@ -29,17 +29,16 @@ checar("Botão Importar meu FAQ na lista", "Importar meu FAQ" in html and 'id="m
 checar("Botão Baixar planilha padrão na lista", "Baixar planilha padrão" in html)
 checar("Modelo para baixar", med.get("/equipe/faq/importar/modelo").status_code == 200)
 
-csv = (f"Exame;Pergunta;Resposta\n"
-       f"{exame_nome};Importado pode água?;Pode beber água até [2 horas antes do exame].\n"
-       f"{exame_nome};Ligar quando?;Ligue para 11 98888-7777\n"
-       f";Sem exame;Falta exame\n"
-       f"Exame Inexistente;Outra?;Resposta\n").encode()
-r = med.post("/equipe/faq/importar", data={"arquivo": (io.BytesIO(csv), "faq.csv")},
+csv = (f"Pergunta;Resposta\n"
+       f"Importado pode água?;Pode beber água até [2 horas antes do exame].\n"
+       f"Ligar quando?;Ligue para 11 98888-7777\n"
+       f"Sem resposta;\n").encode()
+r = med.post("/equipe/faq/importar", data={"arquivo": (io.BytesIO(csv), "faq.csv"), "exame_id": str(exame_id)},
              content_type="multipart/form-data")
 html = r.get_data(as_text=True)
-checar("Conferência mostra 1 válida de 4", "1 de 4 linha(s)" in html)
-checar("Barra telefone, exame inexistente e sem exame",
-       "não entra no FAQ" in html and "não encontrado" in html and "Sem exame" in html)
+checar("Conferência mostra 1 válida de 4", "1 de 3 linha(s)" in html)
+checar("Barra telefone e linha sem resposta",
+       "não entra no FAQ" in html and "Falta a pergunta ou a resposta" in html)
 with app.app_context():
     checar("Nada gravado antes de confirmar", FaqItem.query.filter_by(pergunta="Importado pode água?").count() == 0)
 
@@ -50,12 +49,15 @@ with app.app_context():
     checar("Item no exame certo, com autor", item and item.exame_id == exame_id and item.respondido_por_id == carlos_id)
     checar("Marcador guardado", "{" in item.resposta)
 
-r = med.post("/equipe/faq/importar", data={"arquivo": (io.BytesIO(csv), "faq.csv")},
+r = med.post("/equipe/faq/importar", data={"arquivo": (io.BytesIO(csv), "faq.csv"), "exame_id": str(exame_id)},
              content_type="multipart/form-data")
 checar("Reimportar: duplicada ignorada", "Já existe" in r.get_data(as_text=True))
 
-r = med.post("/equipe/faq/importar", data={"arquivo": (io.BytesIO(modelo_xlsx()), "m.xlsx")},
+r = med.post("/equipe/faq/importar", data={"arquivo": (io.BytesIO(modelo_xlsx()), "m.xlsx"), "exame_id": str(exame_id)},
              content_type="multipart/form-data")
+checar("Médico sem escolher exame é barrado",
+       "escolha um exame" in med.post("/equipe/faq/importar", data={"arquivo": (io.BytesIO(modelo_xlsx()), "m.xlsx")},
+                                      content_type="multipart/form-data").get_data(as_text=True))
 checar("Lê o .xlsx do modelo", "Posso tomar café antes do exame?" in r.get_data(as_text=True))
 r = med.post("/equipe/faq/importar", data={"arquivo": (io.BytesIO(b"x"), "a.txt")},
              content_type="multipart/form-data", follow_redirects=True)

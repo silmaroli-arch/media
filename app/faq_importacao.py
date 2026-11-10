@@ -1,6 +1,6 @@
 """Importar o próprio FAQ do médico (pedido do Silvan, 2026-11-10): uma
-planilha (Excel .xlsx ou CSV) com as colunas Pergunta, Resposta e, se
-quiser, Exame. Aqui só se LÊ o arquivo; quem decide o que entra é a tela de
+planilha (Excel .xlsx ou CSV) com as colunas Pergunta e Resposta (o exame
+é escolhido na tela; a coluna Exame ainda é aceita, se vier). Aqui só se LÊ o arquivo; quem decide o que entra é a tela de
 conferência (app/routes_medico.py)."""
 import csv
 import io
@@ -83,13 +83,12 @@ def modelo_xlsx():
     wb = Workbook()
     ws = wb.active
     ws.title = "Meu FAQ"
-    ws.append(["Exame", "Pergunta", "Resposta"])
-    ws.append(["Colonoscopia", "Posso tomar café antes do exame?",
+    ws.append(["Pergunta", "Resposta"])
+    ws.append(["Posso tomar café antes do exame?",
                "Só café preto, sem leite nem açúcar, até [3 horas antes do exame]."])
-    ws.append(["", "Preciso de acompanhante?", "Sim, é obrigatório vir com acompanhante."])
-    ws.column_dimensions["A"].width = 24
-    ws.column_dimensions["B"].width = 50
-    ws.column_dimensions["C"].width = 80
+    ws.append(["Preciso de acompanhante?", "Sim, é obrigatório vir com acompanhante."])
+    ws.column_dimensions["A"].width = 50
+    ws.column_dimensions["B"].width = 80
     saida = io.BytesIO()
     wb.save(saida)
     return saida.getvalue()

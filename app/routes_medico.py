@@ -4582,7 +4582,7 @@ def faq_importar():
         elif l["exame"] and not exame:
             problema = f"Exame \"{l['exame']}\" não encontrado entre os seus exames."
         elif not exame and eh_medico():
-            problema = "Sem exame: informe a coluna Exame ou escolha um exame padrão."
+            problema = "Sem exame: escolha um exame na janela de importação."
         elif not exame and filiais and not filial_geral:
             problema = "Item geral: escolha a filial na janela de importação."
         elif contem_dado_pessoal(l["pergunta"]) or contem_dado_pessoal(l["resposta"]):

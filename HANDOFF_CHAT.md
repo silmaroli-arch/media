@@ -2956,9 +2956,9 @@ Pedido do Silvan: contador de acessos ao site/sistema.
 - Se o Silvan quiser citar na política de privacidade (`site/privacidade.html`): "contamos acessos de forma anônima, sem guardar IP". Teste: `test_acessos.py`.
 
 ## Importar meu FAQ (2026-11-10)
-- Botão "Importar meu FAQ" no Meu FAQ: planilha .xlsx/.csv (Exame opcional, Pergunta, Resposta; modelo para baixar). `app/faq_importacao.py` lê; rotas `faq_importar` (conferência, nada grava), `faq_importar_confirmar` (grava), `faq_importar_modelo`.
+- Botão "Importar meu FAQ" no Meu FAQ: planilha .xlsx/.csv (Pergunta e Resposta; o exame é escolhido na janela, obrigatório para médico; modelo para baixar). `app/faq_importacao.py` lê; rotas `faq_importar` (conferência, nada grava), `faq_importar_confirmar` (grava), `faq_importar_modelo`.
 - Regras: exame casado pelo nome entre os do médico (ou "exame padrão" da janela); médico exige exame; duplicadas ignoradas; `contem_dado_pessoal` barra; máx. 500 linhas / 2 MB; marcadores [data do exame] viram {..} via `de_leitura`; grava `respondido_por`.
-- "Baixar planilha padrão" (modelo .xlsx com exemplos) é botão na lista do Meu FAQ e dentro da janela de importação.
+- "Baixar planilha padrão" (modelo .xlsx só com Pergunta e Resposta) é botão na lista do Meu FAQ e dentro da janela de importação.
 - Teste: `test_faq_importar.py`. Malu atualizada (`app/ajuda_app.py`).
 
 ## BACKLOG (Silvan) - combinado para fazer depois

@@ -109,7 +109,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
-        <p class="small text-muted">Envie uma planilha Excel (.xlsx) ou CSV com as colunas <strong>Exame</strong> (opcional), <strong>Pergunta</strong> e <strong>Resposta</strong>. Você confere tudo antes de gravar.</p>
+        <p class="small text-muted">Envie uma planilha Excel (.xlsx) ou CSV com as colunas <strong>Pergunta</strong> e <strong>Resposta</strong>. O exame você escolhe abaixo. Você confere tudo antes de gravar.</p>
         <a href="{{ url_for('medico.faq_importar_modelo') }}" class="btn btn-sm btn-outline-secondary mb-3"><i class="bi bi-download"></i> Baixar planilha padrão para preencher</a>
         {% if current_user.tipo == "secretaria" %}
         {{ select_filial(ajuda="Usada nas linhas sem exame (gerais).") }}
@@ -119,9 +119,9 @@
           <input type="file" name="arquivo" id="imp_arquivo" class="form-control" accept=".xlsx,.csv" required>
         </div>
         <div class="mb-2">
-          <label class="form-label" for="imp_exame">Exame padrão (para linhas sem exame)</label>
-          <select name="exame_id" id="imp_exame" class="form-select">
-            <option value="">{% if current_user.tipo == "medico" %}Nenhum{% else %}Geral (qualquer exame){% endif %}</option>
+          <label class="form-label" for="imp_exame">Importar para qual exame?</label>
+          <select name="exame_id" id="imp_exame" class="form-select" {% if current_user.tipo == "medico" %}required{% endif %}>
+            {% if current_user.tipo == "medico" %}<option value="" disabled selected>Selecione...</option>{% else %}<option value="">Geral (qualquer exame)</option>{% endif %}
             {% for e in exames %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}
           </select>
         </div>
