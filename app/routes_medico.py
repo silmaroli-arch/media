@@ -9,7 +9,7 @@ from functools import wraps
 
 from flask import (
     Blueprint, render_template, redirect, url_for, request, flash, session,
-    current_app, jsonify, Response, stream_with_context, abort,
+    current_app, jsonify, Response, stream_with_context, abort, send_file,
 )
 from markupsafe import Markup
 from werkzeug.utils import secure_filename
@@ -4529,6 +4529,114 @@ def faq_novo():
         return redirect(url_for("medico.faq_lista"))
 
     return render_template("medico/faq_form.html", exames=exames)
+
+
+@medico_bp.route("/faq/importar/modelo")
+@login_required
+@staff_required
+def faq_importar_modelo():
+    from app.faq_importacao import modelo_xlsx
+
+    return send_file(io.BytesIO(modelo_xlsx()), as_attachment=True, download_name="modelo_meu_faq.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@medico_bp.route("/faq/importar", methods=["POST"])
+@login_required
+@staff_required
+def faq_importar():
+    """Passo 1: lê a planilha e mostra a conferência (nada é gravado ainda)."""
+    from app.faq_importacao import ErroImportacao, ler_planilha
+    from app.base_aprendizado import contem_dado_pessoal
+    from app.faq_engine import normalizar
+
+    arquivo = request.files.get("arquivo")
+    if not arquivo or not arquivo.filename:
+        flash("Selecione a planilha (.xlsx ou .csv).", "danger")
+        return redirect(url_for("medico.faq_lista"))
+    try:
+        linhas = ler_planilha(arquivo.stream.read(), arquivo.filename)
+    except ErroImportacao as erro:
+        flash(str(erro), "danger")
+        return redirect(url_for("medico.faq_lista"))
+
+    filiais = filiais_atuais()
+    exames = _exames_para_faq()
+    por_nome = {normalizar(e.nome): e for e in exames}
+    padrao = next((e for e in exames if e.id == request.form.get("exame_id", type=int)), None)
+    filial_geral = _filial_do_form(filiais)
+    existentes = {(i.exame_id, normalizar(i.pergunta)) for i in _faq_query_do_usuario_atual().all()}
+    if not eh_medico():
+        existentes |= {
+            (None, normalizar(i.pergunta))
+            for i in FaqItem.query.filter(filtro_escopo_atual(FaqItem.grupo_id, FaqItem.criado_por_id),
+                                          FaqItem.exame_id.is_(None)).all()
+        }
+
+    itens, vistos = [], set()
+    for l in linhas:
+        exame = por_nome.get(normalizar(l["exame"])) if l["exame"] else padrao
+        problema = None
+        if not l["pergunta"] or not l["resposta"]:
+            problema = "Falta a pergunta ou a resposta."
+        elif l["exame"] and not exame:
+            problema = f"Exame \"{l['exame']}\" não encontrado entre os seus exames."
+        elif not exame and eh_medico():
+            problema = "Sem exame: escolha um exame na janela de importação."
+        elif not exame and filiais and not filial_geral:
+            problema = "Item geral: escolha a filial na janela de importação."
+        elif contem_dado_pessoal(l["pergunta"]) or contem_dado_pessoal(l["resposta"]):
+            problema = "Tem telefone, CPF, e-mail, link ou valor em dinheiro - não entra no FAQ."
+        else:
+            chave = (exame.id if exame else None, normalizar(l["pergunta"]))
+            if chave in existentes or chave in vistos:
+                problema = "Já existe (mesma pergunta neste exame) - será ignorada."
+            vistos.add(chave)
+        itens.append({**l, "exame_id": exame.id if exame else None,
+                      "exame_nome": exame.nome if exame else "Geral", "problema": problema})
+
+    session["faq_importacao"] = {
+        "itens": [i for i in itens if not i["problema"]],
+        "filial_id": filial_geral.id if filial_geral else None,
+    }
+    return render_template("medico/faq_importar_conferir.html", itens=itens,
+                           validos=sum(1 for i in itens if not i["problema"]))
+
+
+@medico_bp.route("/faq/importar/confirmar", methods=["POST"])
+@login_required
+@staff_required
+def faq_importar_confirmar():
+    """Passo 2: grava o que passou na conferência (revalidando o acesso)."""
+    dados = session.pop("faq_importacao", None)
+    if not dados or not dados.get("itens"):
+        flash("Nada para importar - envie a planilha de novo.", "danger")
+        return redirect(url_for("medico.faq_lista"))
+    exames = {e.id: e for e in _exames_para_faq()}
+    filiais = filiais_atuais()
+    filial_geral = next((f for f in filiais if f.id == dados.get("filial_id")), None)
+    gravados = 0
+    for i in dados["itens"]:
+        exame = exames.get(i["exame_id"]) if i["exame_id"] else None
+        if i["exame_id"] and not exame:
+            continue
+        filial = exame.grupo if exame else filial_geral
+        if (not exame and eh_medico()) or (filiais and not filial):
+            continue
+        db.session.add(FaqItem(
+            grupo_id=filial.id if filial else None,
+            criado_por_id=current_user.id if not filial else None,
+            exame_id=exame.id if exame else None,
+            pergunta=i["pergunta"],
+            resposta=de_leitura(i["resposta"]),
+            criado_por=current_user.nome,
+            respondido_por_id=current_user.id,
+            respondido_em=datetime.utcnow(),
+        ))
+        gravados += 1
+    db.session.commit()
+    flash(f"{gravados} item(ns) importado(s) para o Meu FAQ.", "success")
+    return redirect(url_for("medico.faq_lista"))
 
 
 def _faq_query_do_usuario_atual():

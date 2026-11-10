@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block titulo %}Conferir importação do FAQ{% endblock %}
+{% block conteudo %}
+<h3>Conferir importação do FAQ</h3>
+<p class="text-muted">{{ validos }} de {{ itens|length }} linha(s) podem ser importadas. Nada foi gravado ainda.</p>
+<table class="table table-sm align-middle">
+  <thead><tr><th>Linha</th><th>Exame</th><th>Pergunta</th><th>Resposta</th><th>Situação</th></tr></thead>
+  <tbody>
+    {% for i in itens %}
+    <tr class="{{ 'table-warning' if i.problema }}">
+      <td>{{ i.linha }}</td><td>{{ i.exame_nome }}</td><td>{{ i.pergunta }}</td><td>{{ i.resposta }}</td>
+      <td>{% if i.problema %}<span class="text-danger small">{{ i.problema }}</span>{% else %}<span class="text-success">Será importada</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<div class="d-flex gap-2">
+  {% if validos %}
+  <form method="post" action="{{ url_for('medico.faq_importar_confirmar') }}"><button class="btn btn-primary">Importar {{ validos }} item(ns)</button></form>
+  {% endif %}
+  <a href="{{ url_for('medico.faq_lista') }}" class="btn btn-link">Cancelar</a>
+</div>
+{% endblock %}

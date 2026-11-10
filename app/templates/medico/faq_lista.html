@@ -5,7 +5,11 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h3>Meu FAQ</h3>
   {# Abre numa janela, sem sair da lista (pedido do Silvan, 2026-10-21) #}
-  <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovoFaq"><i class="bi bi-plus-lg"></i> Adicionar manualmente</button>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('medico.faq_importar_modelo') }}" class="btn btn-outline-secondary"><i class="bi bi-download"></i> Baixar planilha padrão</a>
+    <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalImportarFaq"><i class="bi bi-upload"></i> Importar meu FAQ</button>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNovoFaq"><i class="bi bi-plus-lg"></i> Adicionar manualmente</button>
+  </div>
 </div>
 {# Filtro por exame (só os que têm item) e busca por texto livre (2026-10-21) #}
 <form method="get" class="row g-2 mb-3">
@@ -92,6 +96,40 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
         <button type="submit" class="btn btn-primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+{# Janela "Importar meu FAQ": planilha própria do médico; confere antes de gravar. #}
+<div class="modal fade" id="modalImportarFaq" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" action="{{ url_for('medico.faq_importar') }}" enctype="multipart/form-data" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-upload me-2"></i>Importar meu FAQ</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">Envie uma planilha Excel (.xlsx) ou CSV com as colunas <strong>Pergunta</strong> e <strong>Resposta</strong>. O exame você escolhe abaixo. Você confere tudo antes de gravar.</p>
+        <a href="{{ url_for('medico.faq_importar_modelo') }}" class="btn btn-sm btn-outline-secondary mb-3"><i class="bi bi-download"></i> Baixar planilha padrão para preencher</a>
+        {% if current_user.tipo == "secretaria" %}
+        {{ select_filial(ajuda="Usada nas linhas sem exame (gerais).") }}
+        {% endif %}
+        <div class="mb-3">
+          <label class="form-label" for="imp_arquivo">Planilha</label>
+          <input type="file" name="arquivo" id="imp_arquivo" class="form-control" accept=".xlsx,.csv" required>
+        </div>
+        <div class="mb-2">
+          <label class="form-label" for="imp_exame">Importar para qual exame?</label>
+          <select name="exame_id" id="imp_exame" class="form-select" {% if current_user.tipo == "medico" %}required{% endif %}>
+            {% if current_user.tipo == "medico" %}<option value="" disabled selected>Selecione...</option>{% else %}<option value="">Geral (qualquer exame)</option>{% endif %}
+            {% for e in exames %}<option value="{{ e.id }}">{{ e.nome }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="alert alert-warning py-2 small mb-0">As respostas importadas passam a ser enviadas direto aos pacientes quando a pergunta se repetir. Linhas com telefone, CPF, e-mail, link ou valor em dinheiro são barradas.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Conferir</button>
       </div>
     </form>
   </div>
