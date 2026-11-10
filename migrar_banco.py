@@ -570,6 +570,12 @@ UPDATE notificacoes SET popup = TRUE WHERE tipo = 'boas_vindas' AND titulo = 'Pr
 UPDATE notificacoes SET popup = TRUE WHERE tipo = 'preparo_cadastrado' AND lida = FALSE AND popup = FALSE;
 ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS modelo_claude_sintese VARCHAR(60);
 
+-- Programa de testadores (2026-11-10).
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS tester_ativo BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS tester_vagas INTEGER NOT NULL DEFAULT 10;
+ALTER TABLE plataforma_config ADD COLUMN IF NOT EXISTS tester_dias INTEGER NOT NULL DEFAULT 30;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS tester BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- Versao em pagina (HTML) do PDF original do preparo, aprovada pelo medico (2026-10-24).
 ALTER TABLE preparo_pdfs_originais ADD COLUMN IF NOT EXISTS pagina_html TEXT;
 ALTER TABLE preparo_pdfs_originais ADD COLUMN IF NOT EXISTS pagina_status VARCHAR(20);

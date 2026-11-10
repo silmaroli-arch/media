@@ -181,6 +181,7 @@ def dashboard():
     return render_template(
         "dono/dashboard.html", grupos=grupos, resumo=resumo, resumo_licencas=resumo_licencas,
         hoje=date.today(), config=config,
+        testers=Usuario.query.filter_by(tester=True).order_by(Usuario.id).all(),
         linhas_usuarios=linhas_usuarios, custo_total_usuarios=custo_total_usuarios,
         mensagens_suporte_novas=mensagens_suporte_novas,
         solicitacoes_exclusao=_solicitacoes_exclusao_pendentes(),
@@ -246,6 +247,26 @@ def configuracoes():
     config.trial_dias = trial_dias
     db.session.commit()
     flash(f"Duração do trial atualizada para {trial_dias} dia(s). Vale para novos grupos e médicos cadastrados a partir de agora.", "success")
+    return redirect(url_for("dono.dashboard"))
+
+
+@dono_bp.route("/configuracoes/tester", methods=["POST"])
+@login_required
+@dono_required
+def configuracoes_tester():
+    """Programa de testadores (2026-11-10, ver app/tester.py): liga/desliga,
+    número de vagas e dias grátis."""
+    config = PlataformaConfig.obter()
+    vagas = request.form.get("tester_vagas", type=int)
+    dias = request.form.get("tester_dias", type=int)
+    if not vagas or vagas < 1 or not dias or dias < 1:
+        flash("Informe vagas e dias grátis maiores que zero.", "danger")
+        return redirect(url_for("dono.dashboard"))
+    config.tester_ativo = bool(request.form.get("tester_ativo"))
+    config.tester_vagas = vagas
+    config.tester_dias = dias
+    db.session.commit()
+    flash("Programa de testadores " + ("ligado." if config.tester_ativo else "desligado."), "success")
     return redirect(url_for("dono.dashboard"))
 
 

@@ -441,6 +441,13 @@ def cadastro():
     if current_user.is_authenticated:
         return redirect(url_for("index"))
 
+    # Programa de testadores (app/tester.py): com as vagas esgotadas, ninguém
+    # mais se cadastra.
+    from app.tester import estado as tester_estado
+
+    if tester_estado()["esgotado"]:
+        return render_template("auth/cadastro_esgotado.html")
+
     if request.args.get("sem_google"):
         session.pop("google_cadastro", None)
         return redirect(url_for("auth.cadastro", metodo="senha"))
@@ -580,6 +587,16 @@ def cadastro():
             config = PlataformaConfig.obter()
             usuario.licenca_vencimento = date.today() + timedelta(days=config.trial_dias)
             usuario.valor_licenca_mensal = config.valor_licenca_padrao
+        # Programa de testadores: ocupa uma vaga e o primeiro mês é grátis.
+        # Reconferido aqui, na hora de gravar, para duas pessoas que enviam
+        # juntas não passarem do limite.
+        estado_tester = tester_estado()
+        if estado_tester["ativo"]:
+            if estado_tester["esgotado"]:
+                return render_template("auth/cadastro_esgotado.html")
+            usuario.tester = True
+            if papel == "medico":
+                usuario.licenca_vencimento = date.today() + timedelta(days=estado_tester["dias"])
 
         db.session.add(usuario)
         # Fatia 6: o cadastro NÃO cria mais um Grupo. A conta nasce solo,

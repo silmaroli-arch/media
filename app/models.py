@@ -111,6 +111,12 @@ class PlataformaConfig(db.Model):
     # app.whatsapp_conversa.processar_mensagem (onde o limite é aplicado).
     limite_perguntas_dia_exame = db.Column(db.Integer, nullable=True)
 
+    # Programa de testadores (2026-11-10, ver app/tester.py): cadastro público
+    # limitado a `tester_vagas` pessoas, com `tester_dias` dias grátis.
+    tester_ativo = db.Column(db.Boolean, nullable=False, default=False)
+    tester_vagas = db.Column(db.Integer, nullable=False, default=10)
+    tester_dias = db.Column(db.Integer, nullable=False, default=30)
+
     # Restruturação da licença individual (pedido do Silvan, 2026-09-02): o
     # que antes era configurável por médico em /dono/usuarios vira global
     # aqui, e passa a valer pra equipe toda de uma vez. `trial_dias` (acima)
@@ -283,6 +289,8 @@ class Usuario(db.Model, UserMixin):
     # decisão manual do dono - é a ÚNICA transição que ele faz à mão agora.
     licenca_status = db.Column(db.String(20), nullable=False, default="trial")
     licenca_vencimento = db.Column(db.Date)
+    # Entrou pelo programa de testadores (app/tester.py): conta nas vagas.
+    tester = db.Column(db.Boolean, nullable=False, default=False)
     # Valor mensal cobrado deste médico. Nasce preenchido automaticamente a
     # partir de PlataformaConfig.valor_licenca_padrao (no cadastro), mas o
     # dono pode reajustar individualmente depois em /dono/usuarios -
