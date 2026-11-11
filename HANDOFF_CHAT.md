@@ -2970,6 +2970,7 @@ Pedido do Silvan: contador de acessos ao site/sistema.
 - Problema: o dono viu 10 "aparelhos" no dia, quase todos computador, 1 visita só, em horários de madrugada (00:49 x3, 03:50 x2): robôs de varredura/pré-visualização com navegador comum, que o filtro por nome do navegador não pega.
 - Agora a página só é contada quando o navegador avisa (POST `/_a`, script `app/templates/_contador.html`, incluído em base.html, base_publico.html e preparo_publico.html) depois de 2 s visível e com algum gesto (toque, rolagem, tecla, mouse). `app/acessos.registrar(caminho, ...)`. Sem IP, como antes. O cookie `mid` passa a ser gravado nessa resposta.
 - Efeito: os números antigos (até 10/11) incluem robôs e não são comparáveis; quem desliga JavaScript não é contado. Teste: `test_acessos.py` (+ conferido em navegador real). Suíte: 116/116.
+- Botão "Limpar logs de acesso" em /dono/acessos (rota `dono.acessos_limpar`, pede confirmação): apaga as 4 tabelas do contador para medir a partir de zero. Coberto em `test_acessos.py`.
 
 ## BACKLOG (Silvan) - combinado para fazer depois
 

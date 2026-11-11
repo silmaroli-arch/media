@@ -676,6 +676,21 @@ def usuario_licenca_pagamento_nota(usuario_id, pagamento_id):
     return redirect(url_for("dono.usuario_licenca_pagamentos", usuario_id=usuario.id))
 
 
+@dono_bp.route("/acessos/limpar", methods=["POST"])
+@login_required
+@dono_required
+def acessos_limpar():
+    """Zera todos os registros do contador de acessos (2026-11-11, pedido do
+    Silvan): para medir, a partir de agora, se uma mudança alterou os números."""
+    from app.models import AcessoDetalheDia, AcessoDia, AcessoDispositivoDia, AcessoVisitanteDia
+
+    for modelo in (AcessoDia, AcessoVisitanteDia, AcessoDetalheDia, AcessoDispositivoDia):
+        modelo.query.delete()
+    db.session.commit()
+    flash("Contador de acessos zerado. A contagem recomeça agora.", "success")
+    return redirect(url_for("dono.acessos"))
+
+
 @dono_bp.route("/acessos")
 @login_required
 @dono_required

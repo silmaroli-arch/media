@@ -145,4 +145,16 @@ checar("Tela do dono lista os aparelhos diferentes por código, tipo e visitas, 
 
 for caminho in ("/", "/login"):
     checar(f"A página {caminho} leva o aviso de presença", "/_a" in app.test_client().get(caminho).get_data(as_text=True))
+# ---------- limpar os logs ----------
+from app.models import AcessoDia as _AD, AcessoDispositivoDia as _AP
+checar("Botão 'Limpar logs de acesso' na tela do dono", "Limpar logs de acesso" in dono.get("/dono/acessos").get_data(as_text=True))
+checar("Quem não é dono não limpa", medico.post("/dono/acessos/limpar").status_code in (302, 401, 403))
+with app.app_context():
+    checar("Antes: há registros", _AD.query.count() > 0 and AcessoVisitanteDia.query.count() > 0 and _AP.query.count() > 0 and AcessoDetalheDia.query.count() > 0)
+r = dono.post("/dono/acessos/limpar", follow_redirects=True)
+checar("Limpar avisa e zera tudo", "Contador de acessos zerado" in r.get_data(as_text=True))
+with app.app_context():
+    checar("Depois: nenhuma tabela do contador tem registro", _AD.query.count() == 0 and AcessoVisitanteDia.query.count() == 0 and _AP.query.count() == 0 and AcessoDetalheDia.query.count() == 0)
+visita(app.test_client(), "/", UA1)
+checar("A contagem recomeça do zero", contagem("site") == (1, 1))
 print("TUDO OK")
