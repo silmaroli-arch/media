@@ -2,7 +2,12 @@
 {% block titulo %}Acessos{% endblock %}
 {% block conteudo %}
 {# Contador de acessos (pedido do Silvan, 2026-11-06, ver app/acessos.py). #}
-<h3 class="mb-1">Acessos ao site e ao sistema</h3>
+<div class="d-flex justify-content-between align-items-start gap-3">
+  <h3 class="mb-1">Acessos ao site e ao sistema</h3>
+  <form method="post" action="{{ url_for('dono.acessos_limpar') }}" onsubmit="return confirm('Apagar TODOS os registros do contador de acessos (visitas, visitantes e aparelhos)? Não dá para desfazer. A contagem recomeça do zero.');">
+    <button type="submit" class="btn btn-sm btn-outline-danger text-nowrap"><i class="bi bi-trash"></i> Limpar logs de acesso</button>
+  </form>
+</div>
 <p class="text-muted small">
   <strong>Visitas</strong> = páginas abertas; <strong>visitantes</strong> = pessoas diferentes no dia (a soma de vários dias conta a mesma
   pessoa uma vez por dia). Horário de Brasília. Não guarda IP nem dado pessoal (os aparelhos são códigos aleatórios genéricos); robôs (como o Google e a pré-visualização do
