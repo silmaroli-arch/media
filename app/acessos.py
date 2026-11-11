@@ -5,6 +5,12 @@ a equipe (médicos e secretárias logados), o portal do paciente e o link de
 preparo do WhatsApp. Duas medidas: visitas (páginas abertas) e visitantes
 (pessoas diferentes no dia).
 
+VISITA = UM ACESSO (2026-11-11): navegar e usar funções NÃO soma. Conta-se uma
+visita quando a pessoa entra numa área e outra só depois de 30 minutos parada
+(cookie de sessão "ms", que guarda só as letras das áreas já abertas nesta
+sessão, sem identificar ninguém). "Visitantes" continuam sendo as pessoas
+diferentes no dia.
+
 Para investigar picos há também o detalhe por página e por tipo de navegador
 (AcessoDetalheDia) e a lista de APARELHOS (AcessoDispositivoDia): cada
 navegador recebe um código aleatório genérico, guardado em cookie por 90 dias,
@@ -81,6 +87,9 @@ def normalizar_pagina(caminho):
     return caminho[:120] or "/"
 
 
+COOKIE_SESSAO = "ms"
+DURACAO_SESSAO = 30 * 60
+LETRA_AREA = {"site": "s", "equipe": "e", "paciente": "p", "link_preparo": "l"}
 COOKIE_DISPOSITIVO = "mid"
 VALIDADE_COOKIE = 90 * 24 * 3600
 RE_CODIGO = re.compile(r"[0-9A-F]{8}")
@@ -112,6 +121,14 @@ def registrar(caminho, resposta, secret):
     if area is None:
         return
     dia = agora_brasilia().date()
+    # Sessão: uma visita por área a cada 30 min de uso (o cookie renova a cada aviso).
+    abertas = {c for c in request.cookies.get(COOKIE_SESSAO, "") if c in "sepl"}
+    letra = LETRA_AREA[area]
+    visita_da_area = letra not in abertas
+    sessao_nova = not abertas
+    abertas.add(letra)
+    resposta.set_cookie(COOKIE_SESSAO, "".join(sorted(abertas)), max_age=DURACAO_SESSAO, httponly=True,
+                        samesite="Lax", secure=request.is_secure)
     registro = AcessoDia.query.filter_by(dia=dia, area=area).first()
     if registro is None:
         registro = AcessoDia(dia=dia, area=area, visitas=0, visitantes=0)
@@ -124,8 +141,9 @@ def registrar(caminho, resposta, secret):
     if detalhe is None:
         detalhe = AcessoDetalheDia(dia=dia, area=area, pagina=pagina, navegador=navegador, visitas=0)
         db.session.add(detalhe)
-    detalhe.visitas = (detalhe.visitas or 0) + 1
-    registro.visitas = (registro.visitas or 0) + 1
+    if visita_da_area:
+        detalhe.visitas = (detalhe.visitas or 0) + 1
+        registro.visitas = (registro.visitas or 0) + 1
     chave = _chave_visitante(dia, area, secret)
     if not AcessoVisitanteDia.query.filter_by(dia=dia, area=area, chave=chave).first():
         db.session.add(AcessoVisitanteDia(dia=dia, area=area, chave=chave))
@@ -142,7 +160,8 @@ def registrar(caminho, resposta, secret):
     if aparelho is None:
         aparelho = AcessoDispositivoDia(dia=dia, codigo=codigo, tipo=navegador, visitas=0, primeiro_em=agora, novo=codigo_novo)
         db.session.add(aparelho)
-    aparelho.visitas = (aparelho.visitas or 0) + 1
+    if sessao_nova:
+        aparelho.visitas = (aparelho.visitas or 0) + 1
     aparelho.ultimo_em = agora
     db.session.commit()
 
