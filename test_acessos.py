@@ -35,9 +35,12 @@ c1 = app.test_client()
 visita(c1, "/", UA1)
 checar("Site: 1ª visita conta 1 visita e 1 visitante", contagem("site") == (1, 1))
 visita(c1, "/termos", UA1)
-checar("Mesma pessoa, outra página: 2 visitas, 1 visitante", contagem("site") == (2, 1))
+checar("Mesma pessoa navegando para outra página: continua 1 visita e 1 visitante", contagem("site") == (1, 1))
 visita(app.test_client(), "/login", UA2)
-checar("Outra pessoa: 3 visitas, 2 visitantes", contagem("site") == (3, 2))
+checar("Outra pessoa: 2 visitas, 2 visitantes", contagem("site") == (2, 2))
+c1.delete_cookie("ms")  # passou da meia hora parado: volta como uma nova visita
+visita(c1, "/", UA1)
+checar("Depois de 30 min parado, nova visita (mesmo visitante)", contagem("site") == (3, 2))
 
 visita(c1, "/", {"User-Agent": "Googlebot/2.1"})
 visita(c1, "/", {"User-Agent": "WhatsApp/2.23 preview"})
@@ -73,7 +76,7 @@ medico.post("/login", data={"identificador": "medica2@clinicavitoria.com", "senh
 visita(medico, "/equipe/", UA1)
 visita(medico, "/equipe/", UA2)
 v, u = contagem("equipe")
-checar("Equipe: visitas contadas e o mesmo usuário conta uma vez só", v >= 2 and u == 1)
+checar("Equipe: usar várias telas é 1 visita e o mesmo usuário conta uma vez só", v == 1 and u == 1)
 with app.app_context():
     dono_email = Usuario.query.filter_by(tipo="dono").first().email
 dono = app.test_client()
@@ -92,10 +95,9 @@ checar("Tipo de navegador: celular, computador, programa e vazio",
        and tipo_navegador("Mozilla/5.0 (Windows NT 10.0) Chrome/120") == "Computador"
        and tipo_navegador("Go-http-client/1.1") == "Programa/script" and tipo_navegador("") == "Sem identificação")
 checar("O token do link de preparo não vai para o detalhe", normalizar_pagina("/paciente/preparo/abc123XYZ") == "/paciente/preparo/...")
-c2 = app.test_client()
 for _ in range(3):
-    visita(c2, "/login", {"User-Agent": "Go-http-client/1.1"})
-visita(c2, "/cadastro", {"User-Agent": "Mozilla/5.0 (Android 14; Mobile) Chrome/120"})
+    visita(app.test_client(), "/login", {"User-Agent": "Go-http-client/1.1"})
+visita(app.test_client(), "/cadastro", {"User-Agent": "Mozilla/5.0 (Android 14; Mobile) Chrome/120"})
 with app.app_context():
     d = {(x.pagina, x.navegador): x.visitas for x in AcessoDetalheDia.query.filter_by(dia=hoje, area="site").all()}
     checar("Detalhe conta por página e navegador", d.get(("/login", "Programa/script")) == 3 and d.get(("/cadastro", "Celular")) == 1)
@@ -105,10 +107,10 @@ with app.app_context():
            or AcessoDetalheDia.query.filter_by(dia=hoje, area="link_preparo").count() >= 1)
 html = dono.get("/dono/acessos").get_data(as_text=True)
 checar("Tela mostra páginas mais abertas e tipo de navegador, sem IP",
-       "Páginas mais abertas" in html and "Tipo de navegador" in html and "<code>/login</code>" in html and "Programa/script" in html
+       "Páginas de entrada" in html and "Tipo de navegador" in html and "<code>/login</code>" in html and "Programa/script" in html
        and "127.0.0.1" not in html)
 checar("Dá para escolher outro dia (dia inválido cai em hoje)", "Sem acessos registrados neste dia" in dono.get(f"/dono/acessos?dia={(hoje - timedelta(days=3)).isoformat()}").get_data(as_text=True)
-       and "Páginas mais abertas" in dono.get("/dono/acessos?dia=lixo").get_data(as_text=True))
+       and "Páginas de entrada" in dono.get("/dono/acessos?dia=lixo").get_data(as_text=True))
 # ---------- aparelhos (código aleatório em cookie) ----------
 from app.models import AcessoDispositivoDia
 
@@ -116,17 +118,17 @@ celular = app.test_client()  # guarda cookies, como um navegador de verdade
 UA_CEL = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17) Safari/604"}
 celular.get("/", headers=UA_CEL)
 r = celular.post("/_a", json={"p": "/"}, headers=UA_CEL)
-cookie = r.headers.get("Set-Cookie", "")
+cookie = next((c for c in r.headers.getlist("Set-Cookie") if c.startswith("mid=")), "")
 checar("Navegador novo recebe o cookie com código aleatório de 8 caracteres (sem IP no código)",
        cookie.startswith("mid=") and len(cookie.split("=")[1].split(";")[0]) == 8 and "HttpOnly" in cookie and "SameSite=Lax" in cookie)
 visita(celular, "/termos", UA_CEL)
 visita(celular, "/privacidade", UA_CEL)
 r2 = celular.post("/_a", json={"p": "/privacidade"}, headers=UA_CEL)
-checar("O mesmo navegador não recebe outro código", "mid=" not in r2.headers.get("Set-Cookie", ""))
+checar("O mesmo navegador não recebe outro código", "mid=" not in " ".join(r2.headers.getlist("Set-Cookie")))
 with app.app_context():
-    meu = AcessoDispositivoDia.query.filter_by(dia=hoje, tipo="Celular").first()
-    checar("O aparelho é contado uma vez, com 4 visitas, como novo e do tipo Celular",
-           meu is not None and meu.visitas == 4 and meu.novo and meu.primeiro_em and meu.ultimo_em)
+    meu = AcessoDispositivoDia.query.filter_by(dia=hoje, codigo=cookie.split("=")[1].split(";")[0]).first()
+    checar("O aparelho é contado uma vez, com 1 visita (3 páginas na mesma sessão), como novo e do tipo Celular",
+           meu is not None and meu.visitas == 1 and meu.novo and meu.primeiro_em and meu.ultimo_em)
 # robô sem cookie: cada visita vira um aparelho novo com 1 visita só
 for _ in range(4):
     c_robo = app.test_client()
@@ -135,9 +137,14 @@ with app.app_context():
     robos = AcessoDispositivoDia.query.filter_by(dia=hoje, tipo="Programa/script").all()
     checar("Quem não guarda cookie aparece como vários aparelhos novos com 1 visita",
            len([r for r in robos if r.visitas == 1 and r.novo]) >= 4)
+celular.delete_cookie("ms")
+visita(celular, "/termos", UA_CEL)
+with app.app_context():
+    checar("Voltar depois de 30 min soma uma visita ao mesmo aparelho",
+           AcessoDispositivoDia.query.filter_by(dia=hoje, codigo=cookie.split("=")[1].split(";")[0]).first().visitas == 2)
 c_falso = app.test_client()
 c_falso.set_cookie("mid", "../etc/passwd")
-checar("Cookie com valor estranho vira um código novo válido", "mid=" in c_falso.post("/_a", json={"p": "/"}, headers=UA_CEL).headers.get("Set-Cookie", ""))
+checar("Cookie com valor estranho vira um código novo válido", "mid=" in " ".join(c_falso.post("/_a", json={"p": "/"}, headers=UA_CEL).headers.getlist("Set-Cookie")))
 html = dono.get("/dono/acessos").get_data(as_text=True)
 checar("Tela do dono lista os aparelhos diferentes por código, tipo e visitas, sem IP",
        "Aparelhos diferentes neste dia" in html and "Dispositivo " in html and "novo neste dia" in html and "127.0.0.1" not in html
