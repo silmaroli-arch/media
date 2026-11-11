@@ -11,6 +11,12 @@ navegador recebe um código aleatório genérico, guardado em cookie por 90 dias
 sem IP e sem ligação com a pessoa. Robôs costumam não guardar cookie: aparecem
 como muitos aparelhos "novos" com 1 visita só.
 
+Só conta quem parece gente (2026-11-11): o navegador avisa (POST /_a, script em
+templates/_contador.html) depois de 2 segundos com a página visível e algum
+gesto (toque, rolagem, tecla, mouse) e devolvendo o cookie de aparelho. Robôs de
+varredura abrem a página, mas não fazem nada disso, então deixam de inflar os
+números.
+
 Privacidade (LGPD): nada de IP nem de dado pessoal no banco. Quem é diferente
 é contado por um hash com sal diário (não reversível) guardado só por 2 dias;
 o que fica para sempre são apenas os totais por dia. Robôs (buscadores,
@@ -89,17 +95,20 @@ def _chave_visitante(dia, area, secret):
     return hashlib.sha256(f"{dia.isoformat()}|{area}|{base}|{secret}".encode("utf-8")).hexdigest()[:32]
 
 
-def registrar(resposta, secret):
-    """Conta a página que acabou de ser aberta (chamado depois de cada resposta)."""
+RE_CAMINHO = re.compile(r"/[A-Za-z0-9_\-./]*")
+
+
+def registrar(caminho, resposta, secret):
+    """Conta uma página aberta por uma pessoa (o navegador avisa em /_a)."""
     from app.models import AcessoDetalheDia, AcessoDia, AcessoDispositivoDia, AcessoVisitanteDia
 
-    if request.method != "GET" or resposta.status_code != 200 or resposta.mimetype != "text/html":
-        return
-    if request.headers.get("X-Requested-With") or RE_ROBO.search(request.headers.get("User-Agent", "")):
+    if RE_ROBO.search(request.headers.get("User-Agent", "")):
         return
     if current_user.is_authenticated and getattr(current_user, "is_dono", False):
         return
-    area = area_do_caminho(request.path)
+    if not isinstance(caminho, str) or len(caminho) > 200 or not RE_CAMINHO.fullmatch(caminho):
+        return
+    area = area_do_caminho(caminho)
     if area is None:
         return
     dia = agora_brasilia().date()
@@ -110,7 +119,7 @@ def registrar(resposta, secret):
         AcessoVisitanteDia.query.filter(AcessoVisitanteDia.dia < dia - timedelta(days=1)).delete(synchronize_session=False)
         AcessoDetalheDia.query.filter(AcessoDetalheDia.dia < dia - timedelta(days=35)).delete(synchronize_session=False)
         AcessoDispositivoDia.query.filter(AcessoDispositivoDia.dia < dia - timedelta(days=90)).delete(synchronize_session=False)
-    pagina, navegador = normalizar_pagina(request.path), tipo_navegador(request.headers.get("User-Agent"))
+    pagina, navegador = normalizar_pagina(caminho), tipo_navegador(request.headers.get("User-Agent"))
     detalhe = AcessoDetalheDia.query.filter_by(dia=dia, area=area, pagina=pagina, navegador=navegador).first()
     if detalhe is None:
         detalhe = AcessoDetalheDia(dia=dia, area=area, pagina=pagina, navegador=navegador, visitas=0)
@@ -139,10 +148,15 @@ def registrar(resposta, secret):
 
 
 def init_app(app):
-    @app.after_request
-    def _contar_acesso(resposta):
+    @app.route("/_a", methods=["POST"], endpoint="contar_acesso")
+    def contar_acesso():
+        """Aviso do navegador de que uma pessoa está mesmo na página."""
+        resposta = app.response_class(status=204)
+        if request.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none"):
+            return resposta
         try:
-            registrar(resposta, app.config["SECRET_KEY"])
+            dados = request.get_json(silent=True) or {}
+            registrar(dados.get("p"), resposta, app.config["SECRET_KEY"])
         except Exception:
             db.session.rollback()
             logger.exception("Falha ao contar o acesso")

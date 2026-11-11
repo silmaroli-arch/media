@@ -20,22 +20,34 @@ def contagem(area):
         return (r.visitas, r.visitantes) if r else (0, 0)
 
 
+def visita(cliente, caminho, headers=None, beacon=True):
+    """Abre a página e, como o navegador faria, avisa que há uma pessoa nela."""
+    r = cliente.get(caminho, headers=headers or {}, follow_redirects=True)
+    if beacon:
+        cliente.post("/_a", json={"p": caminho}, headers=headers or {})
+    return r
+
+
 UA1, UA2 = {"User-Agent": "Mozilla/5.0 Pessoa Um"}, {"User-Agent": "Mozilla/5.0 Pessoa Dois"}
 hoje = agora_brasilia().date()
 
 c1 = app.test_client()
-c1.get("/", headers=UA1)
+visita(c1, "/", UA1)
 checar("Site: 1ª visita conta 1 visita e 1 visitante", contagem("site") == (1, 1))
-c1.get("/termos", headers=UA1)
+visita(c1, "/termos", UA1)
 checar("Mesma pessoa, outra página: 2 visitas, 1 visitante", contagem("site") == (2, 1))
-app.test_client().get("/login", headers=UA2)
+visita(app.test_client(), "/login", UA2)
 checar("Outra pessoa: 3 visitas, 2 visitantes", contagem("site") == (3, 2))
 
-c1.get("/", headers={"User-Agent": "Googlebot/2.1"})
-c1.get("/", headers={"User-Agent": "WhatsApp/2.23 preview"})
-c1.get("/static/css/style.css", headers=UA1)
+visita(c1, "/", {"User-Agent": "Googlebot/2.1"})
+visita(c1, "/", {"User-Agent": "WhatsApp/2.23 preview"})
+visita(app.test_client(), "/", UA2, beacon=False)  # varredura: abre a página e nada mais
+c1.post("/_a", json={"p": "/dono/x"}, headers=UA1)
+c1.post("/_a", json={"p": "http://evil"}, headers=UA1)
+c1.post("/_a", json={"p": "/"}, headers={**UA1, "Sec-Fetch-Site": "cross-site"})
+visita(c1, "/static/css/style.css", UA1)
 c1.post("/login", data={}, headers=UA1)
-checar("Robôs, arquivos estáticos e envios (POST) não entram", contagem("site") == (3, 2))
+checar("Robôs, quem não dá sinal de vida, estáticos, outros sites e envios não entram", contagem("site") == (3, 2))
 
 with app.app_context():
     chaves = [v.chave for v in AcessoVisitanteDia.query.all()]
@@ -50,7 +62,7 @@ with app.app_context():
     # visitantes antigos (5 dias) que devem ser apagados
     db.session.add(AcessoVisitanteDia(dia=hoje - timedelta(days=5), area="link_preparo", chave="x" * 32))
     db.session.commit()
-app.test_client().get(f"/paciente/preparo/{token}", headers=UA1)
+visita(app.test_client(), f"/paciente/preparo/{token}", UA1)
 checar("Link de preparo conta na área própria", contagem("link_preparo") == (1, 1))
 with app.app_context():
     checar("Impressões com mais de 2 dias são apagadas", AcessoVisitanteDia.query.filter(AcessoVisitanteDia.dia < hoje - timedelta(days=1)).count() == 0)
@@ -58,8 +70,8 @@ with app.app_context():
 # equipe logada (conta por usuário) e dono (não conta)
 medico = app.test_client()
 medico.post("/login", data={"identificador": "medica2@clinicavitoria.com", "senha": "123456"})
-medico.get("/equipe/", headers=UA1, follow_redirects=True)
-medico.get("/equipe/", headers=UA2, follow_redirects=True)
+visita(medico, "/equipe/", UA1)
+visita(medico, "/equipe/", UA2)
 v, u = contagem("equipe")
 checar("Equipe: visitas contadas e o mesmo usuário conta uma vez só", v >= 2 and u == 1)
 with app.app_context():
@@ -82,8 +94,8 @@ checar("Tipo de navegador: celular, computador, programa e vazio",
 checar("O token do link de preparo não vai para o detalhe", normalizar_pagina("/paciente/preparo/abc123XYZ") == "/paciente/preparo/...")
 c2 = app.test_client()
 for _ in range(3):
-    c2.get("/login", headers={"User-Agent": "Go-http-client/1.1"})
-c2.get("/cadastro", headers={"User-Agent": "Mozilla/5.0 (Android 14; Mobile) Chrome/120"})
+    visita(c2, "/login", {"User-Agent": "Go-http-client/1.1"})
+visita(c2, "/cadastro", {"User-Agent": "Mozilla/5.0 (Android 14; Mobile) Chrome/120"})
 with app.app_context():
     d = {(x.pagina, x.navegador): x.visitas for x in AcessoDetalheDia.query.filter_by(dia=hoje, area="site").all()}
     checar("Detalhe conta por página e navegador", d.get(("/login", "Programa/script")) == 3 and d.get(("/cadastro", "Celular")) == 1)
@@ -102,29 +114,35 @@ from app.models import AcessoDispositivoDia
 
 celular = app.test_client()  # guarda cookies, como um navegador de verdade
 UA_CEL = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17) Safari/604"}
-r = celular.get("/", headers=UA_CEL)
+celular.get("/", headers=UA_CEL)
+r = celular.post("/_a", json={"p": "/"}, headers=UA_CEL)
 cookie = r.headers.get("Set-Cookie", "")
 checar("Navegador novo recebe o cookie com código aleatório de 8 caracteres (sem IP no código)",
        cookie.startswith("mid=") and len(cookie.split("=")[1].split(";")[0]) == 8 and "HttpOnly" in cookie and "SameSite=Lax" in cookie)
-celular.get("/termos", headers=UA_CEL)
-r2 = celular.get("/privacidade", headers=UA_CEL)
+visita(celular, "/termos", UA_CEL)
+visita(celular, "/privacidade", UA_CEL)
+r2 = celular.post("/_a", json={"p": "/privacidade"}, headers=UA_CEL)
 checar("O mesmo navegador não recebe outro código", "mid=" not in r2.headers.get("Set-Cookie", ""))
 with app.app_context():
     meu = AcessoDispositivoDia.query.filter_by(dia=hoje, tipo="Celular").first()
-    checar("O aparelho é contado uma vez, com 3 visitas, como novo e do tipo Celular",
-           meu is not None and meu.visitas == 3 and meu.novo and meu.primeiro_em and meu.ultimo_em)
+    checar("O aparelho é contado uma vez, com 4 visitas, como novo e do tipo Celular",
+           meu is not None and meu.visitas == 4 and meu.novo and meu.primeiro_em and meu.ultimo_em)
 # robô sem cookie: cada visita vira um aparelho novo com 1 visita só
 for _ in range(4):
-    app.test_client().get("/cadastro", headers={"User-Agent": "Go-http-client/1.1"})
+    c_robo = app.test_client()
+    c_robo.post("/_a", json={"p": "/cadastro"}, headers={"User-Agent": "Go-http-client/1.1"})
 with app.app_context():
     robos = AcessoDispositivoDia.query.filter_by(dia=hoje, tipo="Programa/script").all()
     checar("Quem não guarda cookie aparece como vários aparelhos novos com 1 visita",
            len([r for r in robos if r.visitas == 1 and r.novo]) >= 4)
 c_falso = app.test_client()
 c_falso.set_cookie("mid", "../etc/passwd")
-checar("Cookie com valor estranho vira um código novo válido", "mid=" in c_falso.get("/", headers=UA_CEL).headers.get("Set-Cookie", ""))
+checar("Cookie com valor estranho vira um código novo válido", "mid=" in c_falso.post("/_a", json={"p": "/"}, headers=UA_CEL).headers.get("Set-Cookie", ""))
 html = dono.get("/dono/acessos").get_data(as_text=True)
 checar("Tela do dono lista os aparelhos diferentes por código, tipo e visitas, sem IP",
        "Aparelhos diferentes neste dia" in html and "Dispositivo " in html and "novo neste dia" in html and "127.0.0.1" not in html
        and "aparelho(s) diferente(s)" in html)
+
+for caminho in ("/", "/login"):
+    checar(f"A página {caminho} leva o aviso de presença", "/_a" in app.test_client().get(caminho).get_data(as_text=True))
 print("TUDO OK")

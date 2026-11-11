@@ -1,0 +1,18 @@
+{# Contador de acessos (app/acessos.py): avisa o servidor só depois de 2 s com a página visível e algum gesto. #}
+<script>
+(function () {
+  var t0 = Date.now(), gesto = false, enviado = false;
+  function avisar() {
+    if (enviado || !gesto || document.visibilityState !== 'visible') return;
+    if (Date.now() - t0 < 2000) { setTimeout(avisar, 2100 - (Date.now() - t0)); return; }
+    enviado = true;
+    try {
+      fetch('/_a', {method: 'POST', credentials: 'same-origin', keepalive: true,
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({p: location.pathname})}).catch(function () {});
+    } catch (e) {}
+  }
+  ['pointerdown', 'keydown', 'scroll', 'touchstart', 'mousemove'].forEach(function (nome) {
+    addEventListener(nome, function () { gesto = true; avisar(); }, {passive: true});
+  });
+})();
+</script>
