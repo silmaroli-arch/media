@@ -65,6 +65,14 @@ repositório, ver .env.example):
   seus testes: cadastre um agendamento para o paciente de teste (criado
   com o seu nome).". Também quase sempre fora da janela de 24h, e também
   opcional (sem ele, o envio é só pulado).
+- WHATSAPP_META_TEMPLATE_MEDICO_NOVA_PERGUNTA (opcional, 2026-11-16): aviso ao
+  MÉDICO de que chegou uma pergunta de paciente, com quatro variáveis (nome do
+  médico, nome do paciente, a pergunta, o link da Aprovação rápida). Sem ele o
+  aviso é texto livre e a Meta só entrega dentro das 24h da última mensagem do
+  médico. Corpo aprovável (a Meta recusa corpo curto demais e variável no fim): "Olá,
+  {{1}}! Você recebeu uma nova pergunta de paciente no MedIA. Paciente: {{2}}.
+  Pergunta: {{3}}. Para revisar e responder, acesse o link a seguir: {{4}} Esta é
+  uma notificação automática do MedIA."
 - WHATSAPP_META_TEMPLATE_AGENDAMENTO_CRIADO (opcional, pedido do Silvan,
   2026-09-10): nome do template aprovado usado para avisar o PACIENTE, no
   próprio WhatsApp, que um agendamento foi criado para ele (ver

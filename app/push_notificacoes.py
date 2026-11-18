@@ -56,7 +56,7 @@ from flask import current_app
 from pywebpush import WebPushException, webpush
 
 from app.extensions import db
-from app.models import GrupoMembro, PushSubscription, Usuario
+from app.models import GrupoMembro, Notificacao, PushSubscription, Usuario
 from app.whatsapp_envio import enviar_mensagem_whatsapp
 
 logger = logging.getLogger(__name__)
@@ -171,6 +171,10 @@ def notificar_equipe_nova_pergunta(pergunta):
     if not usuarios_ids:
         return
 
+    # Sininho: o único canal que não depende de configuração do aparelho nem
+    # da janela de 24h do WhatsApp (2026-11-16).
+    _criar_notificacoes_sino(pergunta, usuarios_ids)
+
     if _vapid_configurado():
         subscriptions = PushSubscription.query.filter(
             PushSubscription.usuario_id.in_(usuarios_ids)
@@ -185,6 +189,24 @@ def notificar_equipe_nova_pergunta(pergunta):
                 _enviar_para_subscription(subscription, payload)
 
     _notificar_whatsapp_medicos(pergunta, usuarios_ids)
+
+
+def _criar_notificacoes_sino(pergunta, usuarios_ids):
+    """Uma notificação no sininho de cada médico avisado (pedido do Silvan,
+    2026-11-16: a pergunta aparecia pendente no painel, mas nada avisava o
+    médico). O clique leva à Aprovação rápida. Falha aqui nunca atrapalha o
+    resto."""
+    try:
+        for usuario_id in usuarios_ids:
+            db.session.add(Notificacao(
+                usuario_id=usuario_id, tipo="pergunta_nova", titulo="Nova pergunta de paciente",
+                mensagem=f'{pergunta.paciente.nome}: "{pergunta.pergunta}"',
+                link_endpoint="medico.aprovacao_rapida",
+            ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("Falha ao criar a notificação do sininho da pergunta nova")
 
 
 def _link_perguntas():
@@ -218,12 +240,17 @@ def _notificar_whatsapp_medicos(pergunta, usuarios_ids):
         Usuario.telefone.isnot(None),
     ).all()
     for medico in medicos:
+        # Com o template aprovado (WHATSAPP_META_TEMPLATE_MEDICO_NOVA_PERGUNTA,
+        # 2026-11-16) o aviso chega mesmo fora da janela de 24h; sem ele, cai
+        # no texto livre, que a Meta só entrega dentro da janela.
         enviar_mensagem_whatsapp(
             medico.telefone,
             texto=(
                 f'Nova pergunta de {pergunta.paciente.nome}: '
                 f'"{pergunta.pergunta}". Responda em {_link_perguntas()}.'
             ),
+            content_variables=[medico.nome, pergunta.paciente.nome, pergunta.pergunta, _link_perguntas()],
+            nome_template_env="WHATSAPP_META_TEMPLATE_MEDICO_NOVA_PERGUNTA",
         )
 
 

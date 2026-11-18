@@ -2479,6 +2479,7 @@ class Notificacao(db.Model):
         "medico.agenda_novo": "Clique aqui para cadastrar o agendamento do paciente de teste",
         "medico.fale_com_a_gente": "Clique aqui para ver a conversa com o suporte",
         "medico.base_compartilhada": "Clique aqui para ver a base de conhecimento",
+        "medico.aprovacao_rapida": "Clique aqui para responder a pergunta",
     }
 
     @property
